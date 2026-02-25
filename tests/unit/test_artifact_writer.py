@@ -8,14 +8,14 @@ These tests are expected to FAIL until the implementation is written.
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import call, patch
+from unittest.mock import patch
 
 import pytest
 
 from sio.adapters.claude_code.artifact_writer import (
+    commit_artifact,
     generate_diff,
     write_optimization,
-    commit_artifact,
 )
 
 

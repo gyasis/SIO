@@ -116,7 +116,7 @@ def _compute_satisfaction_rate(examples: list[dict]) -> float | None:
         e for e in examples if e.get("user_satisfied") is not None
     ]
     if not labeled:
-        return None
+        return 0.0
     satisfied = sum(1 for e in labeled if e["user_satisfied"] == 1)
     return satisfied / len(labeled)
 
@@ -236,18 +236,25 @@ def optimize(
             "before_satisfaction": before_rate,
         }
 
+    # Arena validation (FR-010, FR-011, FR-012)
+    from sio.core.arena.regression import run_arena
+
+    arena_result = run_arena(conn, skill_name, proposed_diff)
+    arena_passed = 1 if arena_result["passed"] else 0
+    drift_score = arena_result.get("drift_score")
+
     # Record OptimizationRun
     now = datetime.now(timezone.utc).isoformat()
     cursor = conn.execute(
         "INSERT INTO optimization_runs "
         "(platform, skill_name, optimizer, example_count, "
         "before_satisfaction, proposed_diff, status, "
-        "arena_passed, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?)",
+        "arena_passed, drift_score, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
         (
             platform, skill_name, optimizer,
             len(examples), before_rate,
-            proposed_diff, now,
+            proposed_diff, arena_passed, drift_score, now,
         ),
     )
     conn.commit()

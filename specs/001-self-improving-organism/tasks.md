@@ -112,7 +112,7 @@
 - [x] T033 [P] [US2] Implement batch review in `src/sio/core/feedback/batch_review.py`: `get_reviewable(db, platform, session_id, limit)` returns unlabeled sorted by timestamp. `apply_label(db, invocation_id, signal, note)` applies label. Warn if distribution >90% skewed (FR-026)
 - [x] T034 [US2] Implement pattern flag detection in `src/sio/core/feedback/pattern_flag.py`: `flag_pattern(db, skill_name, note)` — marks a skill as priority optimization candidate when user explicitly flags recurring issue (FR-029). Checks if minimum quality gates are met.
 - [x] T035 [US2] Implement feedback CLI entry point in `src/sio/core/feedback/labeler_cli.py`: `python3 -m sio.core.feedback.labeler --session <id> --signal <++|--> [--note <text>]` — parses args, calls labeler.label_latest(), exits 0. This is invoked by the sio-feedback skill trigger (not a Notification hook).
-- [ ] T036 [US2] Update sio-feedback SKILL.md to invoke `python3 -m sio.core.feedback.labeler --session $SESSION_ID --signal "$(echo $USER_INPUT | head -c2)" --note "$(echo $USER_INPUT | cut -c3-)"` via Bash
+- [x] T036 [US2] Update sio-feedback SKILL.md to invoke `python3 -m sio.core.feedback.labeler --session $SESSION_ID --signal "$(echo $USER_INPUT | head -c2)" --note "$(echo $USER_INPUT | cut -c3-)"` via Bash
 - [x] T037 [US2] Implement `sio review` CLI command in `src/sio/cli/main.py`: Click command with `--platform`, `--session`, `--limit` options. Uses Rich for interactive sequential presentation. Labels: `++`/`--`/`s(kip)`/`q(uit)`
 - [x] T038 [US2] Verify all US2 tests pass (Green).
 
@@ -154,22 +154,22 @@
 
 ### Tests for User Story 4
 
-- [ ] T045 [P] [US4] Write unit tests for DSPy optimizer wrapper in `tests/unit/test_optimizer.py`: test quality gate enforcement (min 10 examples, min 5 failures, FR-017), test pattern threshold gate (FR-028 — must have 3+ recurring sessions), test GEPA/MIPROv2/BootstrapFewShot optimizer selection, test atomic rollback on failure (FR-023), test recency weighting in dataset export (FR-027)
-- [ ] T046 [P] [US4] Write unit tests for RLM corpus miner in `tests/unit/test_rlm_miner.py`: test corpus loaded into variable space (not token space), test signature "conversation_corpus, failure_record -> failure_analysis", test trajectory logging (each step has code + output), test Deno missing raises clear error, test sub_lm routing for llm_query() calls, mock WASM sandbox for unit isolation
-- [ ] T047 [P] [US4] Write unit tests for artifact writer in `tests/unit/test_artifact_writer.py`: test diff generation (before/after), test write to CLAUDE.md, test write to SKILL.md, test git commit with descriptive message (FR-009)
-- [ ] T047b [P] [US4] Write unit tests for corpus indexer in `tests/unit/test_corpus_indexer.py`: test index_corpus() builds BM25 + embedding index over markdown files, test search by keyword returns ranked results, test search by embedding returns semantically similar chunks, test empty corpus returns empty index gracefully
-- [ ] T048 [P] [US4] Write integration test for optimization cycle in `tests/integration/test_optimization_cycle.py`: seed DB with 15 labeled invocations (10 failures across 3 sessions + 5 successes) → trigger optimize → verify diff produced, quality gates passed, OptimizationRun record created with status='pending'
-- [ ] T050b [P] [US4] Write unit tests for pattern surfacing in `tests/unit/test_pattern_surface.py`: test surface_patterns() returns recurring failure patterns with description + count + affected sessions, test pattern summary generation for user acknowledgment (FR-030), test empty patterns returns empty list, test patterns below threshold excluded
+- [x] T045 [P] [US4] Write unit tests for DSPy optimizer wrapper in `tests/unit/test_optimizer.py`: test quality gate enforcement (min 10 examples, min 5 failures, FR-017), test pattern threshold gate (FR-028 — must have 3+ recurring sessions), test GEPA/MIPROv2/BootstrapFewShot optimizer selection, test atomic rollback on failure (FR-023), test recency weighting in dataset export (FR-027)
+- [x] T046 [P] [US4] Write unit tests for RLM corpus miner in `tests/unit/test_rlm_miner.py`: test corpus loaded into variable space (not token space), test signature "conversation_corpus, failure_record -> failure_analysis", test trajectory logging (each step has code + output), test Deno missing raises clear error, test sub_lm routing for llm_query() calls, mock WASM sandbox for unit isolation
+- [x] T047 [P] [US4] Write unit tests for artifact writer in `tests/unit/test_artifact_writer.py`: test diff generation (before/after), test write to CLAUDE.md, test write to SKILL.md, test git commit with descriptive message (FR-009)
+- [x] T047b [P] [US4] Write unit tests for corpus indexer in `tests/unit/test_corpus_indexer.py`: test index_corpus() builds BM25 + embedding index over markdown files, test search by keyword returns ranked results, test search by embedding returns semantically similar chunks, test empty corpus returns empty index gracefully
+- [x] T048 [P] [US4] Write integration test for optimization cycle in `tests/integration/test_optimization_cycle.py`: seed DB with 15 labeled invocations (10 failures across 3 sessions + 5 successes) → trigger optimize → verify diff produced, quality gates passed, OptimizationRun record created with status='pending'
+- [x] T050b [P] [US4] Write unit tests for pattern surfacing in `tests/unit/test_pattern_surface.py`: test surface_patterns() returns recurring failure patterns with description + count + affected sessions, test pattern summary generation for user acknowledgment (FR-030), test empty patterns returns empty list, test patterns below threshold excluded
 
 ### Implementation for User Story 4
 
-- [ ] T049 [US4] Implement DSPy optimizer wrapper in `src/sio/core/dspy/optimizer.py`: `optimize(db, skill_name, platform, optimizer='gepa')` — enforces quality gates (FR-017), checks pattern threshold (FR-028 — recurring across 3+ sessions), exports labeled data with recency weighting (FR-027), runs GEPA/MIPROv2/BootstrapFewShot, wraps in atomic transaction (FR-023)
-- [ ] T050 [US4] Implement pattern surfacing for user acknowledgment in `src/sio/core/dspy/pattern_surface.py`: `surface_patterns(db, platform) -> list[PatternSummary]` — finds recurring failure patterns, returns description + count + affected sessions + proposed fix (FR-030). Nothing deploys without user acknowledgment.
-- [ ] T051 [US4] Implement RLM corpus miner in `src/sio/core/dspy/rlm_miner.py`: `mine_failure_context(corpus_path, failure_record) -> MiningResult` — creates `dspy.RLM` with signature `"conversation_corpus, failure_record -> failure_analysis"`, `sub_lm` from config (cheap model for `llm_query()` calls inside REPL), `max_iterations=20`, `max_llm_calls=50`. Root LM writes Python code to search/filter the corpus in variable space (never sent to LLM context). Log `result.trajectory` for audit trail (each step's code + output). Requires Deno installed for WASM sandbox — raise clear error if missing. For unit tests: mock Deno sandbox, test signature parsing and trajectory logging.
-- [ ] T052 [US4] Implement corpus indexer in `src/sio/core/dspy/corpus_indexer.py`: `index_corpus(platform, history_dir) -> CorpusIndex` — BM25 + embedding index over SpecStory `.md` files for Claude Code adapter
-- [ ] T053 [US4] Implement artifact writer in `src/sio/adapters/claude_code/artifact_writer.py`: `write_optimization(platform, skill_name, diff, commit_message)` — writes to CLAUDE.md or SKILL.md, commits to git with FR-009 metadata
-- [ ] T054 [US4] Implement `sio optimize` CLI command in `src/sio/cli/main.py`: Click command with `skill_name`, `--platform`, `--optimizer`, `--dry-run`. Uses Rich for diff display. Prompts `[a(pprove)/r(eject)/d(etails)]`. On approve: write + commit. On failure: atomic rollback.
-- [ ] T055 [US4] Verify all US4 tests pass (Green).
+- [x] T049 [US4] Implement DSPy optimizer wrapper in `src/sio/core/dspy/optimizer.py`: `optimize(db, skill_name, platform, optimizer='gepa')` — enforces quality gates (FR-017), checks pattern threshold (FR-028 — recurring across 3+ sessions), exports labeled data with recency weighting (FR-027), runs GEPA/MIPROv2/BootstrapFewShot, wraps in atomic transaction (FR-023)
+- [x] T050 [US4] Implement pattern surfacing for user acknowledgment in `src/sio/core/dspy/pattern_surface.py`: `surface_patterns(db, platform) -> list[PatternSummary]` — finds recurring failure patterns, returns description + count + affected sessions + proposed fix (FR-030). Nothing deploys without user acknowledgment.
+- [x] T051 [US4] Implement RLM corpus miner in `src/sio/core/dspy/rlm_miner.py`: `mine_failure_context(corpus_path, failure_record) -> MiningResult` — creates `dspy.RLM` with signature `"conversation_corpus, failure_record -> failure_analysis"`, `sub_lm` from config (cheap model for `llm_query()` calls inside REPL), `max_iterations=20`, `max_llm_calls=50`. Root LM writes Python code to search/filter the corpus in variable space (never sent to LLM context). Log `result.trajectory` for audit trail (each step's code + output). Requires Deno installed for WASM sandbox — raise clear error if missing. For unit tests: mock Deno sandbox, test signature parsing and trajectory logging.
+- [x] T052 [US4] Implement corpus indexer in `src/sio/core/dspy/corpus_indexer.py`: `index_corpus(platform, history_dir) -> CorpusIndex` — BM25 + embedding index over SpecStory `.md` files for Claude Code adapter
+- [x] T053 [US4] Implement artifact writer in `src/sio/adapters/claude_code/artifact_writer.py`: `write_optimization(platform, skill_name, diff, commit_message)` — writes to CLAUDE.md or SKILL.md, commits to git with FR-009 metadata
+- [x] T054 [US4] Implement `sio optimize` CLI command in `src/sio/cli/main.py`: Click command with `skill_name`, `--platform`, `--optimizer`, `--dry-run`. Uses Rich for diff display. Prompts `[a(pprove)/r(eject)/d(etails)]`. On approve: write + commit. On failure: atomic rollback.
+- [x] T055 [US4] Verify all US4 tests pass (Green).
 
 **Checkpoint**: `sio optimize Read` produces diffs from labeled data across recurring sessions. Quality gates enforced (10+ examples, 3+ recurring sessions). Atomic rollback on failure. User acknowledgment required for deployment. US4 independently testable.
 
@@ -185,19 +185,19 @@
 
 ### Tests for User Story 5
 
-- [ ] T056 [P] [US5] Write unit tests for gold standards in `tests/unit/test_gold_standards.py`: test promote_to_gold() copies invocation fields, test exempt_from_purge always True, test replay_against_prompt() returns pass/fail
-- [ ] T057 [P] [US5] Write unit tests for drift detector in `tests/unit/test_drift_detector.py`: test cosine distance calculation, test 40% threshold triggers manual approval flag, test below threshold auto-passes
-- [ ] T058 [P] [US5] Write unit tests for collision detector in `tests/unit/test_collision.py`: test embedding similarity between skill descriptions, test 0.85 threshold triggers collision warning
-- [ ] T059 [P] [US5] Write integration test for arena validation in `tests/integration/test_arena_validation.py`: seed gold standards → run optimization → verify gold standards replayed, drift checked, collisions checked, blocking optimization rejected
+- [x] T056 [P] [US5] Write unit tests for gold standards in `tests/unit/test_gold_standards.py`: test promote_to_gold() copies invocation fields, test exempt_from_purge always True, test replay_against_prompt() returns pass/fail
+- [x] T057 [P] [US5] Write unit tests for drift detector in `tests/unit/test_drift_detector.py`: test cosine distance calculation, test 40% threshold triggers manual approval flag, test below threshold auto-passes
+- [x] T058 [P] [US5] Write unit tests for collision detector in `tests/unit/test_collision.py`: test embedding similarity between skill descriptions, test 0.85 threshold triggers collision warning
+- [x] T059 [P] [US5] Write integration test for arena validation in `tests/integration/test_arena_validation.py`: seed gold standards → run optimization → verify gold standards replayed, drift checked, collisions checked, blocking optimization rejected
 
 ### Implementation for User Story 5
 
-- [ ] T060 [P] [US5] Implement gold standards manager in `src/sio/core/arena/gold_standards.py`: `promote_to_gold(db, invocation_id)`, `get_all_for_skill(db, skill_name)`, `replay_against_prompt(gold, new_prompt) -> bool`
-- [ ] T061 [P] [US5] Implement drift detector in `src/sio/core/arena/drift_detector.py`: `measure_drift(original_prompt, new_prompt, embedder) -> float`, `requires_manual_approval(drift_score, threshold=0.40) -> bool`
-- [ ] T062 [P] [US5] Implement collision detector in `src/sio/core/arena/collision.py`: `check_collisions(skill_descriptions: dict, embedder) -> list[CollisionWarning]`, `is_collision(sim_score, threshold=0.85) -> bool`
-- [ ] T063 [US5] Implement arena regression runner in `src/sio/core/arena/regression.py`: `run_arena(db, skill_name, new_prompt, embedder) -> ArenaResult` — orchestrates gold standard replay + drift check + collision check. Returns pass/fail with reasons.
-- [ ] T064 [US5] Integrate arena into optimizer pipeline — extend `src/sio/core/dspy/optimizer.py` to call `run_arena()` after optimization, before presenting diff to user. Block deployment if arena fails.
-- [ ] T065 [US5] Verify all US5 tests pass (Green).
+- [x] T060 [P] [US5] Implement gold standards manager in `src/sio/core/arena/gold_standards.py`: `promote_to_gold(db, invocation_id)`, `get_all_for_skill(db, skill_name)`, `replay_against_prompt(gold, new_prompt) -> bool`
+- [x] T061 [P] [US5] Implement drift detector in `src/sio/core/arena/drift_detector.py`: `measure_drift(original_prompt, new_prompt, embedder) -> float`, `requires_manual_approval(drift_score, threshold=0.40) -> bool`
+- [x] T062 [P] [US5] Implement collision detector in `src/sio/core/arena/collision.py`: `check_collisions(skill_descriptions: dict, embedder) -> list[CollisionWarning]`, `is_collision(sim_score, threshold=0.85) -> bool`
+- [x] T063 [US5] Implement arena regression runner in `src/sio/core/arena/regression.py`: `run_arena(db, skill_name, new_prompt, embedder) -> ArenaResult` — orchestrates gold standard replay + drift check + collision check. Returns pass/fail with reasons.
+- [x] T064 [US5] Integrate arena into optimizer pipeline — extend `src/sio/core/dspy/optimizer.py` to call `run_arena()` after optimization, before presenting diff to user. Block deployment if arena fails.
+- [x] T065 [US5] Verify all US5 tests pass (Green).
 
 **Checkpoint**: Gold standards block harmful optimizations. Drift >40% requires manual approval. Trigger collisions detected. Arena gates integrated into optimizer. US5 independently testable.
 
@@ -236,16 +236,16 @@
 
 ### Tests for User Story 7
 
-- [ ] T071 [P] [US7] Write unit tests for Claude Code installer in `tests/unit/test_installer.py` (mock filesystem): test hook registration (writes to settings.json), test skill installation (copies SKILL.md files), test CLAUDE.md update (appends SIO rules), test DB initialization (creates with WAL), test smoke test logic
-- [ ] T072 [P] [US7] Write contract tests for CLI install command in `tests/contract/test_cli_commands.py` (extend): test `sio install --platform claude-code` exit code 0, test `sio install --auto` with mock platform detection
+- [x] T071 [P] [US7] Write unit tests for Claude Code installer in `tests/unit/test_installer.py` (mock filesystem): test hook registration (writes to settings.json), test skill installation (copies SKILL.md files), test CLAUDE.md update (appends SIO rules), test DB initialization (creates with WAL), test smoke test logic
+- [x] T072 [P] [US7] Write contract tests for CLI install command in `tests/contract/test_cli_commands.py` (extend): test `sio install --platform claude-code` exit code 0, test `sio install --auto` with mock platform detection
 
 ### Implementation for User Story 7
 
-- [ ] T073 [US7] Implement Claude Code installer in `src/sio/adapters/claude_code/installer.py`: `install(db_path=None)` — creates `~/.sio/claude-code/`, initializes DB with WAL + busy_timeout=1000, registers hooks in `~/.claude/settings.json` (PostToolUse + PreToolUse arrays, MUST merge with existing hooks not overwrite), installs skills to `~/.claude/skills/sio-{feedback,optimize,health,review}/`, appends SIO rules to `~/.claude/CLAUDE.md`, runs smoke test, writes PlatformConfig record
-- [ ] T074 [US7] Create SKILL.md files per hook-contracts.md: `src/sio/adapters/claude_code/skills/sio-feedback/SKILL.md`, `sio-optimize/SKILL.md`, `sio-health/SKILL.md`, `sio-review/SKILL.md`
-- [ ] T075 [US7] Implement `sio install` CLI command in `src/sio/cli/main.py`: Click command with `--platform` choice and `--auto` flag. Calls platform-specific installer. Outputs installation summary with smoke test result.
-- [ ] T076 [US7] Implement `sio purge` and `sio export` CLI commands in `src/sio/cli/main.py`: purge uses retention.py, export writes CSV/JSON from query layer
-- [ ] T077 [US7] Verify all US7 tests pass (Green).
+- [x] T073 [US7] Implement Claude Code installer in `src/sio/adapters/claude_code/installer.py`: `install(db_path=None)` — creates `~/.sio/claude-code/`, initializes DB with WAL + busy_timeout=1000, registers hooks in `~/.claude/settings.json` (PostToolUse + PreToolUse arrays, MUST merge with existing hooks not overwrite), installs skills to `~/.claude/skills/sio-{feedback,optimize,health,review}/`, appends SIO rules to `~/.claude/CLAUDE.md`, runs smoke test, writes PlatformConfig record
+- [x] T074 [US7] Create SKILL.md files per hook-contracts.md: `src/sio/adapters/claude_code/skills/sio-feedback/SKILL.md`, `sio-optimize/SKILL.md`, `sio-health/SKILL.md`, `sio-review/SKILL.md`
+- [x] T075 [US7] Implement `sio install` CLI command in `src/sio/cli/main.py`: Click command with `--platform` choice and `--auto` flag. Calls platform-specific installer. Outputs installation summary with smoke test result.
+- [x] T076 [US7] Implement `sio purge` and `sio export` CLI commands in `src/sio/cli/main.py`: purge uses retention.py, export writes CSV/JSON from query layer
+- [x] T077 [US7] Verify all US7 tests pass (Green).
 
 **Checkpoint**: `sio install --platform claude-code` fully sets up SIO. All 6 CLI commands work. Platform-specific DB and hooks. US7 independently testable.
 
@@ -255,14 +255,14 @@
 
 **Purpose**: Integration testing, configuration, documentation, hardening
 
-- [ ] T078 [P] Implement config loader in `src/sio/core/config.py`: load `~/.sio/config.toml` with defaults from quickstart.md (embedding backend, retention days, optimization thresholds, pattern threshold)
-- [ ] T078b [P] Write unit tests for config loader in `tests/unit/test_config.py`: test default values when no config file exists, test TOML parsing with all fields, test partial config (missing keys use defaults), test invalid TOML returns error with clear message
-- [ ] T079 [P] Implement error logging infrastructure in `src/sio/core/logging.py`: separate error log at `~/.sio/<platform>/error.log`, structured JSON logging for debugging
-- [ ] T080 [P] Write end-to-end integration test in `tests/integration/test_e2e_closed_loop.py`: install → capture telemetry → label feedback → detect passive signals → detect recurring pattern → optimize → arena validates → approve → verify config updated. Full closed-loop test.
-- [ ] T081 Run `ruff check src/ tests/` and fix all linting issues
-- [ ] T082 Run full test suite `pytest tests/ -v --cov=sio --cov-report=term-missing` and verify ≥80% coverage
-- [ ] T083 Run quickstart.md validation: follow every step in quickstart.md on a clean environment and verify it works end-to-end
-- [ ] T084 Final code review: verify no placeholder/stub code in production paths, all FRs (FR-001 through FR-030) have corresponding implementation, all quality gates enforced
+- [x] T078 [P] Implement config loader in `src/sio/core/config.py`: load `~/.sio/config.toml` with defaults from quickstart.md (embedding backend, retention days, optimization thresholds, pattern threshold)
+- [x] T078b [P] Write unit tests for config loader in `tests/unit/test_config.py`: test default values when no config file exists, test TOML parsing with all fields, test partial config (missing keys use defaults), test invalid TOML returns error with clear message
+- [x] T079 [P] Implement error logging infrastructure in `src/sio/core/logging.py`: separate error log at `~/.sio/<platform>/error.log`, structured JSON logging for debugging
+- [x] T080 [P] Write end-to-end integration test in `tests/integration/test_e2e_closed_loop.py`: install → capture telemetry → label feedback → detect passive signals → detect recurring pattern → optimize → arena validates → approve → verify config updated. Full closed-loop test.
+- [x] T081 Run `ruff check src/ tests/` and fix all linting issues
+- [x] T082 Run full test suite `pytest tests/ -v --cov=sio --cov-report=term-missing` and verify ≥80% coverage
+- [x] T083 Run quickstart.md validation: follow every step in quickstart.md on a clean environment and verify it works end-to-end
+- [x] T084 Final code review: verify no placeholder/stub code in production paths, all FRs (FR-001 through FR-030) have corresponding implementation, all quality gates enforced
 
 ---
 

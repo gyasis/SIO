@@ -8,12 +8,12 @@ These tests are expected to FAIL until the implementation is written.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from sio.core.db.queries import insert_invocation
-from sio.core.dspy.optimizer import optimize, OptimizationError
+from sio.core.dspy.optimizer import OptimizationError, optimize
 
 
 def _insert_many(conn, factory, records):
