@@ -139,18 +139,24 @@ def get_labeled_for_optimizer(
     platform: str,
     min_examples: int = 10,
 ) -> list[dict]:
+    """Get labeled invocations for the optimizer.
+
+    Includes records where user_satisfied is set OR labeled_by is set.
+    Excludes records with [UNAVAILABLE] user_message.
+    """
+    where = (
+        "WHERE actual_action = ? AND platform = ? "
+        "AND (user_satisfied IS NOT NULL OR labeled_by IS NOT NULL) "
+        "AND user_message != '[UNAVAILABLE]'"
+    )
     count_row = conn.execute(
-        "SELECT COUNT(*) FROM behavior_invocations "
-        "WHERE actual_action = ? AND platform = ? AND user_satisfied IS NOT NULL "
-        "AND user_message != '[UNAVAILABLE]'",
+        f"SELECT COUNT(*) FROM behavior_invocations {where}",
         (skill, platform),
     ).fetchone()
     if count_row[0] < min_examples:
         return []
     rows = conn.execute(
-        "SELECT * FROM behavior_invocations "
-        "WHERE actual_action = ? AND platform = ? AND user_satisfied IS NOT NULL "
-        "AND user_message != '[UNAVAILABLE]' "
+        f"SELECT * FROM behavior_invocations {where} "
         "ORDER BY timestamp DESC",
         (skill, platform),
     ).fetchall()
