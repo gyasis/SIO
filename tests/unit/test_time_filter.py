@@ -498,6 +498,231 @@ class TestEmptyInput:
 
     def test_empty_input_with_various_since_strings(self) -> None:
         """Empty input is handled consistently regardless of the since string."""
-        for since in ("1 day", "3 days", "1 week", "2 weeks", "30 days"):
+        for since in (
+            "1 day", "3 days", "1 week", "2 weeks", "30 days",
+            "2 months", "6 hours", "30min", "yesterday", "3 days ago",
+        ):
             result = filter_files([], since)
             assert result == [], f"Expected empty list for since={since!r}, got {result}"
+
+
+# ---------------------------------------------------------------------------
+# 10. test_parse_since_months — NEW with dateutil
+# ---------------------------------------------------------------------------
+
+
+class TestParseSinceMonths:
+    """parse_since handles month-based durations via dateutil relativedelta."""
+
+    def test_1_month(self) -> None:
+        """'1 month' produces a datetime approximately 1 calendar month ago."""
+        before = _now()
+        result = parse_since("1 month")
+        # Should be roughly 28-31 days ago
+        diff_days = (before - result).days
+        assert 27 <= diff_days <= 32
+
+    def test_3_months(self) -> None:
+        """'3 months' is approximately 90 days ago."""
+        result = parse_since("3 months")
+        diff_days = (_now() - result).days
+        assert 85 <= diff_days <= 95
+
+    def test_result_is_utc_aware(self) -> None:
+        result = parse_since("2 months")
+        assert result.tzinfo is not None
+
+    def test_shorthand_mo(self) -> None:
+        """'3mo' shorthand works."""
+        result = parse_since("3mo")
+        diff_days = (_now() - result).days
+        assert 85 <= diff_days <= 95
+
+
+# ---------------------------------------------------------------------------
+# 11. test_parse_since_hours_minutes — NEW with dateutil
+# ---------------------------------------------------------------------------
+
+
+class TestParseSinceHoursMinutes:
+    """parse_since handles hours and minutes."""
+
+    def test_6_hours(self) -> None:
+        result = parse_since("6 hours")
+        diff_seconds = (_now() - result).total_seconds()
+        assert 6 * 3600 - 5 <= diff_seconds <= 6 * 3600 + 5
+
+    def test_1_hour(self) -> None:
+        result = parse_since("1 hour")
+        diff_seconds = (_now() - result).total_seconds()
+        assert 3595 <= diff_seconds <= 3605
+
+    def test_30_minutes(self) -> None:
+        result = parse_since("30 minutes")
+        diff_seconds = (_now() - result).total_seconds()
+        assert 1795 <= diff_seconds <= 1805
+
+    def test_shorthand_h(self) -> None:
+        result = parse_since("6h")
+        diff_seconds = (_now() - result).total_seconds()
+        assert 6 * 3600 - 5 <= diff_seconds <= 6 * 3600 + 5
+
+    def test_shorthand_min(self) -> None:
+        result = parse_since("30min")
+        diff_seconds = (_now() - result).total_seconds()
+        assert 1795 <= diff_seconds <= 1805
+
+    def test_result_is_utc_aware(self) -> None:
+        result = parse_since("2 hours")
+        assert result.tzinfo is not None
+
+
+# ---------------------------------------------------------------------------
+# 12. test_parse_since_natural_language — NEW with dateutil
+# ---------------------------------------------------------------------------
+
+
+class TestParseSinceNaturalLanguage:
+    """parse_since handles natural language expressions."""
+
+    def test_yesterday(self) -> None:
+        """'yesterday' produces midnight of the previous day."""
+        result = parse_since("yesterday")
+        expected = (_now() - timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0,
+        )
+        diff = abs((result - expected).total_seconds())
+        assert diff < 2
+
+    def test_last_week(self) -> None:
+        """'last week' is approximately 7 days ago."""
+        result = parse_since("last week")
+        diff_days = (_now() - result).days
+        assert 6 <= diff_days <= 8
+
+    def test_last_month(self) -> None:
+        """'last month' is approximately 28-31 days ago."""
+        result = parse_since("last month")
+        diff_days = (_now() - result).days
+        assert 27 <= diff_days <= 32
+
+    def test_ago_suffix(self) -> None:
+        """'5 days ago' is treated like '5 days'."""
+        r1 = parse_since("5 days ago")
+        r2 = parse_since("5 days")
+        diff = abs((r1 - r2).total_seconds())
+        assert diff < 2
+
+    def test_3_hours_ago(self) -> None:
+        """'3 hours ago' works."""
+        result = parse_since("3 hours ago")
+        diff_seconds = (_now() - result).total_seconds()
+        assert 3 * 3600 - 5 <= diff_seconds <= 3 * 3600 + 5
+
+    def test_result_is_utc_aware(self) -> None:
+        result = parse_since("yesterday")
+        assert result.tzinfo is not None
+
+
+# ---------------------------------------------------------------------------
+# 13. test_parse_since_absolute_dates — NEW with dateutil
+# ---------------------------------------------------------------------------
+
+
+class TestParseSinceAbsoluteDates:
+    """parse_since handles absolute date strings via dateutil."""
+
+    def test_iso_date(self) -> None:
+        """'2026-01-15' parses to that date at midnight UTC."""
+        result = parse_since("2026-01-15")
+        assert result.year == 2026
+        assert result.month == 1
+        assert result.day == 15
+        assert result.tzinfo is not None
+
+    def test_iso_datetime(self) -> None:
+        """'2026-01-15T10:30:00Z' parses with time component."""
+        result = parse_since("2026-01-15T10:30:00Z")
+        assert result.year == 2026
+        assert result.month == 1
+        assert result.day == 15
+        assert result.hour == 10
+        assert result.minute == 30
+
+    def test_natural_date(self) -> None:
+        """'Jan 15 2026' parses correctly."""
+        result = parse_since("Jan 15 2026")
+        assert result.year == 2026
+        assert result.month == 1
+        assert result.day == 15
+
+    def test_result_is_utc_aware(self) -> None:
+        result = parse_since("2026-01-15")
+        assert result.tzinfo is not None
+
+
+# ---------------------------------------------------------------------------
+# 14. test_parse_since_years — NEW with dateutil
+# ---------------------------------------------------------------------------
+
+
+class TestParseSinceYears:
+    """parse_since handles year-based durations."""
+
+    def test_1_year(self) -> None:
+        result = parse_since("1 year")
+        diff_days = (_now() - result).days
+        assert 360 <= diff_days <= 370
+
+    def test_shorthand_y(self) -> None:
+        result = parse_since("1y")
+        diff_days = (_now() - result).days
+        assert 360 <= diff_days <= 370
+
+    def test_result_is_utc_aware(self) -> None:
+        result = parse_since("1 year")
+        assert result.tzinfo is not None
+
+
+# ---------------------------------------------------------------------------
+# 15. test_filter_files_with_new_formats — integration with filter_files
+# ---------------------------------------------------------------------------
+
+
+class TestFilterFilesNewFormats:
+    """filter_files works with all new parse_since formats."""
+
+    def test_filter_with_months(self, tmp_path: Path) -> None:
+        recent = _make_plain_file(tmp_path, "recent.txt", timedelta(days=10))
+        old = _make_plain_file(tmp_path, "old.txt", timedelta(days=60))
+        result = filter_files([recent, old], "1 month")
+        assert recent in result
+        assert old not in result
+
+    def test_filter_with_hours(self, tmp_path: Path) -> None:
+        recent = _make_plain_file(tmp_path, "recent.txt", timedelta(hours=2))
+        old = _make_plain_file(tmp_path, "old.txt", timedelta(hours=12))
+        result = filter_files([recent, old], "6 hours")
+        assert recent in result
+        assert old not in result
+
+    def test_filter_with_yesterday(self, tmp_path: Path) -> None:
+        recent = _make_plain_file(tmp_path, "today.txt", timedelta(hours=6))
+        old = _make_plain_file(tmp_path, "old.txt", timedelta(days=3))
+        result = filter_files([recent, old], "yesterday")
+        assert recent in result
+        assert old not in result
+
+    def test_filter_with_ago(self, tmp_path: Path) -> None:
+        recent = _make_plain_file(tmp_path, "recent.txt", timedelta(days=2))
+        old = _make_plain_file(tmp_path, "old.txt", timedelta(days=10))
+        result = filter_files([recent, old], "5 days ago")
+        assert recent in result
+        assert old not in result
+
+    def test_filter_with_shorthand(self, tmp_path: Path) -> None:
+        recent = _make_plain_file(tmp_path, "recent.txt", timedelta(days=2))
+        old = _make_plain_file(tmp_path, "old.txt", timedelta(days=10))
+        result = filter_files([recent, old], "1w")
+        assert recent in result
+        assert old not in result

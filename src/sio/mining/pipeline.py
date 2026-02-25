@@ -227,8 +227,9 @@ def run_mine(
     source_dirs:
         Directories to search for session files.
     since:
-        Human-readable look-back window accepted by filter_files, e.g.
-        ``"3 days"`` or ``"1 week"``.
+        Human-readable time expression accepted by filter_files, e.g.
+        ``"3 days"``, ``"1 week"``, ``"2 months"``, ``"6 hours"``,
+        ``"yesterday"``, ``"3 days ago"``, or ``"2026-01-15"``.
     source_type:
         One of ``"specstory"``, ``"jsonl"``, or ``"both"``.  Controls which
         file types are collected.

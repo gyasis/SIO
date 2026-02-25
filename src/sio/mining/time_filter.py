@@ -1,10 +1,14 @@
 """Time-based filtering utilities for session/history files.
 
+Uses ``python-dateutil`` for flexible date parsing.  Supports relative
+durations ("3 days", "2 months", "6 hours"), natural language ("yesterday",
+"last week", "2 days ago"), and absolute dates ("2026-01-15", "Jan 15 2026",
+ISO 8601).
+
 Public API
 ----------
     parse_since(since: str) -> datetime
-        Convert a human-readable look-back string ("3 days", "1 week", etc.)
-        into a UTC-aware datetime representing the cutoff point.
+        Convert any human-readable time expression into a UTC-aware cutoff.
 
     filter_files(paths: list[Path], since: str) -> list[Path]
         Return only those paths whose effective timestamp is >= parse_since(since).
@@ -25,6 +29,9 @@ import os
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+from dateutil import parser as dateutil_parser
+from dateutil.relativedelta import relativedelta
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -47,17 +54,34 @@ _SPECSTORY_RE = re.compile(
 
 
 def parse_since(since: str) -> datetime:
-    """Convert a human-readable look-back string into a UTC-aware cutoff datetime.
+    """Convert a human-readable time expression into a UTC-aware cutoff datetime.
 
-    Supported formats
-    -----------------
-    - "N day"  / "N days"  → now - N days
-    - "N week" / "N weeks" → now - N*7 days
+    Supported formats (all case-insensitive)
+    -----------------------------------------
+    Relative durations:
+        - ``"N day(s)"``   / ``"N d"``       → now - N days
+        - ``"N week(s)"``  / ``"N w"``       → now - N weeks
+        - ``"N month(s)"`` / ``"N mo"``      → now - N months (calendar months)
+        - ``"N hour(s)"``  / ``"N h"``       → now - N hours
+        - ``"N minute(s)"``/ ``"N min"``     → now - N minutes
+        - ``"N year(s)"``  / ``"N y"``       → now - N years
+
+    Natural language (via dateutil):
+        - ``"yesterday"``                    → start of yesterday (midnight UTC)
+        - ``"last monday"`` / ``"last week"``→ parsed by dateutil
+        - ``"2 days ago"``                   → parsed by dateutil
+        - ``"last month"``                   → start of previous month
+
+    Absolute dates (via dateutil):
+        - ``"2026-01-15"``                   → that date at midnight UTC
+        - ``"Jan 15, 2026"``                 → parsed by dateutil
+        - ``"2026-01-15T10:30:00Z"``         → ISO 8601
+        - ``"15/01/2026"``                   → various international formats
 
     Parameters
     ----------
     since:
-        A string such as ``"3 days"``, ``"1 week"``, or ``"2 weeks"``.
+        A human-readable time expression.
 
     Returns
     -------
@@ -67,7 +91,7 @@ def parse_since(since: str) -> datetime:
     Raises
     ------
     ValueError
-        If *since* does not match an understood pattern.
+        If *since* cannot be interpreted as any known format.
 
     Examples
     --------
@@ -75,24 +99,78 @@ def parse_since(since: str) -> datetime:
     >>> result = parse_since("3 days")
     >>> result.tzinfo == timezone.utc
     True
+    >>> result = parse_since("2 months")
+    >>> result.tzinfo == timezone.utc
+    True
     """
-    since = since.strip().lower()
+    raw = since.strip()
+    text = raw.lower()
 
-    # "N day(s)"
-    match = re.fullmatch(r"(\d+)\s+days?", since)
-    if match:
-        n = int(match.group(1))
-        return datetime.now(_UTC) - timedelta(days=n)
+    now = datetime.now(_UTC)
 
-    # "N week(s)"
-    match = re.fullmatch(r"(\d+)\s+weeks?", since)
-    if match:
-        n = int(match.group(1))
-        return datetime.now(_UTC) - timedelta(weeks=n)
+    # --- 1. Relative duration patterns: "N <unit>" --------------------------
+
+    m = re.fullmatch(r"(\d+)\s*(days?|d)", text)
+    if m:
+        return now - timedelta(days=int(m.group(1)))
+
+    m = re.fullmatch(r"(\d+)\s*(weeks?|w)", text)
+    if m:
+        return now - timedelta(weeks=int(m.group(1)))
+
+    m = re.fullmatch(r"(\d+)\s*(months?|mo)", text)
+    if m:
+        return now - relativedelta(months=int(m.group(1)))
+
+    m = re.fullmatch(r"(\d+)\s*(hours?|h)", text)
+    if m:
+        return now - timedelta(hours=int(m.group(1)))
+
+    m = re.fullmatch(r"(\d+)\s*(minutes?|mins?)", text)
+    if m:
+        return now - timedelta(minutes=int(m.group(1)))
+
+    m = re.fullmatch(r"(\d+)\s*(years?|y)", text)
+    if m:
+        return now - relativedelta(years=int(m.group(1)))
+
+    # --- 2. Natural language shortcuts ---------------------------------------
+
+    if text == "yesterday":
+        return (now - timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0,
+        )
+
+    if text == "last week":
+        return now - timedelta(weeks=1)
+
+    if text == "last month":
+        return now - relativedelta(months=1)
+
+    if text == "last year":
+        return now - relativedelta(years=1)
+
+    # "N <unit> ago" — strip "ago" and re-parse
+    m = re.fullmatch(r"(\d+\s+\w+)\s+ago", text)
+    if m:
+        return parse_since(m.group(1))
+
+    # --- 3. Absolute date/datetime via dateutil ------------------------------
+
+    try:
+        parsed = dateutil_parser.parse(raw, fuzzy=True)
+        # Ensure UTC-aware
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=_UTC)
+        return parsed
+    except (ValueError, OverflowError):
+        pass
 
     raise ValueError(
         f"Unrecognised since format: {since!r}. "
-        "Expected formats: 'N days', 'N day', 'N weeks', 'N week'."
+        "Supported: 'N days', 'N weeks', 'N months', 'N hours', "
+        "'yesterday', 'last week', '2 days ago', 'Jan 15 2026', "
+        "'2026-01-15', or any dateutil-parseable string."
     )
 
 

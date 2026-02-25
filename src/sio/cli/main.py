@@ -280,7 +280,7 @@ def export(platform, fmt, output):
 
 
 @cli.command()
-@click.option("--since", required=True, help='Time window (e.g., "3 days", "1 week").')
+@click.option("--since", required=True, help='Time window: "3 days", "2 weeks", "1 month", "6h", "yesterday", "3 days ago", "2026-01-15".')
 @click.option("--project", default=None, help="Filter by project name.")
 @click.option(
     "--source",
