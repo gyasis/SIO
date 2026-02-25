@@ -178,3 +178,300 @@ def count_by_pattern(
         (behavior_type,),
     ).fetchone()
     return row[0]
+
+
+# ---------------------------------------------------------------------------
+# v2 — ErrorRecord queries
+# ---------------------------------------------------------------------------
+
+_ERROR_RECORD_COLS = [
+    "session_id", "timestamp", "source_type", "source_file", "tool_name",
+    "error_text", "user_message", "context_before", "context_after",
+    "error_type", "mined_at",
+]
+
+
+def insert_error_record(conn: sqlite3.Connection, record: dict) -> int:
+    """Insert an error record. Returns the new row ID."""
+    cols = _ERROR_RECORD_COLS
+    placeholders = ", ".join(["?"] * len(cols))
+    col_names = ", ".join(cols)
+    values = [record.get(c) for c in cols]
+    cur = conn.execute(
+        f"INSERT INTO error_records ({col_names}) VALUES ({placeholders})",
+        values,
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_error_records(
+    conn: sqlite3.Connection,
+    session_id: str = None,
+    error_type: str = None,
+    tool_name: str = None,
+    since: str = None,
+    limit: int = 500,
+) -> list[dict]:
+    """Get error records with optional filters."""
+    query = "SELECT * FROM error_records WHERE 1=1"
+    params: list = []
+    if session_id:
+        query += " AND session_id = ?"
+        params.append(session_id)
+    if error_type:
+        query += " AND error_type = ?"
+        params.append(error_type)
+    if tool_name:
+        query += " AND tool_name = ?"
+        params.append(tool_name)
+    if since:
+        query += " AND timestamp >= ?"
+        params.append(since)
+    query += " ORDER BY timestamp DESC LIMIT ?"
+    params.append(limit)
+    rows = conn.execute(query, params).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def count_error_records(conn: sqlite3.Connection) -> int:
+    """Count total error records."""
+    row = conn.execute("SELECT COUNT(*) FROM error_records").fetchone()
+    return row[0]
+
+
+# ---------------------------------------------------------------------------
+# v2 — Pattern queries
+# ---------------------------------------------------------------------------
+
+_PATTERN_COLS = [
+    "pattern_id", "description", "tool_name", "error_count", "session_count",
+    "first_seen", "last_seen", "rank_score", "centroid_embedding",
+    "created_at", "updated_at",
+]
+
+
+def insert_pattern(conn: sqlite3.Connection, record: dict) -> int:
+    """Insert a pattern. Returns the new row ID."""
+    cols = _PATTERN_COLS
+    placeholders = ", ".join(["?"] * len(cols))
+    col_names = ", ".join(cols)
+    values = [record.get(c) for c in cols]
+    cur = conn.execute(
+        f"INSERT INTO patterns ({col_names}) VALUES ({placeholders})",
+        values,
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_patterns(conn: sqlite3.Connection, min_count: int = 0) -> list[dict]:
+    """Get patterns ordered by rank_score DESC, optionally filtered by min error_count."""
+    rows = conn.execute(
+        "SELECT * FROM patterns WHERE error_count >= ? ORDER BY rank_score DESC",
+        (min_count,),
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def get_pattern_by_id(conn: sqlite3.Connection, pattern_id: str) -> dict | None:
+    """Get a pattern by its human-readable pattern_id slug."""
+    row = conn.execute(
+        "SELECT * FROM patterns WHERE pattern_id = ?", (pattern_id,)
+    ).fetchone()
+    return _row_to_dict(row) if row else None
+
+
+def update_pattern(conn: sqlite3.Connection, id: int, **fields) -> bool:
+    """Update specific fields on a pattern by numeric id."""
+    if not fields:
+        return False
+    set_clause = ", ".join(f"{col} = ?" for col in fields)
+    values = list(fields.values()) + [id]
+    cur = conn.execute(
+        f"UPDATE patterns SET {set_clause} WHERE id = ?",
+        values,
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# v2 — PatternError queries (join table)
+# ---------------------------------------------------------------------------
+
+
+def link_error_to_pattern(
+    conn: sqlite3.Connection, pattern_id: int, error_id: int
+) -> None:
+    """Link an error record to a pattern (join table)."""
+    conn.execute(
+        "INSERT OR IGNORE INTO pattern_errors (pattern_id, error_id) VALUES (?, ?)",
+        (pattern_id, error_id),
+    )
+    conn.commit()
+
+
+def get_errors_for_pattern(
+    conn: sqlite3.Connection, pattern_id: int
+) -> list[dict]:
+    """Get all error records linked to a pattern."""
+    rows = conn.execute(
+        "SELECT er.* FROM error_records er "
+        "JOIN pattern_errors pe ON pe.error_id = er.id "
+        "WHERE pe.pattern_id = ? "
+        "ORDER BY er.timestamp DESC",
+        (pattern_id,),
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# v2 — Dataset queries
+# ---------------------------------------------------------------------------
+
+_DATASET_COLS = [
+    "pattern_id", "train_examples", "val_examples", "test_examples",
+    "created_at", "updated_at",
+]
+
+
+def insert_dataset(conn: sqlite3.Connection, record: dict) -> int:
+    """Insert a dataset record. Returns the new row ID."""
+    cols = _DATASET_COLS
+    placeholders = ", ".join(["?"] * len(cols))
+    col_names = ", ".join(cols)
+    values = [record.get(c) for c in cols]
+    cur = conn.execute(
+        f"INSERT INTO datasets ({col_names}) VALUES ({placeholders})",
+        values,
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_dataset_for_pattern(
+    conn: sqlite3.Connection, pattern_id: int
+) -> dict | None:
+    """Get the dataset for a given pattern."""
+    row = conn.execute(
+        "SELECT * FROM datasets WHERE pattern_id = ?", (pattern_id,)
+    ).fetchone()
+    return _row_to_dict(row) if row else None
+
+
+def update_dataset(conn: sqlite3.Connection, id: int, **fields) -> bool:
+    """Update specific fields on a dataset."""
+    if not fields:
+        return False
+    set_clause = ", ".join(f"{col} = ?" for col in fields)
+    values = list(fields.values()) + [id]
+    cur = conn.execute(
+        f"UPDATE datasets SET {set_clause} WHERE id = ?",
+        values,
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# v2 — Suggestion queries
+# ---------------------------------------------------------------------------
+
+_SUGGESTION_COLS = [
+    "pattern_id", "suggestion_text", "status", "note",
+    "created_at", "updated_at",
+]
+
+
+def insert_suggestion(conn: sqlite3.Connection, record: dict) -> int:
+    """Insert a suggestion. Returns the new row ID."""
+    cols = _SUGGESTION_COLS
+    placeholders = ", ".join(["?"] * len(cols))
+    col_names = ", ".join(cols)
+    values = [record.get(c) for c in cols]
+    cur = conn.execute(
+        f"INSERT INTO suggestions ({col_names}) VALUES ({placeholders})",
+        values,
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_suggestions(
+    conn: sqlite3.Connection, status: str = None
+) -> list[dict]:
+    """Get suggestions, optionally filtered by status."""
+    if status:
+        rows = conn.execute(
+            "SELECT * FROM suggestions WHERE status = ? ORDER BY created_at DESC",
+            (status,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM suggestions ORDER BY created_at DESC"
+        ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def update_suggestion_status(
+    conn: sqlite3.Connection, id: int, status: str, note: str = None
+) -> bool:
+    """Update suggestion status and optionally add a note."""
+    now = datetime.now(timezone.utc).isoformat()
+    if note is not None:
+        cur = conn.execute(
+            "UPDATE suggestions SET status = ?, note = ?, updated_at = ? WHERE id = ?",
+            (status, note, now, id),
+        )
+    else:
+        cur = conn.execute(
+            "UPDATE suggestions SET status = ?, updated_at = ? WHERE id = ?",
+            (status, now, id),
+        )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# v2 — AppliedChange queries
+# ---------------------------------------------------------------------------
+
+_APPLIED_CHANGE_COLS = [
+    "suggestion_id", "change_type", "target_file", "diff_text",
+    "applied_at", "rolled_back_at",
+]
+
+
+def insert_applied_change(conn: sqlite3.Connection, record: dict) -> int:
+    """Insert an applied change record. Returns the new row ID."""
+    cols = _APPLIED_CHANGE_COLS
+    placeholders = ", ".join(["?"] * len(cols))
+    col_names = ", ".join(cols)
+    values = [record.get(c) for c in cols]
+    cur = conn.execute(
+        f"INSERT INTO applied_changes ({col_names}) VALUES ({placeholders})",
+        values,
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_applied_change(conn: sqlite3.Connection, id: int) -> dict | None:
+    """Get an applied change by ID."""
+    row = conn.execute(
+        "SELECT * FROM applied_changes WHERE id = ?", (id,)
+    ).fetchone()
+    return _row_to_dict(row) if row else None
+
+
+def mark_rolled_back(
+    conn: sqlite3.Connection, id: int, rolled_back_at: str
+) -> bool:
+    """Mark an applied change as rolled back."""
+    cur = conn.execute(
+        "UPDATE applied_changes SET rolled_back_at = ? WHERE id = ?",
+        (rolled_back_at, id),
+    )
+    conn.commit()
+    return cur.rowcount > 0

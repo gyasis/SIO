@@ -34,16 +34,16 @@
 
 ### Tests for Foundation
 
-- [ ] T004 [P] Write unit tests for v2 schema DDL in `tests/unit/test_v2_schema.py`: test v2 table creation (error_records, patterns, pattern_errors, datasets, suggestions, applied_changes), verify v1 tables still exist, WAL mode, all indexes
-- [ ] T005 [P] Write unit tests for v2 config keys in `tests/unit/test_v2_config.py`: test new defaults (similarity_threshold=0.80, min_pattern_occurrences=3, min_examples=5, daily_enabled, weekly_enabled), test v1 config keys still work
+- [x] T004 [P] Write unit tests for v2 schema DDL in `tests/unit/test_v2_schema.py`: test v2 table creation (error_records, patterns, pattern_errors, datasets, suggestions, applied_changes), verify v1 tables still exist, WAL mode, all indexes
+- [x] T005 [P] Write unit tests for v2 config keys in `tests/unit/test_v2_config.py`: test new defaults (similarity_threshold=0.80, min_pattern_occurrences=3, min_examples=5, daily_enabled, weekly_enabled), test v1 config keys still work
 
 ### Implementation for Foundation
 
-- [ ] T006 [P] Extend database schema in `src/sio/core/db/schema.py`: ADD v2 CREATE TABLE statements for all 6 entities from data-model.md alongside existing v1 tables
-- [ ] T007 [P] Extend query layer in `src/sio/core/db/queries.py`: ADD v2 insert/get/update functions for error_records, patterns, datasets, suggestions, applied_changes
-- [ ] T008 [P] Extend config loader in `src/sio/core/config.py`: ADD v2 config keys (similarity_threshold, min_pattern_occurrences, min_examples, daily_enabled, weekly_enabled, stale_days=30)
-- [ ] T009 Extend Click CLI in `src/sio/cli/main.py`: ADD stub subcommands `mine`, `patterns`, `datasets`, `review`, `approve`, `reject`, `rollback`, `schedule install`, `schedule status` (stubs that print "not implemented") alongside existing v1 commands
-- [ ] T010 Verify all Phase 2 tests pass AND existing v1 tests still pass
+- [x] T006 [P] Extend database schema in `src/sio/core/db/schema.py`: ADD v2 CREATE TABLE statements for all 6 entities from data-model.md alongside existing v1 tables
+- [x] T007 [P] Extend query layer in `src/sio/core/db/queries.py`: ADD v2 insert/get/update functions for error_records, patterns, datasets, suggestions, applied_changes
+- [x] T008 [P] Extend config loader in `src/sio/core/config.py`: ADD v2 config keys (similarity_threshold, min_pattern_occurrences, min_examples, daily_enabled, weekly_enabled, stale_days=30)
+- [x] T009 Extend Click CLI in `src/sio/cli/main.py`: ADD stub subcommands `mine`, `patterns`, `datasets`, `review`, `approve`, `reject`, `rollback`, `schedule install`, `schedule status` (stubs that print "not implemented") alongside existing v1 commands
+- [x] T010 Verify all Phase 2 tests pass AND existing v1 tests still pass
 
 **Checkpoint**: v2 tables created alongside v1. Config extended. CLI stubs respond. v1 tests green.
 

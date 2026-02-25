@@ -84,12 +84,106 @@ CREATE TABLE IF NOT EXISTS platform_config (
 )
 """
 
+_ERROR_RECORDS_DDL = """
+CREATE TABLE IF NOT EXISTS error_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    source_file TEXT NOT NULL,
+    tool_name TEXT,
+    error_text TEXT NOT NULL,
+    user_message TEXT,
+    context_before TEXT,
+    context_after TEXT,
+    error_type TEXT,
+    mined_at TEXT NOT NULL
+)
+"""
+
+_PATTERNS_DDL = """
+CREATE TABLE IF NOT EXISTS patterns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pattern_id TEXT UNIQUE,
+    description TEXT NOT NULL,
+    tool_name TEXT,
+    error_count INTEGER NOT NULL,
+    session_count INTEGER NOT NULL,
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    rank_score REAL NOT NULL,
+    centroid_embedding BLOB,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+)
+"""
+
+_PATTERN_ERRORS_DDL = """
+CREATE TABLE IF NOT EXISTS pattern_errors (
+    pattern_id INTEGER NOT NULL REFERENCES patterns(id),
+    error_id INTEGER NOT NULL REFERENCES error_records(id),
+    PRIMARY KEY (pattern_id, error_id)
+)
+"""
+
+_DATASETS_DDL = """
+CREATE TABLE IF NOT EXISTS datasets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pattern_id INTEGER NOT NULL REFERENCES patterns(id),
+    file_path TEXT NOT NULL,
+    positive_count INTEGER NOT NULL,
+    negative_count INTEGER NOT NULL,
+    min_threshold INTEGER NOT NULL DEFAULT 5,
+    lineage_sessions TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+)
+"""
+
+_SUGGESTIONS_DDL = """
+CREATE TABLE IF NOT EXISTS suggestions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pattern_id INTEGER REFERENCES patterns(id),
+    dataset_id INTEGER REFERENCES datasets(id),
+    description TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    proposed_change TEXT NOT NULL,
+    target_file TEXT NOT NULL,
+    change_type TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    ai_explanation TEXT,
+    user_note TEXT,
+    created_at TEXT NOT NULL,
+    reviewed_at TEXT
+)
+"""
+
+_APPLIED_CHANGES_DDL = """
+CREATE TABLE IF NOT EXISTS applied_changes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    suggestion_id INTEGER NOT NULL REFERENCES suggestions(id),
+    target_file TEXT NOT NULL,
+    diff_before TEXT NOT NULL,
+    diff_after TEXT NOT NULL,
+    commit_sha TEXT,
+    applied_at TEXT NOT NULL,
+    rolled_back_at TEXT
+)
+"""
+
 _INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_session ON behavior_invocations(session_id)",
     ("CREATE INDEX IF NOT EXISTS idx_platform_behavior "
      "ON behavior_invocations(platform, behavior_type)"),
     "CREATE INDEX IF NOT EXISTS idx_satisfaction ON behavior_invocations(user_satisfied)",
     "CREATE INDEX IF NOT EXISTS idx_timestamp ON behavior_invocations(timestamp)",
+    # v2 indexes
+    "CREATE INDEX IF NOT EXISTS idx_error_session ON error_records(session_id)",
+    "CREATE INDEX IF NOT EXISTS idx_error_type ON error_records(error_type)",
+    "CREATE INDEX IF NOT EXISTS idx_error_tool ON error_records(tool_name)",
+    "CREATE INDEX IF NOT EXISTS idx_error_timestamp ON error_records(timestamp)",
+    "CREATE INDEX IF NOT EXISTS idx_pattern_rank ON patterns(rank_score DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_suggestion_status ON suggestions(status)",
 ]
 
 
@@ -117,11 +211,19 @@ def init_db(db_path: str) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=1000")
 
-    # Create tables
+    # Create v1 tables
     conn.execute(_BEHAVIOR_INVOCATIONS_DDL)
     conn.execute(_OPTIMIZATION_RUNS_DDL)
     conn.execute(_GOLD_STANDARDS_DDL)
     conn.execute(_PLATFORM_CONFIG_DDL)
+
+    # Create v2 tables
+    conn.execute(_ERROR_RECORDS_DDL)
+    conn.execute(_PATTERNS_DDL)
+    conn.execute(_PATTERN_ERRORS_DDL)
+    conn.execute(_DATASETS_DDL)
+    conn.execute(_SUGGESTIONS_DDL)
+    conn.execute(_APPLIED_CHANGES_DDL)
 
     # Create indexes
     for idx_sql in _INDEXES:

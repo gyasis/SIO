@@ -27,6 +27,13 @@ class SIOConfig:
     optimizer: str = "gepa"
     drift_threshold: float = 0.40
     collision_threshold: float = 0.85
+    # v2 fields
+    similarity_threshold: float = 0.80
+    min_pattern_occurrences: int = 3
+    min_dataset_examples: int = 5
+    daily_enabled: bool = True
+    weekly_enabled: bool = True
+    stale_days: int = 30
 
 
 _DEFAULTS = SIOConfig()
@@ -71,4 +78,17 @@ def load_config(path: str | None = None) -> SIOConfig:
         collision_threshold=data.get(
             "collision_threshold", _DEFAULTS.collision_threshold,
         ),
+        # v2 keys
+        similarity_threshold=data.get(
+            "similarity_threshold", _DEFAULTS.similarity_threshold,
+        ),
+        min_pattern_occurrences=data.get(
+            "min_pattern_occurrences", _DEFAULTS.min_pattern_occurrences,
+        ),
+        min_dataset_examples=data.get(
+            "min_dataset_examples", _DEFAULTS.min_dataset_examples,
+        ),
+        daily_enabled=data.get("daily_enabled", _DEFAULTS.daily_enabled),
+        weekly_enabled=data.get("weekly_enabled", _DEFAULTS.weekly_enabled),
+        stale_days=data.get("stale_days", _DEFAULTS.stale_days),
     )

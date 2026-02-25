@@ -274,5 +274,97 @@ def export(platform, fmt, output):
         click.echo(text)
 
 
+# ---------------------------------------------------------------------------
+# v2 stub commands
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.option("--since", required=True, help='Time window (e.g., "3 days", "1 week").')
+@click.option("--project", default=None, help="Filter by project name.")
+@click.option(
+    "--source",
+    type=click.Choice(["specstory", "jsonl", "both"]),
+    default="both",
+    help="Source type.",
+)
+def mine(since, project, source):
+    """Mine recent sessions for errors and failures."""
+    click.echo(f"[v2] Mining sessions since {since}... (not yet implemented)")
+
+
+@cli.command()
+def patterns():
+    """Show discovered error patterns ranked by importance."""
+    click.echo("[v2] Patterns... (not yet implemented)")
+
+
+@cli.group(invoke_without_command=True)
+@click.pass_context
+def datasets(ctx):
+    """Manage pattern datasets."""
+    if ctx.invoked_subcommand is None:
+        click.echo("[v2] Datasets... (not yet implemented)")
+
+
+@datasets.command()
+@click.option("--since", default=None, help="Time range for collection.")
+@click.option("--error-type", default=None, help="Error type filter.")
+def collect(since, error_type):
+    """Collect targeted dataset from specific criteria."""
+    click.echo("[v2] Collecting dataset... (not yet implemented)")
+
+
+@cli.command("suggest-review")
+def suggest_review():
+    """Review pending improvement suggestions."""
+    click.echo("[v2] Suggestion review... (not yet implemented)")
+
+
+@cli.command()
+@click.argument("suggestion_id", type=int)
+def approve(suggestion_id):
+    """Approve a suggestion by ID."""
+    click.echo(f"[v2] Approving suggestion {suggestion_id}... (not yet implemented)")
+
+
+@cli.command()
+@click.argument("suggestion_id", type=int)
+def reject(suggestion_id):
+    """Reject a suggestion by ID."""
+    click.echo(f"[v2] Rejecting suggestion {suggestion_id}... (not yet implemented)")
+
+
+@cli.command()
+@click.argument("change_id", type=int)
+def rollback(change_id):
+    """Rollback an applied change by ID."""
+    click.echo(f"[v2] Rolling back change {change_id}... (not yet implemented)")
+
+
+@cli.group()
+def schedule():
+    """Manage passive analysis schedule."""
+    pass
+
+
+@schedule.command("install")
+def schedule_install():
+    """Install daily + weekly cron jobs."""
+    click.echo("[v2] Installing schedule... (not yet implemented)")
+
+
+@schedule.command("status")
+def schedule_status():
+    """Check scheduler status."""
+    click.echo("[v2] Schedule status... (not yet implemented)")
+
+
+@cli.command("status")
+def sio_status():
+    """Show overall SIO v2 status."""
+    click.echo("[v2] Status... (not yet implemented)")
+
+
 if __name__ == "__main__":
     cli()
