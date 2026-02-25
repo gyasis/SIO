@@ -325,7 +325,12 @@ def mine(since, project, source):
 
 
 @cli.command()
-def patterns():
+@click.option(
+    "--type", "error_type", default=None,
+    type=click.Choice(["tool_failure", "user_correction", "repeated_attempt", "undo", "agent_admission"]),
+    help="Filter by error type.",
+)
+def patterns(error_type):
     """Show discovered error patterns ranked by importance."""
     from rich.console import Console
     from rich.table import Table
@@ -349,12 +354,21 @@ def patterns():
         conn.close()
         return
 
+    # Filter by type if requested
+    if error_type:
+        errors = [e for e in errors if e.get("error_type") == error_type]
+        if not errors:
+            click.echo(f"No '{error_type}' errors found.")
+            conn.close()
+            return
+
     # Cluster and rank
     clustered = cluster_errors(errors)
     ranked = rank_patterns(clustered)
 
+    title = f"Error Patterns — {error_type}" if error_type else "Error Patterns (ranked by importance)"
     console = Console()
-    table = Table(title="Error Patterns (ranked by importance)")
+    table = Table(title=title)
     table.add_column("#", style="bold")
     table.add_column("Pattern", style="cyan")
     table.add_column("Errors", justify="right")
@@ -373,6 +387,82 @@ def patterns():
         )
 
     console.print(table)
+    conn.close()
+
+
+@cli.command()
+@click.option(
+    "--type", "error_type", default=None,
+    type=click.Choice(["tool_failure", "user_correction", "repeated_attempt", "undo", "agent_admission"]),
+    help="Filter by error type.",
+)
+@click.option("--limit", "-n", default=20, help="Max errors to show.")
+def errors(error_type, limit):
+    """Browse mined errors with optional type filter."""
+    from rich.console import Console
+    from rich.table import Table
+
+    from sio.core.db.schema import init_db
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found. Run 'sio mine' first.")
+        return
+
+    conn = init_db(db_path)
+
+    # Summary counts
+    type_counts = conn.execute(
+        "SELECT error_type, COUNT(*) FROM error_records GROUP BY error_type ORDER BY COUNT(*) DESC"
+    ).fetchall()
+
+    if not type_counts:
+        click.echo("No errors mined yet.")
+        conn.close()
+        return
+
+    console = Console()
+
+    # Show type breakdown
+    summary = Table(title="Error Type Summary")
+    summary.add_column("Type", style="bold")
+    summary.add_column("Count", justify="right")
+    for row in type_counts:
+        style = "yellow" if row[0] == "agent_admission" else ""
+        summary.add_row(row[0], str(row[1]), style=style)
+    console.print(summary)
+    console.print()
+
+    # Show filtered errors
+    if error_type:
+        rows = conn.execute(
+            "SELECT error_type, error_text, tool_name, session_id, timestamp "
+            "FROM error_records WHERE error_type = ? "
+            "ORDER BY timestamp DESC LIMIT ?",
+            (error_type, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT error_type, error_text, tool_name, session_id, timestamp "
+            "FROM error_records ORDER BY timestamp DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+
+    if rows:
+        detail = Table(title=f"{'All' if not error_type else error_type} errors (latest {limit})")
+        detail.add_column("Type", style="dim")
+        detail.add_column("Error", max_width=70)
+        detail.add_column("Tool")
+        detail.add_column("Time")
+        for r in rows:
+            detail.add_row(
+                r[0],
+                (r[1] or "")[:70],
+                r[2] or "",
+                (r[4] or "")[:16],
+            )
+        console.print(detail)
+
     conn.close()
 
 

@@ -1,4 +1,4 @@
-"""Error extractor — classifies parsed conversation messages into four error
+"""Error extractor — classifies parsed conversation messages into five error
 categories and emits ErrorRecord dicts suitable for insertion into the v2
 ``error_records`` table.
 
@@ -8,10 +8,13 @@ extract_errors(parsed_messages, source_file, source_type) -> list[dict]
 
 Error types detected
 --------------------
-tool_failure      — assistant message whose ``error`` field is non-null / non-empty
-user_correction   — human message containing correction phrasing (word-boundary aware)
-repeated_attempt  — same tool_name called 3+ consecutive times with similar input
-undo              — human message containing undo / revert signals
+tool_failure       — assistant message whose ``error`` field is non-null / non-empty
+user_correction    — human message containing correction phrasing (word-boundary aware)
+repeated_attempt   — same tool_name called 3+ consecutive times with similar input
+undo               — human message containing undo / revert signals
+agent_admission    — assistant message where the AI admits a mistake, oversight, or
+                     incorrect action (e.g. "I made a mistake", "I should have",
+                     "I accidentally", "I missed", "my apologies")
 """
 
 from __future__ import annotations
@@ -57,6 +60,42 @@ _UNDO_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\bundo\s+the\s+change\b", re.IGNORECASE),
     re.compile(r"\broll\s+back\b", re.IGNORECASE),
     re.compile(r"\brollback\b", re.IGNORECASE),
+]
+
+# Phrases where the AI agent admits it made a mistake or oversight.
+# These fire on assistant messages only — they capture self-awareness moments
+# that reveal prompting/skill/tool-chain gaps.
+_ADMISSION_PATTERNS: list[re.Pattern[str]] = [
+    # Direct mistake admissions
+    re.compile(r"\bi\s+made\s+a\s+mistake\b", re.IGNORECASE),
+    re.compile(r"\bi\s+made\s+an\s+error\b", re.IGNORECASE),
+    re.compile(r"\bthat\s+was\s+(?:my\s+)?(?:a\s+)?mistake\b", re.IGNORECASE),
+    re.compile(r"\bi\s+was\s+wrong\b", re.IGNORECASE),
+    # "I should have" / "I should not have"
+    re.compile(r"\bi\s+should\s+have\b", re.IGNORECASE),
+    re.compile(r"\bi\s+should\s+not\s+have\b", re.IGNORECASE),
+    re.compile(r"\bi\s+shouldn['']t\s+have\b", re.IGNORECASE),
+    # Accidental actions
+    re.compile(r"\bi\s+accidentally\b", re.IGNORECASE),
+    re.compile(r"\bi\s+mistakenly\b", re.IGNORECASE),
+    re.compile(r"\bi\s+incorrectly\b", re.IGNORECASE),
+    # Missed / overlooked
+    re.compile(r"\bi\s+missed\b", re.IGNORECASE),
+    re.compile(r"\bi\s+overlooked\b", re.IGNORECASE),
+    re.compile(r"\bi\s+forgot\s+to\b", re.IGNORECASE),
+    re.compile(r"\bi\s+failed\s+to\b", re.IGNORECASE),
+    re.compile(r"\bi\s+neglected\s+to\b", re.IGNORECASE),
+    # Apologies that signal error awareness
+    re.compile(r"\bmy\s+apologies\b", re.IGNORECASE),
+    re.compile(r"\bsorry\s+about\s+that\b", re.IGNORECASE),
+    re.compile(r"\bsorry\s+for\s+the\s+(?:error|mistake|confusion|oversight)\b", re.IGNORECASE),
+    re.compile(r"\bapologize\s+for\b", re.IGNORECASE),
+    # Self-correction language
+    re.compile(r"\blet\s+me\s+(?:fix|correct|redo)\s+that\b", re.IGNORECASE),
+    re.compile(r"\bthat['']?s\s+not\s+(?:right|correct)\b.*\blet\s+me\b", re.IGNORECASE),
+    re.compile(r"\bi\s+need\s+to\s+(?:fix|correct|redo)\b", re.IGNORECASE),
+    # "didn't" patterns
+    re.compile(r"\bi\s+didn['']t\s+(?:account|consider|notice|check|read|realize)\b", re.IGNORECASE),
 ]
 
 # Guard against false undo from "git push …"
@@ -187,6 +226,15 @@ def _is_undo(content: str) -> bool:
     return any(pat.search(content) for pat in _UNDO_PATTERNS)
 
 
+def _is_admission(content: str) -> bool:
+    """Return True when *content* contains an agent self-admission of error.
+
+    Only fires on assistant messages.  Detects phrases where the AI admits
+    it made a mistake, missed something, or needs to correct its own work.
+    """
+    return any(pat.search(content) for pat in _ADMISSION_PATTERNS)
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -297,6 +345,29 @@ def extract_errors(
                     error_text=f"Undo requested: {content}",
                     tool_name=None,
                     user_message=content,
+                    mined_at=mined_at,
+                )
+            )
+
+        # ------------------------------------------------------------------
+        # 5. agent_admission  (assistant messages only)
+        # ------------------------------------------------------------------
+        if role == "assistant" and content and _is_admission(content):
+            # Truncate to first 200 chars for the error_text — the full
+            # content is preserved in context_before/context_after.
+            snippet = content[:200] + ("…" if len(content) > 200 else "")
+            user_msg = _last_human_message(parsed_messages, idx)
+            records.append(
+                _build_record(
+                    msg=msg,
+                    idx=idx,
+                    messages=parsed_messages,
+                    source_file=source_file,
+                    source_type=source_type,
+                    error_type="agent_admission",
+                    error_text=f"Agent admission: {snippet}",
+                    tool_name=None,
+                    user_message=user_msg,
                     mined_at=mined_at,
                 )
             )
