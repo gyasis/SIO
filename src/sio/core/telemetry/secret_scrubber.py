@@ -15,7 +15,10 @@ _KEY_VALUE_PATTERNS = [
     # AWS secret access keys
     re.compile(r"(aws_secret_access_key\s*[=:]\s*)(\S+)", re.IGNORECASE),
     # API keys/tokens with assignment
-    re.compile(r"((?:api[_-]?key|api[_-]?token|x-api-key)\s*[=:]\s*\"?)(\S+?)\"?(?=\s|$|\")", re.IGNORECASE),
+    re.compile(
+        r"((?:api[_-]?key|api[_-]?token|x-api-key)\s*[=:]\s*\"?)(\S+?)\"?(?=\s|$|\")",
+        re.IGNORECASE,
+    ),
     # Passwords with assignment
     re.compile(r"((?:password|passwd|pwd)\s*[=:]\s*\"?)(\S+?)\"?(?=\s|$|\"|})", re.IGNORECASE),
     # JSON password fields: "password": "value"

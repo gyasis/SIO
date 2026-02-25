@@ -1,6 +1,5 @@
 """Shared pytest fixtures for SIO test suite."""
 
-import sqlite3
 from datetime import datetime, timezone
 
 import pytest

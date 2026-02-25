@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from sio.core.db.queries import insert_invocation
 from sio.core.feedback.pattern_flag import flag_pattern
 

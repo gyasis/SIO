@@ -3,5 +3,8 @@ line-length = 99
 [lint]
 select = ["E", "F", "I", "W"]
 
+[lint.per-file-ignores]
+"tests/**/*.py" = ["E501"]
+
 [format]
 line-ending = "auto"

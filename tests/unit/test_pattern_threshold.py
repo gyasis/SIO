@@ -6,8 +6,6 @@ These tests are expected to FAIL until the implementation is written.
 
 from __future__ import annotations
 
-import pytest
-
 from sio.core.db.queries import insert_invocation
 from sio.core.telemetry.pattern_detector import (
     count_pattern_occurrences,

@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import json
-from typing import Any
-
-import pytest
 
 # Schema definitions from hook-contracts.md
 POST_TOOL_USE_INPUT_REQUIRED = {

@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import time
-
-import pytest
-
 from sio.core.db.queries import get_invocation_by_id, insert_invocation
 from sio.core.feedback.labeler import label_latest
 

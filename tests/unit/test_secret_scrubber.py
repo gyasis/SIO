@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from sio.core.telemetry.secret_scrubber import scrub
 
 

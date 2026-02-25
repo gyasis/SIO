@@ -86,7 +86,8 @@ CREATE TABLE IF NOT EXISTS platform_config (
 
 _INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_session ON behavior_invocations(session_id)",
-    "CREATE INDEX IF NOT EXISTS idx_platform_behavior ON behavior_invocations(platform, behavior_type)",
+    ("CREATE INDEX IF NOT EXISTS idx_platform_behavior "
+     "ON behavior_invocations(platform, behavior_type)"),
     "CREATE INDEX IF NOT EXISTS idx_satisfaction ON behavior_invocations(user_satisfied)",
     "CREATE INDEX IF NOT EXISTS idx_timestamp ON behavior_invocations(timestamp)",
 ]

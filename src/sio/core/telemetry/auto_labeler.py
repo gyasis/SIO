@@ -14,8 +14,9 @@ def auto_label(
     Returns:
         Dict with keys: activated (int), correct_action (int), correct_outcome (int).
     """
-    # activated: did anything fire? (output exists and is non-empty)
-    activated = 1 if tool_output is not None and tool_output != "" else 0
+    # activated: did the tool run? None means it didn't fire at all.
+    # Empty string means it ran but produced no useful output.
+    activated = 1 if tool_output is not None else 0
 
     # correct_action: no error means the right tool was used
     correct_action = 1 if not error else 0

@@ -6,15 +6,13 @@ These tests are expected to FAIL until the implementation is written.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
-
-import pytest
+from datetime import datetime, timedelta, timezone
 
 from sio.core.db.queries import insert_invocation
 from sio.core.telemetry.passive_signals import (
     detect_correction,
-    detect_undo,
     detect_re_invocation,
+    detect_undo,
 )
 
 
@@ -144,7 +142,7 @@ class TestDetectReInvocation:
             sample_invocation(
                 session_id="sess-re-1",
                 tool_name="Read",
-                user_message="show me the contents of foo.py",
+                user_message="read foo.py",
             ),
         )
         insert_invocation(
@@ -152,11 +150,11 @@ class TestDetectReInvocation:
             sample_invocation(
                 session_id="sess-re-1",
                 tool_name="Bash",
-                user_message="cat foo.py",
+                user_message="read foo.py",
             ),
         )
 
-        # The intent "read foo.py" was accomplished via two different tools
+        # Same user_message ("read foo.py") used with different tools (Read vs Bash)
         assert (
             detect_re_invocation("sess-re-1", "read foo.py", tmp_db) is True
         )

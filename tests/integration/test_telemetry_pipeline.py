@@ -9,10 +9,7 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from sio.adapters.claude_code.hooks.post_tool_use import handle_post_tool_use
-
 
 # Tool names that represent a realistic mix of Claude Code tools
 _TOOL_NAMES = [
@@ -54,7 +51,7 @@ class TestTwentyHookCallsProduceTwentyRows:
         results = []
         for i, tool_name in enumerate(_TOOL_NAMES):
             stdin_json = _make_payload(tool_name, i)
-            result_str = handle_post_tool_use(stdin_json)
+            result_str = handle_post_tool_use(stdin_json, conn=tmp_db)
             result = json.loads(result_str)
             results.append(result)
 
@@ -88,7 +85,7 @@ class TestTwentyHookCallsProduceTwentyRows:
         # Run the 20 hook calls
         for i, tool_name in enumerate(_TOOL_NAMES):
             stdin_json = _make_payload(tool_name, i)
-            handle_post_tool_use(stdin_json)
+            handle_post_tool_use(stdin_json, conn=tmp_db)
 
         # Check rows where user_message originally had a secret (even indices)
         rows = tmp_db.execute(
@@ -106,7 +103,7 @@ class TestTwentyHookCallsProduceTwentyRows:
         """Every stored row must have non-null required fields."""
         for i, tool_name in enumerate(_TOOL_NAMES):
             stdin_json = _make_payload(tool_name, i)
-            handle_post_tool_use(stdin_json)
+            handle_post_tool_use(stdin_json, conn=tmp_db)
 
         rows = tmp_db.execute(
             "SELECT * FROM behavior_invocations "

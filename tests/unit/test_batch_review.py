@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from sio.core.db.queries import get_invocation_by_id, insert_invocation
 from sio.core.feedback.batch_review import apply_label, get_reviewable
 

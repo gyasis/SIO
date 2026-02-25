@@ -8,10 +8,7 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from sio.adapters.claude_code.hooks.post_tool_use import handle_post_tool_use
-
 
 # --- Valid payload used across multiple tests ---
 _VALID_PAYLOAD = {
@@ -57,7 +54,7 @@ class TestSessionIdPropagation:
         stdin_json = json.dumps(payload)
 
         # The hook should log into the DB; we verify the session_id was stored.
-        handle_post_tool_use(stdin_json)
+        handle_post_tool_use(stdin_json, conn=tmp_db)
 
         rows = tmp_db.execute(
             "SELECT session_id FROM behavior_invocations WHERE session_id = ?",

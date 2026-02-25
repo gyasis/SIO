@@ -43,7 +43,8 @@ def compute_health(
             SUM(CASE WHEN user_satisfied = 1 THEN 1 ELSE 0 END) as satisfied_count,
             SUM(CASE WHEN user_satisfied = 0 THEN 1 ELSE 0 END) as unsatisfied_count,
             SUM(CASE WHEN user_satisfied IS NULL THEN 1 ELSE 0 END) as unlabeled_count,
-            SUM(CASE WHEN activated = 1 AND correct_action = 0 THEN 1 ELSE 0 END) as false_trigger_count,
+            SUM(CASE WHEN activated = 1 AND correct_action = 0
+                THEN 1 ELSE 0 END) as false_trigger_count,
             SUM(CASE WHEN activated = 0 THEN 1 ELSE 0 END) as missed_trigger_count
         FROM behavior_invocations
         WHERE 1=1

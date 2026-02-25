@@ -74,18 +74,18 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation (Constitution IV)**
 
-- [ ] T019 [P] [US1] Write unit tests for telemetry logger in `tests/unit/test_logger.py`: test log_invocation() creates a row with all required fields, secret scrubbing applied, duplicate detection, error resilience (disk full → log error, don't crash)
-- [ ] T020 [P] [US1] Write unit tests for auto-labeler in `tests/unit/test_auto_labeler.py`: test agent-inferred fields (activated, correct_action, correct_outcome) are set based on tool_output and error fields
-- [ ] T021 [P] [US1] Write contract tests for PostToolUse hook in `tests/contract/test_hook_contracts.py` (extend T011): test stdin JSON parsing, error field handling, session_id propagation
-- [ ] T022 [P] [US1] Write integration test for telemetry pipeline in `tests/integration/test_telemetry_pipeline.py`: simulate 20 PostToolUse hook calls → verify 20 rows in DB with correct metadata, no duplicates, secrets scrubbed
+- [x] T019 [P] [US1] Write unit tests for telemetry logger in `tests/unit/test_logger.py`: test log_invocation() creates a row with all required fields, secret scrubbing applied, duplicate detection, error resilience (disk full → log error, don't crash)
+- [x] T020 [P] [US1] Write unit tests for auto-labeler in `tests/unit/test_auto_labeler.py`: test agent-inferred fields (activated, correct_action, correct_outcome) are set based on tool_output and error fields
+- [x] T021 [P] [US1] Write contract tests for PostToolUse hook in `tests/contract/test_hook_contracts.py` (extend T011): test stdin JSON parsing, error field handling, session_id propagation
+- [x] T022 [P] [US1] Write integration test for telemetry pipeline in `tests/integration/test_telemetry_pipeline.py`: simulate 20 PostToolUse hook calls → verify 20 rows in DB with correct metadata, no duplicates, secrets scrubbed
 
 ### Implementation for User Story 1
 
-- [ ] T023 [P] [US1] Implement telemetry logger in `src/sio/core/telemetry/logger.py`: `log_invocation(db, session_id, tool_name, tool_input, tool_output, error, user_message, platform)` — validates at write time (FR-025), scrubs secrets (FR-022), inserts into behavior_invocations
-- [ ] T024 [P] [US1] Implement auto-labeler in `src/sio/core/telemetry/auto_labeler.py`: `auto_label(tool_name, tool_input, tool_output, error) -> dict` — returns `{activated, correct_action, correct_outcome}` binary fields inferred from output/error signals
-- [ ] T025 [US1] Implement PostToolUse hook handler in `src/sio/adapters/claude_code/hooks/post_tool_use.py`: read JSON from stdin, extract `user_message` (from stdin if present, else from latest JSONL transcript entry, else `[UNAVAILABLE]`), call logger.log_invocation() + auto_labeler.auto_label(), write `{"action": "allow"}` to stdout, exit 0 on any error
+- [x] T023 [P] [US1] Implement telemetry logger in `src/sio/core/telemetry/logger.py`: `log_invocation(db, session_id, tool_name, tool_input, tool_output, error, user_message, platform)` — validates at write time (FR-025), scrubs secrets (FR-022), inserts into behavior_invocations
+- [x] T024 [P] [US1] Implement auto-labeler in `src/sio/core/telemetry/auto_labeler.py`: `auto_label(tool_name, tool_input, tool_output, error) -> dict` — returns `{activated, correct_action, correct_outcome}` binary fields inferred from output/error signals
+- [x] T025 [US1] Implement PostToolUse hook handler in `src/sio/adapters/claude_code/hooks/post_tool_use.py`: read JSON from stdin, extract `user_message` (from stdin if present, else from latest JSONL transcript entry, else `[UNAVAILABLE]`), call logger.log_invocation() + auto_labeler.auto_label(), write `{"action": "allow"}` to stdout, exit 0 on any error
 - [ ] T026 [US1] Create shell wrapper `src/sio/adapters/claude_code/hooks/post_tool_use.sh`: calls `python3 -m sio.adapters.claude_code.hooks.post_tool_use` with stdin passthrough
-- [ ] T027 [US1] Verify all US1 tests pass (Green). Run `tests/unit/test_logger.py`, `tests/unit/test_auto_labeler.py`, `tests/integration/test_telemetry_pipeline.py`.
+- [x] T027 [US1] Verify all US1 tests pass (Green). Run `tests/unit/test_logger.py`, `tests/unit/test_auto_labeler.py`, `tests/integration/test_telemetry_pipeline.py`.
 
 **Checkpoint**: PostToolUse hook receives JSON, logs to DB, auto-labels, scrubs secrets. 20 tool calls → 20 clean rows. US1 independently testable.
 
@@ -101,16 +101,16 @@
 
 ### Tests for User Story 2
 
-- [ ] T028 [P] [US2] Write unit tests for feedback labeler in `tests/unit/test_labeler.py`: test label_latest(session_id, signal, note) updates user_satisfied and user_note on most recent invocation, test re-labeling overwrites previous, test invalid session returns error
-- [ ] T029 [P] [US2] Write unit tests for batch review in `tests/unit/test_batch_review.py`: test get_reviewable() returns unlabeled invocations sorted by timestamp, test balanced presentation (FR-026 warns if >90% one class), test skip and quit behavior
-- [ ] T030 [P] [US2] Write unit tests for pattern flagging in `tests/unit/test_pattern_flag.py`: test user-flagged pattern acceleration (FR-029) — "this keeps happening" marks a skill as priority optimization candidate while still enforcing quality gates
-- [ ] T031 [P] [US2] Write integration test for feedback loop in `tests/integration/test_feedback_loop.py`: simulate log 10 invocations → label 5 with `++`, 5 with `--` → verify satisfaction fields correct, health aggregate updated
+- [x] T028 [P] [US2] Write unit tests for feedback labeler in `tests/unit/test_labeler.py`: test label_latest(session_id, signal, note) updates user_satisfied and user_note on most recent invocation, test re-labeling overwrites previous, test invalid session returns error
+- [x] T029 [P] [US2] Write unit tests for batch review in `tests/unit/test_batch_review.py`: test get_reviewable() returns unlabeled invocations sorted by timestamp, test balanced presentation (FR-026 warns if >90% one class), test skip and quit behavior
+- [x] T030 [P] [US2] Write unit tests for pattern flagging in `tests/unit/test_pattern_flag.py`: test user-flagged pattern acceleration (FR-029) — "this keeps happening" marks a skill as priority optimization candidate while still enforcing quality gates
+- [x] T031 [P] [US2] Write integration test for feedback loop in `tests/integration/test_feedback_loop.py`: simulate log 10 invocations → label 5 with `++`, 5 with `--` → verify satisfaction fields correct, health aggregate updated
 
 ### Implementation for User Story 2
 
-- [ ] T032 [P] [US2] Implement feedback labeler in `src/sio/core/feedback/labeler.py`: `label_latest(db, session_id, signal: str, note: str | None)` — parses `++`/`--`, updates most recent invocation, sets `labeled_by='inline'`, `labeled_at=now()`
-- [ ] T033 [P] [US2] Implement batch review in `src/sio/core/feedback/batch_review.py`: `get_reviewable(db, platform, session_id, limit)` returns unlabeled sorted by timestamp. `apply_label(db, invocation_id, signal, note)` applies label. Warn if distribution >90% skewed (FR-026)
-- [ ] T034 [US2] Implement pattern flag detection in `src/sio/core/feedback/pattern_flag.py`: `flag_pattern(db, skill_name, note)` — marks a skill as priority optimization candidate when user explicitly flags recurring issue (FR-029). Checks if minimum quality gates are met.
+- [x] T032 [P] [US2] Implement feedback labeler in `src/sio/core/feedback/labeler.py`: `label_latest(db, session_id, signal: str, note: str | None)` — parses `++`/`--`, updates most recent invocation, sets `labeled_by='inline'`, `labeled_at=now()`
+- [x] T033 [P] [US2] Implement batch review in `src/sio/core/feedback/batch_review.py`: `get_reviewable(db, platform, session_id, limit)` returns unlabeled sorted by timestamp. `apply_label(db, invocation_id, signal, note)` applies label. Warn if distribution >90% skewed (FR-026)
+- [x] T034 [US2] Implement pattern flag detection in `src/sio/core/feedback/pattern_flag.py`: `flag_pattern(db, skill_name, note)` — marks a skill as priority optimization candidate when user explicitly flags recurring issue (FR-029). Checks if minimum quality gates are met.
 - [ ] T035 [US2] Implement feedback CLI entry point in `src/sio/core/feedback/labeler_cli.py`: `python3 -m sio.core.feedback.labeler --session <id> --signal <++|--> [--note <text>]` — parses args, calls labeler.label_latest(), exits 0. This is invoked by the sio-feedback skill trigger (not a Notification hook).
 - [ ] T036 [US2] Update sio-feedback SKILL.md to invoke `python3 -m sio.core.feedback.labeler --session $SESSION_ID --signal "$(echo $USER_INPUT | head -c2)" --note "$(echo $USER_INPUT | cut -c3-)"` via Bash
 - [ ] T037 [US2] Implement `sio review` CLI command in `src/sio/cli/main.py`: Click command with `--platform`, `--session`, `--limit` options. Uses Rich for interactive sequential presentation. Labels: `++`/`--`/`s(kip)`/`q(uit)`
@@ -130,15 +130,15 @@
 
 ### Tests for User Story 3
 
-- [ ] T039 [P] [US3] Write unit tests for passive signal detector in `tests/unit/test_passive_signals.py`: test look-back correction detection (current user_message starts with "No,"/"Actually,"/"Instead," → flags previous invocation), test look-back undo detection (current tool is git checkout/revert within 30s of previous tool → flags previous as 'undo'), test re-invocation detection (current tool differs from previous but same user intent → flags previous as 'correction'), test no false positives on normal sequential tool calls
-- [ ] T040 [P] [US3] Write unit tests for pattern threshold detector in `tests/unit/test_pattern_threshold.py`: test count_pattern_occurrences() counts same failure (behavior_type + failure_mode) across sessions, test threshold check (default 3, configurable 3-10, FR-028), test single incident does NOT trigger optimization candidacy
+- [x] T039 [P] [US3] Write unit tests for passive signal detector in `tests/unit/test_passive_signals.py`: test look-back correction detection (current user_message starts with "No,"/"Actually,"/"Instead," → flags previous invocation), test look-back undo detection (current tool is git checkout/revert within 30s of previous tool → flags previous as 'undo'), test re-invocation detection (current tool differs from previous but same user intent → flags previous as 'correction'), test no false positives on normal sequential tool calls
+- [x] T040 [P] [US3] Write unit tests for pattern threshold detector in `tests/unit/test_pattern_threshold.py`: test count_pattern_occurrences() counts same failure (behavior_type + failure_mode) across sessions, test threshold check (default 3, configurable 3-10, FR-028), test single incident does NOT trigger optimization candidacy
 
 ### Implementation for User Story 3
 
-- [ ] T041 [P] [US3] Implement passive signal detector in `src/sio/core/telemetry/passive_signals.py`: `detect_correction(message: str) -> bool`, `detect_undo(session_id, timestamp, db) -> bool` (checks for git checkout/revert within 30s), `detect_re_invocation(session_id, intent, db) -> bool`
-- [ ] T042 [US3] Implement pattern threshold detector in `src/sio/core/telemetry/pattern_detector.py`: `count_pattern_occurrences(db, behavior_type, failure_mode) -> int`, `is_optimization_candidate(db, skill_name, threshold=3) -> bool` (FR-028). Only returns True when same failure pattern recurs across ≥threshold sessions.
+- [x] T041 [P] [US3] Implement passive signal detector in `src/sio/core/telemetry/passive_signals.py`: `detect_correction(message: str) -> bool`, `detect_undo(session_id, timestamp, db) -> bool` (checks for git checkout/revert within 30s), `detect_re_invocation(session_id, intent, db) -> bool`
+- [x] T042 [US3] Implement pattern threshold detector in `src/sio/core/telemetry/pattern_detector.py`: `count_pattern_occurrences(db, behavior_type, failure_mode) -> int`, `is_optimization_candidate(db, skill_name, threshold=3) -> bool` (FR-028). Only returns True when same failure pattern recurs across ≥threshold sessions.
 - [ ] T043 [US3] Integrate passive signals into PostToolUse hook — extend `src/sio/adapters/claude_code/hooks/post_tool_use.py` with look-back detection: on each invocation, check if the current `user_message` contains correction language ("No,", "Actually,", "Instead,") or if the current tool is a re-invocation for the same intent as the previous invocation. If detected, update the PREVIOUS invocation's `passive_signal` field via `queries.update_passive_signal(db, previous_id, signal_type)`. For undo detection (git checkout/revert), compare timestamps of the current invocation against the previous invocation's `actual_action` — if the current tool is a revert within 30 seconds, flag the prior as 'undo'.
-- [ ] T044 [US3] Verify all US3 tests pass (Green).
+- [x] T044 [US3] Verify all US3 tests pass (Green).
 
 **Checkpoint**: Passive signals auto-detected. Pattern threshold enforced (3+ sessions required). Single incidents logged but no behavior change triggered. US3 independently testable.
 
@@ -213,14 +213,14 @@
 
 ### Tests for User Story 6
 
-- [ ] T066 [P] [US6] Write unit tests for health aggregator in `tests/unit/test_aggregator.py`: test compute_health() returns correct counts (total, satisfied, unsatisfied, unlabeled, false_trigger, missed_trigger), test satisfaction_rate calculation, test skills below 50% flagged
-- [ ] T067 [P] [US6] Write contract tests for CLI health command in `tests/contract/test_cli_commands.py`: test `sio health` exit code 0, test `--format json` outputs valid JSON, test `--skill` filter works
+- [x] T066 [P] [US6] Write unit tests for health aggregator in `tests/unit/test_aggregator.py`: test compute_health() returns correct counts (total, satisfied, unsatisfied, unlabeled, false_trigger, missed_trigger), test satisfaction_rate calculation, test skills below 50% flagged
+- [x] T067 [P] [US6] Write contract tests for CLI health command in `tests/contract/test_cli_commands.py`: test `sio health` exit code 0, test `--format json` outputs valid JSON, test `--skill` filter works
 
 ### Implementation for User Story 6
 
-- [ ] T068 [US6] Implement health aggregator in `src/sio/core/health/aggregator.py`: `compute_health(db, platform=None, skill=None) -> list[SkillHealth]` — SQL aggregation query per data-model.md SkillHealth entity
-- [ ] T069 [US6] Implement `sio health` CLI command in `src/sio/cli/main.py`: Click command with `--platform`, `--skill`, `--format`. Uses Rich Table for display. Highlights skills <50% satisfaction in red.
-- [ ] T070 [US6] Verify all US6 tests pass (Green).
+- [x] T068 [US6] Implement health aggregator in `src/sio/core/health/aggregator.py`: `compute_health(db, platform=None, skill=None) -> list[SkillHealth]` — SQL aggregation query per data-model.md SkillHealth entity
+- [x] T069 [US6] Implement `sio health` CLI command in `src/sio/cli/main.py`: Click command with `--platform`, `--skill`, `--format`. Uses Rich Table for display. Highlights skills <50% satisfaction in red.
+- [x] T070 [US6] Verify all US6 tests pass (Green).
 
 **Checkpoint**: `sio health` shows per-skill metrics. Low-performing skills highlighted. JSON export works. US6 independently testable.
 

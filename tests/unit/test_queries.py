@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from sio.core.db.queries import (
     count_by_pattern,
     count_by_platform,

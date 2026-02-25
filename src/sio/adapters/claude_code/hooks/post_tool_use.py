@@ -13,7 +13,7 @@ _DEFAULT_PLATFORM = "claude-code"
 _DEFAULT_DB_DIR = os.path.expanduser("~/.sio/claude-code")
 
 
-def handle_post_tool_use(stdin_json: str) -> str:
+def handle_post_tool_use(stdin_json: str, *, conn=None) -> str:
     """Process a PostToolUse hook event.
 
     Parses the JSON payload, logs the invocation to the database,
@@ -21,6 +21,8 @@ def handle_post_tool_use(stdin_json: str) -> str:
 
     Args:
         stdin_json: JSON string from stdin per hook-contracts.md.
+        conn: Optional database connection (for testing). If None,
+              creates a new connection to the default DB path.
 
     Returns:
         JSON string with {"action": "allow"}.
@@ -34,9 +36,11 @@ def handle_post_tool_use(stdin_json: str) -> str:
         from sio.core.db.schema import init_db
         from sio.core.telemetry.logger import log_invocation
 
-        db_path = os.path.join(_DEFAULT_DB_DIR, "behavior_invocations.db")
-        os.makedirs(_DEFAULT_DB_DIR, exist_ok=True)
-        conn = init_db(db_path)
+        own_conn = conn is None
+        if own_conn:
+            db_path = os.path.join(_DEFAULT_DB_DIR, "behavior_invocations.db")
+            os.makedirs(_DEFAULT_DB_DIR, exist_ok=True)
+            conn = init_db(db_path)
 
         session_id = payload.get("session_id", "unknown")
         tool_name = payload.get("tool_name", "unknown")
@@ -55,7 +59,8 @@ def handle_post_tool_use(stdin_json: str) -> str:
             user_message=user_message,
             platform=_DEFAULT_PLATFORM,
         )
-        conn.close()
+        if own_conn:
+            conn.close()
     except Exception:
         logger.exception("PostToolUse hook error — continuing silently")
 

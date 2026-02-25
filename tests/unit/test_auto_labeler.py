@@ -7,8 +7,6 @@ outcome.
 
 from __future__ import annotations
 
-import pytest
-
 from sio.core.telemetry.auto_labeler import auto_label
 
 

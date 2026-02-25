@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime
 
 _CORRECTION_PREFIXES = ("no,", "actually,", "instead,", "wait,", "stop,")
 
@@ -31,7 +31,7 @@ def detect_undo(
     like git checkout/revert and occurred within 30 seconds.
     """
     rows = conn.execute(
-        "SELECT actual_action, timestamp FROM behavior_invocations "
+        "SELECT actual_action, user_message, timestamp FROM behavior_invocations "
         "WHERE session_id = ? ORDER BY timestamp DESC LIMIT 2",
         (session_id,),
     ).fetchall()
@@ -42,10 +42,16 @@ def detect_undo(
     current = rows[0]
     previous = rows[1]
 
-    # Check if current tool is a revert/undo action
+    # Check if current invocation is a revert/undo action.
+    # actual_action is the Claude tool name (e.g. "Bash"), so we also
+    # check user_message for git undo commands.
     undo_actions = ("git checkout", "git revert", "git reset", "git restore")
     current_action = (current["actual_action"] or "").lower()
-    if not any(undo in current_action for undo in undo_actions):
+    current_message = (current["user_message"] or "").lower()
+    if not any(
+        undo in current_action or undo in current_message
+        for undo in undo_actions
+    ):
         return False
 
     # Check time window (30 seconds)
