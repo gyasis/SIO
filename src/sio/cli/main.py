@@ -541,7 +541,22 @@ def reject(suggestion_id, note):
 @click.argument("change_id", type=int)
 def rollback(change_id):
     """Rollback an applied change by ID."""
-    click.echo(f"[v2] Rolling back change {change_id}... (not yet implemented)")
+    from sio.applier.rollback import rollback_change
+    from sio.core.db.schema import init_db
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found.")
+        return
+
+    conn = init_db(db_path)
+    result = rollback_change(conn, change_id)
+    conn.close()
+    if result["success"]:
+        click.echo(f"Change {change_id} rolled back: {result['target_file']}")
+    else:
+        click.echo(f"Rollback failed: {result.get('reason', 'unknown')}")
+        raise SystemExit(1)
 
 
 @cli.group()
@@ -585,7 +600,32 @@ def schedule_status():
 @cli.command("status")
 def sio_status():
     """Show overall SIO v2 status."""
-    click.echo("[v2] Status... (not yet implemented)")
+    from sio.core.db.schema import init_db
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No SIO database found. Run 'sio mine' to start.")
+        return
+
+    conn = init_db(db_path)
+    errors = conn.execute("SELECT COUNT(*) FROM error_records").fetchone()[0]
+    patterns = conn.execute("SELECT COUNT(*) FROM patterns").fetchone()[0]
+    datasets = conn.execute("SELECT COUNT(*) FROM datasets").fetchone()[0]
+    pending = conn.execute(
+        "SELECT COUNT(*) FROM suggestions WHERE status = 'pending'"
+    ).fetchone()[0]
+    applied = conn.execute(
+        "SELECT COUNT(*) FROM applied_changes WHERE rolled_back_at IS NULL"
+    ).fetchone()[0]
+    conn.close()
+
+    click.echo("SIO v2 Status")
+    click.echo("-" * 30)
+    click.echo(f"Errors mined:      {errors}")
+    click.echo(f"Patterns found:    {patterns}")
+    click.echo(f"Datasets built:    {datasets}")
+    click.echo(f"Pending reviews:   {pending}")
+    click.echo(f"Applied changes:   {applied}")
 
 
 if __name__ == "__main__":

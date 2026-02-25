@@ -178,17 +178,17 @@
 
 ### Tests for User Story 6
 
-- [ ] T050 [P] [US6] Write unit tests for writer in `tests/unit/test_writer.py`: test append to CLAUDE.md (never overwrites), test update SKILL.md, test merge into settings.json, test git commit created
-- [ ] T051 [P] [US6] Write unit tests for rollback in `tests/unit/test_rollback.py`: test reverts file to diff_before state, test logs rollback, test rollback of non-existent change returns error
-- [ ] T052 [P] [US6] Write integration test for suggest-to-apply pipeline in `tests/integration/test_suggest_to_apply.py`: generate suggestion → approve → apply → verify file changed → rollback → verify file restored
+- [x] T050 [P] [US6] Write unit tests for writer in `tests/unit/test_writer.py`: test append to CLAUDE.md (never overwrites), test update SKILL.md, test merge into settings.json, test git commit created
+- [x] T051 [P] [US6] Write unit tests for rollback in `tests/unit/test_rollback.py`: test reverts file to diff_before state, test logs rollback, test rollback of non-existent change returns error
+- [x] T052 [P] [US6] Write integration test for suggest-to-apply pipeline in `tests/integration/test_suggest_to_apply.py`: generate suggestion → approve → apply → verify file changed → rollback → verify file restored
 
 ### Implementation for User Story 6
 
-- [ ] T053 [US6] Implement writer in `src/sio/applier/writer.py`: `apply_change(db, suggestion_id) -> AppliedChange` — reads suggestion, writes to target file (append for CLAUDE.md, merge for settings.json), records diff_before/diff_after, git commits. Uses v1's `drift_detector` and `collision` detector before applying.
-- [ ] T054 [US6] Implement rollback in `src/sio/applier/rollback.py`: `rollback_change(db, change_id)` — restores diff_before content, git commits the revert, marks rolled_back_at
-- [ ] T055 [US6] Implement changelog in `src/sio/applier/changelog.py`: `log_change(change)` appends to `~/.sio/changelog.md` with timestamp, pattern, target file, commit SHA
-- [ ] T056 [US6] Wire up `sio rollback <change_id>` and `sio status` CLI commands in `src/sio/cli/main.py`
-- [ ] T057 [US6] Verify all US6 tests pass (Green)
+- [x] T053 [US6] Implement writer in `src/sio/applier/writer.py`: `apply_change(db, suggestion_id) -> AppliedChange` — reads suggestion, writes to target file (append for CLAUDE.md, merge for settings.json), records diff_before/diff_after, git commits. Uses v1's `drift_detector` and `collision` detector before applying.
+- [x] T054 [US6] Implement rollback in `src/sio/applier/rollback.py`: `rollback_change(db, change_id)` — restores diff_before content, git commits the revert, marks rolled_back_at
+- [x] T055 [US6] Implement changelog in `src/sio/applier/changelog.py`: `log_change(change)` appends to `~/.sio/changelog.md` with timestamp, pattern, target file, commit SHA
+- [x] T056 [US6] Wire up `sio rollback <change_id>` and `sio status` CLI commands in `src/sio/cli/main.py`
+- [x] T057 [US6] Verify all US6 tests pass (Green)
 
 **Checkpoint**: Applied changes write to config files, git committed, rollback works. Full closed loop complete. US6 independently testable.
 
