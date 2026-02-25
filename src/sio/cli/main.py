@@ -466,13 +466,33 @@ def schedule():
 @schedule.command("install")
 def schedule_install():
     """Install daily + weekly cron jobs."""
-    click.echo("[v2] Installing schedule... (not yet implemented)")
+    from sio.scheduler.cron import install_schedule
+
+    result = install_schedule()
+    if result.get("installed"):
+        click.echo("Schedule installed successfully.")
+        if result.get("daily_enabled"):
+            click.echo("  Daily job:  midnight (0 0 * * *)")
+        if result.get("weekly_enabled"):
+            click.echo("  Weekly job: Sunday midnight (0 0 * * 0)")
+    else:
+        click.echo("Schedule installation failed.", err=True)
+        raise SystemExit(1)
 
 
 @schedule.command("status")
 def schedule_status():
     """Check scheduler status."""
-    click.echo("[v2] Schedule status... (not yet implemented)")
+    from sio.scheduler.cron import get_status
+
+    status = get_status()
+    installed = status.get("installed", False)
+    daily = status.get("daily_enabled", False)
+    weekly = status.get("weekly_enabled", False)
+
+    click.echo(f"Installed:      {'yes' if installed else 'no'}")
+    click.echo(f"Daily enabled:  {'yes' if daily else 'no'}")
+    click.echo(f"Weekly enabled: {'yes' if weekly else 'no'}")
 
 
 @cli.command("status")
