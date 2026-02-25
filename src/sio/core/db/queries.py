@@ -228,8 +228,10 @@ def get_error_records(
     if since:
         query += " AND timestamp >= ?"
         params.append(since)
-    query += " ORDER BY timestamp DESC LIMIT ?"
-    params.append(limit)
+    query += " ORDER BY timestamp DESC"
+    if limit and limit > 0:
+        query += " LIMIT ?"
+        params.append(limit)
     rows = conn.execute(query, params).fetchall()
     return [_row_to_dict(r) for r in rows]
 
@@ -258,7 +260,7 @@ def insert_pattern(conn: sqlite3.Connection, record: dict) -> int:
     col_names = ", ".join(cols)
     values = [record.get(c) for c in cols]
     cur = conn.execute(
-        f"INSERT INTO patterns ({col_names}) VALUES ({placeholders})",
+        f"INSERT OR REPLACE INTO patterns ({col_names}) VALUES ({placeholders})",
         values,
     )
     conn.commit()

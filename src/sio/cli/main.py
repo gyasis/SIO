@@ -520,6 +520,176 @@ def collect(since, error_type):
     click.echo(f"Collected {count} error records matching criteria.")
 
 
+@cli.command()
+@click.option(
+    "--type", "error_type", default=None,
+    type=click.Choice(["tool_failure", "user_correction", "repeated_attempt", "undo", "agent_admission"]),
+    help="Only analyze errors of this type.",
+)
+@click.option("--min-examples", default=3, help="Min examples to build a dataset.")
+def suggest(error_type, min_examples):
+    """Run the full pipeline: cluster -> persist -> dataset -> suggestions."""
+    from datetime import datetime, timezone
+
+    from rich.console import Console
+    from rich.table import Table
+
+    from sio.clustering.pattern_clusterer import cluster_errors
+    from sio.clustering.ranker import rank_patterns
+    from sio.core.db.queries import (
+        get_error_records,
+        insert_pattern,
+        link_error_to_pattern,
+    )
+    from sio.core.db.schema import init_db
+    from sio.datasets.builder import build_dataset
+    from sio.suggestions.generator import generate_suggestions
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found. Run 'sio mine' first.")
+        return
+
+    conn = init_db(db_path)
+    console = Console()
+
+    # 1. Get all errors (no limit)
+    all_errors = get_error_records(conn, limit=0)
+    if not all_errors:
+        click.echo("No errors mined yet. Run 'sio mine --since \"7 days\"' first.")
+        conn.close()
+        return
+
+    errors_to_cluster = all_errors
+    if error_type:
+        errors_to_cluster = [e for e in all_errors if e.get("error_type") == error_type]
+        if not errors_to_cluster:
+            click.echo(f"No '{error_type}' errors found.")
+            conn.close()
+            return
+
+    console.print(f"[bold]Step 1:[/bold] Clustering {len(errors_to_cluster)} errors...")
+
+    # 2. Cluster and rank
+    clustered = cluster_errors(errors_to_cluster)
+    ranked = rank_patterns(clustered)
+    console.print(f"  Found {len(ranked)} patterns")
+
+    # 3. Persist patterns to DB (clear old patterns first for clean state)
+    console.print("[bold]Step 2:[/bold] Persisting patterns to database...")
+    conn.execute("DELETE FROM pattern_errors")
+    conn.execute("DELETE FROM patterns")
+    conn.commit()
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    seen_slugs: set[str] = set()
+    persisted_patterns: list[dict] = []
+    for p in ranked:
+        # Ensure unique pattern_id slugs
+        slug = p["pattern_id"]
+        if slug in seen_slugs:
+            # Append error count to disambiguate
+            slug = f"{slug}-{p['error_count']}"
+        seen_slugs.add(slug)
+        p["pattern_id"] = slug
+
+        p["centroid_embedding"] = None  # skip blob for now
+        p["created_at"] = now_iso
+        p["updated_at"] = now_iso
+        row_id = insert_pattern(conn, p)
+        p["id"] = row_id  # store DB id for dataset builder
+        persisted_patterns.append(p)
+
+        # Link errors to pattern
+        for eid in p.get("error_ids", []):
+            link_error_to_pattern(conn, row_id, eid)
+
+    console.print(f"  Persisted {len(persisted_patterns)} patterns with error links")
+
+    # 4. Build datasets
+    console.print("[bold]Step 3:[/bold] Building datasets...")
+    datasets: dict[str, dict] = {}
+    for p in persisted_patterns:
+        metadata = build_dataset(p, all_errors, conn, min_threshold=min_examples)
+        if metadata is not None:
+            pid = metadata["pattern_id"]
+            # Store/update dataset record in DB
+            existing = conn.execute(
+                "SELECT id FROM datasets WHERE pattern_id = ? ORDER BY id DESC LIMIT 1",
+                (p["id"],),
+            ).fetchone()
+            if existing:
+                metadata["id"] = existing[0]
+            else:
+                ds_cur = conn.execute(
+                    "INSERT INTO datasets (pattern_id, file_path, positive_count, "
+                    "negative_count, min_threshold, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        p["id"], metadata["file_path"],
+                        metadata["positive_count"], metadata["negative_count"],
+                        min_examples, now_iso, now_iso,
+                    ),
+                )
+                conn.commit()
+                metadata["id"] = ds_cur.lastrowid
+            datasets[pid] = metadata
+
+    console.print(f"  Built {len(datasets)} datasets")
+
+    # 5. Generate targeted suggestions
+    console.print("[bold]Step 4:[/bold] Generating targeted suggestions...")
+    suggestions = generate_suggestions(persisted_patterns, datasets, conn)
+
+    # Clear old suggestions and insert new ones
+    conn.execute("DELETE FROM suggestions WHERE status = 'pending'")
+    conn.commit()
+
+    for s in suggestions:
+        conn.execute(
+            "INSERT INTO suggestions (pattern_id, dataset_id, description, "
+            "confidence, proposed_change, target_file, change_type, status, "
+            "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                s["pattern_id"], s["dataset_id"], s["description"],
+                s["confidence"], s["proposed_change"], s["target_file"],
+                s["change_type"], "pending", now_iso,
+            ),
+        )
+    conn.commit()
+
+    console.print(f"  Generated {len(suggestions)} suggestions")
+    console.print()
+
+    # 6. Display results
+    if suggestions:
+        table = Table(title="Generated Suggestions")
+        table.add_column("#", style="bold")
+        table.add_column("Description", max_width=50)
+        table.add_column("Conf.", justify="right")
+        table.add_column("Target")
+        table.add_column("Type")
+
+        for i, s in enumerate(suggestions, 1):
+            table.add_row(
+                str(i),
+                s["description"][:50],
+                f"{s['confidence']:.0%}",
+                s["target_file"],
+                s["change_type"],
+            )
+        console.print(table)
+        console.print()
+        console.print(
+            f"[green]Run 'sio suggest-review' to review {len(suggestions)} "
+            f"pending suggestions interactively.[/green]"
+        )
+    else:
+        console.print("[yellow]No suggestions generated. Need more error data.[/yellow]")
+
+    conn.close()
+
+
 @cli.command("suggest-review")
 def suggest_review():
     """Review pending improvement suggestions interactively."""
