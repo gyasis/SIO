@@ -398,8 +398,12 @@ def patterns(error_type):
     help="Filter by error type.",
 )
 @click.option("--limit", "-n", default=20, help="Max errors to show.")
-def errors(error_type, limit):
-    """Browse mined errors with optional type filter."""
+@click.option(
+    "--grep", "-g", "grep_term", default=None,
+    help="Search error text, user message, and context for a keyword (case-insensitive).",
+)
+def errors(error_type, limit, grep_term):
+    """Browse mined errors with optional type and content filters."""
     from rich.console import Console
     from rich.table import Table
 
@@ -412,20 +416,49 @@ def errors(error_type, limit):
 
     conn = init_db(db_path)
 
-    # Summary counts
+    # Build query based on filters
+    where_clauses = ["1=1"]
+    params: list = []
+
+    if error_type:
+        where_clauses.append("error_type = ?")
+        params.append(error_type)
+
+    if grep_term:
+        # Search across error_text, user_message, context_before, context_after, source_file
+        where_clauses.append(
+            "(error_text LIKE ? OR user_message LIKE ? OR "
+            "context_before LIKE ? OR context_after LIKE ? OR "
+            "source_file LIKE ?)"
+        )
+        like_term = f"%{grep_term}%"
+        params.extend([like_term] * 5)
+
+    where_sql = " AND ".join(where_clauses)
+
+    # Summary counts (respecting grep filter)
     type_counts = conn.execute(
-        "SELECT error_type, COUNT(*) FROM error_records GROUP BY error_type ORDER BY COUNT(*) DESC"
+        f"SELECT error_type, COUNT(*) FROM error_records "
+        f"WHERE {where_sql} GROUP BY error_type ORDER BY COUNT(*) DESC",
+        params,
     ).fetchall()
 
     if not type_counts:
-        click.echo("No errors mined yet.")
+        if grep_term:
+            click.echo(f"No errors matching '{grep_term}' found.")
+        else:
+            click.echo("No errors mined yet.")
         conn.close()
         return
 
     console = Console()
 
     # Show type breakdown
-    summary = Table(title="Error Type Summary")
+    total_matching = sum(row[1] for row in type_counts)
+    title = "Error Type Summary"
+    if grep_term:
+        title += f" (matching '{grep_term}': {total_matching} hits)"
+    summary = Table(title=title)
     summary.add_column("Type", style="bold")
     summary.add_column("Count", justify="right")
     for row in type_counts:
@@ -435,34 +468,49 @@ def errors(error_type, limit):
     console.print()
 
     # Show filtered errors
-    if error_type:
-        rows = conn.execute(
-            "SELECT error_type, error_text, tool_name, session_id, timestamp "
-            "FROM error_records WHERE error_type = ? "
-            "ORDER BY timestamp DESC LIMIT ?",
-            (error_type, limit),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            "SELECT error_type, error_text, tool_name, session_id, timestamp "
-            "FROM error_records ORDER BY timestamp DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
+    rows = conn.execute(
+        f"SELECT error_type, error_text, tool_name, session_id, timestamp, "
+        f"user_message, source_file "
+        f"FROM error_records WHERE {where_sql} "
+        f"ORDER BY timestamp DESC LIMIT ?",
+        params + [limit],
+    ).fetchall()
 
     if rows:
-        detail = Table(title=f"{'All' if not error_type else error_type} errors (latest {limit})")
+        title_detail = f"errors (latest {limit})"
+        if grep_term:
+            title_detail = f"'{grep_term}' errors (latest {limit})"
+        if error_type:
+            title_detail = f"{error_type} " + title_detail
+        detail = Table(title=title_detail)
         detail.add_column("Type", style="dim")
-        detail.add_column("Error", max_width=70)
+        detail.add_column("Error", max_width=60)
         detail.add_column("Tool")
+        detail.add_column("Source", max_width=30)
         detail.add_column("Time")
         for r in rows:
+            # Highlight the grep term in the error text for readability
+            error_display = (r[1] or "")[:60]
+            source = (r[6] or "").split("/")[-1][:30]  # just filename
             detail.add_row(
                 r[0],
-                (r[1] or "")[:70],
+                error_display,
                 r[2] or "",
+                source,
                 (r[4] or "")[:16],
             )
         console.print(detail)
+
+        # If grep is active, also show a sample user_message for context
+        if grep_term:
+            console.print()
+            console.print("[dim]Sample user contexts:[/dim]")
+            seen: set = set()
+            for r in rows[:5]:
+                user_msg = (r[5] or "").strip()[:120]
+                if user_msg and user_msg not in seen:
+                    seen.add(user_msg)
+                    console.print(f"  [dim]>[/dim] {user_msg}")
 
     conn.close()
 
@@ -527,7 +575,11 @@ def collect(since, error_type):
     help="Only analyze errors of this type.",
 )
 @click.option("--min-examples", default=3, help="Min examples to build a dataset.")
-def suggest(error_type, min_examples):
+@click.option(
+    "--grep", "-g", "grep_term", default=None,
+    help="Filter errors by keyword in content (e.g. 'databricks', 'SQL', 'snowflake').",
+)
+def suggest(error_type, min_examples, grep_term):
     """Run the full pipeline: cluster -> persist -> dataset -> suggestions."""
     from datetime import datetime, timezone
 
@@ -561,14 +613,39 @@ def suggest(error_type, min_examples):
         return
 
     errors_to_cluster = all_errors
-    if error_type:
-        errors_to_cluster = [e for e in all_errors if e.get("error_type") == error_type]
-        if not errors_to_cluster:
-            click.echo(f"No '{error_type}' errors found.")
-            conn.close()
-            return
 
-    console.print(f"[bold]Step 1:[/bold] Clustering {len(errors_to_cluster)} errors...")
+    # Apply error type filter
+    if error_type:
+        errors_to_cluster = [e for e in errors_to_cluster if e.get("error_type") == error_type]
+
+    # Apply content grep filter — searches across error_text, user_message,
+    # context_before, context_after, and source_file
+    if grep_term:
+        term_lower = grep_term.lower()
+
+        def _matches_grep(e: dict) -> bool:
+            for field in ("error_text", "user_message", "context_before", "context_after", "source_file"):
+                val = e.get(field) or ""
+                if term_lower in val.lower():
+                    return True
+            return False
+
+        errors_to_cluster = [e for e in errors_to_cluster if _matches_grep(e)]
+
+    if not errors_to_cluster:
+        filter_desc = []
+        if error_type:
+            filter_desc.append(f"type='{error_type}'")
+        if grep_term:
+            filter_desc.append(f"grep='{grep_term}'")
+        click.echo(f"No errors matching {', '.join(filter_desc)} found.")
+        conn.close()
+        return
+
+    filter_msg = ""
+    if grep_term:
+        filter_msg = f" matching '{grep_term}'"
+    console.print(f"[bold]Step 1:[/bold] Clustering {len(errors_to_cluster)} errors{filter_msg}...")
 
     # 2. Cluster and rank
     clustered = cluster_errors(errors_to_cluster)

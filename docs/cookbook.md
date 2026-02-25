@@ -381,6 +381,127 @@ The error type summary table is your scorecard. After applying targeted CLAUDE.m
 
 ---
 
+## Story 13: "Find all Databricks SQL failures across every project"
+
+This is the cross-project search story. You've been working with Databricks SQL across multiple projects — jira issues, pipelines, data work — and you want to gather every SQL failure the agent has ever hit, regardless of which project folder it lived in.
+
+**Step 1: Mine everything**
+
+```bash
+# Mine the full year across ALL SpecStory + JSONL files
+sio mine --since "1y"
+# Scanned 1264 files
+# Found 8125 errors
+```
+
+This crawls `~/.claude/projects/` (all 1,262 JSONL files) and `~/.specstory/history/` recursively. Every project — jira issues, pipelines, SIO itself — gets mined.
+
+**Step 2: Search for Databricks content**
+
+```bash
+# Search ALL mined errors for "databricks" keyword
+sio errors --grep databricks
+```
+
+Output:
+
+```
+Error Type Summary (matching 'databricks': 564 hits)
+┌──────────────────┬───────┐
+│ Type             │ Count │
+├──────────────────┼───────┤
+│ repeated_attempt │   428 │
+│ tool_failure     │   126 │
+│ user_correction  │     6 │
+│ agent_admission  │     2 │
+│ undo             │     2 │
+└──────────────────┴───────┘
+```
+
+564 errors across all your projects that mention Databricks. The `--grep` flag searches error text, user messages, surrounding context, AND source file paths — so it catches everything.
+
+**Step 3: Drill into the SQL failures**
+
+```bash
+# Just the actual tool failures related to Databricks
+sio errors --grep databricks --type tool_failure -n 20
+```
+
+This shows you every time the agent hit a Databricks-related error — SQL syntax errors, connection timeouts, permission denials, schema mismatches.
+
+**Step 4: Generate targeted Databricks rules**
+
+```bash
+# Full pipeline filtered to Databricks content
+sio suggest --grep databricks --min-examples 2
+```
+
+```
+Step 1: Clustering 564 errors matching 'databricks'...
+  Found 40 patterns
+Step 2: Persisting patterns to database...
+Step 3: Building datasets...
+  Built 18 datasets
+Step 4: Generating targeted suggestions...
+  Generated 18 suggestions
+```
+
+**What you get — real suggestions from real data:**
+
+```
+## Rule: Avoid Repeated Tool Retries
+
+**Tools repeatedly retried**:
+- `mcp__superset__superset_sqllab_execute_query`: 9 retry sequences
+- `mcp__superset__superset_chart_get_by_id`: 8 retry sequences
+
+**Prevention rules**:
+- If `mcp__superset__superset_sqllab_execute_query` fails twice,
+  stop and diagnose the root cause instead of retrying.
+```
+
+**Step 5: Same thing for Snowflake**
+
+The `--grep` flag works with any keyword:
+
+```bash
+sio errors --grep snowflake
+sio errors --grep "SQL syntax"
+sio errors --grep "connection refused"
+sio suggest --grep snowflake --min-examples 2
+```
+
+**The power here**: You're not limited to project folders. Any keyword that appears anywhere in your Claude session history — error messages, user requests, agent responses, file paths — gets surfaced.
+
+---
+
+## Story 14: "Cross-project intelligence — what tools fail the most?"
+
+Use `--grep` with tool-specific keywords to see failure patterns across all your work:
+
+```bash
+# MCP tool failures
+sio errors --grep "mcp__" --type tool_failure -n 30
+
+# Specific MCP servers
+sio errors --grep "atlassian" --type tool_failure
+sio errors --grep "graphiti" --type tool_failure
+sio errors --grep "superset" --type tool_failure
+sio errors --grep "duckdb" --type tool_failure
+
+# Permission denials across all projects
+sio errors --grep "Permission" --type tool_failure -n 20
+
+# Sibling cascade errors
+sio errors --grep "Sibling tool call"
+
+# Connection/timeout issues
+sio errors --grep "timeout"
+sio errors --grep "connection"
+```
+
+---
+
 ## Quick Reference
 
 ```bash
