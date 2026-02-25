@@ -3,6 +3,7 @@
 import json as _json
 import os
 
+
 import click
 
 _DEFAULT_DB_DIR = os.path.expanduser("~/.sio/claude-code")
