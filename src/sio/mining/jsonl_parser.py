@@ -2,16 +2,26 @@
 
 Parses Claude Code JSONL transcripts into a normalised list of dicts.
 
-Wire format (one JSON object per line):
+Real Claude Code wire format (one JSON object per line)::
 
-    {"type":"human","message":{"role":"user","content":"..."},"timestamp":"..."}
-    {"type":"assistant","message":{"role":"assistant","content":"..."},"timestamp":"..."}
-    {"type":"tool_use","tool_name":"Read","tool_input":{...},"tool_output":"...","timestamp":"..."}
-    {"type":"tool_use","tool_name":"Bash","tool_input":{...},"tool_output":null,"error":"...","timestamp":"..."}
+    {"type":"user","message":{"role":"user","content":"..."},...}
+    {"type":"assistant","message":{"role":"assistant","content":[
+        {"type":"text","text":"..."},
+        {"type":"tool_use","id":"...","name":"Read","input":{...}}
+    ]},...}
+    {"type":"user","message":{"role":"user","content":[
+        {"type":"tool_result","tool_use_id":"...","content":"...","is_error":false}
+    ]},...}
+
+Also supports the legacy test-fixture format::
+
+    {"type":"human","message":{"role":"user","content":"..."}}
+    {"type":"tool_use","tool_name":"Read","tool_input":{...},"error":"..."}
+    {"role":"user","content":"...","tool_name":null,...}
 
 Each returned dict has the following keys:
 
-    role        str            "user" | "assistant" | "tool"
+    role        str            "user" | "assistant"
     content     str            message content or empty string
     tool_name   str | None     populated for tool_use entries
     tool_input  str | None     JSON-serialised string of the tool_input object
@@ -27,13 +37,177 @@ from pathlib import Path
 from typing import Any
 
 
-def _parse_human_or_assistant(raw: dict[str, Any]) -> dict[str, Any] | None:
-    """Extract a normalised record from a human or assistant wire-format line.
+# ---------------------------------------------------------------------------
+# Internal: tool_result tracking
+# ---------------------------------------------------------------------------
 
-    Returns None if the entry cannot be meaningfully interpreted (missing
-    ``message`` block entirely), though callers should be tolerant of partial
-    data.
+# We need to correlate tool_result blocks (which carry errors) with the
+# tool_use blocks that produced them.  This dict maps tool_use_id -> record
+# so that when we encounter a tool_result we can back-fill the error field.
+_ToolUseMap = dict[str, dict[str, Any]]
+
+
+def _serialise_input(tool_input_raw: Any) -> str | None:
+    """Serialise a tool_input value to a string."""
+    if tool_input_raw is None:
+        return None
+    if isinstance(tool_input_raw, str):
+        return tool_input_raw
+    return json.dumps(tool_input_raw, ensure_ascii=False)
+
+
+# ---------------------------------------------------------------------------
+# Real Claude Code format handlers
+# ---------------------------------------------------------------------------
+
+
+def _extract_content_text(content: Any) -> str:
+    """Extract displayable text from a message's content field.
+
+    Content can be:
+    - A plain string
+    - A list of content blocks (text, tool_use, tool_result, etc.)
     """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, dict):
+                if block.get("type") == "text":
+                    parts.append(block.get("text", ""))
+            elif isinstance(block, str):
+                parts.append(block)
+        return "\n".join(parts)
+    return ""
+
+
+def _parse_real_user(raw: dict[str, Any], tool_use_map: _ToolUseMap) -> list[dict[str, Any]]:
+    """Parse a real Claude Code ``type: "user"`` line.
+
+    User messages can contain:
+    - Plain text (string content)
+    - tool_result blocks (array content) that carry success/error results
+    """
+    message: dict[str, Any] = raw.get("message") or {}
+    content = message.get("content", "")
+    timestamp = raw.get("timestamp")
+    records: list[dict[str, Any]] = []
+
+    if isinstance(content, list):
+        # Check for tool_result blocks first
+        has_tool_results = False
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "tool_result":
+                has_tool_results = True
+                tool_use_id = block.get("tool_use_id", "")
+                result_content = block.get("content", "")
+                is_error = block.get("is_error", False)
+
+                # Look up the original tool_use to get tool_name
+                original = tool_use_map.get(tool_use_id, {})
+                tool_name = original.get("tool_name")
+                tool_input = original.get("tool_input")
+
+                error_str: str | None = None
+                if is_error:
+                    error_str = result_content if isinstance(result_content, str) else str(result_content)
+
+                records.append({
+                    "role": "assistant",  # treat as assistant context for error extraction
+                    "content": "",
+                    "tool_name": tool_name,
+                    "tool_input": tool_input,
+                    "tool_output": result_content if not is_error else None,
+                    "error": error_str,
+                    "timestamp": timestamp,
+                })
+
+        # Also emit the text portions as a user message
+        text = _extract_content_text(content)
+        if text.strip() or not has_tool_results:
+            records.append({
+                "role": "user",
+                "content": text,
+                "tool_name": None,
+                "tool_input": None,
+                "tool_output": None,
+                "error": None,
+                "timestamp": timestamp,
+            })
+    else:
+        # Plain string content
+        records.append({
+            "role": "user",
+            "content": _extract_content_text(content),
+            "tool_name": None,
+            "tool_input": None,
+            "tool_output": None,
+            "error": None,
+            "timestamp": timestamp,
+        })
+
+    return records
+
+
+def _parse_real_assistant(raw: dict[str, Any], tool_use_map: _ToolUseMap) -> list[dict[str, Any]]:
+    """Parse a real Claude Code ``type: "assistant"`` line.
+
+    Assistant messages can contain:
+    - text blocks (the assistant's prose)
+    - tool_use blocks (tool invocations with name + input)
+    """
+    message: dict[str, Any] = raw.get("message") or {}
+    content = message.get("content", "")
+    timestamp = raw.get("timestamp")
+    records: list[dict[str, Any]] = []
+
+    # Emit one record for the assistant's text
+    text = _extract_content_text(content)
+    records.append({
+        "role": "assistant",
+        "content": text,
+        "tool_name": None,
+        "tool_input": None,
+        "tool_output": None,
+        "error": None,
+        "timestamp": timestamp,
+    })
+
+    # Extract tool_use blocks
+    if isinstance(content, list):
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "tool_use":
+                tool_name = block.get("name")
+                tool_input = _serialise_input(block.get("input"))
+                tool_use_id = block.get("id", "")
+
+                # Register in the map so tool_results can find it
+                tool_use_map[tool_use_id] = {
+                    "tool_name": tool_name,
+                    "tool_input": tool_input,
+                }
+
+                records.append({
+                    "role": "assistant",
+                    "content": "",
+                    "tool_name": tool_name,
+                    "tool_input": tool_input,
+                    "tool_output": None,
+                    "error": None,
+                    "timestamp": timestamp,
+                })
+
+    return records
+
+
+# ---------------------------------------------------------------------------
+# Legacy format handlers (test fixtures)
+# ---------------------------------------------------------------------------
+
+
+def _parse_legacy_human_or_assistant(raw: dict[str, Any]) -> dict[str, Any] | None:
+    """Extract a normalised record from a legacy human/assistant line."""
     message: dict[str, Any] = raw.get("message") or {}
     role: str = message.get("role") or ("user" if raw.get("type") == "human" else "assistant")
     content: str | None = message.get("content")
@@ -49,24 +223,13 @@ def _parse_human_or_assistant(raw: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def _parse_tool_use(raw: dict[str, Any]) -> dict[str, Any]:
-    """Extract a normalised record from a tool_use wire-format line."""
-    tool_input_raw: Any = raw.get("tool_input")
-    tool_input_str: str | None
-    if tool_input_raw is None:
-        tool_input_str = None
-    elif isinstance(tool_input_raw, str):
-        # Already a string — pass through unchanged.
-        tool_input_str = tool_input_raw
-    else:
-        # dict, list, or other JSON-serialisable value — serialise it.
-        tool_input_str = json.dumps(tool_input_raw, ensure_ascii=False)
-
+def _parse_legacy_tool_use(raw: dict[str, Any]) -> dict[str, Any]:
+    """Extract a normalised record from a legacy tool_use line."""
     return {
-        "role": "tool",
+        "role": "assistant",
         "content": "",
         "tool_name": raw.get("tool_name"),
-        "tool_input": tool_input_str,
+        "tool_input": _serialise_input(raw.get("tool_input")),
         "tool_output": raw.get("tool_output"),
         "error": raw.get("error"),
         "timestamp": raw.get("timestamp"),
@@ -74,64 +237,64 @@ def _parse_tool_use(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def _parse_normalised_record(raw: dict[str, Any]) -> dict[str, Any]:
-    """Handle a line that is already in the normalised output schema.
-
-    The ``sample_jsonl_file`` conftest fixture writes dicts with the
-    normalised keys directly (role/content/tool_name/...) rather than the
-    wire format.  We must not crash on these.
-    """
-    tool_input_raw: Any = raw.get("tool_input")
-    tool_input_str: str | None
-    if tool_input_raw is None:
-        tool_input_str = None
-    elif isinstance(tool_input_raw, str):
-        tool_input_str = tool_input_raw
-    else:
-        tool_input_str = json.dumps(tool_input_raw, ensure_ascii=False)
-
+    """Handle a line already in normalised schema (test fixtures)."""
     return {
         "role": raw.get("role") or "",
         "content": raw.get("content") or "",
         "tool_name": raw.get("tool_name"),
-        "tool_input": tool_input_str,
+        "tool_input": _serialise_input(raw.get("tool_input")),
         "tool_output": raw.get("tool_output"),
         "error": raw.get("error"),
         "timestamp": raw.get("timestamp"),
     }
 
 
-def _dispatch(raw: dict[str, Any]) -> dict[str, Any] | None:
+# ---------------------------------------------------------------------------
+# Dispatch
+# ---------------------------------------------------------------------------
+
+
+def _dispatch(
+    raw: dict[str, Any],
+    tool_use_map: _ToolUseMap,
+) -> list[dict[str, Any]]:
     """Route a parsed JSON object to the appropriate extractor.
 
-    Returns a normalised dict or None if the object cannot be interpreted
-    (e.g. not a dict, not a recognised ``type`` value, or a bare list/scalar
-    that slipped through).
+    Returns a list of normalised dicts (may be empty for skipped entries).
     """
     if not isinstance(raw, dict):
-        return None
+        return []
 
     entry_type: str | None = raw.get("type")
 
-    if entry_type in ("human", "assistant"):
-        return _parse_human_or_assistant(raw)
+    # --- Real Claude Code format ---
+    if entry_type == "user" and "message" in raw:
+        return _parse_real_user(raw, tool_use_map)
 
-    if entry_type == "tool_use":
-        return _parse_tool_use(raw)
+    if entry_type == "assistant" and "message" in raw:
+        return _parse_real_assistant(raw, tool_use_map)
 
-    # No ``type`` field present — check for the normalised-schema format used
-    # by the conftest fixture (has a ``role`` key at top level).
+    # --- Legacy test-fixture format ---
+    if entry_type == "human":
+        rec = _parse_legacy_human_or_assistant(raw)
+        return [rec] if rec else []
+
+    if entry_type == "tool_use" and "tool_name" in raw:
+        return [_parse_legacy_tool_use(raw)]
+
+    # No ``type`` field — check for normalised-schema format (has ``role``).
     if "role" in raw:
-        return _parse_normalised_record(raw)
+        return [_parse_normalised_record(raw)]
 
-    # Unknown shape — skip.
-    return None
+    # Unknown shape (progress, file-history-snapshot, etc.) — skip.
+    return []
 
 
 def parse_jsonl(file_path: Path) -> list[dict]:
     """Parse a Claude Code JSONL transcript file into a list of normalised dicts.
 
-    Reads ``file_path`` line by line.  Each line is attempted as a JSON
-    object.  Corrupt, empty, or non-object lines are silently skipped.
+    Handles both the real Claude Code wire format and the legacy test-fixture
+    format.  Corrupt, empty, or non-object lines are silently skipped.
     The function never raises regardless of file contents.
 
     Args:
@@ -151,6 +314,7 @@ def parse_jsonl(file_path: Path) -> list[dict]:
         '2026-02-25T10:00:00Z'
     """
     records: list[dict] = []
+    tool_use_map: _ToolUseMap = {}
 
     try:
         text = file_path.read_text(encoding="utf-8")
@@ -167,8 +331,7 @@ def parse_jsonl(file_path: Path) -> list[dict]:
         except (json.JSONDecodeError, ValueError):
             continue
 
-        record = _dispatch(raw)
-        if record is not None:
-            records.append(record)
+        new_records = _dispatch(raw, tool_use_map)
+        records.extend(new_records)
 
     return records

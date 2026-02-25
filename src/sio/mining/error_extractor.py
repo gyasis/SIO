@@ -159,9 +159,9 @@ def _build_record(
 
 
 def _last_human_message(messages: list[dict[str, Any]], before_idx: int) -> str | None:
-    """Return the content of the most recent human message before *before_idx*."""
+    """Return the content of the most recent human/user message before *before_idx*."""
     for i in range(before_idx - 1, -1, -1):
-        if messages[i].get("role") == "human":
+        if messages[i].get("role") in ("human", "user"):
             return _content_of(messages[i])
     return None
 
@@ -266,7 +266,7 @@ def extract_errors(
         # ------------------------------------------------------------------
         # 2. user_correction  (human messages only)
         # ------------------------------------------------------------------
-        if role == "human" and _is_correction(content):
+        if role in ("human", "user") and _is_correction(content):
             records.append(
                 _build_record(
                     msg=msg,
@@ -285,7 +285,7 @@ def extract_errors(
         # ------------------------------------------------------------------
         # 4. undo  (human messages only)
         # ------------------------------------------------------------------
-        if role == "human" and _is_undo(content):
+        if role in ("human", "user") and _is_undo(content):
             records.append(
                 _build_record(
                     msg=msg,
@@ -332,7 +332,7 @@ def extract_errors(
                 # Different tool or first tool seen — reset run tracking.
                 consecutive_tool = tool_name
                 consecutive_count = 1
-        elif role == "human":
+        elif role in ("human", "user"):
             # A human turn breaks any consecutive assistant tool run.
             consecutive_tool = None
             consecutive_count = 0
