@@ -57,11 +57,11 @@
 
 ### Tests for User Story 1
 
-- [ ] T011 [P] [US1] Write unit tests for SpecStory parser in `tests/unit/test_specstory_parser.py`: test parse Human/Assistant blocks, test extract tool calls from code blocks, test extract errors/failures, test handle malformed markdown gracefully
-- [ ] T012 [P] [US1] Write unit tests for JSONL parser in `tests/unit/test_jsonl_parser.py`: test parse line-by-line, test extract tool_name/input/output/error, test handle missing fields, test handle corrupt lines
-- [ ] T013 [P] [US1] Write unit tests for error extractor in `tests/unit/test_error_extractor.py`: test identify tool failures, test identify user corrections ("No, actually..."), test identify repeated attempts, test identify undos (git checkout/revert), test no false positives on normal conversation
-- [ ] T014 [P] [US1] Write unit tests for time filter in `tests/unit/test_time_filter.py`: test filter by days, test filter by weeks, test custom date range, test empty result when no files in window
-- [ ] T015 [P] [US1] Write integration test for mining pipeline in `tests/integration/test_mine_pipeline.py`: create 5 sample SpecStory files + 5 sample JSONL files with known errors → mine → verify all errors extracted with correct metadata
+- [x] T011 [P] [US1] Write unit tests for SpecStory parser in `tests/unit/test_specstory_parser.py`: test parse Human/Assistant blocks, test extract tool calls from code blocks, test extract errors/failures, test handle malformed markdown gracefully
+- [x] T012 [P] [US1] Write unit tests for JSONL parser in `tests/unit/test_jsonl_parser.py`: test parse line-by-line, test extract tool_name/input/output/error, test handle missing fields, test handle corrupt lines
+- [x] T013 [P] [US1] Write unit tests for error extractor in `tests/unit/test_error_extractor.py`: test identify tool failures, test identify user corrections ("No, actually..."), test identify repeated attempts, test identify undos (git checkout/revert), test no false positives on normal conversation
+- [x] T014 [P] [US1] Write unit tests for time filter in `tests/unit/test_time_filter.py`: test filter by days, test filter by weeks, test custom date range, test empty result when no files in window
+- [x] T015 [P] [US1] Write integration test for mining pipeline in `tests/integration/test_mine_pipeline.py`: create 5 sample SpecStory files + 5 sample JSONL files with known errors → mine → verify all errors extracted with correct metadata
 
 ### Implementation for User Story 1
 
