@@ -84,7 +84,7 @@
 - [x] T023 [P] [US1] Implement telemetry logger in `src/sio/core/telemetry/logger.py`: `log_invocation(db, session_id, tool_name, tool_input, tool_output, error, user_message, platform)` — validates at write time (FR-025), scrubs secrets (FR-022), inserts into behavior_invocations
 - [x] T024 [P] [US1] Implement auto-labeler in `src/sio/core/telemetry/auto_labeler.py`: `auto_label(tool_name, tool_input, tool_output, error) -> dict` — returns `{activated, correct_action, correct_outcome}` binary fields inferred from output/error signals
 - [x] T025 [US1] Implement PostToolUse hook handler in `src/sio/adapters/claude_code/hooks/post_tool_use.py`: read JSON from stdin, extract `user_message` (from stdin if present, else from latest JSONL transcript entry, else `[UNAVAILABLE]`), call logger.log_invocation() + auto_labeler.auto_label(), write `{"action": "allow"}` to stdout, exit 0 on any error
-- [ ] T026 [US1] Create shell wrapper `src/sio/adapters/claude_code/hooks/post_tool_use.sh`: calls `python3 -m sio.adapters.claude_code.hooks.post_tool_use` with stdin passthrough
+- [x] T026 [US1] Create shell wrapper `src/sio/adapters/claude_code/hooks/post_tool_use.sh`: calls `python3 -m sio.adapters.claude_code.hooks.post_tool_use` with stdin passthrough
 - [x] T027 [US1] Verify all US1 tests pass (Green). Run `tests/unit/test_logger.py`, `tests/unit/test_auto_labeler.py`, `tests/integration/test_telemetry_pipeline.py`.
 
 **Checkpoint**: PostToolUse hook receives JSON, logs to DB, auto-labels, scrubs secrets. 20 tool calls → 20 clean rows. US1 independently testable.
@@ -111,10 +111,10 @@
 - [x] T032 [P] [US2] Implement feedback labeler in `src/sio/core/feedback/labeler.py`: `label_latest(db, session_id, signal: str, note: str | None)` — parses `++`/`--`, updates most recent invocation, sets `labeled_by='inline'`, `labeled_at=now()`
 - [x] T033 [P] [US2] Implement batch review in `src/sio/core/feedback/batch_review.py`: `get_reviewable(db, platform, session_id, limit)` returns unlabeled sorted by timestamp. `apply_label(db, invocation_id, signal, note)` applies label. Warn if distribution >90% skewed (FR-026)
 - [x] T034 [US2] Implement pattern flag detection in `src/sio/core/feedback/pattern_flag.py`: `flag_pattern(db, skill_name, note)` — marks a skill as priority optimization candidate when user explicitly flags recurring issue (FR-029). Checks if minimum quality gates are met.
-- [ ] T035 [US2] Implement feedback CLI entry point in `src/sio/core/feedback/labeler_cli.py`: `python3 -m sio.core.feedback.labeler --session <id> --signal <++|--> [--note <text>]` — parses args, calls labeler.label_latest(), exits 0. This is invoked by the sio-feedback skill trigger (not a Notification hook).
+- [x] T035 [US2] Implement feedback CLI entry point in `src/sio/core/feedback/labeler_cli.py`: `python3 -m sio.core.feedback.labeler --session <id> --signal <++|--> [--note <text>]` — parses args, calls labeler.label_latest(), exits 0. This is invoked by the sio-feedback skill trigger (not a Notification hook).
 - [ ] T036 [US2] Update sio-feedback SKILL.md to invoke `python3 -m sio.core.feedback.labeler --session $SESSION_ID --signal "$(echo $USER_INPUT | head -c2)" --note "$(echo $USER_INPUT | cut -c3-)"` via Bash
-- [ ] T037 [US2] Implement `sio review` CLI command in `src/sio/cli/main.py`: Click command with `--platform`, `--session`, `--limit` options. Uses Rich for interactive sequential presentation. Labels: `++`/`--`/`s(kip)`/`q(uit)`
-- [ ] T038 [US2] Verify all US2 tests pass (Green).
+- [x] T037 [US2] Implement `sio review` CLI command in `src/sio/cli/main.py`: Click command with `--platform`, `--session`, `--limit` options. Uses Rich for interactive sequential presentation. Labels: `++`/`--`/`s(kip)`/`q(uit)`
+- [x] T038 [US2] Verify all US2 tests pass (Green).
 
 **Checkpoint**: `++`/`--` labels invocations inline. `sio review` presents unlabeled for batch labeling. Pattern flagging works. US2 independently testable.
 
@@ -137,7 +137,7 @@
 
 - [x] T041 [P] [US3] Implement passive signal detector in `src/sio/core/telemetry/passive_signals.py`: `detect_correction(message: str) -> bool`, `detect_undo(session_id, timestamp, db) -> bool` (checks for git checkout/revert within 30s), `detect_re_invocation(session_id, intent, db) -> bool`
 - [x] T042 [US3] Implement pattern threshold detector in `src/sio/core/telemetry/pattern_detector.py`: `count_pattern_occurrences(db, behavior_type, failure_mode) -> int`, `is_optimization_candidate(db, skill_name, threshold=3) -> bool` (FR-028). Only returns True when same failure pattern recurs across ≥threshold sessions.
-- [ ] T043 [US3] Integrate passive signals into PostToolUse hook — extend `src/sio/adapters/claude_code/hooks/post_tool_use.py` with look-back detection: on each invocation, check if the current `user_message` contains correction language ("No,", "Actually,", "Instead,") or if the current tool is a re-invocation for the same intent as the previous invocation. If detected, update the PREVIOUS invocation's `passive_signal` field via `queries.update_passive_signal(db, previous_id, signal_type)`. For undo detection (git checkout/revert), compare timestamps of the current invocation against the previous invocation's `actual_action` — if the current tool is a revert within 30 seconds, flag the prior as 'undo'.
+- [x] T043 [US3] Integrate passive signals into PostToolUse hook — extend `src/sio/adapters/claude_code/hooks/post_tool_use.py` with look-back detection: on each invocation, check if the current `user_message` contains correction language ("No,", "Actually,", "Instead,") or if the current tool is a re-invocation for the same intent as the previous invocation. If detected, update the PREVIOUS invocation's `passive_signal` field via `queries.update_passive_signal(db, previous_id, signal_type)`. For undo detection (git checkout/revert), compare timestamps of the current invocation against the previous invocation's `actual_action` — if the current tool is a revert within 30 seconds, flag the prior as 'undo'.
 - [x] T044 [US3] Verify all US3 tests pass (Green).
 
 **Checkpoint**: Passive signals auto-detected. Pattern threshold enforced (3+ sessions required). Single incidents logged but no behavior change triggered. US3 independently testable.

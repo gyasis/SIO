@@ -59,12 +59,58 @@ def handle_post_tool_use(stdin_json: str, *, conn=None) -> str:
             user_message=user_message,
             platform=_DEFAULT_PLATFORM,
         )
+
+        # Passive signal detection (T043)
+        _detect_passive_signals(conn, session_id, user_message)
+
         if own_conn:
             conn.close()
     except Exception:
         logger.exception("PostToolUse hook error — continuing silently")
 
     return json.dumps({"action": "allow"})
+
+
+def _detect_passive_signals(conn, session_id, user_message):
+    """Run passive signal detection and update previous invocation if needed."""
+    try:
+        from sio.core.telemetry.passive_signals import (
+            detect_correction,
+            detect_re_invocation,
+            detect_undo,
+        )
+
+        signal = None
+        if detect_correction(user_message):
+            signal = "correction"
+        elif detect_undo(
+            session_id,
+            __import__("datetime").datetime.now(
+                __import__("datetime").timezone.utc
+            ).isoformat(),
+            conn,
+        ):
+            signal = "undo"
+        elif detect_re_invocation(session_id, user_message, conn):
+            signal = "re_invocation"
+
+        if signal:
+            # Update the PREVIOUS invocation's passive_signal field
+            rows = conn.execute(
+                "SELECT id FROM behavior_invocations "
+                "WHERE session_id = ? ORDER BY timestamp DESC LIMIT 2",
+                (session_id,),
+            ).fetchall()
+            if len(rows) >= 2:
+                prev_id = rows[1]["id"]
+                conn.execute(
+                    "UPDATE behavior_invocations SET passive_signal = ? "
+                    "WHERE id = ?",
+                    (signal, prev_id),
+                )
+                conn.commit()
+    except Exception:
+        logger.debug("Passive signal detection failed — non-critical")
 
 
 def main():
