@@ -327,7 +327,53 @@ def mine(since, project, source):
 @cli.command()
 def patterns():
     """Show discovered error patterns ranked by importance."""
-    click.echo("[v2] Patterns... (not yet implemented)")
+    from rich.console import Console
+    from rich.table import Table
+
+    from sio.core.db.queries import get_error_records, get_patterns
+    from sio.core.db.schema import init_db
+    from sio.clustering.pattern_clusterer import cluster_errors
+    from sio.clustering.ranker import rank_patterns
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found. Run 'sio mine' first.")
+        return
+
+    conn = init_db(db_path)
+
+    # Get all error records from DB
+    errors = get_error_records(conn)
+    if not errors:
+        click.echo("No errors mined yet. Run 'sio mine --since \"7 days\"' first.")
+        conn.close()
+        return
+
+    # Cluster and rank
+    clustered = cluster_errors(errors)
+    ranked = rank_patterns(clustered)
+
+    console = Console()
+    table = Table(title="Error Patterns (ranked by importance)")
+    table.add_column("#", style="bold")
+    table.add_column("Pattern", style="cyan")
+    table.add_column("Errors", justify="right")
+    table.add_column("Sessions", justify="right")
+    table.add_column("Last Seen")
+    table.add_column("Score", justify="right")
+
+    for i, p in enumerate(ranked, 1):
+        table.add_row(
+            str(i),
+            p.get("description", p.get("pattern_id", "unknown"))[:60],
+            str(p.get("error_count", 0)),
+            str(p.get("session_count", 0)),
+            (p.get("last_seen") or "")[:10],
+            f"{p.get('rank_score', 0):.2f}",
+        )
+
+    console.print(table)
+    conn.close()
 
 
 @cli.group(invoke_without_command=True)

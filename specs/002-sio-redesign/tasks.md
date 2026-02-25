@@ -84,15 +84,15 @@
 
 ### Tests for User Story 2
 
-- [ ] T022 [P] [US2] Write unit tests for pattern clusterer in `tests/unit/test_pattern_clusterer.py`: test identical errors cluster together, test similar errors (fuzzy) cluster together, test different errors stay separate, test configurable similarity threshold, test empty input returns empty
-- [ ] T023 [P] [US2] Write unit tests for ranker in `tests/unit/test_ranker.py`: test frequency × recency scoring, test recent frequent errors rank higher than old infrequent ones, test ties broken by recency
+- [x] T022 [P] [US2] Write unit tests for pattern clusterer in `tests/unit/test_pattern_clusterer.py`: test identical errors cluster together, test similar errors (fuzzy) cluster together, test different errors stay separate, test configurable similarity threshold, test empty input returns empty
+- [x] T023 [P] [US2] Write unit tests for ranker in `tests/unit/test_ranker.py`: test frequency × recency scoring, test recent frequent errors rank higher than old infrequent ones, test ties broken by recency
 
 ### Implementation for User Story 2
 
-- [ ] T024 [US2] Implement pattern clusterer in `src/sio/clustering/pattern_clusterer.py`: `cluster_errors(errors, threshold=0.80) -> list[Pattern]` — uses v1's `EmbeddingBackend` to embed error_text, computes pairwise cosine similarity, groups by threshold, generates pattern_id slug and description
-- [ ] T025 [US2] Implement ranker in `src/sio/clustering/ranker.py`: `rank_patterns(patterns) -> list[Pattern]` — scores each pattern by `count * recency_weight` where recency_weight decays for older patterns
-- [ ] T026 [US2] Wire up `sio patterns` CLI command in `src/sio/cli/main.py`: reads patterns from DB, displays ranked list with Rich table (pattern description, count, sessions, time range)
-- [ ] T027 [US2] Verify all US2 tests pass (Green)
+- [x] T024 [US2] Implement pattern clusterer in `src/sio/clustering/pattern_clusterer.py`: `cluster_errors(errors, threshold=0.80) -> list[Pattern]` — uses v1's `EmbeddingBackend` to embed error_text, computes pairwise cosine similarity, groups by threshold, generates pattern_id slug and description
+- [x] T025 [US2] Implement ranker in `src/sio/clustering/ranker.py`: `rank_patterns(patterns) -> list[Pattern]` — scores each pattern by `count * recency_weight` where recency_weight decays for older patterns
+- [x] T026 [US2] Wire up `sio patterns` CLI command in `src/sio/cli/main.py`: reads patterns from DB, displays ranked list with Rich table (pattern description, count, sessions, time range)
+- [x] T027 [US2] Verify all US2 tests pass (Green)
 
 **Checkpoint**: `sio patterns` shows clustered error patterns ranked by importance. US2 independently testable.
 
