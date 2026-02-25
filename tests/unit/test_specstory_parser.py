@@ -35,8 +35,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from sio.mining.specstory_parser import parse_specstory
 
 # ---------------------------------------------------------------------------
@@ -727,7 +725,7 @@ class TestTimestampFromFilename:
         path = tmp_path / "2026-02-25_10-00-00Z-my-session.md"
         path.write_text("", encoding="utf-8")
 
-        result = parse_specstory(path)
+        parse_specstory(path)
 
         # Empty file — no blocks. Timestamp is accessible via a module-level helper or
         # on a separate attribute.  We test the dedicated extraction function instead.

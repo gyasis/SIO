@@ -32,6 +32,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+
 from sio.mining.time_filter import filter_files, parse_since  # noqa: E402
 
 # ---------------------------------------------------------------------------

@@ -198,11 +198,11 @@
 
 **Purpose**: Integration testing, hardening, validation
 
-- [ ] T058 [P] Write end-to-end integration test in `tests/integration/test_e2e_passive.py`: create sample session files → run full passive pipeline (mine → cluster → dataset → suggest → write home file) → verify suggestions.md populated
-- [ ] T059 [P] Write CLI contract tests in `tests/contract/test_v2_cli_commands.py`: test all v2 CLI commands exit code 0, test `sio mine --since "1 day"` with sample data, test `sio patterns` output format, test `sio status` output
-- [ ] T060 Run `ruff check src/ tests/` and fix all linting issues
-- [ ] T061 Run full test suite (v1 + v2) and verify ALL pass
-- [ ] T062 Run quickstart.md validation: follow every step on sample data
+- [x] T058 [P] Write end-to-end integration test in `tests/integration/test_e2e_passive.py`: create sample session files → run full passive pipeline (mine → cluster → dataset → suggest → write home file) → verify suggestions.md populated
+- [x] T059 [P] Write CLI contract tests in `tests/contract/test_v2_cli_commands.py`: test all v2 CLI commands exit code 0, test `sio mine --since "1 day"` with sample data, test `sio patterns` output format, test `sio status` output
+- [x] T060 Run `ruff check src/ tests/` and fix all linting issues
+- [x] T061 Run full test suite (v1 + v2) and verify ALL pass
+- [x] T062 Run quickstart.md validation: follow every step on sample data
 
 ---
 

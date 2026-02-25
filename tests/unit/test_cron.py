@@ -19,6 +19,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+
 from sio.scheduler.cron import get_status, install_schedule, uninstall_schedule
 
 # ---------------------------------------------------------------------------

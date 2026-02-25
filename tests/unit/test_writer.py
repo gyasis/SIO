@@ -1,12 +1,6 @@
 """Tests for sio.applier.writer — apply approved changes to config files."""
 
-import os
 import sqlite3
-
-import pytest
-
-from sio.core.db.schema import init_db
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -67,7 +61,7 @@ class TestApplyToCLAUDEmd:
             v2_db, target_file=str(target),
             proposed_change="## First Rule\n\nContent.",
         )
-        result = apply_change(v2_db, sid)
+        apply_change(v2_db, sid)
         assert target.exists()
         assert "## First Rule" in target.read_text()
 
@@ -93,7 +87,7 @@ class TestApplyToCLAUDEmd:
         target = tmp_path / "CLAUDE.md"
         target.write_text("")
         sid = _seed_approved_suggestion(v2_db, target_file=str(target))
-        result = apply_change(v2_db, sid)
+        apply_change(v2_db, sid)
         row = v2_db.execute(
             "SELECT * FROM applied_changes WHERE suggestion_id = ?", (sid,)
         ).fetchone()

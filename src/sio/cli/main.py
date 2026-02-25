@@ -330,10 +330,10 @@ def patterns():
     from rich.console import Console
     from rich.table import Table
 
-    from sio.core.db.queries import get_error_records, get_patterns
-    from sio.core.db.schema import init_db
     from sio.clustering.pattern_clusterer import cluster_errors
     from sio.clustering.ranker import rank_patterns
+    from sio.core.db.queries import get_error_records
+    from sio.core.db.schema import init_db
 
     db_path = os.path.expanduser("~/.sio/sio.db")
     if not os.path.exists(db_path):
@@ -381,7 +381,6 @@ def patterns():
 def datasets(ctx):
     """Manage pattern datasets."""
     if ctx.invoked_subcommand is None:
-        from sio.core.db.queries import get_patterns
         from sio.core.db.schema import init_db
 
         db_path = os.path.expanduser("~/.sio/sio.db")

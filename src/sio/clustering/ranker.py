@@ -56,8 +56,10 @@ def rank_patterns(patterns: list[dict[str, Any]]) -> list[dict[str, Any]]:
     Examples
     --------
     >>> from datetime import datetime, timezone, timedelta
-    >>> recent = {"error_count": 5, "last_seen": datetime.now(timezone.utc).isoformat(), "pattern_id": "a"}
-    >>> old    = {"error_count": 5, "last_seen": (datetime.now(timezone.utc) - timedelta(days=30)).isoformat(), "pattern_id": "b"}
+    >>> now = datetime.now(timezone.utc).isoformat()
+    >>> ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    >>> recent = {"error_count": 5, "last_seen": now, "pattern_id": "a"}
+    >>> old = {"error_count": 5, "last_seen": ago, "pattern_id": "b"}
     >>> ranked = rank_patterns([old, recent])
     >>> ranked[0]["pattern_id"]
     'a'
