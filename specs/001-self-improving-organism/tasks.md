@@ -18,11 +18,11 @@
 
 **Purpose**: Create the package structure, install dependencies, configure tooling
 
-- [ ] T001 Create Python package directory structure per plan.md: `src/sio/{core,adapters,cli}/`, `tests/{unit,integration,contract}/`, with `__init__.py` files in every package
-- [ ] T002 Create `pyproject.toml` with project metadata, dependencies (dspy, numpy, fastembed, click, rich), optional deps ([torch], [openai], [all]), and `[project.scripts] sio = "sio.cli.main:cli"` entry point
-- [ ] T003 [P] Create `tests/conftest.py` with shared pytest fixtures: `tmp_db` (in-memory SQLite), `sample_invocation` factory, `mock_platform_config`
-- [ ] T004 [P] Configure `ruff.toml` with linting rules (select = ["E", "F", "I", "W"]) and formatting (line-length = 99)
-- [ ] T005 Run `uv pip install -e ".[dev]"` and verify `sio --help` outputs the Click CLI help text
+- [x] T001 Create Python package directory structure per plan.md: `src/sio/{core,adapters,cli}/`, `tests/{unit,integration,contract}/`, with `__init__.py` files in every package
+- [x] T002 Create `pyproject.toml` with project metadata, dependencies (dspy, numpy, fastembed, click, rich), optional deps ([torch], [openai], [all]), and `[project.scripts] sio = "sio.cli.main:cli"` entry point
+- [x] T003 [P] Create `tests/conftest.py` with shared pytest fixtures: `tmp_db` (in-memory SQLite), `sample_invocation` factory, `mock_platform_config`
+- [x] T004 [P] Configure `ruff.toml` with linting rules (select = ["E", "F", "I", "W"]) and formatting (line-length = 99)
+- [x] T005 Run `uv pip install -e ".[dev]"` and verify `sio --help` outputs the Click CLI help text
 
 **Checkpoint**: Package installs, CLI entry point responds, test runner discovers conftest.
 
@@ -40,23 +40,23 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation (Constitution IV)**
 
-- [ ] T006 [P] Write unit tests for schema DDL in `tests/unit/test_schema.py`: test table creation, WAL mode enabled, all indexes exist, idempotent re-creation on corrupt DB
-- [ ] T007 [P] Write unit tests for query layer in `tests/unit/test_queries.py`: test insert_invocation, get_invocation_by_id, get_unlabeled, get_by_skill, get_by_session, update_satisfaction, count_by_platform
-- [ ] T008 [P] Write unit tests for secret scrubber in `tests/unit/test_secret_scrubber.py`: test API key patterns, bearer tokens, passwords, connection strings, no false positives on normal text
-- [ ] T009 [P] Write unit tests for retention purge in `tests/unit/test_retention.py`: test purge records older than N days, gold standard exemption, dry-run mode returns count without deleting
-- [ ] T010 [P] Write unit tests for embeddings provider in `tests/unit/test_embeddings.py`: test abstract interface, fastembed backend encode/encode_single, cache hit/miss, model swap invalidates cache, test ApiEmbedBackend with mocked HTTP (FR-024 external override), test fallback to fastembed when config not set
-- [ ] T011 [P] Write contract tests for hook JSON schemas in `tests/contract/test_hook_contracts.py`: validate PostToolUse stdin schema, PreToolUse stdin schema, notification stdin schema, all output schemas
+- [x] T006 [P] Write unit tests for schema DDL in `tests/unit/test_schema.py`: test table creation, WAL mode enabled, all indexes exist, idempotent re-creation on corrupt DB
+- [x] T007 [P] Write unit tests for query layer in `tests/unit/test_queries.py`: test insert_invocation, get_invocation_by_id, get_unlabeled, get_by_skill, get_by_session, update_satisfaction, count_by_platform
+- [x] T008 [P] Write unit tests for secret scrubber in `tests/unit/test_secret_scrubber.py`: test API key patterns, bearer tokens, passwords, connection strings, no false positives on normal text
+- [x] T009 [P] Write unit tests for retention purge in `tests/unit/test_retention.py`: test purge records older than N days, gold standard exemption, dry-run mode returns count without deleting
+- [x] T010 [P] Write unit tests for embeddings provider in `tests/unit/test_embeddings.py`: test abstract interface, fastembed backend encode/encode_single, cache hit/miss, model swap invalidates cache, test ApiEmbedBackend with mocked HTTP (FR-024 external override), test fallback to fastembed when config not set
+- [x] T011 [P] Write contract tests for hook JSON schemas in `tests/contract/test_hook_contracts.py`: validate PostToolUse stdin schema, PreToolUse stdin schema, notification stdin schema, all output schemas
 
 ### Implementation for Foundation
 
-- [ ] T012 [P] Implement database schema with DDL and WAL mode in `src/sio/core/db/schema.py`: CREATE TABLE behavior_invocations (all 20 fields from data-model.md), CREATE TABLE optimization_runs, CREATE TABLE gold_standards, CREATE TABLE platform_config, all indexes, WAL pragma
-- [ ] T013 [P] Implement query layer in `src/sio/core/db/queries.py`: insert_invocation(), get_unlabeled(), get_by_skill(), update_satisfaction(), get_skill_health() (materialized view query), get_labeled_for_optimizer(), count_by_pattern() (for FR-028 threshold detection)
-- [ ] T014 [P] Implement secret scrubber in `src/sio/core/telemetry/secret_scrubber.py`: regex patterns for AWS keys, API tokens, bearer tokens, passwords, connection strings. `scrub(text: str) -> str` replaces matches with `[REDACTED]`
-- [ ] T015 [P] Implement 90-day retention purge in `src/sio/core/db/retention.py`: `purge(db, older_than_days=90, dry_run=False)` — delete rows where timestamp < cutoff AND id NOT IN gold_standards
-- [ ] T016 [P] Implement embedding provider abstraction in `src/sio/core/embeddings/provider.py`: `EmbeddingBackend` ABC with `encode(texts) -> ndarray` and `encode_single(text) -> ndarray`
-- [ ] T017 [P] Implement fastembed backend in `src/sio/core/embeddings/local_model.py`: `FastEmbedBackend(EmbeddingBackend)` using fastembed with all-MiniLM-L6-v2, SQLite cache keyed on `(sha256(text), model_name)`
-- [ ] T017b [P] Implement external API embedding backend in `src/sio/core/embeddings/api_model.py`: `ApiEmbedBackend(EmbeddingBackend)` that calls a user-configured external embedding API (FR-024). Reads endpoint URL and API key from `~/.sio/config.toml`. Falls back to fastembed if config not set.
-- [ ] T018 Verify all Phase 2 tests pass (Green). Fix any failures before proceeding.
+- [x] T012 [P] Implement database schema with DDL and WAL mode in `src/sio/core/db/schema.py`: CREATE TABLE behavior_invocations (all 20 fields from data-model.md), CREATE TABLE optimization_runs, CREATE TABLE gold_standards, CREATE TABLE platform_config, all indexes, WAL pragma
+- [x] T013 [P] Implement query layer in `src/sio/core/db/queries.py`: insert_invocation(), get_unlabeled(), get_by_skill(), update_satisfaction(), get_skill_health() (materialized view query), get_labeled_for_optimizer(), count_by_pattern() (for FR-028 threshold detection)
+- [x] T014 [P] Implement secret scrubber in `src/sio/core/telemetry/secret_scrubber.py`: regex patterns for AWS keys, API tokens, bearer tokens, passwords, connection strings. `scrub(text: str) -> str` replaces matches with `[REDACTED]`
+- [x] T015 [P] Implement 90-day retention purge in `src/sio/core/db/retention.py`: `purge(db, older_than_days=90, dry_run=False)` — delete rows where timestamp < cutoff AND id NOT IN gold_standards
+- [x] T016 [P] Implement embedding provider abstraction in `src/sio/core/embeddings/provider.py`: `EmbeddingBackend` ABC with `encode(texts) -> ndarray` and `encode_single(text) -> ndarray`
+- [x] T017 [P] Implement fastembed backend in `src/sio/core/embeddings/local_model.py`: `FastEmbedBackend(EmbeddingBackend)` using fastembed with all-MiniLM-L6-v2, SQLite cache keyed on `(sha256(text), model_name)`
+- [x] T017b [P] Implement external API embedding backend in `src/sio/core/embeddings/api_model.py`: `ApiEmbedBackend(EmbeddingBackend)` that calls a user-configured external embedding API (FR-024). Reads endpoint URL and API key from `~/.sio/config.toml`. Falls back to fastembed if config not set.
+- [x] T018 Verify all Phase 2 tests pass (Green). Fix any failures before proceeding.
 
 **Checkpoint**: Database creates with WAL mode, CRUD works, secrets scrubbed, embeddings encode, retention purges. All foundational tests green.
 

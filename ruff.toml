@@ -1,0 +1,7 @@
+line-length = 99
+
+[lint]
+select = ["E", "F", "I", "W"]
+
+[format]
+line-ending = "auto"

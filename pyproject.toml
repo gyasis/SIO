@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sio"
+version = "0.1.0"
+description = "Self-Improving Organism — closed-loop AI CLI optimization"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+    "dspy>=2.5",
+    "numpy>=1.24",
+    "fastembed>=0.2",
+    "click>=8.1",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+torch = ["torch>=2.0"]
+openai = ["openai>=1.0"]
+all = ["sio[torch,openai]"]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+sio = "sio.cli.main:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sio"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
