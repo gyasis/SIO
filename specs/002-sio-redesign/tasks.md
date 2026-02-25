@@ -130,19 +130,19 @@
 
 ### Tests for User Story 4
 
-- [ ] T034 [P] [US4] Write unit tests for suggestion generator in `tests/unit/test_suggestion_generator.py`: test generates suggestion from pattern + dataset, test confidence scoring, test suggestion includes proposed change text and target file
-- [ ] T035 [P] [US4] Write unit tests for home file writer in `tests/unit/test_home_file.py`: test writes valid markdown, test ranked sections (high/medium/low priority), test includes approve/reject commands, test handles empty suggestions
-- [ ] T036 [P] [US4] Write unit tests for cron installer in `tests/unit/test_cron.py`: test generates valid crontab entries, test daily and weekly schedules, test idempotent install (no duplicate entries)
+- [x] T034 [P] [US4] Write unit tests for suggestion generator in `tests/unit/test_suggestion_generator.py`: test generates suggestion from pattern + dataset, test confidence scoring, test suggestion includes proposed change text and target file
+- [x] T035 [P] [US4] Write unit tests for home file writer in `tests/unit/test_home_file.py`: test writes valid markdown, test ranked sections (high/medium/low priority), test includes approve/reject commands, test handles empty suggestions
+- [x] T036 [P] [US4] Write unit tests for cron installer in `tests/unit/test_cron.py`: test generates valid crontab entries, test daily and weekly schedules, test idempotent install (no duplicate entries)
 
 ### Implementation for User Story 4
 
-- [ ] T037 [US4] Implement suggestion generator in `src/sio/suggestions/generator.py`: `generate_suggestions(patterns, datasets) -> list[Suggestion]` — for each pattern with sufficient data, proposes a fix (CLAUDE.md rule, SKILL.md update, or hook config). Includes confidence score.
-- [ ] T038 [US4] Implement confidence scorer in `src/sio/suggestions/confidence.py`: `score_confidence(pattern, dataset) -> float` — based on pattern frequency, dataset size, consistency of failure mode
-- [ ] T039 [US4] Implement home file writer in `src/sio/suggestions/home_file.py`: `write_suggestions(suggestions, path="~/.sio/suggestions.md")` — writes ranked markdown with sections, approve/reject commands, pattern stats
-- [ ] T040 [US4] Implement passive runner in `src/sio/scheduler/runner.py`: `run_analysis(mode="daily"|"weekly")` — orchestrates mine → cluster → build datasets → generate suggestions → write home file
-- [ ] T041 [US4] Implement cron installer in `src/sio/scheduler/cron.py`: `install_schedule()` — writes crontab entries for daily (midnight) and weekly (Sunday midnight). `uninstall_schedule()`. `get_status()`.
-- [ ] T042 [US4] Wire up `sio schedule install`, `sio schedule status` CLI commands in `src/sio/cli/main.py`
-- [ ] T043 [US4] Verify all US4 tests pass (Green)
+- [x] T037 [US4] Implement suggestion generator in `src/sio/suggestions/generator.py`: `generate_suggestions(patterns, datasets) -> list[Suggestion]` — for each pattern with sufficient data, proposes a fix (CLAUDE.md rule, SKILL.md update, or hook config). Includes confidence score.
+- [x] T038 [US4] Implement confidence scorer in `src/sio/suggestions/confidence.py`: `score_confidence(pattern, dataset) -> float` — based on pattern frequency, dataset size, consistency of failure mode
+- [x] T039 [US4] Implement home file writer in `src/sio/suggestions/home_file.py`: `write_suggestions(suggestions, path="~/.sio/suggestions.md")` — writes ranked markdown with sections, approve/reject commands, pattern stats
+- [x] T040 [US4] Implement passive runner in `src/sio/scheduler/runner.py`: `run_analysis(mode="daily"|"weekly")` — orchestrates mine → cluster → build datasets → generate suggestions → write home file
+- [x] T041 [US4] Implement cron installer in `src/sio/scheduler/cron.py`: `install_schedule()` — writes crontab entries for daily (midnight) and weekly (Sunday midnight). `uninstall_schedule()`. `get_status()`.
+- [x] T042 [US4] Wire up `sio schedule install`, `sio schedule status` CLI commands in `src/sio/cli/main.py`
+- [x] T043 [US4] Verify all US4 tests pass (Green)
 
 **Checkpoint**: Passive analysis pipeline produces suggestions.md. Scheduler installable. US4 independently testable.
 
