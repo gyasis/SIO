@@ -106,17 +106,17 @@
 
 ### Tests for User Story 3
 
-- [ ] T028 [P] [US3] Write unit tests for dataset builder in `tests/unit/test_dataset_builder.py`: test builds positive examples from successes, test builds negative examples from failures, test minimum threshold enforced (skip if <5 examples), test incremental update appends not rebuilds, test dataset JSON schema matches data-model.md, test on-demand collection by time range, test on-demand collection by error type
-- [ ] T029 [P] [US3] Write unit tests for lineage tracker in `tests/unit/test_lineage.py`: test tracks contributing sessions, test tracks time window, test lineage persists across updates
-- [ ] T029b [P] [US3] Write unit tests for auto-accumulation in `tests/unit/test_dataset_accumulator.py`: test that mining run automatically feeds errors into existing pattern datasets, test new patterns get datasets created on first accumulation
+- [x] T028 [P] [US3] Write unit tests for dataset builder in `tests/unit/test_dataset_builder.py`: test builds positive examples from successes, test builds negative examples from failures, test minimum threshold enforced (skip if <5 examples), test incremental update appends not rebuilds, test dataset JSON schema matches data-model.md, test on-demand collection by time range, test on-demand collection by error type
+- [x] T029 [P] [US3] Write unit tests for lineage tracker in `tests/unit/test_lineage.py`: test tracks contributing sessions, test tracks time window, test lineage persists across updates
+- [x] T029b [P] [US3] Write unit tests for auto-accumulation in `tests/unit/test_dataset_accumulator.py`: test that mining run automatically feeds errors into existing pattern datasets, test new patterns get datasets created on first accumulation
 
 ### Implementation for User Story 3
 
-- [ ] T030 [US3] Implement dataset builder in `src/sio/datasets/builder.py`: `build_dataset(pattern, all_errors) -> Dataset` — for the pattern's tool, finds successful calls (positive) and failed calls (negative). Writes JSON to `~/.sio/datasets/<pattern_id>.json`. Supports incremental updates. Also supports on-demand collection: `collect_dataset(since=None, error_type=None, sessions=None) -> Dataset` for user-specified scope.
-- [ ] T030b [US3] Implement dataset accumulator in `src/sio/datasets/accumulator.py`: `accumulate(errors, patterns)` — called after every mining run, automatically feeds newly mined errors into their respective pattern datasets. Creates new dataset files for new patterns.
-- [ ] T031 [US3] Implement lineage tracking in `src/sio/datasets/lineage.py`: `track_lineage(dataset, sessions, time_window)` — records which sessions contributed and when
-- [ ] T032 [US3] Wire up `sio datasets` CLI command in `src/sio/cli/main.py`: `sio datasets` lists built datasets; `sio datasets collect --since "2 weeks" --error-type tool_failure` for on-demand collection
-- [ ] T033 [US3] Verify all US3 tests pass (Green)
+- [x] T030 [US3] Implement dataset builder in `src/sio/datasets/builder.py`: `build_dataset(pattern, all_errors) -> Dataset` — for the pattern's tool, finds successful calls (positive) and failed calls (negative). Writes JSON to `~/.sio/datasets/<pattern_id>.json`. Supports incremental updates. Also supports on-demand collection: `collect_dataset(since=None, error_type=None, sessions=None) -> Dataset` for user-specified scope.
+- [x] T030b [US3] Implement dataset accumulator in `src/sio/datasets/accumulator.py`: `accumulate(errors, patterns)` — called after every mining run, automatically feeds newly mined errors into their respective pattern datasets. Creates new dataset files for new patterns.
+- [x] T031 [US3] Implement lineage tracking in `src/sio/datasets/lineage.py`: `track_lineage(dataset, sessions, time_window)` — records which sessions contributed and when
+- [x] T032 [US3] Wire up `sio datasets` CLI command in `src/sio/cli/main.py`: `sio datasets` lists built datasets; `sio datasets collect --since "2 weeks" --error-type tool_failure` for on-demand collection
+- [x] T033 [US3] Verify all US3 tests pass (Green)
 
 **Checkpoint**: Datasets built with pos/neg examples per pattern. Lineage tracked. US3 independently testable.
 

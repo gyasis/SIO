@@ -381,7 +381,32 @@ def patterns():
 def datasets(ctx):
     """Manage pattern datasets."""
     if ctx.invoked_subcommand is None:
-        click.echo("[v2] Datasets... (not yet implemented)")
+        from sio.core.db.queries import get_patterns
+        from sio.core.db.schema import init_db
+
+        db_path = os.path.expanduser("~/.sio/sio.db")
+        if not os.path.exists(db_path):
+            click.echo("No database found. Run 'sio mine' first.")
+            return
+
+        conn = init_db(db_path)
+        pattern_rows = conn.execute(
+            "SELECT d.id, d.pattern_id, d.file_path, d.positive_count, d.negative_count, "
+            "d.created_at, d.updated_at FROM datasets d"
+        ).fetchall()
+        conn.close()
+
+        if not pattern_rows:
+            click.echo("No datasets built yet.")
+            return
+
+        for row in pattern_rows:
+            d = dict(row)
+            click.echo(
+                f"  Dataset #{d['id']} (pattern {d['pattern_id']}): "
+                f"{d['positive_count']} positive, {d['negative_count']} negative "
+                f"— {d['file_path']}"
+            )
 
 
 @datasets.command()
@@ -389,7 +414,20 @@ def datasets(ctx):
 @click.option("--error-type", default=None, help="Error type filter.")
 def collect(since, error_type):
     """Collect targeted dataset from specific criteria."""
-    click.echo("[v2] Collecting dataset... (not yet implemented)")
+    from sio.core.db.schema import init_db
+    from sio.datasets.builder import collect_dataset
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found. Run 'sio mine' first.")
+        return
+
+    conn = init_db(db_path)
+    result = collect_dataset(conn, since=since, error_type=error_type)
+    conn.close()
+
+    count = len(result.get("errors", []))
+    click.echo(f"Collected {count} error records matching criteria.")
 
 
 @cli.command("suggest-review")
