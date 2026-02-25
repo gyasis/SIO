@@ -69,7 +69,7 @@
 - [ ] T017 [P] [US1] Implement JSONL parser in `src/sio/mining/jsonl_parser.py`: parse line-by-line, extract message objects with role/content/tool metadata, handle corrupt lines gracefully
 - [ ] T018 [US1] Implement error extractor in `src/sio/mining/error_extractor.py`: `extract_errors(parsed_messages) -> list[ErrorRecord]` — identifies tool failures, user corrections, repeated attempts, undos. Reuses classification logic from v1's `core/telemetry/auto_labeler.py` for binary labeling (activated, correct_action, correct_outcome). Errors are automatically accumulated into datasets on each mining run for later weekly assessment.
 - [ ] T019 [US1] Implement time filter in `src/sio/mining/time_filter.py`: `filter_files(paths, since) -> list[Path]` — filters by modification time or filename-encoded timestamp. Supports "N days", "N weeks", custom date range
-- [ ] T020 [US1] Wire up `sio mine` CLI command in `src/sio/cli/main.py`: `--since` (required), `--project` (optional), `--source` (specstory/jsonl/both). Calls parsers → extractor → stores ErrorRecords in DB. Reports count.
+- [ ] T020 [US1] Wire up `sio mine` CLI command in `src/sio/cli/main.py`: `--since` (required), `--project` (optional), `--source` (specstory/jsonl/both). Calls parsers → extractor → stores ErrorRecords in DB → auto-accumulates into pattern datasets (if patterns exist). Reports count.
 - [ ] T021 [US1] Verify all US1 tests pass (Green)
 
 **Checkpoint**: `sio mine --since "3 days"` extracts errors from session files. US1 independently testable.
@@ -106,14 +106,16 @@
 
 ### Tests for User Story 3
 
-- [ ] T028 [P] [US3] Write unit tests for dataset builder in `tests/unit/test_dataset_builder.py`: test builds positive examples from successes, test builds negative examples from failures, test minimum threshold enforced (skip if <5 examples), test incremental update appends not rebuilds, test dataset JSON schema matches data-model.md
+- [ ] T028 [P] [US3] Write unit tests for dataset builder in `tests/unit/test_dataset_builder.py`: test builds positive examples from successes, test builds negative examples from failures, test minimum threshold enforced (skip if <5 examples), test incremental update appends not rebuilds, test dataset JSON schema matches data-model.md, test on-demand collection by time range, test on-demand collection by error type
 - [ ] T029 [P] [US3] Write unit tests for lineage tracker in `tests/unit/test_lineage.py`: test tracks contributing sessions, test tracks time window, test lineage persists across updates
+- [ ] T029b [P] [US3] Write unit tests for auto-accumulation in `tests/unit/test_dataset_accumulator.py`: test that mining run automatically feeds errors into existing pattern datasets, test new patterns get datasets created on first accumulation
 
 ### Implementation for User Story 3
 
-- [ ] T030 [US3] Implement dataset builder in `src/sio/datasets/builder.py`: `build_dataset(pattern, all_errors) -> Dataset` — for the pattern's tool, finds successful calls (positive) and failed calls (negative). Writes JSON to `~/.sio/datasets/<pattern_id>.json`. Supports incremental updates.
+- [ ] T030 [US3] Implement dataset builder in `src/sio/datasets/builder.py`: `build_dataset(pattern, all_errors) -> Dataset` — for the pattern's tool, finds successful calls (positive) and failed calls (negative). Writes JSON to `~/.sio/datasets/<pattern_id>.json`. Supports incremental updates. Also supports on-demand collection: `collect_dataset(since=None, error_type=None, sessions=None) -> Dataset` for user-specified scope.
+- [ ] T030b [US3] Implement dataset accumulator in `src/sio/datasets/accumulator.py`: `accumulate(errors, patterns)` — called after every mining run, automatically feeds newly mined errors into their respective pattern datasets. Creates new dataset files for new patterns.
 - [ ] T031 [US3] Implement lineage tracking in `src/sio/datasets/lineage.py`: `track_lineage(dataset, sessions, time_window)` — records which sessions contributed and when
-- [ ] T032 [US3] Wire up `sio datasets` CLI command in `src/sio/cli/main.py`: lists built datasets with counts (positive/negative examples per pattern)
+- [ ] T032 [US3] Wire up `sio datasets` CLI command in `src/sio/cli/main.py`: `sio datasets` lists built datasets; `sio datasets collect --since "2 weeks" --error-type tool_failure` for on-demand collection
 - [ ] T033 [US3] Verify all US3 tests pass (Green)
 
 **Checkpoint**: Datasets built with pos/neg examples per pattern. Lineage tracked. US3 independently testable.

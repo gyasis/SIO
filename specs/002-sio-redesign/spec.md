@@ -55,6 +55,8 @@ As a developer, I want each pattern to have a structured dataset of positive (su
 2. **Given** a pattern with fewer examples than the minimum threshold (default 5), **When** dataset building runs, **Then** the pattern is skipped with a note that more data is needed.
 3. **Given** an existing dataset and new session data, **When** dataset building runs again, **Then** new examples are appended incrementally without rebuilding from scratch.
 4. **Given** a built dataset, **When** inspecting its metadata, **Then** lineage information shows which sessions and time windows contributed.
+5. **Given** the user wants a targeted dataset, **When** they specify a time range, specific error types, or session notes, **Then** the system collects matching errors into an on-demand dataset for that specific scope.
+6. **Given** errors are mined (automatically or on-demand), **When** the mining run completes, **Then** errors are automatically accumulated into their respective pattern datasets for later assessment.
 
 ---
 
@@ -135,6 +137,8 @@ As a developer, I want approved suggestions to be written to the correct configu
 - **FR-010**: System MUST track dataset lineage (contributing sessions, time windows, pattern version).
 - **FR-011**: System MUST support incremental dataset updates (append new data, no full rebuild).
 - **FR-012**: System MUST enforce a minimum dataset size (default 5 examples) before generating suggestions.
+- **FR-025**: System MUST support on-demand dataset collection from a user-specified time range, specific error types, or session notes (e.g., `sio datasets collect --since "2 weeks" --error-type tool_failure`).
+- **FR-026**: System MUST automatically accumulate mined errors into their respective pattern datasets on every mining run, so datasets grow passively over time for later assessment.
 - **FR-013**: System MUST generate improvement suggestions categorized as: prompt rules, skill updates, or configuration changes.
 - **FR-014**: System MUST assign a confidence score (0-100%) to each suggestion based on pattern strength and dataset quality.
 - **FR-015**: System MUST write suggestions to a ranked home file with priority sections and actionable commands.
