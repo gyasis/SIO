@@ -20,9 +20,9 @@
 
 **Purpose**: Create v2-specific package directories and extend v1 infrastructure
 
-- [ ] T001 Create v2 package directories: `src/sio/{mining,clustering,datasets,suggestions,review,applier,scheduler}/` with `__init__.py` files
-- [ ] T002 Extend `pyproject.toml` to add any new v2 dependencies (if needed beyond existing click, rich, fastembed, numpy)
-- [ ] T003 [P] Extend `tests/conftest.py` with v2 fixtures: `sample_specstory_file` factory (creates temp .md with tool calls), `sample_jsonl_file` factory (creates temp .jsonl with messages), `sample_error_records` factory, `v2_db` fixture (in-memory SQLite with v2 tables)
+- [x] T001 Create v2 package directories: `src/sio/{mining,clustering,datasets,suggestions,review,applier,scheduler}/` with `__init__.py` files
+- [x] T002 Extend `pyproject.toml` to add any new v2 dependencies (if needed beyond existing click, rich, fastembed, numpy)
+- [x] T003 [P] Extend `tests/conftest.py` with v2 fixtures: `sample_specstory_file` factory (creates temp .md with tool calls), `sample_jsonl_file` factory (creates temp .jsonl with messages), `sample_error_records` factory, `v2_db` fixture (in-memory SQLite with v2 tables)
 
 **Checkpoint**: v2 packages exist alongside v1. Test fixtures available.
 
