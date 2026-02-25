@@ -432,22 +432,109 @@ def collect(since, error_type):
 
 @cli.command("suggest-review")
 def suggest_review():
-    """Review pending improvement suggestions."""
-    click.echo("[v2] Suggestion review... (not yet implemented)")
+    """Review pending improvement suggestions interactively."""
+    from rich.console import Console
+    from rich.table import Table
+
+    from sio.core.db.schema import init_db
+    from sio.review.reviewer import approve as do_approve
+    from sio.review.reviewer import defer as do_defer
+    from sio.review.reviewer import reject as do_reject
+    from sio.review.reviewer import review_pending
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found. Run 'sio mine' first.")
+        return
+
+    conn = init_db(db_path)
+    pending = review_pending(conn)
+
+    if not pending:
+        click.echo("No pending suggestions to review.")
+        conn.close()
+        return
+
+    console = Console()
+    for i, s in enumerate(pending, 1):
+        table = Table(title=f"Suggestion {i}/{len(pending)} (ID: {s['id']})")
+        table.add_column("Field", style="bold")
+        table.add_column("Value")
+        table.add_row("Description", s.get("description", ""))
+        table.add_row("Confidence", f"{s.get('confidence', 0):.0%}")
+        table.add_row("Target", s.get("target_file", ""))
+        table.add_row("Type", s.get("change_type", ""))
+        console.print(table)
+        console.print(f"\n[dim]Proposed change:[/dim]\n{s.get('proposed_change', '')}\n")
+
+        choice = click.prompt(
+            "  [a(pprove)/r(eject)/d(efer)/q(uit)]",
+            type=str,
+            default="d",
+        )
+        if choice == "q":
+            break
+        note = ""
+        if choice in ("a", "r"):
+            note = click.prompt("  Note (optional)", default="", type=str)
+        if choice == "a":
+            do_approve(conn, s["id"], note or None)
+            click.echo("  Approved.")
+        elif choice == "r":
+            do_reject(conn, s["id"], note or None)
+            click.echo("  Rejected.")
+        else:
+            do_defer(conn, s["id"])
+            click.echo("  Deferred.")
+        click.echo()
+
+    conn.close()
 
 
 @cli.command()
 @click.argument("suggestion_id", type=int)
-def approve(suggestion_id):
+@click.option("--note", "-n", default=None, help="Optional note.")
+def approve(suggestion_id, note):
     """Approve a suggestion by ID."""
-    click.echo(f"[v2] Approving suggestion {suggestion_id}... (not yet implemented)")
+    from sio.core.db.schema import init_db
+    from sio.review.reviewer import approve as do_approve
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found.")
+        return
+
+    conn = init_db(db_path)
+    ok = do_approve(conn, suggestion_id, note)
+    conn.close()
+    if ok:
+        click.echo(f"Suggestion {suggestion_id} approved.")
+    else:
+        click.echo(f"Suggestion {suggestion_id} not found.")
+        raise SystemExit(1)
 
 
 @cli.command()
 @click.argument("suggestion_id", type=int)
-def reject(suggestion_id):
+@click.option("--note", "-n", default=None, help="Optional note.")
+def reject(suggestion_id, note):
     """Reject a suggestion by ID."""
-    click.echo(f"[v2] Rejecting suggestion {suggestion_id}... (not yet implemented)")
+    from sio.core.db.schema import init_db
+    from sio.review.reviewer import reject as do_reject
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found.")
+        return
+
+    conn = init_db(db_path)
+    ok = do_reject(conn, suggestion_id, note)
+    conn.close()
+    if ok:
+        click.echo(f"Suggestion {suggestion_id} rejected.")
+    else:
+        click.echo(f"Suggestion {suggestion_id} not found.")
+        raise SystemExit(1)
 
 
 @cli.command()

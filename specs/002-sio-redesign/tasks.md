@@ -156,15 +156,15 @@
 
 ### Tests for User Story 5
 
-- [ ] T044 [P] [US5] Write unit tests for reviewer in `tests/unit/test_reviewer.py`: test loads pending suggestions, test approve changes status, test reject changes status, test defer leaves status pending, test state persists across sessions
-- [ ] T045 [P] [US5] Write unit tests for tagger in `tests/unit/test_tagger.py`: test AI-assisted tag generates explanation from examples, test human tag records user categorization, test tag persists on suggestion record
+- [x] T044 [P] [US5] Write unit tests for reviewer in `tests/unit/test_reviewer.py`: test loads pending suggestions, test approve changes status, test reject changes status, test defer leaves status pending, test state persists across sessions
+- [x] T045 [P] [US5] Write unit tests for tagger in `tests/unit/test_tagger.py`: test AI-assisted tag generates explanation from examples, test human tag records user categorization, test tag persists on suggestion record
 
 ### Implementation for User Story 5
 
-- [ ] T046 [US5] Implement reviewer in `src/sio/review/reviewer.py`: `review_pending(db) -> list[Suggestion]` loads pending, `approve(db, id, note)`, `reject(db, id, note)`, `defer(db, id)`
-- [ ] T047 [US5] Implement tagger in `src/sio/review/tagger.py`: `ai_tag(pattern, dataset) -> str` generates AI explanation from pos/neg examples, `human_tag(suggestion_id, category, note)` records user categorization
-- [ ] T048 [US5] Wire up `sio review`, `sio approve <id>`, `sio reject <id>` CLI commands in `src/sio/cli/main.py` with Rich interactive UI
-- [ ] T049 [US5] Verify all US5 tests pass (Green)
+- [x] T046 [US5] Implement reviewer in `src/sio/review/reviewer.py`: `review_pending(db) -> list[Suggestion]` loads pending, `approve(db, id, note)`, `reject(db, id, note)`, `defer(db, id)`
+- [x] T047 [US5] Implement tagger in `src/sio/review/tagger.py`: `ai_tag(pattern, dataset) -> str` generates AI explanation from pos/neg examples, `human_tag(suggestion_id, category, note)` records user categorization
+- [x] T048 [US5] Wire up `sio review`, `sio approve <id>`, `sio reject <id>` CLI commands in `src/sio/cli/main.py` with Rich interactive UI
+- [x] T049 [US5] Verify all US5 tests pass (Green)
 
 **Checkpoint**: Interactive review works. Approve/reject persists. AI tagging generates explanations. US5 independently testable.
 
