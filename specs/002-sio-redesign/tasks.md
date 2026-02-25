@@ -65,12 +65,12 @@
 
 ### Implementation for User Story 1
 
-- [ ] T016 [P] [US1] Implement SpecStory parser in `src/sio/mining/specstory_parser.py`: parse markdown into conversation blocks, extract tool calls (tool_name, input, output, error), extract timestamps from filename + content
-- [ ] T017 [P] [US1] Implement JSONL parser in `src/sio/mining/jsonl_parser.py`: parse line-by-line, extract message objects with role/content/tool metadata, handle corrupt lines gracefully
-- [ ] T018 [US1] Implement error extractor in `src/sio/mining/error_extractor.py`: `extract_errors(parsed_messages) -> list[ErrorRecord]` — identifies tool failures, user corrections, repeated attempts, undos. Reuses classification logic from v1's `core/telemetry/auto_labeler.py` for binary labeling (activated, correct_action, correct_outcome). Errors are automatically accumulated into datasets on each mining run for later weekly assessment.
-- [ ] T019 [US1] Implement time filter in `src/sio/mining/time_filter.py`: `filter_files(paths, since) -> list[Path]` — filters by modification time or filename-encoded timestamp. Supports "N days", "N weeks", custom date range
-- [ ] T020 [US1] Wire up `sio mine` CLI command in `src/sio/cli/main.py`: `--since` (required), `--project` (optional), `--source` (specstory/jsonl/both). Calls parsers → extractor → stores ErrorRecords in DB → auto-accumulates into pattern datasets (if patterns exist). Reports count.
-- [ ] T021 [US1] Verify all US1 tests pass (Green)
+- [x] T016 [P] [US1] Implement SpecStory parser in `src/sio/mining/specstory_parser.py`: parse markdown into conversation blocks, extract tool calls (tool_name, input, output, error), extract timestamps from filename + content
+- [x] T017 [P] [US1] Implement JSONL parser in `src/sio/mining/jsonl_parser.py`: parse line-by-line, extract message objects with role/content/tool metadata, handle corrupt lines gracefully
+- [x] T018 [US1] Implement error extractor in `src/sio/mining/error_extractor.py`: `extract_errors(parsed_messages) -> list[ErrorRecord]` — identifies tool failures, user corrections, repeated attempts, undos. Reuses classification logic from v1's `core/telemetry/auto_labeler.py` for binary labeling (activated, correct_action, correct_outcome). Errors are automatically accumulated into datasets on each mining run for later weekly assessment.
+- [x] T019 [US1] Implement time filter in `src/sio/mining/time_filter.py`: `filter_files(paths, since) -> list[Path]` — filters by modification time or filename-encoded timestamp. Supports "N days", "N weeks", custom date range
+- [x] T020 [US1] Wire up `sio mine` CLI command in `src/sio/cli/main.py`: `--since` (required), `--project` (optional), `--source` (specstory/jsonl/both). Calls parsers → extractor → stores ErrorRecords in DB → auto-accumulates into pattern datasets (if patterns exist). Reports count.
+- [x] T021 [US1] Verify all US1 tests pass (Green)
 
 **Checkpoint**: `sio mine --since "3 days"` extracts errors from session files. US1 independently testable.
 

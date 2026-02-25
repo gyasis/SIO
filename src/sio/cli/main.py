@@ -290,7 +290,38 @@ def export(platform, fmt, output):
 )
 def mine(since, project, source):
     """Mine recent sessions for errors and failures."""
-    click.echo(f"[v2] Mining sessions since {since}... (not yet implemented)")
+    from pathlib import Path
+
+    from sio.core.db.schema import init_db
+    from sio.mining.pipeline import run_mine
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    conn = init_db(db_path)
+
+    source_dirs = []
+    specstory_dir = Path(os.path.expanduser("~/.specstory/history"))
+    jsonl_dir = Path(os.path.expanduser("~/.claude/projects"))
+
+    if source in ("specstory", "both") and specstory_dir.exists():
+        source_dirs.append(specstory_dir)
+    if source in ("jsonl", "both") and jsonl_dir.exists():
+        source_dirs.append(jsonl_dir)
+
+    if not source_dirs:
+        click.echo("No source directories found. Checked:")
+        if source in ("specstory", "both"):
+            click.echo(f"  SpecStory: {specstory_dir}")
+        if source in ("jsonl", "both"):
+            click.echo(f"  JSONL:     {jsonl_dir}")
+        conn.close()
+        return
+
+    result = run_mine(conn, source_dirs, since, source, project)
+    conn.close()
+
+    click.echo(f"Scanned {result['total_files_scanned']} files")
+    click.echo(f"Found {result['errors_found']} errors")
 
 
 @cli.command()
