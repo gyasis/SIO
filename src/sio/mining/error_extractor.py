@@ -193,6 +193,8 @@ def _build_record(
         "context_before": context_before,
         "context_after": context_after,
         "error_type": error_type,
+        "tool_input": msg.get("tool_input"),
+        "tool_output": msg.get("tool_output"),
         "mined_at": mined_at,
     }
 

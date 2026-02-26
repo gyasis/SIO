@@ -97,6 +97,8 @@ CREATE TABLE IF NOT EXISTS error_records (
     context_before TEXT,
     context_after TEXT,
     error_type TEXT,
+    tool_input TEXT,
+    tool_output TEXT,
     mined_at TEXT NOT NULL
 )
 """
@@ -289,6 +291,16 @@ def init_db(db_path: str) -> sqlite3.Connection:
     # T105: Add quality_assessment column to ground_truth
     try:
         conn.execute("ALTER TABLE ground_truth ADD COLUMN quality_assessment TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Migration: add tool_input/tool_output to error_records
+    try:
+        conn.execute("ALTER TABLE error_records ADD COLUMN tool_input TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        conn.execute("ALTER TABLE error_records ADD COLUMN tool_output TEXT")
     except sqlite3.OperationalError:
         pass  # Column already exists
 

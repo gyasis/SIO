@@ -194,7 +194,7 @@ def count_by_pattern(
 _ERROR_RECORD_COLS = [
     "session_id", "timestamp", "source_type", "source_file", "tool_name",
     "error_text", "user_message", "context_before", "context_after",
-    "error_type", "mined_at",
+    "error_type", "tool_input", "tool_output", "mined_at",
 ]
 
 
