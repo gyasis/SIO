@@ -21,6 +21,8 @@ As an AI CLI user, when I run the suggestion pipeline (`sio suggest`), the syste
 2. **Given** a dataset of 5+ user_correction errors where the user repeatedly said "wrong file", **When** the user runs `sio suggest`, **Then** the generated rule contains an instruction to confirm file paths before editing, derived from the actual correction text — not a generic "verify preconditions" template.
 3. **Given** two different error patterns (one about timeout failures, one about syntax errors), **When** suggestions are generated for both, **Then** the two rules are substantively different in content and recommendations, demonstrating pattern-specific reasoning.
 4. **Given** the LLM backend is unavailable or returns an error, **When** the user runs `sio suggest`, **Then** the system falls back to the existing template-based generation and informs the user that LLM generation was unavailable.
+5. **Given** a pattern of MCP server timeouts (e.g., graphiti server unreachable 15 times across 4 sessions), **When** suggestions are generated, **Then** the DSPy module routes the improvement to `settings_config` (increase `MCP_TOOL_TIMEOUT`) or `mcp_config` (adjust server environment), NOT to CLAUDE.md as a generic behavioral rule.
+6. **Given** a pattern of skill execution failures (e.g., memory-search skill hitting budget limits), **When** suggestions are generated, **Then** the DSPy module targets the specific SKILL.md file with a budget adjustment recommendation.
 
 ---
 
@@ -143,10 +145,29 @@ As an AI CLI user, the system maintains a growing corpus of ground truth example
 - **FR-021**: System MUST store ground truth examples in a structured format compatible with DSPy's `dspy.Example` objects, with fields for: input error examples, desired rule output, label (positive/negative), and source (seed/approved/edited/rejected).
 - **FR-022**: System MUST use the ground truth corpus as the `trainset` parameter when calling BootstrapFewShot or MIPROv2 optimizers — the optimizer learns from real approved/rejected examples, not synthetic data.
 - **FR-023**: The existing dataset builder output (JSON files with error examples) MUST remain the INPUT to the DSPy Signature — datasets provide what went wrong; ground truth provides what the ideal fix looks like.
+- **FR-024**: System MUST support generating improvements for ALL agent behavior surfaces, not just CLAUDE.md. The DSPy Signature's output MUST include a `target_surface` field that routes the generated improvement to the correct file. Supported surfaces include:
+  - `claude_md_rule` → `~/.claude/CLAUDE.md` or `<project>/CLAUDE.md` — behavioral rules, memory triggers, search strategies, preference overrides
+  - `skill_update` → `~/.claude/skills/<name>/SKILL.md` — skill instructions, budget caps, escalation ladders, search strategies
+  - `hook_config` → `~/.claude/hooks/<name>/*` — hook thresholds, timeout values, mode escalation, conditional logic
+  - `mcp_config` → `~/.claude/mcp.json` — MCP server environment variables, timeout overrides, feature flags
+  - `settings_config` → `~/.claude/settings.json` — tool timeouts (`MCP_TOOL_TIMEOUT`, `MCP_TIMEOUT`), effort levels, permission defaults
+  - `agent_profile` → `~/.claude/agents/<name>.md` — agent specialization instructions, focus areas, output format guidance
+  - `project_config` → `<project>/CLAUDE.md` — project-specific tech stack rules, command preferences, code style overrides
+- **FR-025**: The DSPy Module MUST reason about WHICH surface is the correct target for a given error pattern — tool failures from MCP servers should route to `mcp_config` or `hook_config`, user corrections about tool routing should route to `skill_update`, repeated timeout errors should route to `settings_config`, etc. The surface selection MUST be part of the LLM's reasoning chain, not a hardcoded heuristic.
+- **FR-026**: Seed ground truth examples (FR-017) MUST include at least one example per target surface type, so DSPy learns to route improvements to the correct file from the start.
+- **FR-027**: The metric function (FR-003) MUST penalize suggestions that target the wrong surface — e.g., a suggestion about MCP timeouts should NOT be routed to CLAUDE.md as a behavioral rule when it belongs in settings.json as a timeout value.
 
 ### Key Entities
 
-- **DSPy Signature**: Defines the input/output contract for suggestion generation — what the LLM receives (error examples) and what it must produce (structured rule).
+- **Target Surface**: Any file or configuration that influences Claude Code agent behavior. SIO maps 7 surface types covering the full agent behavior stack:
+  - CLAUDE.md (global + project) — behavioral rules, memory strategy, preferences
+  - Skills (SKILL.md) — tool routing, execution budgets, escalation logic
+  - Hooks (JS/Python/Bash) — thresholds, cascade prevention, timeout values
+  - MCP config (mcp.json) — server environment, API settings, feature flags
+  - Settings (settings.json) — timeouts, permissions, effort levels
+  - Agent profiles (agents/*.md) — specialization instructions, focus areas
+  - Project config (project CLAUDE.md) — tech stack rules, code style
+- **DSPy Signature**: Defines the input/output contract for suggestion generation — what the LLM receives (error examples) and what it must produce (structured rule, target surface, and rationale for surface selection).
 - **DSPy Module**: The ChainOfThought wrapper that adds reasoning before generation — the "brain" that analyzes patterns before writing rules.
 - **Metric Function**: Evaluates rule quality on a 0-1 scale — used both for scoring user-facing confidence and for training DSPy optimizers.
 - **LLM Configuration**: User-editable settings specifying which model to use, credentials, and generation parameters.
@@ -163,7 +184,9 @@ As an AI CLI user, the system maintains a growing corpus of ground truth example
 - **SC-003**: The suggestion pipeline completes within 60 seconds for up to 20 patterns (including LLM calls), ensuring practical usability.
 - **SC-004**: After optimization with 20+ labeled suggestions, the quality metric score of generated rules improves by at least 15% compared to the un-optimized default prompt.
 - **SC-005**: Fallback to template mode works seamlessly — users without LLM access still get suggestions (at template quality) with a clear message explaining what LLM access would add.
-- **SC-006**: SIO can successfully run on its own development history and produce at least 3 relevant, specific CLAUDE.md rules from its own error patterns.
+- **SC-006**: SIO can successfully run on its own development history and produce at least 3 relevant, specific improvement suggestions from its own error patterns.
+- **SC-007**: Generated suggestions target at least 3 different surface types (not just CLAUDE.md) — demonstrating that the DSPy module correctly routes MCP failures to mcp_config, timeout patterns to settings_config, and behavioral corrections to claude_md_rule.
+- **SC-008**: Seed ground truth corpus covers all 7 target surface types with at least 1 example each, and the system generates valid suggestions for surfaces beyond CLAUDE.md within its first run.
 
 ## Assumptions
 
