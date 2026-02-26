@@ -265,7 +265,27 @@ def generate_dspy_suggestion(
     proposed_change = _format_proposed_change(
         rule_title, prevention_instructions, target_surface, rationale,
     )
-    confidence = score_confidence(pattern, dataset)
+    pattern_confidence = score_confidence(pattern, dataset)
+
+    # --- T054: Blend pattern confidence with quality metric ---
+    from types import SimpleNamespace
+
+    from sio.core.dspy.metrics import suggestion_quality_metric
+
+    quality_example = SimpleNamespace(
+        error_examples=examples_json,
+        error_type=error_type,
+        pattern_summary=pattern_summary,
+        tool_name=pattern.get("tool_name", ""),
+    )
+    quality_pred = SimpleNamespace(
+        target_surface=target_surface,
+        prevention_instructions=prevention_instructions,
+        rule_title=rule_title,
+        rationale=rationale,
+    )
+    quality_score = suggestion_quality_metric(quality_example, quality_pred, trace=None)
+    confidence = 0.5 * pattern_confidence + 0.5 * quality_score
 
     # Build description consistent with template generator
     tool_name = pattern.get("tool_name") or "unknown tool"

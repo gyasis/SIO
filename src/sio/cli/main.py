@@ -848,8 +848,9 @@ def suggest_review():
 @click.argument("suggestion_id", type=int)
 @click.option("--note", "-n", default=None, help="Optional note.")
 def approve(suggestion_id, note):
-    """Approve a suggestion by ID."""
+    """Approve a suggestion by ID and promote to ground truth."""
     from sio.core.db.schema import init_db
+    from sio.ground_truth.corpus import promote_to_ground_truth
     from sio.review.reviewer import approve as do_approve
 
     db_path = os.path.expanduser("~/.sio/sio.db")
@@ -859,12 +860,19 @@ def approve(suggestion_id, note):
 
     conn = init_db(db_path)
     ok = do_approve(conn, suggestion_id, note)
-    conn.close()
     if ok:
         click.echo(f"Suggestion {suggestion_id} approved.")
+        # T047: Auto-promote to ground truth
+        try:
+            gt_id = promote_to_ground_truth(conn, suggestion_id)
+            click.echo(f"  Promoted to ground truth (ID: {gt_id}).")
+        except Exception as exc:
+            click.echo(f"  Ground truth promotion failed: {exc}")
     else:
+        conn.close()
         click.echo(f"Suggestion {suggestion_id} not found.")
         raise SystemExit(1)
+    conn.close()
 
 
 @cli.command()
@@ -990,6 +998,137 @@ def changes():
     console.print(table)
 
 
+@cli.group(invoke_without_command=True)
+@click.pass_context
+def config(ctx):
+    """View and test LLM configuration."""
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
+
+
+@config.command("show")
+def config_show():
+    """Display current LLM configuration."""
+    from rich.console import Console
+    from rich.table import Table
+
+    from sio.core.config import load_config
+
+    cfg = load_config()
+    console = Console()
+
+    # Detect provider from config or env vars
+    provider = "none"
+    model_display = cfg.llm_model or "(auto-detect)"
+    if cfg.llm_model:
+        provider = cfg.llm_model.split("/")[0] if "/" in cfg.llm_model else "custom"
+    else:
+        for env_name, prov in [
+            ("AZURE_OPENAI_API_KEY", "azure"),
+            ("ANTHROPIC_API_KEY", "anthropic"),
+            ("OPENAI_API_KEY", "openai"),
+        ]:
+            if os.environ.get(env_name):
+                provider = prov
+                break
+
+    table = Table(title="SIO LLM Configuration")
+    table.add_column("Setting", style="bold")
+    table.add_column("Value")
+
+    table.add_row("Model", model_display)
+    table.add_row("Provider detected", provider)
+    table.add_row("Sub-model", cfg.llm_sub_model or "(none)")
+    table.add_row("Temperature", str(cfg.llm_temperature))
+    table.add_row("Max tokens", str(cfg.llm_max_tokens))
+
+    # API key masking
+    if cfg.llm_api_key_env:
+        raw = os.environ.get(cfg.llm_api_key_env, "")
+        masked = _mask_key(raw) if raw else "(not set)"
+        table.add_row(f"API key ({cfg.llm_api_key_env})", masked)
+
+    console.print(table)
+
+    # Auto-detection status
+    console.print()
+    env_table = Table(title="Environment Variable Detection")
+    env_table.add_column("Variable", style="bold")
+    env_table.add_column("Status")
+    env_vars = [
+        "AZURE_OPENAI_API_KEY", "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT", "OLLAMA_HOST",
+    ]
+    for var in env_vars:
+        val = os.environ.get(var, "")
+        if val:
+            status = f"[green]set[/green] ({_mask_key(val)})"
+        else:
+            status = "[dim]not set[/dim]"
+        env_table.add_row(var, status)
+    console.print(env_table)
+
+
+@config.command("test")
+def config_test():
+    """Test LLM connectivity with a simple query."""
+    import time
+
+    from rich.console import Console
+
+    from sio.core.config import load_config
+
+    console = Console()
+    cfg = load_config()
+
+    console.print("[bold]Testing LLM connection...[/bold]")
+
+    try:
+        from sio.core.dspy.lm_factory import create_lm
+    except ImportError:
+        console.print("[red]dspy is not installed. Run: pip install dspy[/red]")
+        raise SystemExit(1)
+
+    lm = create_lm(cfg)
+    if lm is None:
+        console.print("[red]No LLM available.[/red]")
+        console.print()
+        console.print("Set one of these environment variables:")
+        console.print("  export AZURE_OPENAI_API_KEY=...")
+        console.print("  export ANTHROPIC_API_KEY=...")
+        console.print("  export OPENAI_API_KEY=...")
+        console.print()
+        console.print("Or configure explicitly in ~/.sio/config.toml:")
+        console.print('  [llm]')
+        console.print('  model = "openai/gpt-4o"')
+        console.print('  api_key_env = "OPENAI_API_KEY"')
+        raise SystemExit(1)
+
+    console.print(f"  LM created: {lm}")
+
+    try:
+        import dspy
+
+        start = time.perf_counter()
+        predictor = dspy.Predict("question -> answer")
+        with dspy.context(lm=lm):
+            result = predictor(question="What is 2+2?")
+        elapsed_ms = (time.perf_counter() - start) * 1000
+
+        console.print(f"[green]Success![/green] Response: {result.answer}")
+        console.print(f"  Latency: {elapsed_ms:.0f} ms")
+    except Exception as e:
+        console.print(f"[red]LLM call failed:[/red] {e}")
+        raise SystemExit(1)
+
+
+def _mask_key(key: str) -> str:
+    """Mask an API key, showing only first 4 and last 4 characters."""
+    if len(key) <= 8:
+        return "****"
+    return f"{key[:4]}...{key[-4:]}"
+
+
 @cli.group()
 def schedule():
     """Manage passive analysis schedule."""
@@ -1057,6 +1196,204 @@ def sio_status():
     click.echo(f"Datasets built:    {datasets}")
     click.echo(f"Pending reviews:   {pending}")
     click.echo(f"Applied changes:   {applied}")
+
+
+# ---------------------------------------------------------------------------
+# Ground Truth commands (T045 / T046)
+# ---------------------------------------------------------------------------
+
+
+@cli.group(name="ground-truth")
+def ground_truth_group():
+    """Manage agent-generated ground truth for DSPy training."""
+    pass
+
+
+@ground_truth_group.command("seed")
+def gt_seed():
+    """Seed ground truth with representative examples covering all surfaces."""
+    from sio.core.config import load_config
+    from sio.core.db.schema import init_db
+    from sio.ground_truth.seeder import seed_ground_truth
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    conn = init_db(db_path)
+    config = load_config()
+
+    ids = seed_ground_truth(config, conn)
+    conn.close()
+
+    click.echo(f"Seeded {len(ids)} ground truth entries across all 7 surfaces.")
+
+
+@ground_truth_group.command("generate")
+@click.option("--n-candidates", "-n", default=3, help="Candidates per pattern.")
+def gt_generate(n_candidates):
+    """Generate ground truth candidates from discovered patterns."""
+    from sio.core.config import load_config
+    from sio.core.db.queries import get_patterns
+    from sio.core.db.schema import init_db
+    from sio.ground_truth.generator import generate_candidates
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found. Run 'sio mine' first.")
+        return
+
+    conn = init_db(db_path)
+    config = load_config()
+
+    patterns = get_patterns(conn)
+    if not patterns:
+        click.echo("No patterns found. Run 'sio suggest' first.")
+        conn.close()
+        return
+
+    total_ids = []
+    for pattern in patterns:
+        # Build a minimal dataset reference
+        ds_row = conn.execute(
+            "SELECT * FROM datasets WHERE pattern_id = ? LIMIT 1",
+            (pattern["id"],),
+        ).fetchone()
+        dataset = dict(ds_row) if ds_row else {"id": 0, "file_path": ""}
+
+        ids = generate_candidates(
+            pattern, dataset, conn, config, n_candidates=n_candidates,
+        )
+        total_ids.extend(ids)
+
+    conn.close()
+    click.echo(
+        f"Generated {len(total_ids)} ground truth candidates "
+        f"from {len(patterns)} patterns."
+    )
+
+
+@ground_truth_group.command("review")
+def gt_review():
+    """Interactive review of pending ground truth candidates."""
+    from rich.console import Console
+    from rich.panel import Panel
+
+    from sio.core.db.queries import get_pending_ground_truth
+    from sio.core.db.schema import init_db
+    from sio.ground_truth.reviewer import approve, edit, reject
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found.")
+        return
+
+    conn = init_db(db_path)
+    pending = get_pending_ground_truth(conn)
+
+    if not pending:
+        click.echo("No pending ground truth entries to review.")
+        conn.close()
+        return
+
+    console = Console()
+    reviewed = 0
+
+    for i, entry in enumerate(pending, 1):
+        # Display entry details
+        console.print()
+        console.print(Panel(
+            f"[bold]Pattern:[/bold] {entry.get('pattern_summary', '')[:120]}\n\n"
+            f"[bold]Surface:[/bold] {entry.get('target_surface', '')}\n"
+            f"[bold]Rule:[/bold] {entry.get('rule_title', '')}\n\n"
+            f"[bold]Prevention:[/bold]\n{entry.get('prevention_instructions', '')}\n\n"
+            f"[bold]Rationale:[/bold] {entry.get('rationale', '')}",
+            title=f"Ground Truth {i}/{len(pending)} (ID: {entry['id']})",
+        ))
+
+        choice = click.prompt(
+            "  [a]pprove / [r]eject / [e]dit / [s]kip / [q]uit",
+            type=str,
+            default="s",
+        )
+
+        if choice == "q":
+            break
+        elif choice == "a":
+            note = click.prompt("  Note (optional)", default="", type=str)
+            approve(conn, entry["id"], note or None)
+            click.echo("  Approved.")
+            reviewed += 1
+        elif choice == "r":
+            note = click.prompt("  Reason", default="", type=str)
+            reject(conn, entry["id"], note or None)
+            click.echo("  Rejected.")
+            reviewed += 1
+        elif choice == "e":
+            new_title = click.prompt(
+                "  New rule title (Enter to keep)",
+                default=entry.get("rule_title", ""),
+            )
+            new_instructions = click.prompt(
+                "  New instructions (Enter to keep)",
+                default=entry.get("prevention_instructions", ""),
+            )
+            new_content = {}
+            if new_title != entry.get("rule_title", ""):
+                new_content["rule_title"] = new_title
+            if new_instructions != entry.get("prevention_instructions", ""):
+                new_content["prevention_instructions"] = new_instructions
+            if new_content:
+                new_id = edit(conn, entry["id"], new_content)
+                click.echo(f"  Created edited entry (ID: {new_id}).")
+            else:
+                click.echo("  No changes made.")
+            reviewed += 1
+
+    conn.close()
+    click.echo(f"\nReviewed {reviewed} entries.")
+
+
+@ground_truth_group.command("status")
+def gt_status():
+    """Show ground truth statistics."""
+    from rich.console import Console
+    from rich.table import Table
+
+    from sio.core.db.queries import get_ground_truth_stats
+    from sio.core.db.schema import init_db
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found. Run 'sio ground-truth seed' first.")
+        return
+
+    conn = init_db(db_path)
+    stats = get_ground_truth_stats(conn)
+    conn.close()
+
+    console = Console()
+
+    if stats["total"] == 0:
+        console.print("No ground truth entries yet. Run 'sio ground-truth seed'.")
+        return
+
+    # Summary table
+    summary = Table(title="Ground Truth Summary")
+    summary.add_column("Metric", style="bold")
+    summary.add_column("Count", justify="right")
+    summary.add_row("Total entries", str(stats["total"]))
+    for label, count in sorted(stats.get("by_label", {}).items()):
+        style = "green" if label == "positive" else "red" if label == "negative" else ""
+        summary.add_row(f"  {label}", str(count), style=style)
+    console.print(summary)
+    console.print()
+
+    # Surface breakdown
+    surface_table = Table(title="By Target Surface")
+    surface_table.add_column("Surface", style="bold")
+    surface_table.add_column("Count", justify="right")
+    for surface, count in sorted(stats.get("by_surface", {}).items()):
+        surface_table.add_row(surface, str(count))
+    console.print(surface_table)
 
 
 if __name__ == "__main__":

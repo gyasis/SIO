@@ -10,6 +10,31 @@ from pathlib import Path
 
 from sio.core.db.schema import init_db
 
+_CONFIG_TEMPLATE = """\
+# SIO configuration — ~/.sio/config.toml
+# Uncomment and edit the provider you want to use.
+
+[llm]
+# model = "azure/DeepSeek-R1-0528"
+# api_key_env = "AZURE_OPENAI_API_KEY"
+# api_base_env = "AZURE_OPENAI_ENDPOINT"
+
+# model = "anthropic/claude-sonnet-4-20250514"
+# api_key_env = "ANTHROPIC_API_KEY"
+
+# model = "openai/gpt-4o"
+# api_key_env = "OPENAI_API_KEY"
+
+# model = "ollama/llama3"
+# api_base_env = "OLLAMA_HOST"
+
+temperature = 0.7
+max_tokens = 2000
+
+[llm.sub]
+# model = "openai/gpt-4o-mini"
+"""
+
 # Skills bundled with SIO
 _SKILLS_DIR = Path(__file__).parent / "skills"
 _SKILL_NAMES = [
@@ -51,6 +76,9 @@ def install(
     os.makedirs(os.path.join(sio_base, "ground_truth"), exist_ok=True)
     os.makedirs(os.path.join(sio_base, "optimized"), exist_ok=True)
 
+    # Create config.toml template if not present
+    config_created = _install_config(sio_base)
+
     # Initialize database
     db_path = os.path.join(db_dir, "behavior_invocations.db")
     conn = init_db(db_path)
@@ -80,9 +108,30 @@ def install(
         "db_path": db_path,
         "hooks_registered": hooks_registered,
         "skills_installed": skills_installed,
+        "config_created": config_created,
         "platform_config_saved": True,
         "dry_run": dry_run,
     }
+
+
+def _install_config(sio_base: str) -> bool:
+    """Create ~/.sio/config.toml with a template [llm] section if not present.
+
+    Never overwrites an existing config file.
+
+    Args:
+        sio_base: Path to SIO base directory (e.g. ~/.sio).
+
+    Returns:
+        True if the file was created, False if it already existed.
+    """
+    config_path = os.path.join(sio_base, "config.toml")
+    if os.path.exists(config_path):
+        return False
+    os.makedirs(sio_base, exist_ok=True)
+    with open(config_path, "w") as f:
+        f.write(_CONFIG_TEMPLATE)
+    return True
 
 
 def _register_hooks(settings_path: str) -> bool:
