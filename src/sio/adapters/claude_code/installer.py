@@ -46,6 +46,11 @@ def install(
     os.makedirs(db_dir, exist_ok=True)
     os.makedirs(claude_dir, exist_ok=True)
 
+    # Create ground truth and optimized module directories
+    sio_base = os.path.expanduser("~/.sio")
+    os.makedirs(os.path.join(sio_base, "ground_truth"), exist_ok=True)
+    os.makedirs(os.path.join(sio_base, "optimized"), exist_ok=True)
+
     # Initialize database
     db_path = os.path.join(db_dir, "behavior_invocations.db")
     conn = init_db(db_path)

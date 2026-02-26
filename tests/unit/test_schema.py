@@ -134,3 +134,112 @@ class TestCheckConstraints:
         )
         row = conn.execute("SELECT behavior_type FROM behavior_invocations WHERE session_id = ?", (f"sess-{btype}",)).fetchone()
         assert row[0] == btype
+
+
+# ---------------------------------------------------------------------------
+# T006: DSPy suggestion engine schema extensions
+# ---------------------------------------------------------------------------
+
+
+class TestGroundTruthTable:
+    """ground_truth table must exist with CHECK constraints for DSPy training data."""
+
+    def test_ground_truth_table_exists(self, conn):
+        tables = _table_names(conn)
+        assert "ground_truth" in tables, f"Missing 'ground_truth' table. Found: {sorted(tables)}"
+
+    VALID_TARGET_SURFACES = (
+        "skill", "mcp_tool", "preference", "instructions_rule",
+        "claude_md", "hook", "workflow",
+    )
+
+    @pytest.mark.parametrize("surface", VALID_TARGET_SURFACES)
+    def test_ground_truth_target_surface_accepts_valid(self, conn, surface):
+        conn.execute(
+            "INSERT INTO ground_truth "
+            "(pattern_id, error_example, target_surface, label, source, created_at) "
+            "VALUES (1, 'example error', ?, 'pending', 'seed', '2026-01-01T00:00:00Z')",
+            (surface,),
+        )
+        row = conn.execute(
+            "SELECT target_surface FROM ground_truth WHERE target_surface = ?",
+            (surface,),
+        ).fetchone()
+        assert row[0] == surface
+
+    def test_ground_truth_target_surface_check(self, conn):
+        """CHECK constraint rejects invalid target_surface values."""
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO ground_truth "
+                "(pattern_id, error_example, target_surface, label, source, created_at) "
+                "VALUES (1, 'err', 'INVALID_SURFACE', 'pending', 'seed', '2026-01-01T00:00:00Z')"
+            )
+
+    VALID_LABELS = ("pending", "positive", "negative")
+
+    @pytest.mark.parametrize("label", VALID_LABELS)
+    def test_ground_truth_label_accepts_valid(self, conn, label):
+        conn.execute(
+            "INSERT INTO ground_truth "
+            "(pattern_id, error_example, target_surface, label, source, created_at) "
+            "VALUES (1, 'example', 'skill', ?, 'seed', '2026-01-01T00:00:00Z')",
+            (label,),
+        )
+
+    def test_ground_truth_label_check(self, conn):
+        """CHECK constraint rejects invalid label values."""
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO ground_truth "
+                "(pattern_id, error_example, target_surface, label, source, created_at) "
+                "VALUES (1, 'err', 'skill', 'INVALID_LABEL', 'seed', '2026-01-01T00:00:00Z')"
+            )
+
+    VALID_SOURCES = ("agent", "seed", "approved", "edited", "rejected")
+
+    @pytest.mark.parametrize("source", VALID_SOURCES)
+    def test_ground_truth_source_accepts_valid(self, conn, source):
+        conn.execute(
+            "INSERT INTO ground_truth "
+            "(pattern_id, error_example, target_surface, label, source, created_at) "
+            "VALUES (1, 'example', 'skill', 'pending', ?, '2026-01-01T00:00:00Z')",
+            (source,),
+        )
+
+    def test_ground_truth_source_check(self, conn):
+        """CHECK constraint rejects invalid source values."""
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO ground_truth "
+                "(pattern_id, error_example, target_surface, label, source, created_at) "
+                "VALUES (1, 'err', 'skill', 'pending', 'INVALID_SOURCE', '2026-01-01T00:00:00Z')"
+            )
+
+
+class TestOptimizedModulesTable:
+    """optimized_modules table must exist for storing DSPy module checkpoints."""
+
+    def test_optimized_modules_table_exists(self, conn):
+        tables = _table_names(conn)
+        assert "optimized_modules" in tables, (
+            f"Missing 'optimized_modules' table. Found: {sorted(tables)}"
+        )
+
+
+class TestSuggestionsNewColumns:
+    """suggestions table must have new columns for DSPy integration."""
+
+    def test_suggestions_target_surface_column(self, conn):
+        columns = _column_info(conn, "suggestions")
+        col_names = {c["name"] for c in columns}
+        assert "target_surface" in col_names, (
+            f"suggestions table missing 'target_surface' column. Has: {sorted(col_names)}"
+        )
+
+    def test_suggestions_reasoning_trace_column(self, conn):
+        columns = _column_info(conn, "suggestions")
+        col_names = {c["name"] for c in columns}
+        assert "reasoning_trace" in col_names, (
+            f"suggestions table missing 'reasoning_trace' column. Has: {sorted(col_names)}"
+        )

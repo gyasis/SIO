@@ -477,3 +477,187 @@ def mark_rolled_back(
     )
     conn.commit()
     return cur.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# v3 — Ground Truth queries (DSPy suggestion engine)
+# ---------------------------------------------------------------------------
+
+
+def insert_ground_truth(
+    conn: sqlite3.Connection,
+    pattern_id: str,
+    error_examples_json: str,
+    error_type: str,
+    pattern_summary: str,
+    target_surface: str,
+    rule_title: str,
+    prevention_instructions: str,
+    rationale: str,
+    source: str = "agent",
+    confidence: float | None = None,
+    file_path: str | None = None,
+) -> int:
+    """Insert a ground truth candidate.
+
+    Args:
+        conn: Database connection.
+        pattern_id: Identifier for the error pattern.
+        error_examples_json: JSON-encoded array of error examples.
+        error_type: Category of error (tool_failure, user_correction, etc.).
+        pattern_summary: Description of the recurring error pattern.
+        target_surface: Where the fix should be applied.
+        rule_title: Concise title for the improvement.
+        prevention_instructions: Actionable prevention text in markdown.
+        rationale: Why this improvement addresses the pattern.
+        source: Origin of the entry (agent, seed, approved, edited, rejected).
+        confidence: Optional confidence score.
+        file_path: Optional path to the relevant file.
+
+    Returns:
+        The new row ID.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    cur = conn.execute(
+        "INSERT INTO ground_truth "
+        "(pattern_id, error_examples_json, error_type, pattern_summary, "
+        "target_surface, rule_title, prevention_instructions, rationale, "
+        "source, confidence, file_path, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            pattern_id, error_examples_json, error_type, pattern_summary,
+            target_surface, rule_title, prevention_instructions, rationale,
+            source, confidence, file_path, now,
+        ),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_ground_truth_by_pattern(
+    conn: sqlite3.Connection, pattern_id: str
+) -> list[dict]:
+    """Get all ground truth entries for a pattern.
+
+    Args:
+        conn: Database connection.
+        pattern_id: The pattern identifier to filter by.
+
+    Returns:
+        List of ground truth rows as dicts.
+    """
+    rows = conn.execute(
+        "SELECT * FROM ground_truth WHERE pattern_id = ? ORDER BY created_at DESC",
+        (pattern_id,),
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def get_pending_ground_truth(
+    conn: sqlite3.Connection, surface_type: str | None = None
+) -> list[dict]:
+    """Get all pending (unreviewed) ground truth entries.
+
+    Args:
+        conn: Database connection.
+        surface_type: Optional target_surface filter.
+
+    Returns:
+        List of pending ground truth rows as dicts.
+    """
+    if surface_type:
+        rows = conn.execute(
+            "SELECT * FROM ground_truth WHERE label = 'pending' AND target_surface = ? "
+            "ORDER BY created_at DESC",
+            (surface_type,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM ground_truth WHERE label = 'pending' ORDER BY created_at DESC"
+        ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def update_ground_truth_label(
+    conn: sqlite3.Connection,
+    gt_id: int,
+    label: str,
+    source: str | None = None,
+    user_note: str | None = None,
+) -> None:
+    """Update label (approve/reject) and optionally source and note.
+
+    Args:
+        conn: Database connection.
+        gt_id: The ground truth row ID.
+        label: New label value (pending, positive, negative).
+        source: Optional new source value.
+        user_note: Optional user note.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    if source is not None and user_note is not None:
+        conn.execute(
+            "UPDATE ground_truth SET label = ?, source = ?, user_note = ?, reviewed_at = ? "
+            "WHERE id = ?",
+            (label, source, user_note, now, gt_id),
+        )
+    elif source is not None:
+        conn.execute(
+            "UPDATE ground_truth SET label = ?, source = ?, reviewed_at = ? WHERE id = ?",
+            (label, source, now, gt_id),
+        )
+    elif user_note is not None:
+        conn.execute(
+            "UPDATE ground_truth SET label = ?, user_note = ?, reviewed_at = ? WHERE id = ?",
+            (label, user_note, now, gt_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE ground_truth SET label = ?, reviewed_at = ? WHERE id = ?",
+            (label, now, gt_id),
+        )
+    conn.commit()
+
+
+def get_training_corpus(conn: sqlite3.Connection) -> list[dict]:
+    """Get all positive-labeled ground truth for DSPy training.
+
+    Args:
+        conn: Database connection.
+
+    Returns:
+        List of positive ground truth rows as dicts.
+    """
+    rows = conn.execute(
+        "SELECT * FROM ground_truth WHERE label = 'positive' ORDER BY created_at"
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def get_ground_truth_stats(conn: sqlite3.Connection) -> dict:
+    """Get stats: count by label, count by surface, total.
+
+    Args:
+        conn: Database connection.
+
+    Returns:
+        Dict with 'total', 'by_label', and 'by_surface' keys.
+    """
+    total_row = conn.execute("SELECT COUNT(*) FROM ground_truth").fetchone()
+    total = total_row[0]
+
+    label_rows = conn.execute(
+        "SELECT label, COUNT(*) as cnt FROM ground_truth GROUP BY label"
+    ).fetchall()
+    by_label = {row["label"]: row["cnt"] for row in label_rows}
+
+    surface_rows = conn.execute(
+        "SELECT target_surface, COUNT(*) as cnt FROM ground_truth GROUP BY target_surface"
+    ).fetchall()
+    by_surface = {row["target_surface"]: row["cnt"] for row in surface_rows}
+
+    return {
+        "total": total,
+        "by_label": by_label,
+        "by_surface": by_surface,
+    }

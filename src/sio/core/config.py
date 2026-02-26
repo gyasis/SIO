@@ -34,6 +34,14 @@ class SIOConfig:
     daily_enabled: bool = True
     weekly_enabled: bool = True
     stale_days: int = 30
+    # [llm] section
+    llm_model: str | None = None
+    llm_api_key_env: str | None = None
+    llm_api_base_env: str | None = None
+    llm_temperature: float = 0.7
+    llm_max_tokens: int = 2000
+    # [llm.sub] section
+    llm_sub_model: str | None = None
 
 
 _DEFAULTS = SIOConfig()
@@ -63,6 +71,10 @@ def load_config(path: str | None = None) -> SIOConfig:
     except Exception as e:
         raise ValueError(f"Invalid config file {path}: {e}") from e
 
+    # Parse [llm] section
+    llm_section = data.get("llm", {})
+    llm_sub_section = llm_section.get("sub", {})
+
     return SIOConfig(
         embedding_backend=data.get("embedding_backend", _DEFAULTS.embedding_backend),
         embedding_model=data.get("embedding_model", _DEFAULTS.embedding_model),
@@ -91,4 +103,12 @@ def load_config(path: str | None = None) -> SIOConfig:
         daily_enabled=data.get("daily_enabled", _DEFAULTS.daily_enabled),
         weekly_enabled=data.get("weekly_enabled", _DEFAULTS.weekly_enabled),
         stale_days=data.get("stale_days", _DEFAULTS.stale_days),
+        # [llm] keys
+        llm_model=llm_section.get("model", _DEFAULTS.llm_model),
+        llm_api_key_env=llm_section.get("api_key_env", _DEFAULTS.llm_api_key_env),
+        llm_api_base_env=llm_section.get("api_base_env", _DEFAULTS.llm_api_base_env),
+        llm_temperature=llm_section.get("temperature", _DEFAULTS.llm_temperature),
+        llm_max_tokens=llm_section.get("max_tokens", _DEFAULTS.llm_max_tokens),
+        # [llm.sub] keys
+        llm_sub_model=llm_sub_section.get("model", _DEFAULTS.llm_sub_model),
     )

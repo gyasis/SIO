@@ -171,6 +171,45 @@ CREATE TABLE IF NOT EXISTS applied_changes (
 )
 """
 
+_GROUND_TRUTH_DDL = """
+CREATE TABLE IF NOT EXISTS ground_truth (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pattern_id TEXT NOT NULL,
+    error_examples_json TEXT NOT NULL,
+    error_type TEXT NOT NULL,
+    pattern_summary TEXT NOT NULL,
+    target_surface TEXT NOT NULL CHECK(target_surface IN (
+        'claude_md_rule', 'skill_update', 'hook_config',
+        'mcp_config', 'settings_config', 'agent_profile', 'project_config'
+    )),
+    rule_title TEXT NOT NULL,
+    prevention_instructions TEXT NOT NULL,
+    rationale TEXT NOT NULL,
+    label TEXT NOT NULL DEFAULT 'pending' CHECK(label IN ('pending', 'positive', 'negative')),
+    source TEXT NOT NULL DEFAULT 'agent'
+        CHECK(source IN ('agent', 'seed', 'approved', 'edited', 'rejected')),
+    confidence REAL,
+    user_note TEXT,
+    file_path TEXT,
+    created_at TEXT NOT NULL,
+    reviewed_at TEXT
+)
+"""
+
+_OPTIMIZED_MODULES_DDL = """
+CREATE TABLE IF NOT EXISTS optimized_modules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    module_type TEXT NOT NULL,
+    optimizer_used TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    training_count INTEGER NOT NULL,
+    metric_before REAL,
+    metric_after REAL,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+)
+"""
+
 _INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_session ON behavior_invocations(session_id)",
     ("CREATE INDEX IF NOT EXISTS idx_platform_behavior "
@@ -184,6 +223,13 @@ _INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_error_timestamp ON error_records(timestamp)",
     "CREATE INDEX IF NOT EXISTS idx_pattern_rank ON patterns(rank_score DESC)",
     "CREATE INDEX IF NOT EXISTS idx_suggestion_status ON suggestions(status)",
+    # ground_truth indexes
+    "CREATE INDEX IF NOT EXISTS idx_gt_pattern ON ground_truth(pattern_id)",
+    "CREATE INDEX IF NOT EXISTS idx_gt_label ON ground_truth(label)",
+    "CREATE INDEX IF NOT EXISTS idx_gt_source ON ground_truth(source)",
+    "CREATE INDEX IF NOT EXISTS idx_gt_surface ON ground_truth(target_surface)",
+    # optimized_modules indexes
+    "CREATE INDEX IF NOT EXISTS idx_om_active ON optimized_modules(module_type, is_active)",
 ]
 
 
@@ -224,6 +270,21 @@ def init_db(db_path: str) -> sqlite3.Connection:
     conn.execute(_DATASETS_DDL)
     conn.execute(_SUGGESTIONS_DDL)
     conn.execute(_APPLIED_CHANGES_DDL)
+
+    # Create DSPy suggestion engine tables
+    conn.execute(_GROUND_TRUTH_DDL)
+    conn.execute(_OPTIMIZED_MODULES_DDL)
+
+    # Migration: add columns to suggestions (safe with try/except since
+    # ALTER TABLE doesn't support IF NOT EXISTS)
+    try:
+        conn.execute("ALTER TABLE suggestions ADD COLUMN target_surface TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        conn.execute("ALTER TABLE suggestions ADD COLUMN reasoning_trace TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
 
     # Create indexes
     for idx_sql in _INDEXES:
