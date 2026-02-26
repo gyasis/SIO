@@ -12,11 +12,18 @@ class SuggestionModule(dspy.Module):
         super().__init__()
         self.generate = dspy.ChainOfThought(SuggestionGenerator)
 
-    def forward(self, error_examples: str, error_type: str, pattern_summary: str):
+    def forward(
+        self,
+        error_examples: str,
+        error_type: str,
+        pattern_summary: str,
+        tool_input_context: str = "{}",
+    ):
         return self.generate(
             error_examples=error_examples,
             error_type=error_type,
             pattern_summary=pattern_summary,
+            tool_input_context=tool_input_context,
         )
 
 
@@ -27,9 +34,16 @@ class GroundTruthModule(dspy.Module):
         super().__init__()
         self.generate = dspy.ChainOfThought(GroundTruthCandidate)
 
-    def forward(self, error_examples: str, error_type: str, pattern_summary: str):
+    def forward(
+        self,
+        error_examples: str,
+        error_type: str,
+        pattern_summary: str,
+        tool_input_context: str = "{}",
+    ):
         return self.generate(
             error_examples=error_examples,
             error_type=error_type,
             pattern_summary=pattern_summary,
+            tool_input_context=tool_input_context,
         )

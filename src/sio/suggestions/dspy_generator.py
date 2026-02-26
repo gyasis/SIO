@@ -268,6 +268,18 @@ def generate_dspy_suggestion(
     examples_json = _sanitize_examples(examples_json)
     examples_json = _truncate_fields(examples_json, max_chars=6000)
 
+    # --- Extract tool_input context for target determination ---
+    # Collect unique tool_input values from examples so DSPy can analyze
+    # what the agent was doing and determine the correct fix target
+    # (skill_update vs claude_md_rule vs hook_config etc.)
+    tool_inputs = []
+    for ex in examples[:10]:
+        ti = ex.get("tool_input")
+        if ti:
+            tool_inputs.append({"tool_name": ex.get("tool_name", ""), "tool_input": ti})
+    tool_input_context = json.dumps(tool_inputs, default=str) if tool_inputs else "{}"
+    tool_input_context = _truncate_fields(tool_input_context, max_chars=4000)
+
     error_type = pattern.get("error_type") or "unknown"
     # Build a concise pattern summary from description + tool_name + counts
     pattern_summary = (
@@ -282,10 +294,11 @@ def generate_dspy_suggestion(
     if verbose:
         logger.info(
             "DSPy input — error_type=%s, pattern_summary=%s, "
-            "examples_json_len=%d",
+            "examples_json_len=%d, tool_input_context_len=%d",
             error_type,
             pattern_summary[:200],
             len(examples_json),
+            len(tool_input_context),
         )
 
     # --- T062: Load optimized module if available (FR-011) ---
@@ -296,6 +309,7 @@ def generate_dspy_suggestion(
             error_examples=examples_json,
             error_type=error_type,
             pattern_summary=pattern_summary,
+            tool_input_context=tool_input_context,
         )
     except Exception as exc:
         raise RuntimeError(f"DSPy call failed: {exc}") from exc

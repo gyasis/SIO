@@ -16,7 +16,7 @@ class TestSuggestionGeneratorContract:
         from sio.core.dspy.signatures import SuggestionGenerator
 
         actual_inputs = set(SuggestionGenerator.input_fields.keys())
-        expected_inputs = {"error_examples", "error_type", "pattern_summary"}
+        expected_inputs = {"error_examples", "error_type", "pattern_summary", "tool_input_context"}
 
         assert actual_inputs == expected_inputs, (
             f"SuggestionGenerator input fields mismatch.\n"
