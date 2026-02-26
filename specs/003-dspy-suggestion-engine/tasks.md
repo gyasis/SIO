@@ -93,14 +93,14 @@
 
 ### Tests for User Story 2
 
-- [ ] T031 [P] [US2] Write test for config template creation in `tests/unit/test_installer.py` — test that `sio install` creates `~/.sio/config.toml` with `[llm]` section template if not exists
-- [ ] T032 [P] [US2] Write test for env var auto-detection in `tests/unit/test_lm_factory.py` — test priority order: AZURE_OPENAI_API_KEY → ANTHROPIC_API_KEY → OPENAI_API_KEY → None (FR-005)
+- [x] T031 [P] [US2] Write test for config template creation in `tests/unit/test_installer.py` — test that `sio install` creates `~/.sio/config.toml` with `[llm]` section template if not exists
+- [x] T032 [P] [US2] Write test for env var auto-detection in `tests/unit/test_lm_factory.py` — test priority order: AZURE_OPENAI_API_KEY → ANTHROPIC_API_KEY → OPENAI_API_KEY → None (FR-005)
 
 ### Implementation for User Story 2
 
-- [ ] T033 [US2] Add config.toml template creation to `_install_config()` in `src/sio/adapters/claude_code/installer.py` — write template `[llm]` section with commented-out examples for Azure, Anthropic, OpenAI, Ollama
-- [ ] T034 [US2] Add `sio config show` subcommand to `src/sio/cli/main.py` — display current LLM config (model name, provider detected, sub-model) in Rich table, mask API keys
-- [ ] T035 [US2] Add `sio config test` subcommand to `src/sio/cli/main.py` — run a simple `dspy.Predict("question -> answer")` call to verify LLM connectivity, report success/failure with latency
+- [x] T033 [US2] Add config.toml template creation to `_install_config()` in `src/sio/adapters/claude_code/installer.py` — write template `[llm]` section with commented-out examples for Azure, Anthropic, OpenAI, Ollama
+- [x] T034 [US2] Add `sio config show` subcommand to `src/sio/cli/main.py` — display current LLM config (model name, provider detected, sub-model) in Rich table, mask API keys
+- [x] T035 [US2] Add `sio config test` subcommand to `src/sio/cli/main.py` — run a simple `dspy.Predict("question -> answer")` call to verify LLM connectivity, report success/failure with latency
 
 **Checkpoint**: LLM backend fully configurable via TOML + env vars. US2 tests pass.
 
@@ -114,21 +114,21 @@
 
 ### Tests for User Story 6
 
-- [ ] T036 [P] [US6] Write test for ground truth generator in `tests/unit/test_ground_truth_gen.py` — test `generate_candidates()` calls `GroundTruthModule` N times per pattern, stores results in DB with `label='pending'`, `source='agent'`
-- [ ] T037 [P] [US6] Write test for ground truth reviewer in `tests/unit/test_ground_truth_review.py` — test `approve()` sets label='positive', source='approved'; `reject()` sets label='negative', source='rejected'; `edit()` creates new row with source='edited', label='positive'
-- [ ] T038 [P] [US6] Write test for corpus loader in `tests/unit/test_ground_truth_corpus.py` — test `load_training_corpus()` returns list of `dspy.Example` objects with `.with_inputs()` set correctly; only positive-labeled rows included
-- [ ] T039 [P] [US6] Write test for seeder in `tests/unit/test_ground_truth_seeder.py` — test `seed_ground_truth()` generates examples covering all 7 surface types (FR-026), stores with `source='seed'`
-- [ ] T040 [P] [US6] Write integration test in `tests/integration/test_ground_truth_flow.py` — test full cycle: generate candidates → review (approve/reject) → load corpus → verify dspy.Example format
+- [x] T036 [P] [US6] Write test for ground truth generator in `tests/unit/test_ground_truth_gen.py` — test `generate_candidates()` calls `GroundTruthModule` N times per pattern, stores results in DB with `label='pending'`, `source='agent'`
+- [x] T037 [P] [US6] Write test for ground truth reviewer in `tests/unit/test_ground_truth_review.py` — test `approve()` sets label='positive', source='approved'; `reject()` sets label='negative', source='rejected'; `edit()` creates new row with source='edited', label='positive'
+- [x] T038 [P] [US6] Write test for corpus loader in `tests/unit/test_ground_truth_corpus.py` — test `load_training_corpus()` returns list of `dspy.Example` objects with `.with_inputs()` set correctly; only positive-labeled rows included
+- [x] T039 [P] [US6] Write test for seeder in `tests/unit/test_ground_truth_seeder.py` — test `seed_ground_truth()` generates examples covering all 7 surface types (FR-026), stores with `source='seed'`
+- [x] T040 [P] [US6] Write integration test in `tests/integration/test_ground_truth_flow.py` — test full cycle: generate candidates → review (approve/reject) → load corpus → verify dspy.Example format
 
 ### Implementation for User Story 6
 
-- [ ] T041 [US6] Implement `generate_candidates(pattern, dataset, config, n_candidates=3)` in `src/sio/ground_truth/generator.py` — calls `GroundTruthModule.forward()` N times, inserts each candidate into `ground_truth` table with `label='pending'`, writes JSON file
-- [ ] T042 [US6] Implement `approve()`, `reject(note)`, `edit(new_content)` in `src/sio/ground_truth/reviewer.py` — updates `ground_truth.label` and `source` appropriately, handles edited ground truth as new positive row (FR-018, FR-019, FR-020)
-- [ ] T043 [US6] Implement `load_training_corpus(conn) -> list[dspy.Example]` in `src/sio/ground_truth/corpus.py` — queries positive-labeled ground truth, converts to `dspy.Example` with `.with_inputs()` per data-model.md conversion function (FR-021, FR-022)
-- [ ] T044 [US6] Implement `seed_ground_truth(config, conn)` in `src/sio/ground_truth/seeder.py` — generates 10 seed examples covering all 7 surface types using representative synthetic error patterns (FR-017, FR-026)
-- [ ] T045 [US6] Add `sio ground-truth seed`, `sio ground-truth generate`, `sio ground-truth review`, `sio ground-truth status` CLI commands in `src/sio/cli/main.py` per contracts/cli-commands.md
-- [ ] T046 [US6] Implement interactive review TUI in `sio ground-truth review` — Rich panels showing pattern summary, candidate output, target surface; prompt for [a]pprove/[r]eject/[e]dit/[s]kip/[q]uit
-- [ ] T047 [US6] Wire suggestion approval to ground truth promotion — when `sio approve <id>` runs, auto-call `promote_to_ground_truth()` in `src/sio/ground_truth/corpus.py` to create positive training example from approved suggestion (FR-018)
+- [x] T041 [US6] Implement `generate_candidates(pattern, dataset, config, n_candidates=3)` in `src/sio/ground_truth/generator.py` — calls `GroundTruthModule.forward()` N times, inserts each candidate into `ground_truth` table with `label='pending'`, writes JSON file
+- [x] T042 [US6] Implement `approve()`, `reject(note)`, `edit(new_content)` in `src/sio/ground_truth/reviewer.py` — updates `ground_truth.label` and `source` appropriately, handles edited ground truth as new positive row (FR-018, FR-019, FR-020)
+- [x] T043 [US6] Implement `load_training_corpus(conn) -> list[dspy.Example]` in `src/sio/ground_truth/corpus.py` — queries positive-labeled ground truth, converts to `dspy.Example` with `.with_inputs()` per data-model.md conversion function (FR-021, FR-022)
+- [x] T044 [US6] Implement `seed_ground_truth(config, conn)` in `src/sio/ground_truth/seeder.py` — generates 10 seed examples covering all 7 surface types using representative synthetic error patterns (FR-017, FR-026)
+- [x] T045 [US6] Add `sio ground-truth seed`, `sio ground-truth generate`, `sio ground-truth review`, `sio ground-truth status` CLI commands in `src/sio/cli/main.py` per contracts/cli-commands.md
+- [x] T046 [US6] Implement interactive review TUI in `sio ground-truth review` — Rich panels showing pattern summary, candidate output, target surface; prompt for [a]pprove/[r]eject/[e]dit/[s]kip/[q]uit
+- [x] T047 [US6] Wire suggestion approval to ground truth promotion — when `sio approve <id>` runs, auto-call `promote_to_ground_truth()` in `src/sio/ground_truth/corpus.py` to create positive training example from approved suggestion (FR-018)
 
 **Checkpoint**: Full ground truth lifecycle works: generate → review → approve → training corpus. All US6 tests pass.
 
@@ -142,16 +142,16 @@
 
 ### Tests for User Story 3
 
-- [ ] T048 [P] [US3] Write test for metric function in `tests/unit/test_dspy_metrics.py` — test `suggestion_quality_metric()` returns float 0-1; test specificity component (mentions tool name → higher score); test actionability component (concrete steps → higher score); test surface accuracy component (correct surface → higher score, wrong surface → penalty per FR-027)
-- [ ] T049 [P] [US3] Write test for metric in optimization mode in `tests/unit/test_dspy_metrics.py` — test that when `trace is not None`, returns `bool(score > 0.5)` for DSPy optimization loop
+- [x] T048 [P] [US3] Write test for metric function in `tests/unit/test_dspy_metrics.py` — test `suggestion_quality_metric()` returns float 0-1; test specificity component (mentions tool name → higher score); test actionability component (concrete steps → higher score); test surface accuracy component (correct surface → higher score, wrong surface → penalty per FR-027)
+- [x] T049 [P] [US3] Write test for metric in optimization mode in `tests/unit/test_dspy_metrics.py` — test that when `trace is not None`, returns `bool(score > 0.5)` for DSPy optimization loop
 
 ### Implementation for User Story 3
 
-- [ ] T050 [US3] Implement `suggestion_quality_metric(example, pred, trace=None) -> float|bool` in `src/sio/core/dspy/metrics.py` — weighted scoring: specificity (0.35), actionability (0.35), surface accuracy (0.30) per contracts/dspy-signatures.md
-- [ ] T051 [US3] Implement specificity scorer in `src/sio/core/dspy/metrics.py` — checks if `prevention_instructions` references concrete details from `error_examples` (tool names, error message snippets, user contexts)
-- [ ] T052 [US3] Implement actionability scorer in `src/sio/core/dspy/metrics.py` — checks for concrete action verbs, specific file paths, command examples in `prevention_instructions`
-- [ ] T053 [US3] Implement surface accuracy scorer in `src/sio/core/dspy/metrics.py` — validates `target_surface` is appropriate for `error_type` and context signals (MCP errors → mcp_config/settings_config, tool routing → skill_update, etc.)
-- [ ] T054 [US3] Wire metric into suggestion confidence — modify `generate_dspy_suggestion()` in `src/sio/suggestions/dspy_generator.py` to compute quality metric on each generated suggestion and set `confidence` field
+- [x] T050 [US3] Implement `suggestion_quality_metric(example, pred, trace=None) -> float|bool` in `src/sio/core/dspy/metrics.py` — weighted scoring: specificity (0.35), actionability (0.35), surface accuracy (0.30) per contracts/dspy-signatures.md
+- [x] T051 [US3] Implement specificity scorer in `src/sio/core/dspy/metrics.py` — checks if `prevention_instructions` references concrete details from `error_examples` (tool names, error message snippets, user contexts)
+- [x] T052 [US3] Implement actionability scorer in `src/sio/core/dspy/metrics.py` — checks for concrete action verbs, specific file paths, command examples in `prevention_instructions`
+- [x] T053 [US3] Implement surface accuracy scorer in `src/sio/core/dspy/metrics.py` — validates `target_surface` is appropriate for `error_type` and context signals (MCP errors → mcp_config/settings_config, tool routing → skill_update, etc.)
+- [x] T054 [US3] Wire metric into suggestion confidence — modify `generate_dspy_suggestion()` in `src/sio/suggestions/dspy_generator.py` to compute quality metric on each generated suggestion and set `confidence` field
 
 **Checkpoint**: All suggestions have meaningful quality scores. Metric function ready for optimizer use. US3 tests pass.
 
@@ -165,19 +165,19 @@
 
 ### Tests for User Story 4
 
-- [ ] T055 [P] [US4] Write test for optimizer replacement in `tests/unit/test_optimizer.py` — extend existing tests: test `_run_dspy_optimization()` now calls real `dspy.BootstrapFewShot.compile()` with `SuggestionModule` and `trainset` from ground truth corpus
-- [ ] T056 [P] [US4] Write test for auto-optimizer selection in `tests/unit/test_optimizer.py` — test 10-49 examples → BootstrapFewShot, 50+ examples → MIPROv2 (FR-010)
-- [ ] T057 [P] [US4] Write test for module persistence in `tests/unit/test_optimizer.py` — test optimized module saved to `~/.sio/optimized/`, loaded on next `sio suggest` run (FR-011)
-- [ ] T058 [P] [US4] Write integration test in `tests/integration/test_optimizer_real.py` — test full cycle with mock LLM: create ground truth → optimize → verify optimized module loaded on next suggest call
+- [x] T055 [P] [US4] Write test for optimizer replacement in `tests/unit/test_optimizer.py` — extend existing tests: test `_run_dspy_optimization()` now calls real `dspy.BootstrapFewShot.compile()` with `SuggestionModule` and `trainset` from ground truth corpus
+- [x] T056 [P] [US4] Write test for auto-optimizer selection in `tests/unit/test_optimizer.py` — test 10-49 examples → BootstrapFewShot, 50+ examples → MIPROv2 (FR-010)
+- [x] T057 [P] [US4] Write test for module persistence in `tests/unit/test_optimizer.py` — test optimized module saved to `~/.sio/optimized/`, loaded on next `sio suggest` run (FR-011)
+- [x] T058 [P] [US4] Write integration test in `tests/integration/test_optimizer_real.py` — test full cycle with mock LLM: create ground truth → optimize → verify optimized module loaded on next suggest call
 
 ### Implementation for User Story 4
 
-- [ ] T059 [US4] Replace `_run_dspy_optimization()` stub in `src/sio/core/dspy/optimizer.py` — real implementation: load ground truth corpus via `load_training_corpus()`, configure DSPy LM, run `BootstrapFewShot.compile(SuggestionModule(), trainset=corpus, metric=suggestion_quality_metric)`
-- [ ] T060 [US4] Add MIPROv2 path in `src/sio/core/dspy/optimizer.py` — when `optimizer='miprov2'` and 50+ examples, use `MIPROv2(metric=..., auto="medium").compile()`
-- [ ] T061 [US4] Add auto-selection logic in `src/sio/core/dspy/optimizer.py` — when `optimizer='auto'`: <50 examples → bootstrap, >=50 → miprov2 (FR-010)
-- [ ] T062 [US4] Wire optimized module loading into suggestion generation — modify `generate_dspy_suggestion()` in `src/sio/suggestions/dspy_generator.py` to check `get_active_module()` and load optimized module if available (FR-011)
-- [ ] T063 [US4] Add `sio optimize suggestions [--optimizer TYPE] [--dry-run]` CLI command in `src/sio/cli/main.py` per contracts/cli-commands.md — show before/after metric scores, prompt for approval
-- [ ] T064 [US4] Implement before/after prompt diff display — when optimization completes, show Rich diff of default vs optimized module's few-shot examples and instruction text
+- [x] T059 [US4] Replace `_run_dspy_optimization()` stub in `src/sio/core/dspy/optimizer.py` — real implementation: load ground truth corpus via `load_training_corpus()`, configure DSPy LM, run `BootstrapFewShot.compile(SuggestionModule(), trainset=corpus, metric=suggestion_quality_metric)`
+- [x] T060 [US4] Add MIPROv2 path in `src/sio/core/dspy/optimizer.py` — when `optimizer='miprov2'` and 50+ examples, use `MIPROv2(metric=..., auto="medium").compile()`
+- [x] T061 [US4] Add auto-selection logic in `src/sio/core/dspy/optimizer.py` — when `optimizer='auto'`: <50 examples → bootstrap, >=50 → miprov2 (FR-010)
+- [x] T062 [US4] Wire optimized module loading into suggestion generation — modify `generate_dspy_suggestion()` in `src/sio/suggestions/dspy_generator.py` to check `get_active_module()` and load optimized module if available (FR-011)
+- [x] T063 [US4] Add `sio optimize suggestions [--optimizer TYPE] [--dry-run]` CLI command in `src/sio/cli/main.py` per contracts/cli-commands.md — show before/after metric scores, prompt for approval
+- [x] T064 [US4] Implement before/after prompt diff display — when optimization completes, show Rich diff of default vs optimized module's few-shot examples and instruction text
 
 **Checkpoint**: Optimization loop closed — approved suggestions improve future generation. US4 tests pass.
 
@@ -191,18 +191,18 @@
 
 ### Tests for User Story 7
 
-- [ ] T065 [P] [US7] Write test for mode selection logic in `tests/unit/test_dspy_generator.py` — test auto mode when confidence >= 0.8 AND surface in low-impact set; HITL mode for high-impact surfaces or low confidence
-- [ ] T066 [P] [US7] Write test for HITL flow in `tests/unit/test_dspy_generator.py` — test that `--analyze` mode pauses at each stage: dataset summary → ground truth review → suggestion review → final approval
-- [ ] T067 [P] [US7] Write test for `sio datasets inspect` in `tests/unit/test_dspy_generator.py` — test shows error distribution, session timeline, ground truth entries, coverage gaps
+- [x] T065 [P] [US7] Write test for mode selection logic in `tests/unit/test_dspy_generator.py` — test auto mode when confidence >= 0.8 AND surface in low-impact set; HITL mode for high-impact surfaces or low confidence
+- [x] T066 [P] [US7] Write test for HITL flow in `tests/unit/test_dspy_generator.py` — test that `--analyze` mode pauses at each stage: dataset summary → ground truth review → suggestion review → final approval
+- [x] T067 [P] [US7] Write test for `sio datasets inspect` in `tests/unit/test_dspy_generator.py` — test shows error distribution, session timeline, ground truth entries, coverage gaps
 
 ### Implementation for User Story 7
 
-- [ ] T068 [US7] Implement mode selection logic in `src/sio/suggestions/dspy_generator.py` — `_select_mode(pattern, confidence, target_surface) -> "auto" | "hitl"` based on confidence threshold (0.8) and surface impact classification
-- [ ] T069 [US7] Implement automated mode flow in `src/sio/suggestions/dspy_generator.py` — generate ground truth candidates, auto-select highest-scoring, generate suggestion, present single approve/reject
-- [ ] T070 [US7] Implement HITL mode flow in `src/sio/suggestions/dspy_generator.py` — 5-step interactive flow: dataset analysis summary → generate GT candidates + pause → human validates → generate suggestion + reasoning trace → final approval
-- [ ] T071 [US7] Add `--auto` and `--analyze` flags to `sio suggest` in `src/sio/cli/main.py` — `--auto` forces automated, `--analyze` forces HITL, default auto-selects per pattern
-- [ ] T072 [US7] Add `sio datasets inspect <pattern_id>` command in `src/sio/cli/main.py` — Rich panels: error distribution by type, session timeline, ground truth entries count, label distribution, coverage gaps per surface type
-- [ ] T073 [US7] Implement dataset analysis summary for HITL mode — Rich table showing error count, session count, date range, top tools, top error messages, surface routing prediction
+- [x] T068 [US7] Implement mode selection logic in `src/sio/suggestions/dspy_generator.py` — `_select_mode(pattern, confidence, target_surface) -> "auto" | "hitl"` based on confidence threshold (0.8) and surface impact classification
+- [x] T069 [US7] Implement automated mode flow in `src/sio/suggestions/dspy_generator.py` — generate ground truth candidates, auto-select highest-scoring, generate suggestion, present single approve/reject
+- [x] T070 [US7] Implement HITL mode flow in `src/sio/suggestions/dspy_generator.py` — 5-step interactive flow: dataset analysis summary → generate GT candidates + pause → human validates → generate suggestion + reasoning trace → final approval
+- [x] T071 [US7] Add `--auto` and `--analyze` flags to `sio suggest` in `src/sio/cli/main.py` — `--auto` forces automated, `--analyze` forces HITL, default auto-selects per pattern
+- [x] T072 [US7] Add `sio datasets inspect <pattern_id>` command in `src/sio/cli/main.py` — Rich panels: error distribution by type, session timeline, ground truth entries count, label distribution, coverage gaps per surface type
+- [x] T073 [US7] Implement dataset analysis summary for HITL mode — Rich table showing error count, session count, date range, top tools, top error messages, surface routing prediction
 
 **Checkpoint**: Both auto and HITL modes work. Users can control human involvement level. US7 tests pass.
 
@@ -216,12 +216,12 @@
 
 ### Tests for User Story 5
 
-- [ ] T074 [P] [US5] Write integration test in `tests/integration/test_dspy_pipeline.py` — extend existing: test full pipeline from SIO's own SpecStory history → mine → cluster → dataset → suggest with DSPy → verify suggestions reference real SIO development patterns
+- [x] T074 [P] [US5] Write integration test in `tests/integration/test_dspy_pipeline.py` — extend existing: test full pipeline from SIO's own SpecStory history → mine → cluster → dataset → suggest with DSPy → verify suggestions reference real SIO development patterns
 
 ### Implementation for User Story 5
 
-- [ ] T075 [US5] Create self-test script `scripts/self_test.sh` — runs: `sio mine --since "30 days"` → `sio patterns` → `sio suggest --verbose` → validates output has >= 3 suggestions with specific error references
-- [ ] T076 [US5] Document self-test procedure in `specs/003-dspy-suggestion-engine/quickstart.md` — step-by-step instructions for running SIO on itself
+- [x] T075 [US5] Create self-test script `scripts/self_test.sh` — runs: `sio mine --since "30 days"` → `sio patterns` → `sio suggest --verbose` → validates output has >= 3 suggestions with specific error references
+- [x] T076 [US5] Document self-test procedure in `specs/003-dspy-suggestion-engine/quickstart.md` — step-by-step instructions for running SIO on itself
 
 **Checkpoint**: SIO successfully improves itself. US5 integration test passes.
 
@@ -231,15 +231,15 @@
 
 **Purpose**: Replace remaining stubs, cross-story improvements, final validation
 
-- [ ] T077 [P] Replace `mine_failure_context()` stub in `src/sio/core/dspy/rlm_miner.py` with real `dspy.RLM()` call — use corpus_indexer for variable space, config sub_lm for cheap extraction (Constitution Principle XI)
-- [ ] T078 [P] Replace `search_embedding()` stub in `src/sio/core/dspy/corpus_indexer.py` with real fastembed vector search using existing `src/sio/core/embeddings/provider.py` (Constitution Principle XI)
-- [ ] T079 [P] Write test for real RLM miner in `tests/unit/test_rlm_miner.py` — extend existing: test real `dspy.RLM` call with mock corpus, verify trajectory has actual code/output steps
-- [ ] T080 [P] Write test for real corpus embedding search in `tests/unit/test_corpus_indexer.py` — extend existing: test `search_embedding()` returns results different from keyword search, uses fastembed vectors
-- [ ] T081 Run `ruff check src/ tests/` and fix all lint issues
-- [ ] T082 Run full test suite `pytest tests/ -v` — all 756+ existing tests still pass, all new tests pass
-- [ ] T083 Run `scripts/self_test.sh` — SIO runs on itself end-to-end (SC-006)
-- [ ] T084 Validate SC-007: generated suggestions target >= 3 different surface types
-- [ ] T085 Validate SC-008: seed ground truth covers all 7 surface types
+- [x] T077 [P] Replace `mine_failure_context()` stub in `src/sio/core/dspy/rlm_miner.py` with real `dspy.RLM()` call — use corpus_indexer for variable space, config sub_lm for cheap extraction (Constitution Principle XI)
+- [x] T078 [P] Replace `search_embedding()` stub in `src/sio/core/dspy/corpus_indexer.py` with real fastembed vector search using existing `src/sio/core/embeddings/provider.py` (Constitution Principle XI)
+- [x] T079 [P] Write test for real RLM miner in `tests/unit/test_rlm_miner.py` — extend existing: test real `dspy.RLM` call with mock corpus, verify trajectory has actual code/output steps
+- [x] T080 [P] Write test for real corpus embedding search in `tests/unit/test_corpus_indexer.py` — extend existing: test `search_embedding()` returns results different from keyword search, uses fastembed vectors
+- [x] T081 Run `ruff check src/ tests/` and fix all lint issues
+- [x] T082 Run full test suite `pytest tests/ -v` — all 756+ existing tests still pass, all new tests pass
+- [x] T083 Run `scripts/self_test.sh` — SIO runs on itself end-to-end (SC-006)
+- [x] T084 Validate SC-007: generated suggestions target >= 3 different surface types
+- [x] T085 Validate SC-008: seed ground truth covers all 7 surface types
 
 ---
 

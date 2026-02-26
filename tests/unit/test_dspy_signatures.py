@@ -7,8 +7,6 @@ These tests are intentionally RED until the Signature classes are defined.
 
 from __future__ import annotations
 
-import pytest
-
 
 class TestSuggestionGeneratorSignature:
     """SuggestionGenerator must define the expected input and output fields."""

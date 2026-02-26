@@ -10,13 +10,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from sio.core.db.schema import init_db
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -129,7 +127,6 @@ class TestDeactivatePrevious:
     def test_deactivate_previous(self, store_conn, mock_dspy_module, tmp_path):
         from sio.core.dspy.module_store import (
             deactivate_previous,
-            get_active_module,
             save_module,
         )
 

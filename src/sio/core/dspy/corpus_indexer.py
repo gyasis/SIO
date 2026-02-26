@@ -7,6 +7,17 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import numpy as np
+
+# Lazy import guard for fastembed
+try:
+    from sio.core.embeddings.local_model import FastEmbedBackend
+
+    _fastembed_available = True
+except ImportError:
+    FastEmbedBackend = None  # type: ignore[assignment,misc]
+    _fastembed_available = False
+
 
 @dataclass
 class SearchResult:
@@ -24,6 +35,8 @@ class CorpusIndex:
     file_count: int
     chunk_count: int
     _chunks: list[dict] = field(default_factory=list, repr=False)
+    _embeddings: np.ndarray | None = field(default=None, repr=False)
+    _backend: object | None = field(default=None, repr=False)
 
     def search_keyword(
         self, query: str, top_k: int = 5,
@@ -46,15 +59,51 @@ class CorpusIndex:
             for s, c in scored[:top_k]
         ]
 
+    def _ensure_embeddings(self) -> None:
+        """Lazily compute embeddings for all chunks using fastembed.
+
+        Only initializes once. No-op if fastembed is unavailable or chunks are empty.
+        """
+        if self._embeddings is not None:
+            return
+        if not self._chunks:
+            return
+        if not _fastembed_available:
+            return
+
+        self._backend = FastEmbedBackend()
+        texts = [c["text"] for c in self._chunks]
+        self._embeddings = self._backend.encode(texts)
+
     def search_embedding(
         self, query: str, top_k: int = 5,
     ) -> list[SearchResult]:
-        """Search by embedding similarity.
+        """Search by embedding (cosine similarity via fastembed vectors).
 
-        V0.1: Falls back to keyword search.
-        Full implementation will use fastembed vectors.
+        Falls back to keyword search when fastembed is unavailable or
+        embeddings cannot be computed.
         """
-        return self.search_keyword(query, top_k)
+        self._ensure_embeddings()
+
+        if self._embeddings is None or len(self._chunks) == 0:
+            # Fallback to keyword search
+            return self.search_keyword(query, top_k)
+
+        query_emb = self._backend.encode_single(query)
+
+        # Cosine similarity: dot(A, q) / (||A|| * ||q||)
+        norms = np.linalg.norm(self._embeddings, axis=1) * np.linalg.norm(query_emb)
+        sims = np.dot(self._embeddings, query_emb) / np.maximum(norms, 1e-10)
+
+        top_idx = np.argsort(-sims)[:top_k]
+        return [
+            SearchResult(
+                path=self._chunks[i]["path"],
+                score=float(sims[i]),
+                snippet=self._chunks[i]["text"][:200],
+            )
+            for i in top_idx
+        ]
 
 
 def _chunk_markdown(text: str, path: str, chunk_size: int = 500) -> list[dict]:

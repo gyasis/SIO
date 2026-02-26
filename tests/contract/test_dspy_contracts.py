@@ -7,8 +7,6 @@ renames a field in the Signature, these tests catch the mismatch immediately.
 
 from __future__ import annotations
 
-import pytest
-
 
 class TestSuggestionGeneratorContract:
     """Verify SuggestionGenerator Signature fields match the expected contract."""
@@ -50,7 +48,6 @@ class TestSuggestionGeneratorContract:
 
     def test_input_fields_are_dspy_input_fields(self):
         """Each input field must be a dspy.InputField instance."""
-        import dspy
 
         from sio.core.dspy.signatures import SuggestionGenerator
 
@@ -62,7 +59,6 @@ class TestSuggestionGeneratorContract:
 
     def test_output_fields_are_dspy_output_fields(self):
         """Each output field must be a dspy.OutputField instance."""
-        import dspy
 
         from sio.core.dspy.signatures import SuggestionGenerator
 

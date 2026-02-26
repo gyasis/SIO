@@ -1,10 +1,18 @@
-"""DSPy optimizer wrapper — runs prompt optimization with quality gates."""
+"""DSPy optimizer wrapper — runs prompt optimization with quality gates.
+
+Includes both the legacy behavior_invocations optimizer (optimize()) and
+the new DSPy suggestion optimizer (optimize_suggestions()) that uses
+BootstrapFewShot / MIPROv2 on the ground truth corpus.
+"""
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 
 class OptimizationError(Exception):
@@ -22,13 +30,29 @@ class OptimizationResult:
     session_count: int
 
 
+@dataclass
+class SuggestionOptimizationResult:
+    """Result of DSPy suggestion optimization."""
+
+    status: str  # "success", "error", "dry_run"
+    optimizer_used: str
+    training_count: int
+    metric_before: float | None
+    metric_after: float | None
+    module_id: int | None  # DB row ID if saved
+    message: str
+
+
 # --- Quality gates ---
 
 _MIN_EXAMPLES = 10
 _MIN_FAILURES = 5
 _MIN_SESSIONS = 3
 
-_VALID_OPTIMIZERS = ("gepa", "miprov2", "bootstrap")
+_VALID_OPTIMIZERS = ("gepa", "miprov2", "bootstrap", "auto")
+
+# --- Auto-selection thresholds (FR-010) ---
+_MIPROV2_THRESHOLD = 50  # examples needed for MIPROv2
 
 
 def check_quality_gates(
@@ -162,6 +186,245 @@ def _run_dspy_optimization(
     diff = "\n".join(lines)
     score = len(successes) / max(len(dataset), 1)
     return {"proposed_diff": diff, "score": score}
+
+
+# ---------------------------------------------------------------------------
+# T059-T061: Real DSPy suggestion optimization
+# ---------------------------------------------------------------------------
+
+
+def _select_optimizer(optimizer: str, example_count: int) -> str:
+    """Resolve 'auto' to a concrete optimizer based on example count.
+
+    Args:
+        optimizer: Requested optimizer name ('auto', 'bootstrap', 'miprov2').
+        example_count: Number of training examples available.
+
+    Returns:
+        Concrete optimizer name: 'bootstrap' or 'miprov2'.
+    """
+    if optimizer == "auto":
+        if example_count >= _MIPROV2_THRESHOLD:
+            return "miprov2"
+        return "bootstrap"
+    return optimizer
+
+
+def _evaluate_metric(
+    module,
+    corpus: list,
+    metric_fn,
+) -> float:
+    """Evaluate average metric score for a module on a corpus.
+
+    Args:
+        module: DSPy module to evaluate.
+        corpus: List of dspy.Example objects.
+        metric_fn: Metric function (example, pred, trace=None) -> float.
+
+    Returns:
+        Average metric score across all examples.
+    """
+    if not corpus:
+        return 0.0
+
+    scores = []
+    for example in corpus:
+        try:
+            pred = module(
+                error_examples=example.error_examples,
+                error_type=example.error_type,
+                pattern_summary=example.pattern_summary,
+            )
+            score = metric_fn(example, pred, trace=None)
+            scores.append(float(score))
+        except Exception:
+            logger.debug("Metric eval failed for example, scoring 0.0")
+            scores.append(0.0)
+
+    return sum(scores) / len(scores) if scores else 0.0
+
+
+def _run_bootstrap_optimization(
+    module,
+    corpus: list,
+    metric_fn,
+    max_bootstrapped_demos: int = 4,
+    max_labeled_demos: int = 16,
+):
+    """Run BootstrapFewShot optimization.
+
+    Args:
+        module: DSPy SuggestionModule instance.
+        corpus: Training examples (dspy.Example list).
+        metric_fn: Quality metric function.
+        max_bootstrapped_demos: Max bootstrapped demonstrations.
+        max_labeled_demos: Max labeled demonstrations.
+
+    Returns:
+        Optimized DSPy module.
+    """
+    import dspy
+
+    optimizer = dspy.BootstrapFewShot(
+        metric=metric_fn,
+        max_bootstrapped_demos=max_bootstrapped_demos,
+        max_labeled_demos=max_labeled_demos,
+    )
+    return optimizer.compile(module, trainset=corpus)
+
+
+def _run_miprov2_optimization(
+    module,
+    corpus: list,
+    metric_fn,
+    num_trials: int = 10,
+):
+    """Run MIPROv2 optimization.
+
+    Args:
+        module: DSPy SuggestionModule instance.
+        corpus: Training examples (dspy.Example list).
+        metric_fn: Quality metric function.
+        num_trials: Number of optimization trials.
+
+    Returns:
+        Optimized DSPy module.
+    """
+    import dspy
+
+    optimizer = dspy.MIPROv2(
+        metric=metric_fn,
+        auto="medium",
+    )
+    return optimizer.compile(module, trainset=corpus, num_trials=num_trials)
+
+
+def optimize_suggestions(
+    conn: sqlite3.Connection,
+    optimizer: str = "auto",
+    dry_run: bool = False,
+    config=None,
+) -> SuggestionOptimizationResult:
+    """Run DSPy optimization on the ground truth corpus.
+
+    Loads approved ground truth examples, runs BootstrapFewShot or MIPROv2,
+    saves the optimized module to disk, and records it in the DB.
+
+    Args:
+        conn: SQLite connection with SIO schema.
+        optimizer: Optimizer choice ('auto', 'bootstrap', 'miprov2').
+            'auto' selects based on corpus size (FR-010):
+            <50 examples -> bootstrap, >=50 -> miprov2.
+        dry_run: If True, evaluate metrics but do not save the module.
+        config: Optional SIOConfig for LM creation. If None, uses default.
+
+    Returns:
+        SuggestionOptimizationResult with status and metrics.
+
+    Raises:
+        OptimizationError: If DSPy compilation fails.
+    """
+    import dspy
+
+    from sio.core.dspy.lm_factory import create_lm
+    from sio.core.dspy.metrics import suggestion_quality_metric
+    from sio.core.dspy.module_store import save_module
+    from sio.core.dspy.modules import SuggestionModule
+    from sio.ground_truth.corpus import load_training_corpus
+
+    # Load corpus
+    corpus = load_training_corpus(conn)
+    if not corpus:
+        return SuggestionOptimizationResult(
+            status="error",
+            optimizer_used=optimizer,
+            training_count=0,
+            metric_before=None,
+            metric_after=None,
+            module_id=None,
+            message="No positive ground truth examples found. "
+                    "Run 'sio ground-truth review' to approve examples first.",
+        )
+
+    # Configure LM
+    if config is not None:
+        lm = create_lm(config)
+        if lm is not None:
+            dspy.configure(lm=lm)
+
+    # Resolve optimizer
+    resolved = _select_optimizer(optimizer, len(corpus))
+    logger.info(
+        "Optimizing suggestions: optimizer=%s (resolved from '%s'), "
+        "corpus_size=%d",
+        resolved, optimizer, len(corpus),
+    )
+
+    # Create base module and evaluate before score
+    base_module = SuggestionModule()
+    metric_before = _evaluate_metric(
+        base_module, corpus, suggestion_quality_metric,
+    )
+
+    # Run optimization
+    try:
+        if resolved == "miprov2":
+            optimized_module = _run_miprov2_optimization(
+                SuggestionModule(), corpus, suggestion_quality_metric,
+            )
+        else:
+            optimized_module = _run_bootstrap_optimization(
+                SuggestionModule(), corpus, suggestion_quality_metric,
+            )
+    except Exception as exc:
+        raise OptimizationError(
+            f"DSPy {resolved} optimization failed: {exc}"
+        ) from exc
+
+    # Evaluate after score
+    metric_after = _evaluate_metric(
+        optimized_module, corpus, suggestion_quality_metric,
+    )
+
+    if dry_run:
+        return SuggestionOptimizationResult(
+            status="dry_run",
+            optimizer_used=resolved,
+            training_count=len(corpus),
+            metric_before=metric_before,
+            metric_after=metric_after,
+            module_id=None,
+            message=f"Dry run complete. Before: {metric_before:.3f}, "
+                    f"After: {metric_after:.3f}",
+        )
+
+    # Save optimized module
+    module_id = save_module(
+        conn,
+        module=optimized_module,
+        module_type="suggestion",
+        optimizer_used=resolved,
+        training_count=len(corpus),
+        metric_before=metric_before,
+        metric_after=metric_after,
+    )
+
+    return SuggestionOptimizationResult(
+        status="success",
+        optimizer_used=resolved,
+        training_count=len(corpus),
+        metric_before=metric_before,
+        metric_after=metric_after,
+        module_id=module_id,
+        message=f"Optimization complete. Before: {metric_before:.3f}, "
+                f"After: {metric_after:.3f}. Module saved (ID: {module_id}).",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Legacy behavior_invocations optimizer (kept for backward compatibility)
+# ---------------------------------------------------------------------------
 
 
 def optimize(

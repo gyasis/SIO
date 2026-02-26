@@ -8,10 +8,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from sio.core.config import SIOConfig
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -128,7 +125,6 @@ class TestCreateSubLM:
     @patch.dict("os.environ", {}, clear=True)
     @patch("dspy.LM")
     def test_create_sub_lm(self, mock_lm_cls):
-        from sio.core.dspy.lm_factory import create_lm
 
         mock_lm_cls.return_value = MagicMock()
         cfg = _make_config(

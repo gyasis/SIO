@@ -6,8 +6,6 @@ sections are wired into SIOConfig and load_config().
 
 from __future__ import annotations
 
-import pytest
-
 from sio.core.config import SIOConfig, load_config
 
 

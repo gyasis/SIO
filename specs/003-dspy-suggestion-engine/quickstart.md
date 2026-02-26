@@ -103,3 +103,135 @@ pytest tests/integration/test_dspy_pipeline.py -v
 | `src/sio/ground_truth/reviewer.py` | Human review interface |
 | `src/sio/ground_truth/corpus.py` | Corpus management |
 | `src/sio/ground_truth/seeder.py` | Seed example generation |
+
+## Running SIO on Itself (Self-Test)
+
+SIO is designed to improve itself. The self-test validates the full pipeline
+end-to-end using SIO's own SpecStory development history as input data.
+
+### Quick Self-Test (automated script)
+
+```bash
+# From the SIO project root
+./scripts/self_test.sh
+
+# With a custom time window
+./scripts/self_test.sh --since "7 days"
+```
+
+The script runs through all four pipeline stages and validates output quality.
+Exit code 0 means all checks passed.
+
+### Manual Self-Test (step-by-step)
+
+#### Step 1: Mine errors from your development history
+
+```bash
+sio mine --since "30 days"
+```
+
+This scans `~/.specstory/history` and `~/.claude/projects` for session
+files, extracts error records (tool failures, user corrections, agent
+admissions, repeated attempts, undos), and stores them in `~/.sio/sio.db`.
+
+Expected output: `Scanned N files / Found M errors`
+
+#### Step 2: View discovered patterns
+
+```bash
+sio patterns
+```
+
+This clusters the mined errors by semantic similarity (using fastembed
+embeddings) and ranks them by frequency x recency. You should see a
+table with pattern descriptions, error counts, and rank scores.
+
+Optional filters:
+
+```bash
+# Only tool_failure patterns
+sio patterns --type tool_failure
+
+# Only user_correction patterns
+sio patterns --type user_correction
+```
+
+#### Step 3: Generate suggestions
+
+```bash
+sio suggest --verbose
+```
+
+This runs the full pipeline: cluster -> persist -> dataset build -> suggestion
+generation. When an LLM backend is configured (see LLM Configuration above),
+suggestions are generated via DSPy. Otherwise, deterministic templates produce
+targeted rules based on actual error content.
+
+Optional filters:
+
+```bash
+# Only analyze a specific error type
+sio suggest --type tool_failure
+
+# Filter by keyword in error content
+sio suggest --grep "snowflake"
+
+# Lower the dataset threshold for small datasets
+sio suggest --min-examples 1
+```
+
+#### Step 4: Review suggestions
+
+```bash
+sio suggest-review
+```
+
+Interactive review loop: accept, reject, or edit each pending suggestion.
+Accepted suggestions are ready for application.
+
+#### Step 5: Apply an accepted suggestion
+
+```bash
+sio apply <suggestion-id>
+```
+
+Writes the proposed change to the target file (e.g., CLAUDE.md) with a
+diff preview and optional git commit.
+
+### Integration Tests
+
+```bash
+# Run the self-pipeline integration test (no LLM required)
+pytest tests/integration/test_self_pipeline.py -v
+
+# Run all integration tests
+pytest tests/integration/ -v
+
+# Run with the DSPy pipeline test (requires LLM config)
+pytest tests/integration/test_dspy_pipeline.py -v
+```
+
+### Verifying the Database
+
+```bash
+# Check current state
+sio status
+
+# Direct DB inspection
+sqlite3 ~/.sio/sio.db "SELECT COUNT(*) FROM error_records;"
+sqlite3 ~/.sio/sio.db "SELECT COUNT(*) FROM patterns;"
+sqlite3 ~/.sio/sio.db "SELECT COUNT(*) FROM suggestions WHERE status='pending';"
+
+# View ground truth stats
+sio ground-truth status
+```
+
+### Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| `No source directories found` | Ensure `~/.specstory/history` or `~/.claude/projects` exist with session files |
+| `No errors mined yet` | Run `sio mine --since "30 days"` first |
+| `No suggestions generated` | Lower `--min-examples` to 1, or mine a longer time window |
+| `DSPy path unavailable` | Set LLM env vars (see LLM Configuration above); template fallback still works |
+| `fastembed model download fails` | Check internet connectivity; model is cached after first download |

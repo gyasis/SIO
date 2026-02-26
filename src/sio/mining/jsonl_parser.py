@@ -36,7 +36,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # Internal: tool_result tracking
 # ---------------------------------------------------------------------------

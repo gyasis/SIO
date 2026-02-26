@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import inspect
 
-import pytest
-
 
 class TestSuggestionModule:
     """SuggestionModule must be a valid dspy.Module with generate and forward."""

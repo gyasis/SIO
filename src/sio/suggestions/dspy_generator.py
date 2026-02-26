@@ -7,15 +7,22 @@ unavailable or the LLM call fails.
 Public API
 ----------
     generate_dspy_suggestion(pattern, dataset, config, verbose=False) -> dict
+    _select_mode(pattern, confidence, target_surface) -> "auto" | "hitl"
+    generate_auto_suggestion(pattern, dataset, config) -> dict | None
+    generate_hitl_suggestion(pattern, dataset, config, conn, input_fn=None) -> dict | None
+    build_dataset_analysis_summary(pattern, dataset) -> dict
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import sqlite3
+from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +41,55 @@ _SURFACE_TARGET_MAP: dict[str, str] = {
 }
 
 _VALID_SURFACES = frozenset(_SURFACE_TARGET_MAP.keys())
+
+
+# ---------------------------------------------------------------------------
+# T062: Optimized module loading (FR-011)
+# ---------------------------------------------------------------------------
+
+
+def _load_optimized_or_default(config: Any) -> Any:
+    """Load the active optimized SuggestionModule, or create a fresh one.
+
+    Checks the SIO database for an active optimized module of type
+    'suggestion'. If found and the file exists on disk, loads and returns
+    it. Otherwise returns a new (unoptimized) SuggestionModule.
+
+    Args:
+        config: SIOConfig instance (used to locate the DB).
+
+    Returns:
+        A DSPy SuggestionModule — either optimized or freshly created.
+    """
+    from sio.core.dspy.modules import SuggestionModule
+
+    try:
+        db_path = os.path.expanduser("~/.sio/sio.db")
+        if not os.path.exists(db_path):
+            return SuggestionModule()
+
+        import sqlite3
+
+        from sio.core.dspy.module_store import get_active_module, load_module
+
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        active = get_active_module(conn, "suggestion")
+        conn.close()
+
+        if active and os.path.exists(active["file_path"]):
+            logger.info(
+                "Loading optimized SuggestionModule from %s",
+                active["file_path"],
+            )
+            return load_module(SuggestionModule, active["file_path"])
+    except Exception:
+        logger.debug(
+            "Failed to load optimized module, falling back to default",
+            exc_info=True,
+        )
+
+    return SuggestionModule()
 
 # ---------------------------------------------------------------------------
 # T026: Input sanitization
@@ -193,7 +249,6 @@ def generate_dspy_suggestion(
     import dspy
 
     from sio.core.dspy.lm_factory import create_lm
-    from sio.core.dspy.modules import SuggestionModule
     from sio.suggestions.confidence import score_confidence
 
     # --- Create and configure LM ---
@@ -229,8 +284,9 @@ def generate_dspy_suggestion(
             len(examples_json),
         )
 
-    # --- Run DSPy module ---
-    module = SuggestionModule()
+    # --- T062: Load optimized module if available (FR-011) ---
+    module = _load_optimized_or_default(config)
+
     try:
         result = module.forward(
             error_examples=examples_json,
@@ -310,4 +366,296 @@ def generate_dspy_suggestion(
         "reasoning_trace": reasoning_trace,
         "status": "pending",
         "_using_dspy": True,
+    }
+
+
+# ---------------------------------------------------------------------------
+# T068: Mode selection logic (US7)
+# ---------------------------------------------------------------------------
+
+_LOW_IMPACT_SURFACES: frozenset[str] = frozenset({"claude_md_rule", "agent_profile"})
+_HIGH_IMPACT_SURFACES: frozenset[str] = frozenset({
+    "hook_config", "mcp_config", "settings_config",
+    "project_config", "skill_update",
+})
+_AUTO_CONFIDENCE_THRESHOLD: float = 0.8
+
+
+def _select_mode(
+    pattern: dict[str, Any],
+    confidence: float,
+    target_surface: str,
+) -> str:
+    """Select pipeline mode based on confidence and surface impact.
+
+    Returns ``"auto"`` when confidence >= 0.8 AND the target surface is
+    low-impact (claude_md_rule, agent_profile). Returns ``"hitl"`` for
+    everything else, including unknown surfaces.
+
+    Parameters
+    ----------
+    pattern:
+        Pattern dict (currently unused but available for future heuristics).
+    confidence:
+        Blended confidence score in [0.0, 1.0].
+    target_surface:
+        Normalized target surface string.
+
+    Returns
+    -------
+    str
+        Either ``"auto"`` or ``"hitl"``.
+    """
+    if (
+        confidence >= _AUTO_CONFIDENCE_THRESHOLD
+        and target_surface in _LOW_IMPACT_SURFACES
+    ):
+        return "auto"
+    return "hitl"
+
+
+# ---------------------------------------------------------------------------
+# T069: Automated mode flow (US7)
+# ---------------------------------------------------------------------------
+
+
+def generate_auto_suggestion(
+    pattern: dict[str, Any],
+    dataset: dict[str, Any],
+    config: Any,
+    *,
+    verbose: bool = False,
+) -> dict[str, Any] | None:
+    """Generate a suggestion in fully automated mode (no human interaction).
+
+    Calls ``generate_dspy_suggestion`` and, if successful, marks the result
+    as ``auto_approved``. Returns ``None`` on any generation failure.
+
+    Parameters
+    ----------
+    pattern:
+        Pattern dict with standard keys.
+    dataset:
+        Dataset metadata dict.
+    config:
+        SIOConfig instance.
+    verbose:
+        Pass through to DSPy generator for trace logging.
+
+    Returns
+    -------
+    dict | None
+        Suggestion dict with ``_mode="auto"`` and ``status="auto_approved"``,
+        or ``None`` if generation failed.
+    """
+    try:
+        suggestion = generate_dspy_suggestion(
+            pattern, dataset, config, verbose=verbose,
+        )
+    except Exception:
+        logger.warning(
+            "Auto mode: DSPy generation failed for pattern %s",
+            pattern.get("pattern_id", pattern.get("id", "?")),
+            exc_info=True,
+        )
+        return None
+
+    suggestion["_mode"] = "auto"
+    suggestion["status"] = "auto_approved"
+    return suggestion
+
+
+# ---------------------------------------------------------------------------
+# T070: HITL (Human-in-the-Loop) mode flow (US7)
+# ---------------------------------------------------------------------------
+
+
+def generate_hitl_suggestion(
+    pattern: dict[str, Any],
+    dataset: dict[str, Any],
+    config: Any,
+    conn: sqlite3.Connection,
+    *,
+    verbose: bool = False,
+    input_fn: Callable[[str], str] | None = None,
+) -> dict[str, Any] | None:
+    """Generate a suggestion with interactive human review at each stage.
+
+    The flow has three pause points where the human can abort:
+    1. After dataset analysis summary — continue or skip this pattern.
+    2. After suggestion generation and review — continue or reject.
+    3. Final approval — approve or reject the suggestion.
+
+    Parameters
+    ----------
+    pattern:
+        Pattern dict with standard keys.
+    dataset:
+        Dataset metadata dict.
+    config:
+        SIOConfig instance.
+    conn:
+        SQLite connection (for ground truth lookups if needed).
+    verbose:
+        Pass through to DSPy generator.
+    input_fn:
+        Callable that accepts a prompt string and returns user input.
+        Defaults to ``input()`` for real interactive use. Pass a mock
+        for testing.
+
+    Returns
+    -------
+    dict | None
+        Suggestion dict with ``_mode="hitl"`` and ``status="approved"``,
+        or ``None`` if the user aborted at any stage or generation failed.
+    """
+    if input_fn is None:
+        input_fn = input
+
+    # ---- Stage 1: Dataset analysis summary ----
+    summary = build_dataset_analysis_summary(pattern, dataset)
+    logger.info(
+        "HITL dataset summary: %d errors, %d sessions, tools=%s",
+        summary["error_count"],
+        summary["session_count"],
+        summary["top_tools"],
+    )
+
+    response = input_fn(
+        f"Dataset summary: {summary['error_count']} errors across "
+        f"{summary['session_count']} sessions. Continue? [y/n] "
+    )
+    if response.strip().lower() != "y":
+        logger.info("HITL: user declined at dataset summary stage")
+        return None
+
+    # ---- Stage 2: Generate suggestion via DSPy ----
+    try:
+        suggestion = generate_dspy_suggestion(
+            pattern, dataset, config, verbose=verbose,
+        )
+    except Exception:
+        logger.warning(
+            "HITL: DSPy generation failed for pattern %s",
+            pattern.get("pattern_id", pattern.get("id", "?")),
+            exc_info=True,
+        )
+        return None
+
+    # ---- Stage 3: Show suggestion and get review ----
+    response = input_fn(
+        f"Suggestion: {suggestion['rule_title']} "
+        f"(confidence={suggestion['confidence']:.0%}, "
+        f"target={suggestion['target_surface']}). "
+        f"Continue to approval? [y/n] "
+    )
+    if response.strip().lower() != "y":
+        logger.info("HITL: user declined at suggestion review stage")
+        return None
+
+    # ---- Stage 4: Final approval ----
+    response = input_fn(
+        f"Approve suggestion '{suggestion['rule_title']}'? [y/n] "
+    )
+    if response.strip().lower() != "y":
+        logger.info("HITL: user rejected final approval")
+        return None
+
+    suggestion["_mode"] = "hitl"
+    suggestion["status"] = "approved"
+    return suggestion
+
+
+# ---------------------------------------------------------------------------
+# T073: Dataset analysis summary for HITL mode (US7)
+# ---------------------------------------------------------------------------
+
+
+def build_dataset_analysis_summary(
+    pattern: dict[str, Any],
+    dataset: dict[str, Any],
+) -> dict[str, Any]:
+    """Build a summary of the dataset for human review in HITL mode.
+
+    Analyzes the dataset examples to extract:
+    - Error count and session count from the pattern
+    - Date range of errors
+    - Top tool names
+    - Top error message snippets
+    - Predicted target surface based on error type
+
+    Parameters
+    ----------
+    pattern:
+        Pattern dict with standard keys.
+    dataset:
+        Dataset metadata dict with ``file_path``.
+
+    Returns
+    -------
+    dict
+        Summary dict with keys: ``error_count``, ``session_count``,
+        ``date_range``, ``top_tools``, ``top_error_messages``,
+        ``surface_prediction``.
+    """
+    error_count = int(pattern.get("error_count") or 0)
+    session_count = int(pattern.get("session_count") or 0)
+
+    examples = _load_dataset_examples(dataset)
+
+    # Extract date range
+    timestamps = [
+        e.get("timestamp", "") for e in examples if e.get("timestamp")
+    ]
+    if timestamps:
+        sorted_ts = sorted(timestamps)
+        date_range = {"earliest": sorted_ts[0], "latest": sorted_ts[-1]}
+    else:
+        first_seen = pattern.get("first_seen", "")
+        last_seen = pattern.get("last_seen", "")
+        date_range = {"earliest": first_seen, "latest": last_seen}
+
+    # Extract top tools
+    tool_counter: Counter[str] = Counter()
+    for ex in examples:
+        tn = ex.get("tool_name")
+        if tn:
+            tool_counter[tn] += 1
+    # Fall back to pattern tool_name
+    if not tool_counter and pattern.get("tool_name"):
+        tool_counter[pattern["tool_name"]] = error_count
+    top_tools = [name for name, _ in tool_counter.most_common(5)]
+
+    # Extract top error message snippets
+    error_messages: list[str] = []
+    seen_prefixes: set[str] = set()
+    for ex in examples:
+        msg = (ex.get("error_text") or "").strip()
+        if not msg:
+            continue
+        prefix = msg[:80].lower()
+        if prefix not in seen_prefixes:
+            seen_prefixes.add(prefix)
+            error_messages.append(msg[:200])
+        if len(error_messages) >= 5:
+            break
+
+    # Predict surface based on error type
+    error_type = pattern.get("error_type") or "unknown"
+    surface_map = {
+        "tool_failure": "claude_md_rule",
+        "user_correction": "claude_md_rule",
+        "agent_admission": "claude_md_rule",
+        "repeated_attempt": "hook_config",
+        "undo": "settings_config",
+    }
+    surface_prediction = surface_map.get(error_type, "claude_md_rule")
+
+    return {
+        "error_count": error_count,
+        "session_count": session_count,
+        "date_range": date_range,
+        "top_tools": top_tools,
+        "top_error_messages": error_messages,
+        "surface_prediction": surface_prediction,
     }

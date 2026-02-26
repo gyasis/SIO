@@ -3,10 +3,22 @@
 import json as _json
 import os
 
-
 import click
 
 _DEFAULT_DB_DIR = os.path.expanduser("~/.sio/claude-code")
+
+
+def _get_sio_db_conn():
+    """Open (and init) the SIO main database. Returns conn or None.
+
+    Extracted as a module-level function so tests can monkeypatch it.
+    """
+    from sio.core.db.schema import init_db
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        return None
+    return init_db(db_path)
 
 
 @click.group()
@@ -573,6 +585,144 @@ def collect(since, error_type):
     click.echo(f"Collected {count} error records matching criteria.")
 
 
+@datasets.command()
+@click.argument("pattern_id")
+def inspect(pattern_id):
+    """Inspect dataset for a specific pattern.
+
+    Shows error distribution, session timeline, ground truth entries,
+    and coverage gaps per surface type.
+    """
+    from collections import Counter
+
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+
+    console = Console()
+
+    conn = _get_sio_db_conn()
+    if conn is None:
+        click.echo("No database found. Run 'sio mine' first.")
+        return
+
+    # Look up pattern
+    from sio.core.db.queries import get_pattern_by_id
+    pattern = get_pattern_by_id(conn, pattern_id)
+    if pattern is None:
+        click.echo(f"No pattern found with id '{pattern_id}'.")
+        conn.close()
+        return
+
+    pat_row_id = pattern["id"]
+
+    # --- Error distribution ---
+    from sio.core.db.queries import get_errors_for_pattern
+    errors = get_errors_for_pattern(conn, pat_row_id)
+
+    error_type_counts: Counter = Counter()
+    session_ids: set = set()
+    tool_counts: Counter = Counter()
+    timestamps: list = []
+    top_messages: list = []
+    seen_msg_prefixes: set = set()
+
+    for e in errors:
+        et = e.get("error_type") or "unknown"
+        error_type_counts[et] += 1
+        sid = e.get("session_id")
+        if sid:
+            session_ids.add(sid)
+        tn = e.get("tool_name")
+        if tn:
+            tool_counts[tn] += 1
+        ts = e.get("timestamp")
+        if ts:
+            timestamps.append(ts)
+        msg = (e.get("error_text") or "").strip()
+        if msg:
+            prefix = msg[:80].lower()
+            if prefix not in seen_msg_prefixes and len(top_messages) < 5:
+                seen_msg_prefixes.add(prefix)
+                top_messages.append(msg[:120])
+
+    # Error distribution table
+    err_table = Table(title="Error Distribution by Type")
+    err_table.add_column("Error Type", style="bold")
+    err_table.add_column("Count", justify="right")
+    for etype, count in error_type_counts.most_common():
+        err_table.add_row(etype, str(count))
+    console.print(err_table)
+    console.print()
+
+    # Session timeline
+    sorted_ts = sorted(timestamps) if timestamps else []
+    session_info = (
+        f"Sessions: {len(session_ids)} unique\n"
+        f"Errors: {len(errors)} total\n"
+    )
+    if sorted_ts:
+        session_info += f"Date range: {sorted_ts[0]} to {sorted_ts[-1]}"
+    else:
+        first = pattern.get('first_seen', '?')
+        last = pattern.get('last_seen', '?')
+        session_info += f"Date range: {first} to {last}"
+    console.print(Panel(session_info, title="Session Timeline"))
+    console.print()
+
+    # Top tools
+    if tool_counts:
+        tool_table = Table(title="Top Tools")
+        tool_table.add_column("Tool", style="bold")
+        tool_table.add_column("Count", justify="right")
+        for tn, count in tool_counts.most_common(5):
+            tool_table.add_row(tn, str(count))
+        console.print(tool_table)
+        console.print()
+
+    # Ground truth info
+    from sio.core.db.queries import get_ground_truth_by_pattern
+    gt_entries = get_ground_truth_by_pattern(conn, pattern_id)
+    gt_label_counts: Counter = Counter()
+    gt_surface_counts: Counter = Counter()
+    for gt in gt_entries:
+        gt_label_counts[gt.get("label", "unknown")] += 1
+        gt_surface_counts[gt.get("target_surface", "unknown")] += 1
+
+    gt_table = Table(title="Ground Truth Entries")
+    gt_table.add_column("Label", style="bold")
+    gt_table.add_column("Count", justify="right")
+    if gt_label_counts:
+        for label, count in gt_label_counts.most_common():
+            gt_table.add_row(label, str(count))
+    else:
+        gt_table.add_row("(none)", "0")
+    console.print(gt_table)
+    console.print()
+
+    # Coverage gaps per surface type
+    all_surfaces = {
+        "claude_md_rule", "skill_update", "hook_config",
+        "mcp_config", "settings_config", "agent_profile", "project_config",
+    }
+    covered_surfaces = set(gt_surface_counts.keys())
+
+    coverage_table = Table(title="Surface Coverage Gaps")
+    coverage_table.add_column("Surface Type", style="bold")
+    coverage_table.add_column("Status")
+    for surface in sorted(all_surfaces):
+        if surface in covered_surfaces:
+            cnt = gt_surface_counts[surface]
+            coverage_table.add_row(
+                surface, f"[green]covered ({cnt})[/green]",
+            )
+        else:
+            coverage_table.add_row(surface, "[yellow]no ground truth[/yellow]")
+    console.print(coverage_table)
+
+    conn.close()
+
+
 @cli.command()
 @click.option(
     "--type", "error_type", default=None,
@@ -588,7 +738,15 @@ def collect(since, error_type):
     "--verbose", "-v", is_flag=True, default=False,
     help="Enable verbose DSPy trace logging.",
 )
-def suggest(error_type, min_examples, grep_term, verbose):
+@click.option(
+    "--auto", "auto_mode", is_flag=True, default=False,
+    help="Force automated mode for all patterns (skip interactive review).",
+)
+@click.option(
+    "--analyze", "analyze_mode", is_flag=True, default=False,
+    help="Force HITL (human-in-the-loop) mode for all patterns.",
+)
+def suggest(error_type, min_examples, grep_term, verbose, auto_mode, analyze_mode):
     """Run the full pipeline: cluster -> persist -> dataset -> suggestions."""
     from datetime import datetime, timezone
 
@@ -1394,6 +1552,152 @@ def gt_status():
     for surface, count in sorted(stats.get("by_surface", {}).items()):
         surface_table.add_row(surface, str(count))
     console.print(surface_table)
+
+
+# ---------------------------------------------------------------------------
+# Optimize Suggestions command (T063 / T064)
+# ---------------------------------------------------------------------------
+
+
+@cli.command("optimize-suggestions")
+@click.option(
+    "--optimizer",
+    type=click.Choice(["auto", "bootstrap", "miprov2"]),
+    default="auto",
+    help="DSPy optimizer to use. 'auto' selects based on corpus size.",
+)
+@click.option("--dry-run", is_flag=True, help="Evaluate metrics without saving.")
+def optimize_suggestions_cmd(optimizer, dry_run):
+    """Optimize the suggestion module using ground truth corpus.
+
+    Uses BootstrapFewShot (<50 examples) or MIPROv2 (>=50 examples)
+    to optimize the DSPy SuggestionModule on approved ground truth.
+    Shows before/after metric scores and prompts for approval.
+    """
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+
+    from sio.core.config import load_config
+    from sio.core.db.schema import init_db
+    from sio.core.dspy.optimizer import OptimizationError, optimize_suggestions
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found. Run 'sio ground-truth seed' first.")
+        raise SystemExit(1)
+
+    conn = init_db(db_path)
+    config = load_config()
+    console = Console()
+
+    console.print(
+        f"\n[bold]Optimizing suggestions[/bold] "
+        f"(optimizer={optimizer}, dry_run={dry_run})\n"
+    )
+
+    try:
+        result = optimize_suggestions(
+            conn, optimizer=optimizer, dry_run=dry_run, config=config,
+        )
+    except OptimizationError as exc:
+        console.print(f"[red]Optimization failed:[/red] {exc}")
+        conn.close()
+        raise SystemExit(1)
+
+    # Display results
+    if result.status == "error":
+        console.print(f"[red]Cannot optimize:[/red] {result.message}")
+        conn.close()
+        raise SystemExit(1)
+
+    # T064: Before/after metric display
+    metrics_table = Table(title="Optimization Metrics")
+    metrics_table.add_column("Metric", style="bold")
+    metrics_table.add_column("Value", justify="right")
+    metrics_table.add_row("Optimizer", result.optimizer_used)
+    metrics_table.add_row("Training examples", str(result.training_count))
+    metrics_table.add_row(
+        "Metric (before)",
+        f"{result.metric_before:.3f}" if result.metric_before is not None else "N/A",
+    )
+    metrics_table.add_row(
+        "Metric (after)",
+        f"{result.metric_after:.3f}" if result.metric_after is not None else "N/A",
+    )
+
+    # Compute improvement
+    if result.metric_before is not None and result.metric_after is not None:
+        delta = result.metric_after - result.metric_before
+        delta_pct = (delta / max(result.metric_before, 0.001)) * 100
+        style = "green" if delta > 0 else "red" if delta < 0 else ""
+        metrics_table.add_row(
+            "Improvement",
+            f"{delta:+.3f} ({delta_pct:+.1f}%)",
+            style=style,
+        )
+
+    console.print(metrics_table)
+    console.print()
+
+    # T064: Show few-shot demo diff if module was saved
+    if result.module_id is not None:
+        _display_optimization_diff(console, conn, result)
+
+    if dry_run:
+        console.print("[yellow][dry-run] No changes saved.[/yellow]")
+    else:
+        console.print(Panel(
+            result.message,
+            title="Result",
+            style="green" if result.status == "success" else "yellow",
+        ))
+
+        # Approval prompt
+        choice = click.prompt(
+            "Keep optimized module? [y]es / [n]o (rollback)",
+            type=click.Choice(["y", "n"]),
+            default="y",
+        )
+        if choice == "n":
+            # Rollback: deactivate the module
+            from sio.core.dspy.module_store import deactivate_previous
+
+            deactivate_previous(conn, "suggestion")
+            console.print("[yellow]Optimized module deactivated.[/yellow]")
+
+    conn.close()
+
+
+def _display_optimization_diff(console, conn, result):
+    """T064: Display Rich diff of default vs optimized module's few-shot examples."""
+    from rich.panel import Panel
+    from rich.syntax import Syntax
+
+    try:
+        from sio.core.dspy.module_store import get_active_module
+
+        active = get_active_module(conn, "suggestion")
+        if active and os.path.exists(active["file_path"]):
+            import json as json_mod
+
+            with open(active["file_path"]) as f:
+                module_data = json_mod.load(f)
+
+            # Extract demos from the saved module JSON
+            demos_text = json_mod.dumps(module_data, indent=2, default=str)
+            # Truncate for display
+            if len(demos_text) > 3000:
+                demos_text = demos_text[:3000] + "\n... (truncated)"
+
+            console.print(Panel(
+                Syntax(demos_text, "json", theme="monokai"),
+                title="Optimized Module (few-shot examples)",
+                subtitle=f"File: {active['file_path']}",
+            ))
+    except Exception:
+        # Non-critical display — don't crash
+        pass
 
 
 if __name__ == "__main__":
