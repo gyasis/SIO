@@ -32,4 +32,34 @@ Python 3.11+: Follow standard conventions
 - 001-self-improving-organism: Added Python 3.11+ + DSPy (latest, currently 3.1.3), fastembed, numpy, sqlite3 (stdlib), Click (CLI), Rich (terminal UI)
 
 <!-- MANUAL ADDITIONS START -->
+
+## SIO-Generated Rules (from error pattern analysis)
+
+### Sequential Tool Execution
+Never call Bash in parallel with Write or Edit. State-modifying tools must run sequentially — parallel execution causes "Sibling tool call errored" cascade failures.
+- Chain shell commands with `&&` in a single Bash call
+- Run file writes AFTER Bash completes, not alongside it
+
+### Import & Lint Compliance
+Before finishing any Python file edit, mentally verify:
+1. Imports are sorted: stdlib → third-party → local, alphabetical within groups
+2. No unused imports (F401)
+3. No lines exceed 99 characters (E501) — break with parentheses or intermediate variables
+4. Run `ruff check --fix .` after multi-file changes
+
+### Session Continuation
+When resuming after context truncation:
+1. Read `session_state.json` or `.memory/session.json` first
+2. Run `git status` to see uncommitted work
+3. Confirm with user what to continue before acting
+4. Never re-do work that was already committed
+
+### Test Generation Protocol
+When writing tests from specifications:
+1. Decompose requirements into discrete test functions before writing code
+2. Each test: setup → execute → assert (no shared mutable state)
+3. Verify every requirement from the spec has a corresponding test
+4. Run `ruff check --fix` on test files before executing them
+5. If tests fail, fix the code not the tests (unless test is wrong)
+
 <!-- MANUAL ADDITIONS END -->
