@@ -89,6 +89,24 @@ As a developer of SIO, I can point SIO at its own SpecStory/JSONL session histor
 
 ---
 
+### User Story 6 - Ground Truth Seeding and Training Data Lifecycle (Priority: P1)
+
+As an AI CLI user, the system maintains a growing corpus of ground truth examples — ideal CLAUDE.md rules paired with the error patterns they address — so that DSPy optimizers have labeled input→output training data to learn from.
+
+**Why this priority**: P1 because DSPy cannot optimize without training data. The datasets (error examples) are only the INPUT side. DSPy needs input→output pairs where the output is the DESIRED rule. Without ground truth, BootstrapFewShot has nothing to bootstrap from and MIPROv2 has no metric to optimize against. This is the bridge between "we have data" and "DSPy can learn."
+
+**Independent Test**: Can be tested by creating 5 hand-written ground truth examples (error pattern → ideal rule), running BootstrapFewShot with those seed examples, and verifying the optimized module generates better rules than the un-seeded default.
+
+**Acceptance Scenarios**:
+
+1. **Given** SIO is freshly installed with no prior suggestions, **When** the user runs `sio suggest` for the first time, **Then** the system ships with 5-10 seed ground truth examples (hand-written ideal rules for common error types: tool_failure, user_correction, agent_admission, repeated_attempt, undo) that DSPy uses as few-shot demonstrations.
+2. **Given** a user approves a suggestion via `sio approve`, **When** the approval is recorded, **Then** the approved suggestion (error pattern → generated rule) is automatically added to the ground truth training corpus as a positive example for future DSPy optimization.
+3. **Given** a user rejects a suggestion and provides an edited version or note explaining why, **When** the rejection is recorded with a note, **Then** the rejection is stored as a negative training signal, and if an edited version is provided, that becomes a positive ground truth example.
+4. **Given** 10+ ground truth examples exist (seed + approved), **When** the user runs `sio optimize suggestions`, **Then** BootstrapFewShot uses these examples to select the most effective few-shot demonstrations for the suggestion generation prompt.
+5. **Given** the ground truth corpus grows over time through approvals, **When** DSPy re-optimizes, **Then** the quality of generated suggestions measurably improves compared to earlier optimization runs with fewer examples.
+
+---
+
 ### Edge Cases
 
 - What happens when the LLM generates a rule that is too long (>500 lines)? The system must truncate or summarize.
@@ -118,6 +136,13 @@ As a developer of SIO, I can point SIO at its own SpecStory/JSONL session histor
 - **FR-014**: System MUST log DSPy call traces (input, output, reasoning) for debugging when `--verbose` flag is passed to `sio suggest`.
 - **FR-015**: System MUST generate rules in valid markdown format suitable for direct insertion into CLAUDE.md files.
 - **FR-016**: System MUST NOT contain placeholder, stub, or simulated implementations in any production code path — every function in the suggestion generation pipeline must perform its actual intended work using real DSPy calls to a real LLM.
+- **FR-017**: System MUST ship with 5-10 seed ground truth examples — hand-crafted input→output pairs where the input is a representative error pattern (one per error type) and the output is an ideal CLAUDE.md rule. These seed examples bootstrap DSPy before any user has approved suggestions.
+- **FR-018**: System MUST automatically promote approved suggestions to the ground truth training corpus — when a user approves a suggestion, the (error_pattern → generated_rule) pair becomes a positive training example for future DSPy optimization.
+- **FR-019**: System MUST record rejected suggestions as negative training signals — when a user rejects a suggestion with a note, the note and original output are stored so the metric function can penalize similar outputs in future optimization.
+- **FR-020**: System MUST support user-edited ground truth — when a user rejects a suggestion but provides a corrected version, that corrected version becomes a positive ground truth example (the gold standard).
+- **FR-021**: System MUST store ground truth examples in a structured format compatible with DSPy's `dspy.Example` objects, with fields for: input error examples, desired rule output, label (positive/negative), and source (seed/approved/edited/rejected).
+- **FR-022**: System MUST use the ground truth corpus as the `trainset` parameter when calling BootstrapFewShot or MIPROv2 optimizers — the optimizer learns from real approved/rejected examples, not synthetic data.
+- **FR-023**: The existing dataset builder output (JSON files with error examples) MUST remain the INPUT to the DSPy Signature — datasets provide what went wrong; ground truth provides what the ideal fix looks like.
 
 ### Key Entities
 
@@ -126,7 +151,8 @@ As a developer of SIO, I can point SIO at its own SpecStory/JSONL session histor
 - **Metric Function**: Evaluates rule quality on a 0-1 scale — used both for scoring user-facing confidence and for training DSPy optimizers.
 - **LLM Configuration**: User-editable settings specifying which model to use, credentials, and generation parameters.
 - **Optimized Module**: A saved DSPy program (after BootstrapFewShot or MIPROv2 compilation) that contains learned few-shot examples and/or optimized instructions.
-- **Training Dataset**: Approved suggestions (positive) and rejected suggestions (negative) used as training data for DSPy optimizers.
+- **Ground Truth Corpus**: The collection of input→output pairs that DSPy trains on. Inputs are error pattern summaries; outputs are ideal CLAUDE.md rules. Sources: (a) hand-written seed examples shipped with SIO, (b) approved suggestions promoted automatically, (c) user-edited corrections from rejected suggestions. This is THE critical asset — it grows with every approve/reject cycle and directly improves future suggestion quality.
+- **Training Dataset**: The ground truth corpus formatted as `dspy.Example` objects for optimizer consumption. Each example has: `error_pattern` (input), `ideal_rule` (output), `label` (positive/negative), `source` (seed/approved/edited/rejected).
 
 ## Success Criteria *(mandatory)*
 
