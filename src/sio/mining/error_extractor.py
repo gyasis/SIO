@@ -24,6 +24,15 @@ import re
 from datetime import datetime, timezone
 from typing import Any  # noqa: UP035
 
+def _to_text(value: Any) -> str | None:
+    """Coerce a value to a TEXT-safe string for SQLite storage."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, default=str)
+
+
 # ---------------------------------------------------------------------------
 # Compiled patterns
 # ---------------------------------------------------------------------------
@@ -193,8 +202,8 @@ def _build_record(
         "context_before": context_before,
         "context_after": context_after,
         "error_type": error_type,
-        "tool_input": msg.get("tool_input"),
-        "tool_output": msg.get("tool_output"),
+        "tool_input": _to_text(msg.get("tool_input")),
+        "tool_output": _to_text(msg.get("tool_output")),
         "mined_at": mined_at,
     }
 

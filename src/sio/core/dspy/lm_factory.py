@@ -34,6 +34,7 @@ def create_lm(config: SIOConfig) -> dspy.LM | None:
             "model": config.llm_model,
             "temperature": config.llm_temperature,
             "max_tokens": config.llm_max_tokens,
+            "num_retries": 3,
         }
         if config.llm_api_key_env:
             api_key = os.environ.get(config.llm_api_key_env)
@@ -53,6 +54,7 @@ def create_lm(config: SIOConfig) -> dspy.LM | None:
             "api_key": azure_key,
             "temperature": config.llm_temperature,
             "max_tokens": config.llm_max_tokens,
+            "num_retries": 3,
         }
         azure_base = os.environ.get("AZURE_OPENAI_ENDPOINT")
         if azure_base:

@@ -196,7 +196,7 @@ def _score_surface_accuracy(example: Any, pred: Any) -> float:
     target_surface = getattr(pred, "target_surface", "claude_md_rule")
 
     # Check MCP-related: if tool_name contains "mcp"
-    tool_name = _get_tool_name_from_example(example)
+    tool_name = _get_tool_name_from_example(example) or ""
     if "mcp" in tool_name.lower():
         if target_surface in _MCP_SURFACES:
             return 1.0
