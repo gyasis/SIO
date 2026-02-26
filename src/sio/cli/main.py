@@ -349,7 +349,8 @@ def mine(since, project, source):
     type=click.Choice(["tool_failure", "user_correction", "repeated_attempt", "undo", "agent_admission"]),
     help="Filter by error type.",
 )
-def patterns(error_type):
+@click.option("--project", default=None, help="Filter by project name (substring match on source path).")
+def patterns(error_type, project):
     """Show discovered error patterns ranked by importance."""
     from rich.console import Console
     from rich.table import Table
@@ -367,7 +368,7 @@ def patterns(error_type):
     conn = init_db(db_path)
 
     # Get all error records from DB
-    errors = get_error_records(conn)
+    errors = get_error_records(conn, project=project)
     if not errors:
         click.echo("No errors mined yet. Run 'sio mine --since \"7 days\"' first.")
         conn.close()

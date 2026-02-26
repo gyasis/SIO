@@ -222,6 +222,7 @@ def get_error_records(
     tool_name: str = None,
     since: str = None,
     limit: int = 500,
+    project: str = None,
 ) -> list[dict]:
     """Get error records with optional filters."""
     query = "SELECT * FROM error_records WHERE 1=1"
@@ -238,6 +239,9 @@ def get_error_records(
     if since:
         query += " AND timestamp >= ?"
         params.append(since)
+    if project:
+        query += " AND source_file LIKE ?"
+        params.append(f"%{project}%")
     query += " ORDER BY timestamp DESC"
     if limit and limit > 0:
         query += " LIMIT ?"
