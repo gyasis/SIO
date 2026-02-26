@@ -15,10 +15,16 @@ _INVOCATION_COLS = [
 
 
 def _row_to_dict(row: sqlite3.Row) -> dict:
-    return dict(row)
+    """Convert a sqlite3.Row to dict with defensive validation."""
+    d = dict(row)
+    if not d:
+        raise ValueError("row_factory returned an empty dict; expected columns")
+    return d
 
 
-def insert_invocation(conn: sqlite3.Connection, record: dict) -> int:
+def insert_invocation(
+    conn: sqlite3.Connection, record: dict, *, _batch: bool = False,
+) -> int:
     cols = _INVOCATION_COLS
     placeholders = ", ".join(["?"] * len(cols))
     col_names = ", ".join(cols)
@@ -27,7 +33,8 @@ def insert_invocation(conn: sqlite3.Connection, record: dict) -> int:
         f"INSERT INTO behavior_invocations ({col_names}) VALUES ({placeholders})",
         values,
     )
-    conn.commit()
+    if not _batch:
+        conn.commit()
     return cur.lastrowid
 
 
@@ -191,7 +198,9 @@ _ERROR_RECORD_COLS = [
 ]
 
 
-def insert_error_record(conn: sqlite3.Connection, record: dict) -> int:
+def insert_error_record(
+    conn: sqlite3.Connection, record: dict, *, _batch: bool = False,
+) -> int:
     """Insert an error record. Returns the new row ID."""
     cols = _ERROR_RECORD_COLS
     placeholders = ", ".join(["?"] * len(cols))
@@ -201,7 +210,8 @@ def insert_error_record(conn: sqlite3.Connection, record: dict) -> int:
         f"INSERT INTO error_records ({col_names}) VALUES ({placeholders})",
         values,
     )
-    conn.commit()
+    if not _batch:
+        conn.commit()
     return cur.lastrowid
 
 
@@ -320,14 +330,16 @@ def update_pattern(conn: sqlite3.Connection, id: int, **fields) -> bool:
 
 
 def link_error_to_pattern(
-    conn: sqlite3.Connection, pattern_id: int, error_id: int
+    conn: sqlite3.Connection, pattern_id: int, error_id: int,
+    *, _batch: bool = False,
 ) -> None:
     """Link an error record to a pattern (join table)."""
     conn.execute(
         "INSERT OR IGNORE INTO pattern_errors (pattern_id, error_id) VALUES (?, ?)",
         (pattern_id, error_id),
     )
-    conn.commit()
+    if not _batch:
+        conn.commit()
 
 
 def get_errors_for_pattern(
@@ -523,6 +535,7 @@ def insert_ground_truth(
     source: str = "agent",
     confidence: float | None = None,
     file_path: str | None = None,
+    quality_assessment: str | None = None,
 ) -> int:
     """Insert a ground truth candidate.
 
@@ -539,21 +552,40 @@ def insert_ground_truth(
         source: Origin of the entry (agent, seed, approved, edited, rejected).
         confidence: Optional confidence score.
         file_path: Optional path to the relevant file.
+        quality_assessment: Optional self-assessment of candidate quality.
 
     Returns:
         The new row ID.
+
+    Raises:
+        ValueError: If pattern_id does not reference a valid pattern.
     """
+    import logging as _logging
+
+    _logger = _logging.getLogger(__name__)
+
+    # T101: Application-level FK validation for pattern_id
+    pat_row = conn.execute(
+        "SELECT id FROM patterns WHERE pattern_id = ?", (pattern_id,)
+    ).fetchone()
+    if pat_row is None:
+        _logger.warning(
+            "ground_truth.pattern_id '%s' has no matching patterns row; "
+            "inserting anyway for backward compatibility.",
+            pattern_id,
+        )
+
     now = datetime.now(timezone.utc).isoformat()
     cur = conn.execute(
         "INSERT INTO ground_truth "
         "(pattern_id, error_examples_json, error_type, pattern_summary, "
         "target_surface, rule_title, prevention_instructions, rationale, "
-        "source, confidence, file_path, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "source, confidence, file_path, quality_assessment, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             pattern_id, error_examples_json, error_type, pattern_summary,
             target_surface, rule_title, prevention_instructions, rationale,
-            source, confidence, file_path, now,
+            source, confidence, file_path, quality_assessment, now,
         ),
     )
     conn.commit()

@@ -89,13 +89,14 @@ class CorpusIndex:
             # Fallback to keyword search
             return self.search_keyword(query, top_k)
 
-        query_emb = self._backend.encode_single(query)
+        query_emb = np.asarray(self._backend.encode_single(query)).flatten()
 
         # Cosine similarity: dot(A, q) / (||A|| * ||q||)
         norms = np.linalg.norm(self._embeddings, axis=1) * np.linalg.norm(query_emb)
         sims = np.dot(self._embeddings, query_emb) / np.maximum(norms, 1e-10)
 
         top_idx = np.argsort(-sims)[:top_k]
+        min_sim = 0.3
         return [
             SearchResult(
                 path=self._chunks[i]["path"],
@@ -103,6 +104,7 @@ class CorpusIndex:
                 snippet=self._chunks[i]["text"][:200],
             )
             for i in top_idx
+            if float(sims[i]) >= min_sim
         ]
 
 

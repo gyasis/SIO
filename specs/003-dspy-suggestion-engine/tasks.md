@@ -243,6 +243,61 @@
 
 ---
 
+## Phase 11: Adversarial Audit Fixes
+
+**Purpose**: Address ALL findings from 3 adversarial audits (placeholder exterminator, spec compliance, logic bug hunter). CRITICAL/HIGH/MAJOR issues already fixed in prior wave; remaining MINOR issues tracked here.
+
+### Already Fixed (CRITICAL/HIGH/MAJOR — completed in prior wave)
+
+- [x] T086 [CRITICAL] Wire --auto/--analyze CLI flags through to `generate_suggestions(mode=...)` in `src/sio/cli/main.py` and `src/sio/suggestions/generator.py`
+- [x] T087 [CRITICAL] Fix `_SURFACE_TARGET_MAP` in `src/sio/suggestions/dspy_generator.py` — mcp_config→`.claude/mcp.json`, agent_profile→`.claude/agents/`, project_config→`CLAUDE.md`
+- [x] T088 [CRITICAL] Fix stale column refs in `src/sio/core/db/queries.py` — update `_DATASET_COLS`, `_SUGGESTION_COLS`, `_APPLIED_CHANGE_COLS` to match actual DDL
+- [x] T089 [HIGH] Add SQL injection prevention via column whitelist (`_PATTERN_UPDATE_ALLOWED`, `_DATASET_UPDATE_ALLOWED`) in `src/sio/core/db/queries.py`
+- [x] T090 [HIGH] Fix double-commit race in `save_module()` — inline deactivation+insert in single transaction in `src/sio/core/dspy/module_store.py`
+- [x] T091 [HIGH] Fix INSERT OR REPLACE data loss — change to INSERT ... ON CONFLICT DO UPDATE in `src/sio/core/db/queries.py` `insert_pattern()`
+- [x] T092 [HIGH] Fix DB connection leak in `_load_optimized_or_default()` — add try/finally in `src/sio/suggestions/dspy_generator.py`
+- [x] T093 [MAJOR] Fix wrong `llm_calls=2` in heuristic path — set to 0 in `src/sio/core/dspy/rlm_miner.py` `_heuristic_mining()`
+- [x] T094 [MAJOR] Add logging for swallowed exceptions in `_corpus_search()` and DSPy failure path in `src/sio/core/dspy/rlm_miner.py`
+- [x] T095 [MAJOR] Fix `skill_md_update` → `skill_update` in template fallback `_TARGET_FILE_MAP` and `_infer_change_type()` in `src/sio/suggestions/generator.py`
+- [x] T096 [MAJOR] Fix wrong separator in `promote_to_ground_truth()` — try em-dash first, then `" -- "` in `src/sio/ground_truth/corpus.py`
+- [x] T097 [MAJOR] Fix non-deterministic fuzzy match — use `sorted(_VALID_SURFACES)` in `_normalize_surface()` in `src/sio/suggestions/dspy_generator.py`
+- [x] T098 [MAJOR] Add warning log when DSPy returns default/empty field values in `src/sio/suggestions/dspy_generator.py`
+- [x] T099 [MAJOR] Fix `update_suggestion_status()` column names — `reviewed_at` (was `updated_at`), `user_note` (was `note`) in `src/sio/core/db/queries.py`
+- [x] T100 [MAJOR] Fix "v2 stub commands" comment to "v2 pipeline commands" in `src/sio/cli/main.py`
+
+### Remaining Fixes (MINOR — from adversarial audits)
+
+- [x] T101 [MINOR] Add FK reference validation for `ground_truth.pattern_id` → `patterns.id` in `src/sio/core/db/queries.py` (application-level check in insert_ground_truth)
+- [x] T102 [MINOR] Add `--candidates` flag to `ground-truth generate` CLI command in `src/sio/cli/main.py` per spec FR-GT-002
+- [x] T103 [MINOR] Add `--count` flag to `ground-truth seed` CLI command in `src/sio/cli/main.py` per spec FR-GT-003
+- [x] T104 [MINOR] Add `--surface` filter flag to `ground-truth seed` CLI command in `src/sio/cli/main.py` per spec FR-GT-003
+- [x] T105 [MINOR] Persist `quality_assessment` field from `GroundTruthCandidate` signature to ground_truth table in `src/sio/ground_truth/generator.py`
+- [x] T106 [MINOR] Ensure seeded `pattern_id` values in `ground-truth seed` correspond to real pattern rows or create stub patterns in `src/sio/ground_truth/seeder.py`
+- [x] T107 [MINOR] Fix `_compute_satisfaction_rate()` to return `None` instead of `0.0` when no data available in `src/sio/core/dspy/optimizer.py`
+- [x] T108 [MINOR] Fix `_apply_recency_weighting()` to not mutate input list — create a copy before modifying in `src/sio/core/dspy/optimizer.py`
+- [x] T109 [MINOR] Add row_factory validation in query helper functions to guard against schema drift in `src/sio/core/db/queries.py`
+- [x] T110 [MINOR] Add warning for unrecognized TOML keys in config loader in `src/sio/core/config.py`
+- [x] T111 [MINOR] Add shape safety (flatten) for `query_emb` in cosine similarity calculation in `src/sio/core/dspy/corpus_indexer.py`
+- [x] T112 [MINOR] Add similarity threshold filtering to `search_embedding()` to prevent returning noise results in `src/sio/core/dspy/corpus_indexer.py`
+- [x] T113 [MINOR] Reduce excessive per-operation commits — batch commits where possible in `src/sio/core/db/queries.py`
+- [x] T114 [MINOR] Add startup diagnostic message when LLM is disabled by config default (no API key found) in `src/sio/core/dspy/lm_factory.py`
+
+### Tests for Phase 11
+
+- [x] T115 [P] Write test for FK validation on `ground_truth.pattern_id` in `tests/unit/test_phase11_minor_fixes.py`
+- [x] T116 [P] Write test for `--candidates`, `--count`, `--surface` CLI flags in `tests/unit/test_phase11_minor_fixes.py`
+- [x] T117 [P] Write test for `quality_assessment` persistence in `tests/unit/test_phase11_minor_fixes.py`
+- [x] T118 [P] Write test for `_compute_satisfaction_rate()` returning None when no data in `tests/unit/test_phase11_minor_fixes.py`
+- [x] T119 [P] Write test for `_apply_recency_weighting()` not mutating input in `tests/unit/test_phase11_minor_fixes.py`
+- [x] T120 [P] Write test for embedding shape safety and threshold filtering in `tests/unit/test_phase11_minor_fixes.py`
+- [x] T121 [P] Write test for config loader warning on unrecognized keys in `tests/unit/test_phase11_minor_fixes.py`
+- [x] T122 Run `ruff check src/ tests/` and fix all lint issues from Phase 11 changes
+- [x] T123 Run full test suite `pytest tests/ -v` — all tests pass after Phase 11
+
+**Checkpoint**: All adversarial findings resolved, full test suite green
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -257,6 +312,7 @@
 - **Phase 8 (US7)**: Depends on Phase 3 (suggestions working)
 - **Phase 9 (US5)**: Depends on Phases 3, 5, 6, 7 (full pipeline working)
 - **Phase 10 (Polish)**: Depends on all user stories
+- **Phase 11 (Adversarial Audit)**: Depends on Phase 10 — fixes from 3 independent audits
 
 ### User Story Dependencies
 
@@ -388,5 +444,6 @@ This path delivers the core value: a system that generates suggestions AND impro
 - Constitution Principle XI — NO stubs in production code; all DSPy functions must call real DSPy
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
-- Total: 85 tasks across 10 phases
+- Total: 123 tasks across 11 phases (85 original + 38 adversarial audit)
 - P1 stories: 30 tasks (US1: 11, US2: 5, US6: 12) + 2 setup = 32 tasks for MVP-complete
+- Phase 11: 15 already fixed [x] + 14 remaining MINOR fixes + 9 tests = 38 tasks

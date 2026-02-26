@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 
@@ -9,6 +10,8 @@ try:
     import tomllib
 except ImportError:
     import tomli as tomllib  # type: ignore[no-redef]
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -70,6 +73,22 @@ def load_config(path: str | None = None) -> SIOConfig:
             data = tomllib.load(f)
     except Exception as e:
         raise ValueError(f"Invalid config file {path}: {e}") from e
+
+    # Warn about unrecognized top-level keys
+    _KNOWN_TOP_KEYS = frozenset({
+        "embedding_backend", "embedding_model", "embedding_api_url",
+        "embedding_api_key", "retention_days", "min_examples",
+        "min_failures", "min_sessions", "pattern_threshold", "optimizer",
+        "drift_threshold", "collision_threshold", "similarity_threshold",
+        "min_pattern_occurrences", "min_dataset_examples", "daily_enabled",
+        "weekly_enabled", "stale_days", "llm",
+    })
+    unknown_keys = set(data.keys()) - _KNOWN_TOP_KEYS
+    if unknown_keys:
+        logger.warning(
+            "Unrecognized keys in config TOML: %s",
+            ", ".join(sorted(unknown_keys)),
+        )
 
     # Parse [llm] section
     llm_section = data.get("llm", {})

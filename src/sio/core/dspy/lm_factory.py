@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import os
 
 import dspy
 
 from sio.core.config import SIOConfig
+
+logger = logging.getLogger(__name__)
 
 
 def create_lm(config: SIOConfig) -> dspy.LM | None:
@@ -77,6 +80,13 @@ def create_lm(config: SIOConfig) -> dspy.LM | None:
         )
 
     # Priority 5: No LLM available
+    logger.info(
+        "No LLM backend available. To configure, either: "
+        "(1) set llm.model in ~/.sio/config.toml, "
+        "(2) set AZURE_OPENAI_API_KEY, "
+        "(3) set ANTHROPIC_API_KEY, or "
+        "(4) set OPENAI_API_KEY environment variable."
+    )
     return None
 
 

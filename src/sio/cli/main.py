@@ -1375,7 +1375,9 @@ def ground_truth_group():
 
 
 @ground_truth_group.command("seed")
-def gt_seed():
+@click.option("--count", default=10, help="Max number of seed entries to insert.")
+@click.option("--surface", default=None, help="Filter by target surface type.")
+def gt_seed(count, surface):
     """Seed ground truth with representative examples covering all surfaces."""
     from sio.core.config import load_config
     from sio.core.db.schema import init_db
@@ -1386,7 +1388,7 @@ def gt_seed():
     conn = init_db(db_path)
     config = load_config()
 
-    ids = seed_ground_truth(config, conn)
+    ids = seed_ground_truth(config, conn, count=count, surface=surface)
     conn.close()
 
     click.echo(f"Seeded {len(ids)} ground truth entries across all 7 surfaces.")
@@ -1394,12 +1396,16 @@ def gt_seed():
 
 @ground_truth_group.command("generate")
 @click.option("--n-candidates", "-n", default=3, help="Candidates per pattern.")
-def gt_generate(n_candidates):
+@click.option("--candidates", default=5, help="Alias for --n-candidates per FR-GT-002.")
+def gt_generate(n_candidates, candidates):
     """Generate ground truth candidates from discovered patterns."""
     from sio.core.config import load_config
     from sio.core.db.queries import get_patterns
     from sio.core.db.schema import init_db
     from sio.ground_truth.generator import generate_candidates
+
+    # --candidates (FR-GT-002) takes precedence when --n-candidates is default
+    effective_candidates = n_candidates if n_candidates != 3 else candidates
 
     db_path = os.path.expanduser("~/.sio/sio.db")
     if not os.path.exists(db_path):
@@ -1425,7 +1431,7 @@ def gt_generate(n_candidates):
         dataset = dict(ds_row) if ds_row else {"id": 0, "file_path": ""}
 
         ids = generate_candidates(
-            pattern, dataset, conn, config, n_candidates=n_candidates,
+            pattern, dataset, conn, config, n_candidates=effective_candidates,
         )
         total_ids.extend(ids)
 

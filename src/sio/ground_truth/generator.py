@@ -93,6 +93,7 @@ def generate_candidates(
             result, "prevention_instructions", "Review the error pattern."
         )
         rationale = getattr(result, "rationale", "Based on observed error patterns.")
+        quality_assessment = getattr(result, "quality_assessment", None)
 
         row_id = insert_ground_truth(
             conn,
@@ -107,6 +108,7 @@ def generate_candidates(
             source="agent",
             confidence=None,
             file_path=dataset.get("file_path"),
+            quality_assessment=quality_assessment,
         )
         row_ids.append(row_id)
         logger.info("Inserted ground truth candidate %d (row %d)", i, row_id)

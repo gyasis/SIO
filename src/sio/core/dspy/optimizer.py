@@ -120,12 +120,16 @@ def check_quality_gates(
 
 
 def _apply_recency_weighting(examples: list[dict]) -> list[dict]:
-    """Weight examples by recency — newer get higher weight."""
+    """Weight examples by recency — newer get higher weight.
+
+    Returns a new list of copied dicts; the input list is not mutated.
+    """
     if not examples:
-        return examples
+        return list(examples)
 
     sorted_ex = sorted(
-        examples, key=lambda e: e.get("timestamp", ""),
+        (dict(e) for e in examples),
+        key=lambda e: e.get("timestamp", ""),
     )
     n = len(sorted_ex)
     for i, ex in enumerate(sorted_ex):
@@ -135,12 +139,15 @@ def _apply_recency_weighting(examples: list[dict]) -> list[dict]:
 
 
 def _compute_satisfaction_rate(examples: list[dict]) -> float | None:
-    """Compute satisfaction rate from examples."""
+    """Compute satisfaction rate from examples.
+
+    Returns None when there are no labeled examples to compute from.
+    """
     labeled = [
         e for e in examples if e.get("user_satisfied") is not None
     ]
     if not labeled:
-        return 0.0
+        return None
     satisfied = sum(1 for e in labeled if e["user_satisfied"] == 1)
     return satisfied / len(labeled)
 
@@ -508,6 +515,8 @@ def optimize(
     # Recency weighting (FR-027)
     examples = _apply_recency_weighting(examples)
     before_rate = _compute_satisfaction_rate(examples)
+    # Use 0.0 for DB storage when no data available
+    before_rate_for_db = before_rate if before_rate is not None else 0.0
 
     # Run optimization — propagate exceptions for atomic rollback
     result = _run_dspy_optimization(examples, skill_name, optimizer)
@@ -538,7 +547,7 @@ def optimize(
         "VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
         (
             platform, skill_name, optimizer,
-            len(examples), before_rate,
+            len(examples), before_rate_for_db,
             proposed_diff, arena_passed, drift_score, now,
         ),
     )

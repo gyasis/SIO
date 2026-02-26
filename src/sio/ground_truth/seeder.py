@@ -283,7 +283,10 @@ _SEED_ENTRIES: list[dict[str, str]] = [
 
 
 def seed_ground_truth(
-    config: Any, conn: sqlite3.Connection
+    config: Any,
+    conn: sqlite3.Connection,
+    count: int = 10,
+    surface: str | None = None,
 ) -> list[int]:
     """Insert seed ground truth entries covering all 7 surfaces.
 
@@ -294,6 +297,9 @@ def seed_ground_truth(
     Args:
         config: ``SIOConfig`` instance (unused, for interface).
         conn: SQLite connection with SIO schema.
+        count: Maximum number of seed entries to insert (default 10).
+        surface: Optional target_surface filter. When set, only seed
+            entries matching this surface are inserted.
 
     Returns:
         List of inserted row IDs.
@@ -302,7 +308,14 @@ def seed_ground_truth(
 
     row_ids: list[int] = []
 
-    for entry in _SEED_ENTRIES:
+    entries = _SEED_ENTRIES
+    if surface is not None:
+        entries = [e for e in entries if e["target_surface"] == surface]
+
+    for entry in entries[:count]:
+        # Ensure pattern_id references a real pattern, or create a stub
+        _ensure_pattern_exists(conn, entry["pattern_id"])
+
         row_id = insert_ground_truth(
             conn,
             pattern_id=entry["pattern_id"],
@@ -324,3 +337,28 @@ def seed_ground_truth(
         row_ids.append(row_id)
 
     return row_ids
+
+
+def _ensure_pattern_exists(conn: sqlite3.Connection, pattern_id: str) -> None:
+    """Ensure a pattern with the given pattern_id exists; create a stub if not.
+
+    This supports T106: seeded entries should reference real pattern_id values
+    from the patterns table.
+    """
+    from datetime import datetime, timezone
+
+    row = conn.execute(
+        "SELECT id FROM patterns WHERE pattern_id = ?", (pattern_id,)
+    ).fetchone()
+    if row is not None:
+        return
+
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "INSERT INTO patterns "
+        "(pattern_id, description, tool_name, error_count, session_count, "
+        "first_seen, last_seen, rank_score, created_at, updated_at) "
+        "VALUES (?, ?, NULL, 0, 0, ?, ?, 0.0, ?, ?)",
+        (pattern_id, f"Stub pattern for seed: {pattern_id}", now, now, now, now),
+    )
+    conn.commit()
