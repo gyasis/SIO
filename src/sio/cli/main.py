@@ -778,7 +778,11 @@ def inspect(pattern_id):
     "--exclude-type", "exclude_types", default=None,
     help="Exclude error types. Comma-separated (e.g. 'repeated_attempt,tool_failure').",
 )
-def suggest(error_type, min_examples, grep_term, verbose, auto_mode, analyze_mode, project, exclude_types):
+@click.option(
+    "--preview", is_flag=True, default=False,
+    help="Preview: filter + cluster + show pattern groupings, then stop. No generation.",
+)
+def suggest(error_type, min_examples, grep_term, verbose, auto_mode, analyze_mode, project, exclude_types, preview):
     """Run the full pipeline: cluster -> persist -> dataset -> suggestions."""
     from datetime import datetime, timezone
 
@@ -867,6 +871,87 @@ def suggest(error_type, min_examples, grep_term, verbose, auto_mode, analyze_mod
     clustered = cluster_errors(errors_to_cluster)
     ranked = rank_patterns(clustered)
     console.print(f"  Found {len(ranked)} patterns")
+
+    # Preview mode: show pattern groupings and stop
+    if preview:
+        console.print()
+        preview_table = Table(title="Pattern Groupings (preview)")
+        preview_table.add_column("#", justify="right", style="dim")
+        preview_table.add_column("Pattern", max_width=50)
+        preview_table.add_column("Errors", justify="right")
+        preview_table.add_column("Sessions", justify="right")
+        preview_table.add_column("Top Error Type")
+        preview_table.add_column("Score", justify="right")
+        preview_table.add_column("Sample", max_width=40)
+
+        for i, p in enumerate(ranked, 1):
+            # Find most common error type in this cluster
+            type_counts: dict[str, int] = {}
+            sample_msg = ""
+            for eid in p.get("error_ids", []):
+                for e in errors_to_cluster:
+                    if e.get("id") == eid:
+                        et = e.get("error_type", "unknown")
+                        type_counts[et] = type_counts.get(et, 0) + 1
+                        if not sample_msg:
+                            sample_msg = (e.get("error_text") or "")[:40]
+                        break
+            top_type = max(type_counts, key=type_counts.get) if type_counts else "unknown"
+
+            preview_table.add_row(
+                str(i),
+                p.get("description", p.get("pattern_id", "?"))[:50],
+                str(p.get("error_count", 0)),
+                str(p.get("session_count", 0)),
+                top_type,
+                f"{p.get('rank_score', 0):.2f}",
+                sample_msg,
+            )
+
+        console.print(preview_table)
+        console.print()
+        console.print(f"[bold]{len(ranked)}[/bold] patterns from [bold]{len(errors_to_cluster)}[/bold] filtered errors.")
+        console.print()
+
+        # Export preview dataset as CSV for external analysis
+        import csv
+
+        preview_dir = os.path.expanduser("~/.sio/previews")
+        os.makedirs(preview_dir, exist_ok=True)
+
+        # Export patterns summary
+        patterns_csv = os.path.join(preview_dir, "patterns_preview.csv")
+        with open(patterns_csv, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["rank", "pattern_id", "description", "error_count", "session_count", "rank_score"])
+            for i, p in enumerate(ranked, 1):
+                writer.writerow([
+                    i, p.get("pattern_id", ""), p.get("description", "")[:120],
+                    p.get("error_count", 0), p.get("session_count", 0),
+                    f"{p.get('rank_score', 0):.2f}",
+                ])
+
+        # Export filtered errors dataset
+        errors_csv = os.path.join(preview_dir, "errors_preview.csv")
+        with open(errors_csv, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["id", "error_type", "error_text", "tool_name", "session_id", "timestamp", "source_file", "user_message"])
+            for e in errors_to_cluster:
+                writer.writerow([
+                    e.get("id", ""), e.get("error_type", ""),
+                    (e.get("error_text") or "")[:200], e.get("tool_name", ""),
+                    e.get("session_id", ""), e.get("timestamp", ""),
+                    e.get("source_file", ""), (e.get("user_message") or "")[:200],
+                ])
+
+        console.print(f"[bold]Exported for analysis:[/bold]")
+        console.print(f"  Patterns: {patterns_csv}")
+        console.print(f"  Errors:   {errors_csv}")
+        console.print()
+        console.print("[dim]To generate suggestions, re-run without --preview.[/dim]")
+        console.print("[dim]To refine, adjust --grep, --type, --exclude-type and re-run --preview.[/dim]")
+        conn.close()
+        return
 
     # 3. Persist patterns to DB (clear old patterns first for clean state)
     console.print("[bold]Step 2:[/bold] Persisting patterns to database...")
