@@ -421,7 +421,11 @@ def patterns(error_type, project):
     "--grep", "-g", "grep_term", default=None,
     help="Search error text, user message, and context for a keyword (case-insensitive).",
 )
-def errors(error_type, limit, grep_term):
+@click.option(
+    "--project", default=None,
+    help="Filter by project name (substring match on source path).",
+)
+def errors(error_type, limit, grep_term, project):
     """Browse mined errors with optional type and content filters."""
     from rich.console import Console
     from rich.table import Table
@@ -442,6 +446,10 @@ def errors(error_type, limit, grep_term):
     if error_type:
         where_clauses.append("error_type = ?")
         params.append(error_type)
+
+    if project:
+        where_clauses.append("source_file LIKE ?")
+        params.append(f"%{project}%")
 
     if grep_term:
         # Search across error_text, user_message, context_before, context_after, source_file
@@ -748,7 +756,11 @@ def inspect(pattern_id):
     "--analyze", "analyze_mode", is_flag=True, default=False,
     help="Force HITL (human-in-the-loop) mode for all patterns.",
 )
-def suggest(error_type, min_examples, grep_term, verbose, auto_mode, analyze_mode):
+@click.option(
+    "--project", default=None,
+    help="Filter by project name (substring match on source path).",
+)
+def suggest(error_type, min_examples, grep_term, verbose, auto_mode, analyze_mode, project):
     """Run the full pipeline: cluster -> persist -> dataset -> suggestions."""
     from datetime import datetime, timezone
 
@@ -774,10 +786,11 @@ def suggest(error_type, min_examples, grep_term, verbose, auto_mode, analyze_mod
     conn = init_db(db_path)
     console = Console()
 
-    # 1. Get all errors (no limit)
-    all_errors = get_error_records(conn, limit=0)
+    # 1. Get all errors (no limit), filtered by project if specified
+    all_errors = get_error_records(conn, limit=0, project=project)
     if not all_errors:
-        click.echo("No errors mined yet. Run 'sio mine --since \"7 days\"' first.")
+        filter_hint = f" for project '{project}'" if project else ""
+        click.echo(f"No errors mined yet{filter_hint}. Run 'sio mine --since \"7 days\"' first.")
         conn.close()
         return
 
@@ -852,33 +865,28 @@ def suggest(error_type, min_examples, grep_term, verbose, auto_mode, analyze_mod
 
     console.print(f"  Persisted {len(persisted_patterns)} patterns with error links")
 
-    # 4. Build datasets
+    # 4. Build datasets (ephemeral — clear stale datasets and rebuild fresh)
     console.print("[bold]Step 3:[/bold] Building datasets...")
+    conn.execute("DELETE FROM datasets")
+    conn.commit()
+
     datasets: dict[str, dict] = {}
     for p in persisted_patterns:
         metadata = build_dataset(p, all_errors, conn, min_threshold=min_examples)
         if metadata is not None:
             pid = metadata["pattern_id"]
-            # Store/update dataset record in DB
-            existing = conn.execute(
-                "SELECT id FROM datasets WHERE pattern_id = ? ORDER BY id DESC LIMIT 1",
-                (p["id"],),
-            ).fetchone()
-            if existing:
-                metadata["id"] = existing[0]
-            else:
-                ds_cur = conn.execute(
-                    "INSERT INTO datasets (pattern_id, file_path, positive_count, "
-                    "negative_count, min_threshold, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        p["id"], metadata["file_path"],
-                        metadata["positive_count"], metadata["negative_count"],
-                        min_examples, now_iso, now_iso,
-                    ),
-                )
-                conn.commit()
-                metadata["id"] = ds_cur.lastrowid
+            ds_cur = conn.execute(
+                "INSERT INTO datasets (pattern_id, file_path, positive_count, "
+                "negative_count, min_threshold, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    p["id"], metadata["file_path"],
+                    metadata["positive_count"], metadata["negative_count"],
+                    min_examples, now_iso, now_iso,
+                ),
+            )
+            conn.commit()
+            metadata["id"] = ds_cur.lastrowid
             datasets[pid] = metadata
 
     console.print(f"  Built {len(datasets)} datasets")
