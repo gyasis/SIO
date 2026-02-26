@@ -240,10 +240,10 @@ class TestQualityAssessmentPersistence:
         )
         mock_module_cls.return_value = mock_instance
 
-        from sio.ground_truth.generator import generate_candidates
-
         # Create pattern in DB so FK validation passes
         from datetime import datetime, timezone
+
+        from sio.ground_truth.generator import generate_candidates
 
         now = datetime.now(timezone.utc).isoformat()
         mem_db.execute(

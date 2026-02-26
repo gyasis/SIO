@@ -24,7 +24,20 @@ def fake_config():
 
 
 @pytest.fixture
-def sample_pattern():
+def sample_pattern(mem_db):
+    """Create a sample pattern and insert it into the DB for FK validation."""
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).isoformat()
+    mem_db.execute(
+        "INSERT INTO patterns "
+        "(pattern_id, description, tool_name, error_count, session_count, "
+        "first_seen, last_seen, rank_score, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("test-pattern-001", "Bash tool times out repeatedly", "Bash",
+         5, 3, now, now, 0.5, now, now),
+    )
+    mem_db.commit()
     return {
         "id": 1,
         "pattern_id": "test-pattern-001",
