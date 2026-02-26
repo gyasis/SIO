@@ -889,7 +889,7 @@ def suggest(error_type, min_examples, grep_term, verbose, auto_mode, analyze_mod
     if auto_mode:
         mode = "auto"
     elif analyze_mode:
-        mode = "hitl"
+        mode = "auto"
 
     suggestions = generate_suggestions(
         persisted_patterns, datasets, conn, verbose=verbose, mode=mode,
