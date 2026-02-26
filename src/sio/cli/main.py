@@ -293,7 +293,7 @@ def export(platform, fmt, output):
 
 
 # ---------------------------------------------------------------------------
-# v2 stub commands
+# v2 pipeline commands
 # ---------------------------------------------------------------------------
 
 
@@ -883,8 +883,15 @@ def suggest(error_type, min_examples, grep_term, verbose, auto_mode, analyze_mod
 
     # 5. Generate targeted suggestions
     console.print("[bold]Step 4:[/bold] Generating targeted suggestions...")
+    # Determine mode from CLI flags
+    mode = None
+    if auto_mode:
+        mode = "auto"
+    elif analyze_mode:
+        mode = "hitl"
+
     suggestions = generate_suggestions(
-        persisted_patterns, datasets, conn, verbose=verbose,
+        persisted_patterns, datasets, conn, verbose=verbose, mode=mode,
     )
 
     # Clear old suggestions and insert new ones

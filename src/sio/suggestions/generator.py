@@ -39,8 +39,8 @@ _DEFAULT_TARGET_FILE = "CLAUDE.md"
 # Map change_type -> canonical target file
 _TARGET_FILE_MAP: dict[str, str] = {
     "claude_md_rule": "CLAUDE.md",
-    "skill_md_update": "SKILL.md",
-    "hook_config": ".claude/hooks",
+    "skill_update": ".claude/skills/",
+    "hook_config": ".claude/hooks/",
 }
 
 
@@ -57,7 +57,7 @@ def _infer_change_type(pattern: dict) -> str:
     if "hook" in tool_name:
         return "hook_config"
     if "skill" in tool_name:
-        return "skill_md_update"
+        return "skill_update"
     return _DEFAULT_CHANGE_TYPE
 
 
@@ -642,6 +642,7 @@ def generate_suggestions(
     db_conn: sqlite3.Connection,
     *,
     verbose: bool = False,
+    mode: str | None = None,
 ) -> list[dict[str, Any]]:
     """Generate improvement suggestion dicts from ranked patterns and datasets.
 
@@ -706,14 +707,44 @@ def generate_suggestions(
         if use_dspy:
             try:
                 from sio.suggestions.dspy_generator import (
+                    generate_auto_suggestion,
                     generate_dspy_suggestion,
+                    generate_hitl_suggestion,
                 )
 
-                suggestion = generate_dspy_suggestion(
-                    pattern, dataset, config, verbose=verbose,
-                )
-                suggestions.append(suggestion)
-                continue
+                if mode == "auto":
+                    suggestion = generate_auto_suggestion(
+                        pattern, dataset, config, verbose=verbose,
+                    )
+                    if suggestion is None:
+                        _log.warning(
+                            "Auto mode generation returned None for "
+                            "pattern %s, falling back to template",
+                            pattern_str_id,
+                        )
+                    else:
+                        suggestions.append(suggestion)
+                        continue
+                elif mode == "hitl":
+                    suggestion = generate_hitl_suggestion(
+                        pattern, dataset, config, db_conn,
+                        verbose=verbose,
+                    )
+                    if suggestion is None:
+                        _log.info(
+                            "HITL mode: user skipped pattern %s",
+                            pattern_str_id,
+                        )
+                        continue
+                    else:
+                        suggestions.append(suggestion)
+                        continue
+                else:
+                    suggestion = generate_dspy_suggestion(
+                        pattern, dataset, config, verbose=verbose,
+                    )
+                    suggestions.append(suggestion)
+                    continue
             except Exception as exc:  # noqa: BLE001
                 _log.warning(
                     "DSPy generation failed for pattern %s, "

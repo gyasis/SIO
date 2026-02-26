@@ -90,8 +90,16 @@ def promote_to_ground_truth(conn: sqlite3.Connection, suggestion_id: int) -> int
         "description": description,
     }])
 
-    # Extract rule_title from description or proposed_change
-    rule_title = description.split(" -- ")[0] if " -- " in description else description[:100]
+    # Extract rule_title from description — try em-dash first, then double-dash
+    if " \u2014 " in description:
+        rule_title = description.split(" \u2014 ")[0]
+    elif " -- " in description:
+        rule_title = description.split(" -- ")[0]
+    else:
+        rule_title = description[:100]
+    # Strip [DSPy] prefix if present
+    if rule_title.startswith("[DSPy] "):
+        rule_title = rule_title[7:]
 
     gt_id = insert_ground_truth(
         conn,

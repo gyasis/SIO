@@ -380,20 +380,20 @@ class TestSurfaceTargetMap:
 
         assert _SURFACE_TARGET_MAP["hook_config"] == ".claude/hooks/"
 
-    def test_mcp_config_maps_to_settings_json(self):
+    def test_mcp_config_maps_to_mcp_json(self):
         from sio.suggestions.dspy_generator import _SURFACE_TARGET_MAP
 
-        assert _SURFACE_TARGET_MAP["mcp_config"] == ".claude/settings.json"
+        assert _SURFACE_TARGET_MAP["mcp_config"] == ".claude/mcp.json"
 
-    def test_agent_profile_maps_to_agent_profile_md(self):
+    def test_agent_profile_maps_to_agents_dir(self):
         from sio.suggestions.dspy_generator import _SURFACE_TARGET_MAP
 
-        assert _SURFACE_TARGET_MAP["agent_profile"] == ".claude/agent-profile.md"
+        assert _SURFACE_TARGET_MAP["agent_profile"] == ".claude/agents/"
 
-    def test_project_config_maps_to_project_config_json(self):
+    def test_project_config_maps_to_claude_md(self):
         from sio.suggestions.dspy_generator import _SURFACE_TARGET_MAP
 
-        assert _SURFACE_TARGET_MAP["project_config"] == ".claude/project-config.json"
+        assert _SURFACE_TARGET_MAP["project_config"] == "CLAUDE.md"
 
     def test_target_file_set_from_surface(
         self, sample_pattern, sample_dataset, mock_config, mock_dspy_prediction,

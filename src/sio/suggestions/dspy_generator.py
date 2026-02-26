@@ -34,10 +34,10 @@ _SURFACE_TARGET_MAP: dict[str, str] = {
     "claude_md_rule": "CLAUDE.md",
     "skill_update": ".claude/skills/",
     "hook_config": ".claude/hooks/",
-    "mcp_config": ".claude/settings.json",
+    "mcp_config": ".claude/mcp.json",
     "settings_config": ".claude/settings.json",
-    "agent_profile": ".claude/agent-profile.md",
-    "project_config": ".claude/project-config.json",
+    "agent_profile": ".claude/agents/",
+    "project_config": "CLAUDE.md",
 }
 
 _VALID_SURFACES = frozenset(_SURFACE_TARGET_MAP.keys())
@@ -73,9 +73,11 @@ def _load_optimized_or_default(config: Any) -> Any:
         from sio.core.dspy.module_store import get_active_module, load_module
 
         conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-        active = get_active_module(conn, "suggestion")
-        conn.close()
+        try:
+            conn.row_factory = sqlite3.Row
+            active = get_active_module(conn, "suggestion")
+        finally:
+            conn.close()
 
         if active and os.path.exists(active["file_path"]):
             logger.info(
@@ -184,8 +186,8 @@ def _normalize_surface(raw_surface: str) -> str:
     cleaned = raw_surface.strip().lower().replace("-", "_").replace(" ", "_")
     if cleaned in _VALID_SURFACES:
         return cleaned
-    # Fuzzy match: check if any valid surface is a substring
-    for valid in _VALID_SURFACES:
+    # Fuzzy match: check if any valid surface is a substring (deterministic order)
+    for valid in sorted(_VALID_SURFACES):
         if valid in cleaned or cleaned in valid:
             return valid
     return "claude_md_rule"
@@ -305,6 +307,11 @@ def generate_dspy_suggestion(
     )
     rationale = getattr(result, "rationale", "Based on observed error patterns.")
     reasoning_trace = getattr(result, "reasoning", "")
+
+    # Warn if DSPy returned default/empty fields — low quality signal
+    _DEFAULT_VALUES = {"Improvement suggestion", "Review the error pattern.", "Based on observed error patterns."}
+    if rule_title in _DEFAULT_VALUES or prevention_instructions in _DEFAULT_VALUES:
+        logger.warning("DSPy returned default/empty fields — suggestion may be low quality")
 
     # --- T027: Verbose trace logging (outputs) ---
     if verbose:

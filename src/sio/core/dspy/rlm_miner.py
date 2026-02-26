@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 # Lazy import guard for dspy
 try:
@@ -51,7 +54,7 @@ def _corpus_search(corpus_path: str, query: str) -> str:
         if results:
             return "\n---\n".join(r.snippet for r in results)
     except Exception:
-        pass
+        logger.debug("Corpus search failed", exc_info=True)
     return ""
 
 
@@ -87,7 +90,7 @@ def _heuristic_mining(
     return MiningResult(
         failure_analysis=analysis,
         trajectory=trajectory,
-        llm_calls=2,
+        llm_calls=0,
     )
 
 
@@ -175,6 +178,6 @@ def mine_failure_context(
 
         except Exception:
             # DSPy call failed — fall back to heuristic
-            pass
+            logger.warning("DSPy ChainOfThought failed, falling back to heuristic", exc_info=True)
 
     return _heuristic_mining(skill, message, outcome, corpus_context)

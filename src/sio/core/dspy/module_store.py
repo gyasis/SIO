@@ -34,9 +34,6 @@ def save_module(
     Returns:
         The database row ID of the new record.
     """
-    # Deactivate previous active modules of this type
-    deactivate_previous(conn, module_type)
-
     # Save module to JSON file
     if store_dir is None:
         store_dir = _DEFAULT_STORE_DIR
@@ -47,7 +44,12 @@ def save_module(
     file_path = os.path.join(store_dir, filename)
     module.save(file_path)
 
-    # Record in DB
+    # Deactivate previous and insert new in a single transaction
+    conn.execute(
+        "UPDATE optimized_modules SET is_active = 0 "
+        "WHERE module_type = ? AND is_active = 1",
+        (module_type,),
+    )
     cursor = conn.execute(
         "INSERT INTO optimized_modules "
         "(module_type, optimizer_used, file_path, training_count, "
@@ -56,7 +58,7 @@ def save_module(
         (module_type, optimizer_used, file_path, training_count,
          metric_before, metric_after, now.isoformat()),
     )
-    conn.commit()
+    conn.commit()  # single commit for both operations
     return cursor.lastrowid
 
 

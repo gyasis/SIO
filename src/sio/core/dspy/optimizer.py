@@ -152,12 +152,23 @@ def _run_dspy_optimization(
 ) -> dict:
     """Run the DSPy optimizer and return result.
 
+    .. deprecated::
+        Legacy behavior_invocations optimizer. Use ``optimize_suggestions()``
+        for the real DSPy ground-truth-based implementation.
+
     This is the integration point for DSPy. In V0.1, this
     produces a simple prompt diff based on failure analysis.
 
     Returns:
         dict with 'proposed_diff' and 'score' keys.
     """
+    import warnings
+
+    warnings.warn(
+        "_run_dspy_optimization is deprecated; use optimize_suggestions() instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     failures = [e for e in dataset if e.get("user_satisfied") == 0]
     successes = [e for e in dataset if e.get("user_satisfied") == 1]
 
@@ -436,6 +447,10 @@ def optimize(
 ) -> dict:
     """Run prompt optimization for a skill.
 
+    .. deprecated::
+        Legacy behavior_invocations optimizer. Use ``optimize_suggestions()``
+        for the real DSPy ground-truth-based implementation.
+
     Returns a dict with 'status' and optional 'reason', 'diff',
     'optimization_id' keys.
 
@@ -443,6 +458,13 @@ def optimize(
         ValueError: If optimizer name is invalid.
         OptimizationError/RuntimeError: If DSPy fails after gates pass.
     """
+    import warnings
+
+    warnings.warn(
+        "optimize() is deprecated; use optimize_suggestions() instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     if optimizer not in _VALID_OPTIMIZERS:
         raise ValueError(
             f"Invalid optimizer '{optimizer}'. "
@@ -538,7 +560,18 @@ def run_optimization(
 ) -> dict:
     """Public alias for optimize() with 'skill' kwarg.
 
+    .. deprecated::
+        Legacy behavior_invocations optimizer. Use ``optimize_suggestions()``
+        for the real DSPy ground-truth-based implementation.
+
     Integration test API.
     """
+    import warnings
+
+    warnings.warn(
+        "run_optimization() is deprecated; use optimize_suggestions() instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return optimize(conn, skill_name=skill, platform=platform,
                     optimizer=optimizer)

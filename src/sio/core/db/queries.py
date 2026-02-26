@@ -260,7 +260,13 @@ def insert_pattern(conn: sqlite3.Connection, record: dict) -> int:
     col_names = ", ".join(cols)
     values = [record.get(c) for c in cols]
     cur = conn.execute(
-        f"INSERT OR REPLACE INTO patterns ({col_names}) VALUES ({placeholders})",
+        f"INSERT INTO patterns ({col_names}) VALUES ({placeholders}) "
+        f"ON CONFLICT(pattern_id) DO UPDATE SET "
+        f"description=excluded.description, tool_name=excluded.tool_name, "
+        f"error_count=excluded.error_count, session_count=excluded.session_count, "
+        f"first_seen=excluded.first_seen, last_seen=excluded.last_seen, "
+        f"rank_score=excluded.rank_score, centroid_embedding=excluded.centroid_embedding, "
+        f"updated_at=excluded.updated_at",
         values,
     )
     conn.commit()
@@ -284,10 +290,20 @@ def get_pattern_by_id(conn: sqlite3.Connection, pattern_id: str) -> dict | None:
     return _row_to_dict(row) if row else None
 
 
+_PATTERN_UPDATE_ALLOWED = frozenset({
+    "description", "tool_name", "error_count", "session_count",
+    "first_seen", "last_seen", "rank_score", "centroid_embedding",
+    "updated_at",
+})
+
+
 def update_pattern(conn: sqlite3.Connection, id: int, **fields) -> bool:
     """Update specific fields on a pattern by numeric id."""
     if not fields:
         return False
+    invalid = set(fields.keys()) - _PATTERN_UPDATE_ALLOWED
+    if invalid:
+        raise ValueError(f"Invalid columns for pattern update: {invalid}")
     set_clause = ", ".join(f"{col} = ?" for col in fields)
     values = list(fields.values()) + [id]
     cur = conn.execute(
@@ -333,8 +349,8 @@ def get_errors_for_pattern(
 # ---------------------------------------------------------------------------
 
 _DATASET_COLS = [
-    "pattern_id", "train_examples", "val_examples", "test_examples",
-    "created_at", "updated_at",
+    "pattern_id", "file_path", "positive_count", "negative_count",
+    "min_threshold", "lineage_sessions", "created_at", "updated_at",
 ]
 
 
@@ -362,10 +378,19 @@ def get_dataset_for_pattern(
     return _row_to_dict(row) if row else None
 
 
+_DATASET_UPDATE_ALLOWED = frozenset({
+    "file_path", "positive_count", "negative_count", "min_threshold",
+    "lineage_sessions", "updated_at",
+})
+
+
 def update_dataset(conn: sqlite3.Connection, id: int, **fields) -> bool:
     """Update specific fields on a dataset."""
     if not fields:
         return False
+    invalid = set(fields.keys()) - _DATASET_UPDATE_ALLOWED
+    if invalid:
+        raise ValueError(f"Invalid columns for dataset update: {invalid}")
     set_clause = ", ".join(f"{col} = ?" for col in fields)
     values = list(fields.values()) + [id]
     cur = conn.execute(
@@ -381,8 +406,9 @@ def update_dataset(conn: sqlite3.Connection, id: int, **fields) -> bool:
 # ---------------------------------------------------------------------------
 
 _SUGGESTION_COLS = [
-    "pattern_id", "suggestion_text", "status", "note",
-    "created_at", "updated_at",
+    "pattern_id", "dataset_id", "description", "confidence",
+    "proposed_change", "target_file", "change_type", "status",
+    "ai_explanation", "user_note", "created_at", "reviewed_at",
 ]
 
 
@@ -423,12 +449,12 @@ def update_suggestion_status(
     now = datetime.now(timezone.utc).isoformat()
     if note is not None:
         cur = conn.execute(
-            "UPDATE suggestions SET status = ?, note = ?, updated_at = ? WHERE id = ?",
+            "UPDATE suggestions SET status = ?, user_note = ?, reviewed_at = ? WHERE id = ?",
             (status, note, now, id),
         )
     else:
         cur = conn.execute(
-            "UPDATE suggestions SET status = ?, updated_at = ? WHERE id = ?",
+            "UPDATE suggestions SET status = ?, reviewed_at = ? WHERE id = ?",
             (status, now, id),
         )
     conn.commit()
@@ -440,8 +466,8 @@ def update_suggestion_status(
 # ---------------------------------------------------------------------------
 
 _APPLIED_CHANGE_COLS = [
-    "suggestion_id", "change_type", "target_file", "diff_text",
-    "applied_at", "rolled_back_at",
+    "suggestion_id", "target_file", "diff_before", "diff_after",
+    "commit_sha", "applied_at", "rolled_back_at",
 ]
 
 
