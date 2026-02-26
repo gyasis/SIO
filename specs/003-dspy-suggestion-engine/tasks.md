@@ -18,9 +18,9 @@
 
 **Purpose**: Project initialization — new packages, dependency updates, directory structure
 
-- [ ] T001 Update `dspy>=3.1.3` in pyproject.toml (currently `>=2.5`) per research.md R7
-- [ ] T002 [P] Create `src/sio/ground_truth/__init__.py` package directory
-- [ ] T003 [P] Create `~/.sio/ground_truth/` and `~/.sio/optimized/` directories in installer at `src/sio/adapters/claude_code/installer.py`
+- [x] T001 Update `dspy>=3.1.3` in pyproject.toml (currently `>=2.5`) per research.md R7
+- [x] T002 [P] Create `src/sio/ground_truth/__init__.py` package directory
+- [x] T003 [P] Create `~/.sio/ground_truth/` and `~/.sio/optimized/` directories in installer at `src/sio/adapters/claude_code/installer.py`
 
 **Checkpoint**: Project structure ready, dependencies aligned
 
@@ -34,25 +34,25 @@
 
 ### Tests for Foundational
 
-- [ ] T004 [P] Write test for LLM config parsing in `tests/unit/test_config_llm.py` — test `[llm]` and `[llm.sub]` TOML sections, env var auto-detection priority order, missing config fallback
-- [ ] T005 [P] Write test for LM factory in `tests/unit/test_lm_factory.py` — test `create_lm()` returns `dspy.LM` from config, env var detection, `None` when no LLM available
-- [ ] T006 [P] Write test for ground_truth table DDL in `tests/unit/test_schema.py` — extend existing schema tests with `ground_truth` and `optimized_modules` tables, CHECK constraints on `target_surface`, `label`, `source`
-- [ ] T007 [P] Write test for DSPy Signature definitions in `tests/unit/test_dspy_signatures.py` — test `SuggestionGenerator` has correct input/output fields, field descriptions present
-- [ ] T008 [P] Write test for DSPy Module in `tests/unit/test_dspy_modules.py` — test `SuggestionModule` wraps `ChainOfThought(SuggestionGenerator)`, `forward()` accepts correct args
-- [ ] T009 [P] Write test for module store in `tests/unit/test_module_store.py` — test `save_module()` writes JSON, `load_module()` restores, `get_active_module()` returns latest active
+- [x] T004 [P] Write test for LLM config parsing in `tests/unit/test_config_llm.py` — test `[llm]` and `[llm.sub]` TOML sections, env var auto-detection priority order, missing config fallback
+- [x] T005 [P] Write test for LM factory in `tests/unit/test_lm_factory.py` — test `create_lm()` returns `dspy.LM` from config, env var detection, `None` when no LLM available
+- [x] T006 [P] Write test for ground_truth table DDL in `tests/unit/test_schema.py` — extend existing schema tests with `ground_truth` and `optimized_modules` tables, CHECK constraints on `target_surface`, `label`, `source`
+- [x] T007 [P] Write test for DSPy Signature definitions in `tests/unit/test_dspy_signatures.py` — test `SuggestionGenerator` has correct input/output fields, field descriptions present
+- [x] T008 [P] Write test for DSPy Module in `tests/unit/test_dspy_modules.py` — test `SuggestionModule` wraps `ChainOfThought(SuggestionGenerator)`, `forward()` accepts correct args
+- [x] T009 [P] Write test for module store in `tests/unit/test_module_store.py` — test `save_module()` writes JSON, `load_module()` restores, `get_active_module()` returns latest active
 
 ### Implementation for Foundational
 
-- [ ] T010 Extend `SIOConfig` dataclass with LLM fields (`llm_model`, `llm_api_key_env`, `llm_api_base_env`, `llm_temperature`, `llm_max_tokens`, `llm_sub_model`) and TOML `[llm]` section parsing in `src/sio/core/config.py`
-- [ ] T011 [P] Create LM factory `create_lm(config) -> dspy.LM | None` with auto-detection priority (Azure → Anthropic → OpenAI → None) in `src/sio/core/dspy/lm_factory.py`
-- [ ] T012 Add `ground_truth` and `optimized_modules` tables to `init_db()` in `src/sio/core/db/schema.py` per contracts/ground-truth-schema.md DDL
-- [ ] T013 Add `ALTER TABLE suggestions ADD COLUMN target_surface TEXT` and `reasoning_trace TEXT` migration in `src/sio/core/db/schema.py`
-- [ ] T014 [P] Define `SuggestionGenerator` DSPy Signature in `src/sio/core/dspy/signatures.py` per contracts/dspy-signatures.md — inputs: `error_examples`, `error_type`, `pattern_summary`; outputs: `target_surface`, `rule_title`, `prevention_instructions`, `rationale`
-- [ ] T015 [P] Define `GroundTruthCandidate` DSPy Signature in `src/sio/core/dspy/signatures.py` — same as SuggestionGenerator plus `quality_assessment` output field
-- [ ] T016 [P] Implement `SuggestionModule(dspy.Module)` with `ChainOfThought(SuggestionGenerator)` in `src/sio/core/dspy/modules.py`
-- [ ] T017 [P] Implement `GroundTruthModule(dspy.Module)` with `ChainOfThought(GroundTruthCandidate)` in `src/sio/core/dspy/modules.py`
-- [ ] T018 [P] Implement `save_module()`, `load_module()`, `get_active_module()`, `deactivate_previous()` in `src/sio/core/dspy/module_store.py`
-- [ ] T019 Add ground truth CRUD operations to `src/sio/core/db/queries.py` — `insert_ground_truth()`, `get_ground_truth_by_pattern()`, `get_pending_ground_truth()`, `update_ground_truth_label()`, `get_training_corpus()`, `get_ground_truth_stats()`
+- [x] T010 Extend `SIOConfig` dataclass with LLM fields (`llm_model`, `llm_api_key_env`, `llm_api_base_env`, `llm_temperature`, `llm_max_tokens`, `llm_sub_model`) and TOML `[llm]` section parsing in `src/sio/core/config.py`
+- [x] T011 [P] Create LM factory `create_lm(config) -> dspy.LM | None` with auto-detection priority (Azure → Anthropic → OpenAI → None) in `src/sio/core/dspy/lm_factory.py`
+- [x] T012 Add `ground_truth` and `optimized_modules` tables to `init_db()` in `src/sio/core/db/schema.py` per contracts/ground-truth-schema.md DDL
+- [x] T013 Add `ALTER TABLE suggestions ADD COLUMN target_surface TEXT` and `reasoning_trace TEXT` migration in `src/sio/core/db/schema.py`
+- [x] T014 [P] Define `SuggestionGenerator` DSPy Signature in `src/sio/core/dspy/signatures.py` per contracts/dspy-signatures.md — inputs: `error_examples`, `error_type`, `pattern_summary`; outputs: `target_surface`, `rule_title`, `prevention_instructions`, `rationale`
+- [x] T015 [P] Define `GroundTruthCandidate` DSPy Signature in `src/sio/core/dspy/signatures.py` — same as SuggestionGenerator plus `quality_assessment` output field
+- [x] T016 [P] Implement `SuggestionModule(dspy.Module)` with `ChainOfThought(SuggestionGenerator)` in `src/sio/core/dspy/modules.py`
+- [x] T017 [P] Implement `GroundTruthModule(dspy.Module)` with `ChainOfThought(GroundTruthCandidate)` in `src/sio/core/dspy/modules.py`
+- [x] T018 [P] Implement `save_module()`, `load_module()`, `get_active_module()`, `deactivate_previous()` in `src/sio/core/dspy/module_store.py`
+- [x] T019 Add ground truth CRUD operations to `src/sio/core/db/queries.py` — `insert_ground_truth()`, `get_ground_truth_by_pattern()`, `get_pending_ground_truth()`, `update_ground_truth_label()`, `get_training_corpus()`, `get_ground_truth_stats()`
 
 **Checkpoint**: Foundation ready — LLM config, DB schema, DSPy primitives all in place. All foundational tests pass.
 
@@ -66,20 +66,20 @@
 
 ### Tests for User Story 1
 
-- [ ] T020 [P] [US1] Write test for DSPy generator in `tests/unit/test_dspy_generator.py` — test `generate_dspy_suggestion()` calls `SuggestionModule.forward()` with sanitized inputs, returns suggestion dict with all required fields including `target_surface` and `reasoning_trace`
-- [ ] T021 [P] [US1] Write test for input sanitization in `tests/unit/test_dspy_generator.py` — test API keys, passwords, tokens stripped from error examples before LLM call (FR-012), fields truncated to 500 chars (FR-013)
-- [ ] T022 [P] [US1] Write test for template fallback in `tests/unit/test_dspy_generator.py` — test that when `create_lm()` returns None, generator falls back to existing template logic with user-facing message
-- [ ] T023 [P] [US1] Write integration test in `tests/integration/test_dspy_pipeline.py` — test full pipeline: mock LLM → generate suggestions for tool_failure pattern → verify suggestion references specific tool name and error text
-- [ ] T024 [P] [US1] Write contract test in `tests/contract/test_dspy_contracts.py` — test DSPy Signature input/output field names match contracts/dspy-signatures.md
+- [x] T020 [P] [US1] Write test for DSPy generator in `tests/unit/test_dspy_generator.py` — test `generate_dspy_suggestion()` calls `SuggestionModule.forward()` with sanitized inputs, returns suggestion dict with all required fields including `target_surface` and `reasoning_trace`
+- [x] T021 [P] [US1] Write test for input sanitization in `tests/unit/test_dspy_generator.py` — test API keys, passwords, tokens stripped from error examples before LLM call (FR-012), fields truncated to 500 chars (FR-013)
+- [x] T022 [P] [US1] Write test for template fallback in `tests/unit/test_dspy_generator.py` — test that when `create_lm()` returns None, generator falls back to existing template logic with user-facing message
+- [x] T023 [P] [US1] Write integration test in `tests/integration/test_dspy_pipeline.py` — test full pipeline: mock LLM → generate suggestions for tool_failure pattern → verify suggestion references specific tool name and error text
+- [x] T024 [P] [US1] Write contract test in `tests/contract/test_dspy_contracts.py` — test DSPy Signature input/output field names match contracts/dspy-signatures.md
 
 ### Implementation for User Story 1
 
-- [ ] T025 [US1] Create `generate_dspy_suggestion(pattern, dataset, config) -> dict` in `src/sio/suggestions/dspy_generator.py` — loads LM via factory, configures DSPy, runs `SuggestionModule.forward()`, returns suggestion dict with `target_surface`, `reasoning_trace`, `proposed_change`, `confidence`
-- [ ] T026 [US1] Implement input sanitization in `src/sio/suggestions/dspy_generator.py` — `_sanitize_examples()` strips secrets (regex for API keys, passwords, tokens), `_truncate_fields()` caps each field at 500 chars (FR-012, FR-013)
-- [ ] T027 [US1] Implement verbose trace logging in `src/sio/suggestions/dspy_generator.py` — when `verbose=True`, log DSPy input, output, and reasoning trace (FR-014)
-- [ ] T028 [US1] Modify `generate_suggestions()` in `src/sio/suggestions/generator.py` — add DSPy path: if `create_lm(config)` returns a valid LM, delegate each pattern to `generate_dspy_suggestion()`; else fall back to existing template builders with Rich warning message (FR-006, FR-007)
-- [ ] T029 [US1] Modify `sio suggest` command in `src/sio/cli/main.py` — pass `--verbose` flag through to generator, display `[DSPy]` or `[Template]` tag per suggestion in Rich output
-- [ ] T030 [US1] Implement multi-surface targeting — DSPy output `target_surface` maps to correct `target_file` path via lookup table in `src/sio/suggestions/dspy_generator.py` (FR-024, FR-025)
+- [x] T025 [US1] Create `generate_dspy_suggestion(pattern, dataset, config) -> dict` in `src/sio/suggestions/dspy_generator.py` — loads LM via factory, configures DSPy, runs `SuggestionModule.forward()`, returns suggestion dict with `target_surface`, `reasoning_trace`, `proposed_change`, `confidence`
+- [x] T026 [US1] Implement input sanitization in `src/sio/suggestions/dspy_generator.py` — `_sanitize_examples()` strips secrets (regex for API keys, passwords, tokens), `_truncate_fields()` caps each field at 500 chars (FR-012, FR-013)
+- [x] T027 [US1] Implement verbose trace logging in `src/sio/suggestions/dspy_generator.py` — when `verbose=True`, log DSPy input, output, and reasoning trace (FR-014)
+- [x] T028 [US1] Modify `generate_suggestions()` in `src/sio/suggestions/generator.py` — add DSPy path: if `create_lm(config)` returns a valid LM, delegate each pattern to `generate_dspy_suggestion()`; else fall back to existing template builders with Rich warning message (FR-006, FR-007)
+- [x] T029 [US1] Modify `sio suggest` command in `src/sio/cli/main.py` — pass `--verbose` flag through to generator, display `[DSPy]` or `[Template]` tag per suggestion in Rich output
+- [x] T030 [US1] Implement multi-surface targeting — DSPy output `target_surface` maps to correct `target_file` path via lookup table in `src/sio/suggestions/dspy_generator.py` (FR-024, FR-025)
 
 **Checkpoint**: `sio suggest` generates LLM-powered suggestions when LLM configured, falls back to templates otherwise. All US1 tests pass.
 

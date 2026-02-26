@@ -640,8 +640,14 @@ def generate_suggestions(
     patterns: list[dict[str, Any]],
     datasets: dict[str, dict[str, Any]],
     db_conn: sqlite3.Connection,
+    *,
+    verbose: bool = False,
 ) -> list[dict[str, Any]]:
     """Generate improvement suggestion dicts from ranked patterns and datasets.
+
+    When an LLM backend is configured (via ``~/.sio/config.toml`` or env
+    vars), delegates to DSPy for LLM-powered generation.  Otherwise falls
+    back to the deterministic template path.
 
     Loads actual error examples from dataset files to produce targeted,
     content-aware suggestions instead of generic boilerplate rules.
@@ -659,13 +665,35 @@ def generate_suggestions(
     db_conn:
         Open SQLite connection (used for any future DB operations; not mutated
         by this function in the current implementation).
+    verbose:
+        When True and the DSPy path is active, log DSPy input/output
+        and reasoning traces.
 
     Returns
     -------
     list[dict]
         One suggestion dict per pattern that has a matching dataset entry.
-        Patterns without a dataset entry are silently skipped.
+        Patterns without a dataset entry are silently skipped.  Each dict
+        includes ``_using_dspy`` (bool) indicating which path produced it.
     """
+    import logging
+
+    _log = logging.getLogger(__name__)
+
+    # --- Attempt DSPy path ---
+    use_dspy = False
+    try:
+        from sio.core.config import load_config
+        from sio.core.dspy.lm_factory import create_lm
+
+        config = load_config()
+        lm = create_lm(config)
+        if lm is not None:
+            use_dspy = True
+            _log.info("LLM backend detected — using DSPy suggestion path")
+    except Exception as exc:  # noqa: BLE001
+        _log.debug("DSPy path unavailable: %s", exc)
+
     suggestions: list[dict[str, Any]] = []
 
     for pattern in patterns:
@@ -674,7 +702,28 @@ def generate_suggestions(
         if dataset is None:
             continue
 
-        # Load actual examples from the dataset file
+        # --- DSPy path (when LLM is available) ---
+        if use_dspy:
+            try:
+                from sio.suggestions.dspy_generator import (
+                    generate_dspy_suggestion,
+                )
+
+                suggestion = generate_dspy_suggestion(
+                    pattern, dataset, config, verbose=verbose,
+                )
+                suggestions.append(suggestion)
+                continue
+            except Exception as exc:  # noqa: BLE001
+                _log.warning(
+                    "DSPy generation failed for pattern %s, "
+                    "falling back to template: %s",
+                    pattern_str_id,
+                    exc,
+                )
+                # Fall through to template path for this pattern
+
+        # --- Template path (deterministic fallback) ---
         examples = _load_dataset_examples(dataset)
 
         change_type = _infer_change_type(pattern)
@@ -683,7 +732,7 @@ def generate_suggestions(
         proposed_change = _build_proposed_change(pattern, examples)
         description = _build_description(pattern, dataset, examples)
 
-        suggestion: dict[str, Any] = {
+        suggestion_dict: dict[str, Any] = {
             "pattern_id": int(pattern["id"]),
             "dataset_id": int(dataset["id"]),
             "description": description,
@@ -692,7 +741,8 @@ def generate_suggestions(
             "target_file": target_file,
             "change_type": change_type,
             "status": "pending",
+            "_using_dspy": False,
         }
-        suggestions.append(suggestion)
+        suggestions.append(suggestion_dict)
 
     return suggestions

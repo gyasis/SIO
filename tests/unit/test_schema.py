@@ -144,22 +144,36 @@ class TestCheckConstraints:
 class TestGroundTruthTable:
     """ground_truth table must exist with CHECK constraints for DSPy training data."""
 
+    # Helper SQL fragment for all NOT NULL columns in ground_truth
+    _GT_COLS = (
+        "pattern_id, error_examples_json, error_type, pattern_summary, "
+        "target_surface, rule_title, prevention_instructions, rationale, "
+        "label, source, created_at"
+    )
+
+    def _gt_vals(self, surface="claude_md_rule", label="pending", source="seed"):
+        """Return a tuple of valid values for ground_truth INSERT."""
+        return (
+            "pat-1", '["example error"]', "tool_error", "Tool fails on X",
+            surface, "Fix X", "Do Y instead", "Because Z",
+            label, source, "2026-01-01T00:00:00Z",
+        )
+
     def test_ground_truth_table_exists(self, conn):
         tables = _table_names(conn)
         assert "ground_truth" in tables, f"Missing 'ground_truth' table. Found: {sorted(tables)}"
 
     VALID_TARGET_SURFACES = (
-        "skill", "mcp_tool", "preference", "instructions_rule",
-        "claude_md", "hook", "workflow",
+        "claude_md_rule", "skill_update", "hook_config",
+        "mcp_config", "settings_config", "agent_profile", "project_config",
     )
 
     @pytest.mark.parametrize("surface", VALID_TARGET_SURFACES)
     def test_ground_truth_target_surface_accepts_valid(self, conn, surface):
         conn.execute(
-            "INSERT INTO ground_truth "
-            "(pattern_id, error_example, target_surface, label, source, created_at) "
-            "VALUES (1, 'example error', ?, 'pending', 'seed', '2026-01-01T00:00:00Z')",
-            (surface,),
+            f"INSERT INTO ground_truth ({self._GT_COLS}) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            self._gt_vals(surface=surface),
         )
         row = conn.execute(
             "SELECT target_surface FROM ground_truth WHERE target_surface = ?",
@@ -171,9 +185,9 @@ class TestGroundTruthTable:
         """CHECK constraint rejects invalid target_surface values."""
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(
-                "INSERT INTO ground_truth "
-                "(pattern_id, error_example, target_surface, label, source, created_at) "
-                "VALUES (1, 'err', 'INVALID_SURFACE', 'pending', 'seed', '2026-01-01T00:00:00Z')"
+                f"INSERT INTO ground_truth ({self._GT_COLS}) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                self._gt_vals(surface="INVALID_SURFACE"),
             )
 
     VALID_LABELS = ("pending", "positive", "negative")
@@ -181,19 +195,18 @@ class TestGroundTruthTable:
     @pytest.mark.parametrize("label", VALID_LABELS)
     def test_ground_truth_label_accepts_valid(self, conn, label):
         conn.execute(
-            "INSERT INTO ground_truth "
-            "(pattern_id, error_example, target_surface, label, source, created_at) "
-            "VALUES (1, 'example', 'skill', ?, 'seed', '2026-01-01T00:00:00Z')",
-            (label,),
+            f"INSERT INTO ground_truth ({self._GT_COLS}) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            self._gt_vals(label=label),
         )
 
     def test_ground_truth_label_check(self, conn):
         """CHECK constraint rejects invalid label values."""
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(
-                "INSERT INTO ground_truth "
-                "(pattern_id, error_example, target_surface, label, source, created_at) "
-                "VALUES (1, 'err', 'skill', 'INVALID_LABEL', 'seed', '2026-01-01T00:00:00Z')"
+                f"INSERT INTO ground_truth ({self._GT_COLS}) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                self._gt_vals(label="INVALID_LABEL"),
             )
 
     VALID_SOURCES = ("agent", "seed", "approved", "edited", "rejected")
@@ -201,19 +214,18 @@ class TestGroundTruthTable:
     @pytest.mark.parametrize("source", VALID_SOURCES)
     def test_ground_truth_source_accepts_valid(self, conn, source):
         conn.execute(
-            "INSERT INTO ground_truth "
-            "(pattern_id, error_example, target_surface, label, source, created_at) "
-            "VALUES (1, 'example', 'skill', 'pending', ?, '2026-01-01T00:00:00Z')",
-            (source,),
+            f"INSERT INTO ground_truth ({self._GT_COLS}) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            self._gt_vals(source=source),
         )
 
     def test_ground_truth_source_check(self, conn):
         """CHECK constraint rejects invalid source values."""
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(
-                "INSERT INTO ground_truth "
-                "(pattern_id, error_example, target_surface, label, source, created_at) "
-                "VALUES (1, 'err', 'skill', 'pending', 'INVALID_SOURCE', '2026-01-01T00:00:00Z')"
+                f"INSERT INTO ground_truth ({self._GT_COLS}) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                self._gt_vals(source="INVALID_SOURCE"),
             )
 
 

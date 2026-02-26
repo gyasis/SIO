@@ -584,7 +584,11 @@ def collect(since, error_type):
     "--grep", "-g", "grep_term", default=None,
     help="Filter errors by keyword in content (e.g. 'databricks', 'SQL', 'snowflake').",
 )
-def suggest(error_type, min_examples, grep_term):
+@click.option(
+    "--verbose", "-v", is_flag=True, default=False,
+    help="Enable verbose DSPy trace logging.",
+)
+def suggest(error_type, min_examples, grep_term, verbose):
     """Run the full pipeline: cluster -> persist -> dataset -> suggestions."""
     from datetime import datetime, timezone
 
@@ -721,7 +725,9 @@ def suggest(error_type, min_examples, grep_term):
 
     # 5. Generate targeted suggestions
     console.print("[bold]Step 4:[/bold] Generating targeted suggestions...")
-    suggestions = generate_suggestions(persisted_patterns, datasets, conn)
+    suggestions = generate_suggestions(
+        persisted_patterns, datasets, conn, verbose=verbose,
+    )
 
     # Clear old suggestions and insert new ones
     conn.execute("DELETE FROM suggestions WHERE status = 'pending'")
@@ -751,14 +757,19 @@ def suggest(error_type, min_examples, grep_term):
         table.add_column("Conf.", justify="right")
         table.add_column("Target")
         table.add_column("Type")
+        table.add_column("Source")
 
         for i, s in enumerate(suggestions, 1):
+            source_label = (
+                "[DSPy]" if s.get("_using_dspy") else "[Template]"
+            )
             table.add_row(
                 str(i),
                 s["description"][:50],
                 f"{s['confidence']:.0%}",
                 s["target_file"],
                 s["change_type"],
+                source_label,
             )
         console.print(table)
         console.print()
