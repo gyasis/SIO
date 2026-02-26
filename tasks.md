@@ -1,1 +1,0 @@
-specs/002-sio-redesign/tasks.md
