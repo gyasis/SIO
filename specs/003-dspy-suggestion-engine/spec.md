@@ -91,21 +91,43 @@ As a developer of SIO, I can point SIO at its own SpecStory/JSONL session histor
 
 ---
 
-### User Story 6 - Ground Truth Seeding and Training Data Lifecycle (Priority: P1)
+### User Story 6 - Agent-Generated Synthetic Ground Truth (Priority: P1)
 
-As an AI CLI user, the system maintains a growing corpus of ground truth examples — ideal CLAUDE.md rules paired with the error patterns they address — so that DSPy optimizers have labeled input→output training data to learn from.
+As an AI CLI user, the system uses the LLM itself to generate synthetic ground truth datasets — candidate ideal outputs for each error pattern — which I then review as a data analyst before they become DSPy training data. The human never writes ground truth from scratch; the agent proposes, the human validates.
 
-**Why this priority**: P1 because DSPy cannot optimize without training data. The datasets (error examples) are only the INPUT side. DSPy needs input→output pairs where the output is the DESIRED rule. Without ground truth, BootstrapFewShot has nothing to bootstrap from and MIPROv2 has no metric to optimize against. This is the bridge between "we have data" and "DSPy can learn."
+**Why this priority**: P1 because DSPy cannot optimize without training data, and humans should not be writing ideal CLAUDE.md rules from scratch. The agent is better at generating many candidate outputs; the human is better at evaluating which candidates are good. This is the same pattern as RLHF — generate candidates, human ranks/selects. Without this step, DSPy has no labeled input→output pairs to learn from.
 
-**Independent Test**: Can be tested by creating 5 hand-written ground truth examples (error pattern → ideal rule), running BootstrapFewShot with those seed examples, and verifying the optimized module generates better rules than the un-seeded default.
+**Independent Test**: Can be tested by running `sio ground-truth generate` on existing error patterns, verifying it produces 3-5 candidate ideal outputs per pattern, then reviewing and approving the best ones. The approved ground truth should then be usable as DSPy training data.
 
 **Acceptance Scenarios**:
 
-1. **Given** SIO is freshly installed with no prior suggestions, **When** the user runs `sio suggest` for the first time, **Then** the system ships with 5-10 seed ground truth examples (hand-written ideal rules for common error types: tool_failure, user_correction, agent_admission, repeated_attempt, undo) that DSPy uses as few-shot demonstrations.
-2. **Given** a user approves a suggestion via `sio approve`, **When** the approval is recorded, **Then** the approved suggestion (error pattern → generated rule) is automatically added to the ground truth training corpus as a positive example for future DSPy optimization.
-3. **Given** a user rejects a suggestion and provides an edited version or note explaining why, **When** the rejection is recorded with a note, **Then** the rejection is stored as a negative training signal, and if an edited version is provided, that becomes a positive ground truth example.
-4. **Given** 10+ ground truth examples exist (seed + approved), **When** the user runs `sio optimize suggestions`, **Then** BootstrapFewShot uses these examples to select the most effective few-shot demonstrations for the suggestion generation prompt.
-5. **Given** the ground truth corpus grows over time through approvals, **When** DSPy re-optimizes, **Then** the quality of generated suggestions measurably improves compared to earlier optimization runs with fewer examples.
+1. **Given** error datasets exist with clustered patterns, **When** the user runs ground truth generation, **Then** the system uses the LLM to produce 3-5 candidate ideal outputs per error pattern — each candidate is a complete improvement (rule, skill update, hook config, etc.) targeting the appropriate surface.
+2. **Given** candidate ground truth has been generated, **When** the user enters review mode, **Then** the system presents each candidate like a data analyst would see it: the error pattern summary, the candidate output, the target surface, and a quality assessment — allowing approve, reject, or edit.
+3. **Given** a user approves a ground truth candidate, **When** approval is recorded, **Then** the (error_pattern → ideal_output) pair joins the training corpus as a positive `dspy.Example`.
+4. **Given** a user rejects a candidate with a note, **When** rejection is recorded, **Then** it becomes a negative training signal. If the user provides an edited version, that edit becomes the positive ground truth.
+5. **Given** the ground truth corpus grows through approve/reject cycles, **When** DSPy re-optimizes, **Then** the optimizer draws from these human-validated examples to improve its few-shot demonstrations and instruction text.
+
+---
+
+### User Story 7 - Automated and Human-in-the-Middle Modes (Priority: P2)
+
+As an AI CLI user, I can choose between two pipeline modes depending on whether I want speed or control: a fully automated mode for high-confidence patterns, and a human-in-the-middle mode for analysis, discussion, and careful dataset curation.
+
+**Why this priority**: Different situations need different levels of human involvement. When SIO has high-confidence patterns with strong evidence (20+ errors, 5+ sessions), automation is appropriate. When patterns are novel, ambiguous, or high-impact (changes to hooks, MCP configs), the human should be in the loop reviewing datasets, discussing trade-offs, and making informed decisions. Both modes feed the same DSPy training pipeline.
+
+**Independent Test**: Can be tested by running the automated mode on a well-established pattern (many errors, clear fix) and verifying it produces and applies a suggestion without human intervention. Then running the HITL mode on a novel pattern and verifying it pauses for human review at each stage.
+
+**Acceptance Scenarios**:
+
+1. **Given** a pattern with 20+ errors across 5+ sessions and a confidence score above 0.8, **When** the user runs `sio suggest --auto`, **Then** the system generates ground truth candidates, auto-selects the highest-scoring one, generates the suggestion, and presents it for a single approve/reject decision — no multi-step review required.
+2. **Given** a novel pattern or one targeting a high-impact surface (hooks, MCP config, settings), **When** the user runs `sio suggest --analyze`, **Then** the system enters human-in-the-middle mode:
+   - Step 1: Presents the error dataset as a data analysis summary (error distribution, session timeline, common tools, user contexts)
+   - Step 2: Generates ground truth candidates and pauses for human review
+   - Step 3: After human validates ground truth, generates the suggestion
+   - Step 4: Presents the suggestion with full reasoning trace for discussion
+   - Step 5: User approves, rejects with edits, or defers
+3. **Given** the user wants to inspect the training dataset before any optimization, **When** the user runs `sio datasets inspect <pattern_id>`, **Then** the system shows the full dataset: error examples, ground truth corpus entries (if any), label distribution, quality metrics, and coverage gaps.
+4. **Given** the default mode (no flag), **When** the user runs `sio suggest`, **Then** the system auto-selects the appropriate mode per pattern based on confidence score and target surface impact — high-confidence + low-impact → auto, everything else → HITL.
 
 ---
 
