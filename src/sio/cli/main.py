@@ -419,13 +419,17 @@ def patterns(error_type, project):
 @click.option("--limit", "-n", default=20, help="Max errors to show.")
 @click.option(
     "--grep", "-g", "grep_term", default=None,
-    help="Search error text, user message, and context for a keyword (case-insensitive).",
+    help="Search content for keyword(s). Comma-separated for OR logic (e.g. 'placeholder,hardcoded,stub').",
 )
 @click.option(
     "--project", default=None,
     help="Filter by project name (substring match on source path).",
 )
-def errors(error_type, limit, grep_term, project):
+@click.option(
+    "--exclude-type", "exclude_types", default=None,
+    help="Exclude error types. Comma-separated (e.g. 'repeated_attempt,tool_failure').",
+)
+def errors(error_type, limit, grep_term, project, exclude_types):
     """Browse mined errors with optional type and content filters."""
     from rich.console import Console
     from rich.table import Table
@@ -447,19 +451,29 @@ def errors(error_type, limit, grep_term, project):
         where_clauses.append("error_type = ?")
         params.append(error_type)
 
+    if exclude_types:
+        excluded = [t.strip() for t in exclude_types.split(",") if t.strip()]
+        placeholders = ", ".join(["?"] * len(excluded))
+        where_clauses.append(f"error_type NOT IN ({placeholders})")
+        params.extend(excluded)
+
     if project:
         where_clauses.append("source_file LIKE ?")
         params.append(f"%{project}%")
 
     if grep_term:
-        # Search across error_text, user_message, context_before, context_after, source_file
-        where_clauses.append(
-            "(error_text LIKE ? OR user_message LIKE ? OR "
-            "context_before LIKE ? OR context_after LIKE ? OR "
-            "source_file LIKE ?)"
-        )
-        like_term = f"%{grep_term}%"
-        params.extend([like_term] * 5)
+        # Comma-separated terms use OR logic across all content fields
+        terms = [t.strip() for t in grep_term.split(",") if t.strip()]
+        term_clauses = []
+        for term in terms:
+            term_clauses.append(
+                "(error_text LIKE ? OR user_message LIKE ? OR "
+                "context_before LIKE ? OR context_after LIKE ? OR "
+                "source_file LIKE ?)"
+            )
+            like_term = f"%{term}%"
+            params.extend([like_term] * 5)
+        where_clauses.append(f"({' OR '.join(term_clauses)})")
 
     where_sql = " AND ".join(where_clauses)
 
@@ -742,7 +756,7 @@ def inspect(pattern_id):
 @click.option("--min-examples", default=3, help="Min examples to build a dataset.")
 @click.option(
     "--grep", "-g", "grep_term", default=None,
-    help="Filter errors by keyword in content (e.g. 'databricks', 'SQL', 'snowflake').",
+    help="Filter errors by keyword(s) in content. Comma-separated for OR logic (e.g. 'placeholder,hardcoded,stub').",
 )
 @click.option(
     "--verbose", "-v", is_flag=True, default=False,
@@ -760,7 +774,11 @@ def inspect(pattern_id):
     "--project", default=None,
     help="Filter by project name (substring match on source path).",
 )
-def suggest(error_type, min_examples, grep_term, verbose, auto_mode, analyze_mode, project):
+@click.option(
+    "--exclude-type", "exclude_types", default=None,
+    help="Exclude error types. Comma-separated (e.g. 'repeated_attempt,tool_failure').",
+)
+def suggest(error_type, min_examples, grep_term, verbose, auto_mode, analyze_mode, project, exclude_types):
     """Run the full pipeline: cluster -> persist -> dataset -> suggestions."""
     from datetime import datetime, timezone
 
@@ -796,23 +814,39 @@ def suggest(error_type, min_examples, grep_term, verbose, auto_mode, analyze_mod
 
     errors_to_cluster = all_errors
 
-    # Apply error type filter
+    # Apply error type filter (include)
     if error_type:
         errors_to_cluster = [e for e in errors_to_cluster if e.get("error_type") == error_type]
 
-    # Apply content grep filter — searches across error_text, user_message,
-    # context_before, context_after, and source_file
-    if grep_term:
-        term_lower = grep_term.lower()
+    # Apply error type exclusion filter
+    if exclude_types:
+        excluded = {t.strip().lower() for t in exclude_types.split(",")}
+        errors_to_cluster = [e for e in errors_to_cluster if (e.get("error_type") or "").lower() not in excluded]
 
-        def _matches_grep(e: dict) -> bool:
+    # Apply content grep filter — comma-separated terms use OR logic
+    # Searches across error_text, user_message, context_before, context_after, source_file
+    # Results are deduped by error ID
+    if grep_term:
+        terms = [t.strip().lower() for t in grep_term.split(",") if t.strip()]
+
+        def _matches_any_term(e: dict) -> bool:
             for field in ("error_text", "user_message", "context_before", "context_after", "source_file"):
-                val = e.get(field) or ""
-                if term_lower in val.lower():
-                    return True
+                val = (e.get(field) or "").lower()
+                for term in terms:
+                    if term in val:
+                        return True
             return False
 
-        errors_to_cluster = [e for e in errors_to_cluster if _matches_grep(e)]
+        errors_to_cluster = [e for e in errors_to_cluster if _matches_any_term(e)]
+        # Dedup by error record ID
+        seen_ids: set = set()
+        deduped: list = []
+        for e in errors_to_cluster:
+            eid = e.get("id")
+            if eid not in seen_ids:
+                seen_ids.add(eid)
+                deduped.append(e)
+        errors_to_cluster = deduped
 
     if not errors_to_cluster:
         filter_desc = []
