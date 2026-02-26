@@ -42,7 +42,7 @@ class SIOConfig:
     llm_api_key_env: str | None = None
     llm_api_base_env: str | None = None
     llm_temperature: float = 0.7
-    llm_max_tokens: int = 2000
+    llm_max_tokens: int = 8000
     # [llm.sub] section
     llm_sub_model: str | None = None
 

@@ -183,6 +183,8 @@ def _normalize_surface(raw_surface: str) -> str:
     The LLM may return slightly different casing or extra whitespace.
     Falls back to ``claude_md_rule`` if unrecognized.
     """
+    if raw_surface is None:
+        return "claude_md_rule"
     cleaned = raw_surface.strip().lower().replace("-", "_").replace(" ", "_")
     if cleaned in _VALID_SURFACES:
         return cleaned
@@ -264,7 +266,7 @@ def generate_dspy_suggestion(
     examples = _load_dataset_examples(dataset)
     examples_json = json.dumps(examples[:20], default=str)  # cap at 20 examples
     examples_json = _sanitize_examples(examples_json)
-    examples_json = _truncate_fields(examples_json, max_chars=2000)
+    examples_json = _truncate_fields(examples_json, max_chars=6000)
 
     error_type = pattern.get("error_type") or "unknown"
     # Build a concise pattern summary from description + tool_name + counts
@@ -299,7 +301,7 @@ def generate_dspy_suggestion(
         raise RuntimeError(f"DSPy call failed: {exc}") from exc
 
     # --- Extract outputs ---
-    raw_surface = getattr(result, "target_surface", "claude_md_rule")
+    raw_surface = getattr(result, "target_surface", None) or "claude_md_rule"
     target_surface = _normalize_surface(raw_surface)
     rule_title = getattr(result, "rule_title", "Improvement suggestion")
     prevention_instructions = getattr(
