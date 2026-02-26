@@ -294,7 +294,53 @@
 - [x] T122 Run `ruff check src/ tests/` and fix all lint issues from Phase 11 changes
 - [x] T123 Run full test suite `pytest tests/ -v` — all tests pass after Phase 11
 
-**Checkpoint**: All adversarial findings resolved, full test suite green
+**Checkpoint**: Phase 11 MINOR fixes complete
+
+---
+
+## Phase 12: Adversarial Audit Round 2
+
+**Purpose**: Fix ALL findings from second adversarial audit on Phase 11 code. Three audits ran: placeholder exterminator, logic bug hunter, spec compliance reviewer.
+
+### CRITICAL + MAJOR Fixes
+
+- [ ] T124 [CRITICAL] Collapse `--n-candidates`/`--candidates` into single `--candidates` flag (default=3 per contract) on `ground-truth generate` in `src/sio/cli/main.py` — remove fragile precedence logic
+- [ ] T125 [MAJOR] Add optional `PATTERN_ID` positional argument to `ground-truth generate` per cli-commands.md contract in `src/sio/cli/main.py`
+- [ ] T126 [MAJOR] Enforce FK on `ground_truth.pattern_id` — change warn-and-continue to raise `ValueError` when pattern missing (with `strict=True` default) in `src/sio/core/db/queries.py`
+- [ ] T127 [MAJOR] Fix batch commit tests to use `unittest.mock` spy on `conn.commit()` to verify commit IS/IS NOT called based on `_batch` flag in `tests/unit/test_phase11_minor_fixes.py`
+- [ ] T128 [MAJOR] Remove dead `_row_to_dict` empty-dict guard (unreachable with sqlite3.Row) OR replace with meaningful validation in `src/sio/core/db/queries.py`
+- [ ] T129 [MAJOR] Add `--surface` filter flag to `ground-truth review` CLI command in `src/sio/cli/main.py` — wire to existing `get_pending_ground_truth(surface_type=)` parameter
+
+### MEDIUM Fixes
+
+- [ ] T130 [MEDIUM] Fix `_normalize_surface` substring matching — use `difflib.get_close_matches()` instead of `in` operator for deterministic fuzzy matching in `src/sio/ground_truth/generator.py`
+- [ ] T131 [MEDIUM] Replace shallow `dict(e)` with `copy.deepcopy(e)` in `_apply_recency_weighting()` in `src/sio/core/dspy/optimizer.py`
+- [ ] T132 [MEDIUM] Log warning when `quality_assessment` getattr fallback triggers in `src/sio/ground_truth/generator.py` — set `quality_assessment="FALLBACK: field missing"` for reviewer visibility
+- [ ] T133 [MEDIUM] Log warning when ANY getattr fallback triggers for DSPy output fields in `src/sio/ground_truth/generator.py`
+
+### MINOR Fixes
+
+- [ ] T134 [MINOR] Wire `min_sim` threshold to `SIOConfig` or accept as parameter in `search_embedding()` in `src/sio/core/dspy/corpus_indexer.py`
+- [ ] T135 [MINOR] Fix seed message — conditional text when `--surface` is provided in `src/sio/cli/main.py` line 1394
+- [ ] T136 [MINOR] Add `quality_assessment TEXT` column to `_GROUND_TRUTH_DDL` (not just ALTER TABLE migration) in `src/sio/core/db/schema.py`
+- [ ] T137 [MINOR] Move inline `import logging` in `insert_ground_truth()` to module-level in `src/sio/core/db/queries.py`
+- [ ] T138 [MINOR] Add user-facing deprecation notice to legacy `optimize` CLI command in `src/sio/cli/main.py`
+- [ ] T139 [MINOR] Standardize exit pattern — use `raise SystemExit(1)` consistently across all CLI error paths in `src/sio/cli/main.py`
+- [ ] T140 [MINOR] Add deprecation timeline comment `# Remove in v0.3` to `_run_dspy_optimization`, `optimize()`, `run_optimization()` in `src/sio/core/dspy/optimizer.py`
+- [ ] T141 [MINOR] Add `stub_pattern=True` marker or `source='seed'` column to distinguish stub patterns from real ones in `src/sio/ground_truth/seeder.py`
+
+### Tests for Phase 12
+
+- [ ] T142 [P] Write test for single `--candidates` flag (default=3) and `PATTERN_ID` positional arg in `tests/unit/test_phase12_audit2.py`
+- [ ] T143 [P] Write test for strict FK enforcement — `ValueError` raised on missing pattern_id in `tests/unit/test_phase12_audit2.py`
+- [ ] T144 [P] Write test for `_normalize_surface` deterministic matching with `difflib` in `tests/unit/test_phase12_audit2.py`
+- [ ] T145 [P] Write test for deep copy in `_apply_recency_weighting` with nested dicts in `tests/unit/test_phase12_audit2.py`
+- [ ] T146 [P] Write test for DSPy fallback logging and `quality_assessment="FALLBACK"` in `tests/unit/test_phase12_audit2.py`
+- [ ] T147 [P] Write test for `--surface` on `ground-truth review` CLI in `tests/unit/test_phase12_audit2.py`
+- [ ] T148 Run `ruff check src/ tests/` and fix all lint issues from Phase 12 changes
+- [ ] T149 Run full test suite `pytest tests/ -v` — all tests pass after Phase 12
+
+**Checkpoint**: All Phase 12 adversarial findings resolved, full test suite green
 
 ---
 
@@ -313,6 +359,7 @@
 - **Phase 9 (US5)**: Depends on Phases 3, 5, 6, 7 (full pipeline working)
 - **Phase 10 (Polish)**: Depends on all user stories
 - **Phase 11 (Adversarial Audit)**: Depends on Phase 10 — fixes from 3 independent audits
+- **Phase 12 (Adversarial Audit R2)**: Depends on Phase 11 — second round audit on Phase 11 code
 
 ### User Story Dependencies
 
@@ -444,6 +491,7 @@ This path delivers the core value: a system that generates suggestions AND impro
 - Constitution Principle XI — NO stubs in production code; all DSPy functions must call real DSPy
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
-- Total: 123 tasks across 11 phases (85 original + 38 adversarial audit)
+- Total: 149 tasks across 12 phases (85 original + 38 audit R1 + 26 audit R2)
 - P1 stories: 30 tasks (US1: 11, US2: 5, US6: 12) + 2 setup = 32 tasks for MVP-complete
-- Phase 11: 15 already fixed [x] + 14 remaining MINOR fixes + 9 tests = 38 tasks
+- Phase 11: 15 already fixed [x] + 14 MINOR fixes [x] + 9 tests [x] = 38 tasks
+- Phase 12: 6 CRITICAL/MAJOR + 4 MEDIUM + 8 MINOR + 8 tests = 26 tasks

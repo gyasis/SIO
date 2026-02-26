@@ -7,6 +7,7 @@ BootstrapFewShot / MIPROv2 on the ground truth corpus.
 
 from __future__ import annotations
 
+import copy
 import logging
 import sqlite3
 from dataclasses import dataclass
@@ -128,7 +129,7 @@ def _apply_recency_weighting(examples: list[dict]) -> list[dict]:
         return list(examples)
 
     sorted_ex = sorted(
-        (dict(e) for e in examples),
+        (copy.deepcopy(e) for e in examples),
         key=lambda e: e.get("timestamp", ""),
     )
     n = len(sorted_ex)
@@ -152,6 +153,7 @@ def _compute_satisfaction_rate(examples: list[dict]) -> float | None:
     return satisfied / len(labeled)
 
 
+# DEPRECATED: Remove in v0.3
 def _run_dspy_optimization(
     dataset: list[dict],
     skill_name: str,
@@ -445,6 +447,7 @@ def optimize_suggestions(
 # ---------------------------------------------------------------------------
 
 
+# DEPRECATED: Remove in v0.3
 def optimize(
     conn: sqlite3.Connection,
     skill_name: str,
@@ -561,6 +564,7 @@ def optimize(
     }
 
 
+# DEPRECATED: Remove in v0.3
 def run_optimization(
     conn: sqlite3.Connection,
     skill: str,

@@ -64,6 +64,20 @@ class TestGroundTruthFullCycle:
             "examples": [{"error_text": "FileNotFoundError", "tool_name": "Read"}]
         }))
 
+        # Create pattern in DB so FK validation passes
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).isoformat()
+        mem_db.execute(
+            "INSERT INTO patterns "
+            "(pattern_id, description, tool_name, error_count, session_count, "
+            "first_seen, last_seen, rank_score, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ("fnf-pattern", "File not found errors", "Read", 10, 5,
+             now, now, 1.0, now, now),
+        )
+        mem_db.commit()
+
         pattern = {
             "id": 1,
             "pattern_id": "fnf-pattern",
@@ -138,6 +152,20 @@ class TestGroundTruthFullCycle:
 
         ds_file = tmp_path / "dataset.json"
         ds_file.write_text(json.dumps({"examples": []}))
+
+        # Create pattern in DB so FK validation passes
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).isoformat()
+        mem_db.execute(
+            "INSERT INTO patterns "
+            "(pattern_id, description, tool_name, error_count, session_count, "
+            "first_seen, last_seen, rank_score, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ("edit-test", "Test pattern", "Read", 3, 2,
+             now, now, 1.0, now, now),
+        )
+        mem_db.commit()
 
         pattern = {
             "id": 1,

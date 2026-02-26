@@ -50,8 +50,25 @@ def config():
 class TestForeignKeyValidation:
     """T101: Application-level FK validation for ground_truth.pattern_id."""
 
-    def test_warns_on_missing_pattern(self, mem_db, caplog):
-        """insert_ground_truth warns when pattern_id has no matching pattern."""
+    def test_raises_on_missing_pattern_strict(self, mem_db):
+        """insert_ground_truth raises ValueError when pattern_id is missing (strict=True)."""
+        from sio.core.db.queries import insert_ground_truth
+
+        with pytest.raises(ValueError, match="nonexistent-pattern"):
+            insert_ground_truth(
+                mem_db,
+                pattern_id="nonexistent-pattern",
+                error_examples_json="[]",
+                error_type="tool_failure",
+                pattern_summary="Test",
+                target_surface="claude_md_rule",
+                rule_title="Test",
+                prevention_instructions="Do something",
+                rationale="Because",
+            )
+
+    def test_warns_on_missing_pattern_non_strict(self, mem_db, caplog):
+        """insert_ground_truth warns when pattern_id is missing and strict=False."""
         from sio.core.db.queries import insert_ground_truth
 
         with caplog.at_level(logging.WARNING, logger="sio.core.db.queries"):
@@ -65,6 +82,7 @@ class TestForeignKeyValidation:
                 rule_title="Test",
                 prevention_instructions="Do something",
                 rationale="Because",
+                strict=False,
             )
 
         assert "nonexistent-pattern" in caplog.text
@@ -176,6 +194,7 @@ class TestQualityAssessmentPersistence:
             prevention_instructions="Do something",
             rationale="Because",
             quality_assessment="High quality candidate",
+            strict=False,
         )
         row = mem_db.execute(
             "SELECT quality_assessment FROM ground_truth WHERE id = ?",
@@ -196,6 +215,7 @@ class TestQualityAssessmentPersistence:
             rule_title="Test rule",
             prevention_instructions="Do something",
             rationale="Because",
+            strict=False,
         )
         row = mem_db.execute(
             "SELECT quality_assessment FROM ground_truth WHERE id = ?",
@@ -221,6 +241,19 @@ class TestQualityAssessmentPersistence:
         mock_module_cls.return_value = mock_instance
 
         from sio.ground_truth.generator import generate_candidates
+
+        # Create pattern in DB so FK validation passes
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).isoformat()
+        mem_db.execute(
+            "INSERT INTO patterns "
+            "(pattern_id, description, tool_name, error_count, session_count, "
+            "first_seen, last_seen, rank_score, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ("gen-qa-test", "Test", "Bash", 5, 3, now, now, 1.0, now, now),
+        )
+        mem_db.commit()
 
         pattern = {
             "id": 1, "pattern_id": "gen-qa-test",
@@ -369,7 +402,7 @@ class TestRecencyWeightingNoMutation:
 
 
 class TestRowFactoryValidation:
-    """T109: _row_to_dict raises on empty result."""
+    """T109: _row_to_dict converts sqlite3.Row to dict."""
 
     def test_normal_row_converts(self, mem_db):
         from sio.core.db.queries import _row_to_dict
@@ -494,19 +527,52 @@ class TestSimilarityThresholdFiltering:
 # ---------------------------------------------------------------------------
 
 
-class TestBatchCommits:
-    """T113: _batch=True skips per-operation commits."""
+class _CommitSpy:
+    """Wrapper around sqlite3.Connection that tracks commit() calls.
 
-    def test_batch_insert_invocation_no_autocommit(self, mem_db, sample_invocation):
+    sqlite3.Connection.commit is a read-only C attribute, so
+    unittest.mock.patch.object cannot be used directly. This wrapper
+    delegates all attribute access to the real connection and intercepts
+    commit() to record call counts.
+    """
+
+    def __init__(self, conn):
+        object.__setattr__(self, "_conn", conn)
+        object.__setattr__(self, "commit_count", 0)
+
+    def commit(self):
+        object.__getattribute__(self, "_conn").commit()
+        cnt = object.__getattribute__(self, "commit_count")
+        object.__setattr__(self, "commit_count", cnt + 1)
+
+    def __getattr__(self, name):
+        return getattr(object.__getattribute__(self, "_conn"), name)
+
+    def __setattr__(self, name, value):
+        if name in ("_conn", "commit_count"):
+            object.__setattr__(self, name, value)
+        else:
+            setattr(object.__getattribute__(self, "_conn"), name, value)
+
+
+class TestBatchCommits:
+    """T113/T127: _batch=True skips per-operation commits; _batch=False calls commit."""
+
+    def test_batch_true_skips_commit(self, mem_db, sample_invocation):
         from sio.core.db.queries import insert_invocation
 
-        # With _batch=True, should not auto-commit
-        row_id = insert_invocation(
-            mem_db, sample_invocation(), _batch=True,
-        )
-        assert row_id > 0
+        spy = _CommitSpy(mem_db)
+        insert_invocation(spy, sample_invocation(), _batch=True)
+        assert spy.commit_count == 0
 
-    def test_batch_insert_error_record_no_autocommit(self, mem_db):
+    def test_batch_false_calls_commit(self, mem_db, sample_invocation):
+        from sio.core.db.queries import insert_invocation
+
+        spy = _CommitSpy(mem_db)
+        insert_invocation(spy, sample_invocation(), _batch=False)
+        assert spy.commit_count == 1
+
+    def test_batch_insert_error_record_no_commit(self, mem_db):
         from datetime import datetime, timezone
 
         from sio.core.db.queries import insert_error_record
@@ -519,8 +585,27 @@ class TestBatchCommits:
             "context_after": None, "error_type": "tool_failure",
             "mined_at": datetime.now(timezone.utc).isoformat(),
         }
-        row_id = insert_error_record(mem_db, record, _batch=True)
+        spy = _CommitSpy(mem_db)
+        row_id = insert_error_record(spy, record, _batch=True)
         assert row_id > 0
+        assert spy.commit_count == 0
+
+    def test_batch_insert_error_record_commits(self, mem_db):
+        from datetime import datetime, timezone
+
+        from sio.core.db.queries import insert_error_record
+
+        record = {
+            "session_id": "s1", "timestamp": datetime.now(timezone.utc).isoformat(),
+            "source_type": "test", "source_file": "test.md",
+            "tool_name": "Bash", "error_text": "Error",
+            "user_message": "msg", "context_before": None,
+            "context_after": None, "error_type": "tool_failure",
+            "mined_at": datetime.now(timezone.utc).isoformat(),
+        }
+        spy = _CommitSpy(mem_db)
+        insert_error_record(spy, record, _batch=False)
+        assert spy.commit_count == 1
 
     def test_batch_link_error_to_pattern(self, mem_db):
         from datetime import datetime, timezone
@@ -549,8 +634,9 @@ class TestBatchCommits:
             "context_after": None, "error_type": "tool_failure",
             "mined_at": now,
         })
-        # Should not raise
-        link_error_to_pattern(mem_db, pat_id, err_id, _batch=True)
+        spy = _CommitSpy(mem_db)
+        link_error_to_pattern(spy, pat_id, err_id, _batch=True)
+        assert spy.commit_count == 0
 
 
 # ---------------------------------------------------------------------------

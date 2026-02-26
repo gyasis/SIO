@@ -110,6 +110,7 @@ def edit(conn: sqlite3.Connection, gt_id: int, new_content: dict) -> int:
         source="edited",
         confidence=original.get("confidence"),
         file_path=original.get("file_path"),
+        strict=False,  # Editing existing row; pattern_id already validated on original insert
     )
 
     # Mark the new row as positive immediately

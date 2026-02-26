@@ -114,6 +114,7 @@ def promote_to_ground_truth(conn: sqlite3.Connection, suggestion_id: int) -> int
         source="approved",
         confidence=suggestion.get("confidence"),
         file_path=suggestion.get("target_file"),
+        strict=False,  # pattern_id from suggestions; may not exist in patterns table
     )
 
     # Mark as positive since it was already approved

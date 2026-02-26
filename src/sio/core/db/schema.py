@@ -191,6 +191,7 @@ CREATE TABLE IF NOT EXISTS ground_truth (
     confidence REAL,
     user_note TEXT,
     file_path TEXT,
+    quality_assessment TEXT,
     created_at TEXT NOT NULL,
     reviewed_at TEXT
 )

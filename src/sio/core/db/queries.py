@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 _INVOCATION_COLS = [
     "session_id", "timestamp", "platform", "user_message", "behavior_type",
@@ -15,11 +18,8 @@ _INVOCATION_COLS = [
 
 
 def _row_to_dict(row: sqlite3.Row) -> dict:
-    """Convert a sqlite3.Row to dict with defensive validation."""
-    d = dict(row)
-    if not d:
-        raise ValueError("row_factory returned an empty dict; expected columns")
-    return d
+    """Convert a sqlite3.Row to dict."""
+    return dict(row)
 
 
 def insert_invocation(
@@ -536,6 +536,7 @@ def insert_ground_truth(
     confidence: float | None = None,
     file_path: str | None = None,
     quality_assessment: str | None = None,
+    strict: bool = True,
 ) -> int:
     """Insert a ground truth candidate.
 
@@ -553,25 +554,28 @@ def insert_ground_truth(
         confidence: Optional confidence score.
         file_path: Optional path to the relevant file.
         quality_assessment: Optional self-assessment of candidate quality.
+        strict: If True (default), raise ValueError when pattern_id is missing.
+            If False, warn and continue (backward compat).
 
     Returns:
         The new row ID.
 
     Raises:
-        ValueError: If pattern_id does not reference a valid pattern.
+        ValueError: If pattern_id does not reference a valid pattern and strict=True.
     """
-    import logging as _logging
-
-    _logger = _logging.getLogger(__name__)
-
-    # T101: Application-level FK validation for pattern_id
+    # T101/T126: Application-level FK validation for pattern_id
     pat_row = conn.execute(
         "SELECT id FROM patterns WHERE pattern_id = ?", (pattern_id,)
     ).fetchone()
     if pat_row is None:
-        _logger.warning(
+        if strict:
+            raise ValueError(
+                f"ground_truth.pattern_id '{pattern_id}' has no matching "
+                f"patterns row"
+            )
+        logger.warning(
             "ground_truth.pattern_id '%s' has no matching patterns row; "
-            "inserting anyway for backward compatibility.",
+            "inserting anyway (strict=False).",
             pattern_id,
         )
 

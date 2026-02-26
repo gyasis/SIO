@@ -30,7 +30,7 @@ def _insert_sample(conn, **overrides) -> int:
         "source": "agent",
     }
     defaults.update(overrides)
-    return insert_ground_truth(conn, **defaults)
+    return insert_ground_truth(conn, strict=False, **defaults)
 
 
 class TestApprove:

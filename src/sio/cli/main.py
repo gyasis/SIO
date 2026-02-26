@@ -143,6 +143,7 @@ def review(platform, session, limit):
 @click.option("--dry-run", is_flag=True, help="Show diff without applying.")
 def optimize(skill_name, platform, optimizer, dry_run):
     """Run prompt optimization for a skill."""
+    click.echo("\u26a0\ufe0f  'sio optimize' is deprecated. Use 'sio optimize-suggestions' instead.", err=True)
     from sio.core.db.schema import init_db
     from sio.core.dspy.optimizer import optimize as run_opt
 
@@ -1391,35 +1392,44 @@ def gt_seed(count, surface):
     ids = seed_ground_truth(config, conn, count=count, surface=surface)
     conn.close()
 
-    click.echo(f"Seeded {len(ids)} ground truth entries across all 7 surfaces.")
+    if surface:
+        click.echo(f"Seeded {len(ids)} ground truth entries for surface '{surface}'.")
+    else:
+        click.echo(f"Seeded {len(ids)} ground truth entries across all 7 surfaces.")
 
 
 @ground_truth_group.command("generate")
-@click.option("--n-candidates", "-n", default=3, help="Candidates per pattern.")
-@click.option("--candidates", default=5, help="Alias for --n-candidates per FR-GT-002.")
-def gt_generate(n_candidates, candidates):
+@click.option("--candidates", default=3, help="Candidates per pattern.")
+@click.argument("pattern_id", required=False, default=None)
+def gt_generate(candidates, pattern_id):
     """Generate ground truth candidates from discovered patterns."""
     from sio.core.config import load_config
-    from sio.core.db.queries import get_patterns
+    from sio.core.db.queries import get_pattern_by_id, get_patterns
     from sio.core.db.schema import init_db
     from sio.ground_truth.generator import generate_candidates
-
-    # --candidates (FR-GT-002) takes precedence when --n-candidates is default
-    effective_candidates = n_candidates if n_candidates != 3 else candidates
 
     db_path = os.path.expanduser("~/.sio/sio.db")
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio mine' first.")
-        return
+        raise SystemExit(1)
 
     conn = init_db(db_path)
     config = load_config()
 
-    patterns = get_patterns(conn)
+    if pattern_id is not None:
+        pat = get_pattern_by_id(conn, pattern_id)
+        if pat is None:
+            click.echo(f"Pattern '{pattern_id}' not found.")
+            conn.close()
+            raise SystemExit(1)
+        patterns = [pat]
+    else:
+        patterns = get_patterns(conn)
+
     if not patterns:
         click.echo("No patterns found. Run 'sio suggest' first.")
         conn.close()
-        return
+        raise SystemExit(1)
 
     total_ids = []
     for pattern in patterns:
@@ -1431,7 +1441,7 @@ def gt_generate(n_candidates, candidates):
         dataset = dict(ds_row) if ds_row else {"id": 0, "file_path": ""}
 
         ids = generate_candidates(
-            pattern, dataset, conn, config, n_candidates=effective_candidates,
+            pattern, dataset, conn, config, n_candidates=candidates,
         )
         total_ids.extend(ids)
 
@@ -1443,7 +1453,8 @@ def gt_generate(n_candidates, candidates):
 
 
 @ground_truth_group.command("review")
-def gt_review():
+@click.option("--surface", default=None, help="Filter by target surface type.")
+def gt_review(surface):
     """Interactive review of pending ground truth candidates."""
     from rich.console import Console
     from rich.panel import Panel
@@ -1455,15 +1466,15 @@ def gt_review():
     db_path = os.path.expanduser("~/.sio/sio.db")
     if not os.path.exists(db_path):
         click.echo("No database found.")
-        return
+        raise SystemExit(1)
 
     conn = init_db(db_path)
-    pending = get_pending_ground_truth(conn)
+    pending = get_pending_ground_truth(conn, surface_type=surface)
 
     if not pending:
         click.echo("No pending ground truth entries to review.")
         conn.close()
-        return
+        raise SystemExit(1)
 
     console = Console()
     reviewed = 0

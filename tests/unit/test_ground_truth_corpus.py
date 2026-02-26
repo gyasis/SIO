@@ -28,7 +28,7 @@ def _insert_gt(conn, label="pending", source="agent", **overrides) -> int:
         "source": source,
     }
     defaults.update(overrides)
-    row_id = insert_ground_truth(conn, **defaults)
+    row_id = insert_ground_truth(conn, strict=False, **defaults)
     if label != "pending":
         update_ground_truth_label(conn, row_id, label=label, source=source)
     return row_id

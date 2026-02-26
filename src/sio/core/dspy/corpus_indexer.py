@@ -77,11 +77,17 @@ class CorpusIndex:
 
     def search_embedding(
         self, query: str, top_k: int = 5,
+        min_similarity: float = 0.3,
     ) -> list[SearchResult]:
         """Search by embedding (cosine similarity via fastembed vectors).
 
         Falls back to keyword search when fastembed is unavailable or
         embeddings cannot be computed.
+
+        Args:
+            query: Search query string.
+            top_k: Maximum number of results to return.
+            min_similarity: Minimum cosine similarity threshold for results.
         """
         self._ensure_embeddings()
 
@@ -96,7 +102,6 @@ class CorpusIndex:
         sims = np.dot(self._embeddings, query_emb) / np.maximum(norms, 1e-10)
 
         top_idx = np.argsort(-sims)[:top_k]
-        min_sim = 0.3
         return [
             SearchResult(
                 path=self._chunks[i]["path"],
@@ -104,7 +109,7 @@ class CorpusIndex:
                 snippet=self._chunks[i]["text"][:200],
             )
             for i in top_idx
-            if float(sims[i]) >= min_sim
+            if float(sims[i]) >= min_similarity
         ]
 
 

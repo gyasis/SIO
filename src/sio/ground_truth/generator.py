@@ -84,7 +84,23 @@ def generate_candidates(
             logger.exception("GroundTruthModule call %d failed", i)
             continue
 
-        # Extract fields from DSPy result
+        # Extract fields from DSPy result with fallback logging
+        _sentinel = object()
+        _fallback_fields = {
+            "target_surface": "claude_md_rule",
+            "rule_title": "Improvement suggestion",
+            "prevention_instructions": "Review the error pattern.",
+            "rationale": "Based on observed error patterns.",
+            "quality_assessment": None,
+        }
+        for _field_name in _fallback_fields:
+            if getattr(result, _field_name, _sentinel) is _sentinel:
+                logger.warning(
+                    "DSPy result missing field '%s' for candidate %d; "
+                    "using fallback value",
+                    _field_name, i,
+                )
+
         target_surface = _normalize_surface(
             getattr(result, "target_surface", "claude_md_rule")
         )
@@ -93,7 +109,11 @@ def generate_candidates(
             result, "prevention_instructions", "Review the error pattern."
         )
         rationale = getattr(result, "rationale", "Based on observed error patterns.")
-        quality_assessment = getattr(result, "quality_assessment", None)
+        raw_qa = getattr(result, "quality_assessment", _sentinel)
+        if raw_qa is _sentinel:
+            quality_assessment = "FALLBACK: field missing from DSPy output"
+        else:
+            quality_assessment = raw_qa
 
         row_id = insert_ground_truth(
             conn,
@@ -128,12 +148,16 @@ _VALID_SURFACES = frozenset({
 
 def _normalize_surface(raw_surface: str) -> str:
     """Normalize a DSPy-returned target_surface to a valid value."""
+    import difflib
+
     cleaned = raw_surface.strip().lower().replace("-", "_").replace(" ", "_")
     if cleaned in _VALID_SURFACES:
         return cleaned
-    for valid in _VALID_SURFACES:
-        if valid in cleaned or cleaned in valid:
-            return valid
+    matches = difflib.get_close_matches(
+        cleaned, sorted(_VALID_SURFACES), n=1, cutoff=0.6,
+    )
+    if matches:
+        return matches[0]
     return "claude_md_rule"
 
 
