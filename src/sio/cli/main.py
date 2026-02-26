@@ -195,6 +195,11 @@ def install(platform, auto_detect):
     result = do_install()
     click.echo(f"Database: {result['db_path']}")
     click.echo(f"Hooks registered: {result['hooks_registered']}")
+    skills = result.get("skills_installed", [])
+    if skills:
+        click.echo(f"Skills installed ({len(skills)}):")
+        for s in skills:
+            click.echo(f"  - {s}")
     click.echo("Installation complete.")
 
 
@@ -874,6 +879,31 @@ def reject(suggestion_id, note):
         raise SystemExit(1)
 
 
+@cli.command("apply")
+@click.argument("suggestion_id", type=int)
+def apply_suggestion(suggestion_id):
+    """Apply an approved suggestion to its target file."""
+    from sio.applier.writer import apply_change
+    from sio.core.db.schema import init_db
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found.")
+        return
+
+    conn = init_db(db_path)
+    result = apply_change(conn, suggestion_id)
+    conn.close()
+
+    if result["success"]:
+        click.echo(f"Applied suggestion {suggestion_id} to {result['target_file']}")
+        cid = result['change_id']
+        click.echo(f"Change ID: {cid} (use 'sio rollback {cid}' to undo)")
+    else:
+        click.echo(f"Apply failed: {result.get('reason', 'unknown')}")
+        raise SystemExit(1)
+
+
 @cli.command()
 @click.argument("change_id", type=int)
 def rollback(change_id):
@@ -894,6 +924,59 @@ def rollback(change_id):
     else:
         click.echo(f"Rollback failed: {result.get('reason', 'unknown')}")
         raise SystemExit(1)
+
+
+@cli.command()
+def changes():
+    """List applied changes and their status."""
+    from rich.console import Console
+    from rich.table import Table
+
+    from sio.core.db.schema import init_db
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found.")
+        return
+
+    conn = init_db(db_path)
+    rows = conn.execute(
+        "SELECT ac.id, ac.suggestion_id, ac.target_file, ac.applied_at, "
+        "ac.rolled_back_at, s.description "
+        "FROM applied_changes ac "
+        "LEFT JOIN suggestions s ON s.id = ac.suggestion_id "
+        "ORDER BY ac.applied_at DESC"
+    ).fetchall()
+    conn.close()
+
+    if not rows:
+        click.echo("No applied changes yet.")
+        return
+
+    console = Console()
+    table = Table(title="Applied Changes")
+    table.add_column("ID", style="bold")
+    table.add_column("Suggestion")
+    table.add_column("Target File")
+    table.add_column("Applied At")
+    table.add_column("Status")
+    table.add_column("Description", max_width=40)
+
+    for r in rows:
+        r = dict(r)
+        status = "rolled back" if r.get("rolled_back_at") else "active"
+        style = "dim" if status == "rolled back" else "green"
+        table.add_row(
+            str(r["id"]),
+            str(r["suggestion_id"]),
+            r["target_file"] or "",
+            (r["applied_at"] or "")[:16],
+            status,
+            (r.get("description") or "")[:40],
+            style=style,
+        )
+
+    console.print(table)
 
 
 @cli.group()

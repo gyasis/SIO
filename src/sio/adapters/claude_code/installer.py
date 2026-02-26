@@ -4,9 +4,21 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from datetime import datetime, timezone
+from pathlib import Path
 
 from sio.core.db.schema import init_db
+
+# Skills bundled with SIO
+_SKILLS_DIR = Path(__file__).parent / "skills"
+_SKILL_NAMES = [
+    "sio-scan",
+    "sio-suggest",
+    "sio-apply",
+    "sio-review",
+    "sio-status",
+]
 
 
 def install(
@@ -16,7 +28,7 @@ def install(
 ) -> dict:
     """Install SIO for Claude Code.
 
-    Creates DB, registers hooks, saves platform config.
+    Creates DB, registers hooks, installs skills, saves platform config.
 
     Args:
         db_dir: Path to SIO data directory. Default: ~/.sio/claude-code
@@ -42,6 +54,9 @@ def install(
     settings_path = os.path.join(claude_dir, "settings.json")
     hooks_registered = _register_hooks(settings_path)
 
+    # Install skills to ~/.claude/skills/
+    skills_installed = _install_skills(claude_dir)
+
     # Save platform config
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
@@ -59,6 +74,7 @@ def install(
         "db_created": True,
         "db_path": db_path,
         "hooks_registered": hooks_registered,
+        "skills_installed": skills_installed,
         "platform_config_saved": True,
         "dry_run": dry_run,
     }
@@ -95,3 +111,27 @@ def _register_hooks(settings_path: str) -> bool:
         json.dump(settings, f, indent=2)
 
     return True
+
+
+def _install_skills(claude_dir: str) -> list[str]:
+    """Copy SIO skill SKILL.md files to ~/.claude/skills/.
+
+    Each skill gets its own directory under ~/.claude/skills/sio-<name>/.
+    Existing skills are overwritten (updated to latest version).
+
+    Returns list of skill names installed.
+    """
+    target_base = Path(claude_dir) / "skills"
+    installed: list[str] = []
+
+    for skill_name in _SKILL_NAMES:
+        src = _SKILLS_DIR / skill_name / "SKILL.md"
+        if not src.exists():
+            continue
+
+        dest_dir = target_base / skill_name
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(str(src), str(dest_dir / "SKILL.md"))
+        installed.append(skill_name)
+
+    return installed
