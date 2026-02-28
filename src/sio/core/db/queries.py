@@ -273,12 +273,16 @@ _PATTERN_COLS = [
 
 
 def insert_pattern(conn: sqlite3.Connection, record: dict) -> int:
-    """Insert a pattern. Returns the new row ID."""
+    """Insert or upsert a pattern. Returns the row ID.
+
+    Note: SQLite ``lastrowid`` is unreliable after an upsert UPDATE, so we
+    resolve the actual ``id`` via a follow-up SELECT on ``pattern_id``.
+    """
     cols = _PATTERN_COLS
     placeholders = ", ".join(["?"] * len(cols))
     col_names = ", ".join(cols)
     values = [record.get(c) for c in cols]
-    cur = conn.execute(
+    conn.execute(
         f"INSERT INTO patterns ({col_names}) VALUES ({placeholders}) "
         f"ON CONFLICT(pattern_id) DO UPDATE SET "
         f"description=excluded.description, tool_name=excluded.tool_name, "
@@ -289,7 +293,11 @@ def insert_pattern(conn: sqlite3.Connection, record: dict) -> int:
         values,
     )
     conn.commit()
-    return cur.lastrowid
+    row = conn.execute(
+        "SELECT id FROM patterns WHERE pattern_id = ?",
+        (record.get("pattern_id"),),
+    ).fetchone()
+    return row[0]
 
 
 def get_patterns(conn: sqlite3.Connection, min_count: int = 0) -> list[dict]:

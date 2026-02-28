@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from sio.mining.pipeline import run_mine
@@ -326,12 +327,15 @@ class TestMineWithTimeFilter:
             # Back-date the file modification time.
             os.utime(dest, (ten_days_ago, ten_days_ago))
 
-        # One recent file.
+        # One recent file — use today's date so the filename-based filter
+        # always considers it "recent" regardless of when the test runs.
+        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        recent_fname = f"{today_str}_10-00-00Z-recent.md"
         sample_specstory_file(
-            filename="2026-02-25_10-00-00Z-recent.md",
+            filename=recent_fname,
             errors=[_SPECSTORY_ERRORS[2]],
         )
-        recent_path = tmp_path / "2026-02-25_10-00-00Z-recent.md"
+        recent_path = tmp_path / recent_fname
         recent_path.rename(source_dir / recent_path.name)
 
         result = run_mine(

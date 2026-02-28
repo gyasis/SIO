@@ -10,10 +10,13 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any
-from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
+
+import pytest
+from click.testing import CliRunner
 
 
 def _mock_db_conn(conn):
@@ -22,9 +25,6 @@ def _mock_db_conn(conn):
     def _inner(_db_path=None):
         yield conn
     return _inner
-
-import pytest
-from click.testing import CliRunner
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
