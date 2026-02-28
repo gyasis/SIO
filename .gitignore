@@ -34,3 +34,7 @@ Thumbs.db
 # Claude Code project files (user-specific)
 .claude/
 .memory/
+.specstory/
+.specify/
+memory-bank/
+execution_plan.json
