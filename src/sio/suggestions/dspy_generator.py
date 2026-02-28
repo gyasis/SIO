@@ -115,6 +115,12 @@ _SENSITIVE_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"ghp_[a-zA-Z0-9]{20,}"),
     # GitHub OAuth tokens
     re.compile(r"gho_[a-zA-Z0-9]{20,}"),
+    # Anthropic API keys
+    re.compile(r"sk-ant-[a-zA-Z0-9_\-]{20,}"),
+    # SSH / PEM private keys
+    re.compile(r"-----BEGIN [A-Z ]+ KEY-----"),
+    # JWT tokens
+    re.compile(r"eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+"),
 ]
 
 
@@ -325,7 +331,11 @@ def generate_dspy_suggestion(
     reasoning_trace = getattr(result, "reasoning", "")
 
     # Warn if DSPy returned default/empty fields — low quality signal
-    _DEFAULT_VALUES = {"Improvement suggestion", "Review the error pattern.", "Based on observed error patterns."}
+    _DEFAULT_VALUES = {
+        "Improvement suggestion",
+        "Review the error pattern.",
+        "Based on observed error patterns.",
+    }
     if rule_title in _DEFAULT_VALUES or prevention_instructions in _DEFAULT_VALUES:
         logger.warning("DSPy returned default/empty fields — suggestion may be low quality")
 

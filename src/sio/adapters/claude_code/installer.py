@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -43,6 +44,9 @@ _SKILL_NAMES = [
     "sio-apply",
     "sio-review",
     "sio-status",
+    "sio-optimize",
+    "sio-health",
+    "sio-feedback",
 ]
 
 
@@ -147,18 +151,22 @@ def _register_hooks(settings_path: str) -> bool:
 
     hooks = settings.setdefault("hooks", {})
 
+    _MODULE_PATH = "sio.adapters.claude_code.hooks.post_tool_use"
     sio_hook = {
         "type": "command",
-        "command": "python3 -m sio.adapters.claude_code.hooks.post_tool_use",
+        "command": f"{sys.executable} -m {_MODULE_PATH}",
     }
 
     post_hooks = hooks.setdefault("PostToolUse", [])
 
-    # Check if SIO hook already registered
-    existing_cmds = {
-        h.get("command", "") for h in post_hooks if isinstance(h, dict)
-    }
-    if sio_hook["command"] not in existing_cmds:
+    # Check if SIO hook already registered (match on module path, not full command,
+    # since the python path will differ across installs)
+    already_registered = any(
+        _MODULE_PATH in h.get("command", "")
+        for h in post_hooks
+        if isinstance(h, dict)
+    )
+    if not already_registered:
         post_hooks.append(sio_hook)
 
     with open(settings_path, "w") as f:

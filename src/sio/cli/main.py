@@ -2,10 +2,24 @@
 
 import json as _json
 import os
+from contextlib import contextmanager
+from importlib.metadata import version as pkg_version
 
 import click
 
 _DEFAULT_DB_DIR = os.path.expanduser("~/.sio/claude-code")
+
+
+@contextmanager
+def _db_conn(db_path):
+    """Context manager that opens init_db() and guarantees close."""
+    from sio.core.db.schema import init_db
+
+    conn = init_db(db_path)
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def _get_sio_db_conn():
@@ -22,7 +36,7 @@ def _get_sio_db_conn():
 
 
 @click.group()
-@click.version_option(version="0.1.0")
+@click.version_option(version=pkg_version("sio"))
 def cli():
     """SIO: Self-Improving Organism for AI coding CLIs."""
     pass
@@ -40,16 +54,14 @@ def cli():
 )
 def health(platform, skill, fmt):
     """Show per-skill health metrics."""
-    from sio.core.db.schema import init_db
     from sio.core.health.aggregator import compute_health
 
     db_path = os.path.join(_DEFAULT_DB_DIR, "behavior_invocations.db")
     if not os.path.exists(db_path):
         os.makedirs(_DEFAULT_DB_DIR, exist_ok=True)
-    conn = init_db(db_path)
 
-    results = compute_health(conn, platform=platform, skill=skill)
-    conn.close()
+    with _db_conn(db_path) as conn:
+        results = compute_health(conn, platform=platform, skill=skill)
 
     if fmt == "json":
         data = [
@@ -84,50 +96,47 @@ def health(platform, skill, fmt):
 @click.option("--limit", default=20, help="Max items to review.")
 def review(platform, session, limit):
     """Batch-review unlabeled invocations."""
-    from sio.core.db.schema import init_db
     from sio.core.feedback.batch_review import apply_label, get_reviewable
 
     db_path = os.path.join(_DEFAULT_DB_DIR, "behavior_invocations.db")
     if not os.path.exists(db_path):
         os.makedirs(_DEFAULT_DB_DIR, exist_ok=True)
-    conn = init_db(db_path)
 
-    items = get_reviewable(
-        conn, platform, session_id=session, limit=limit,
-    )
-
-    if not items:
-        click.echo("No unlabeled invocations to review.")
-        conn.close()
-        return
-
-    skew = items[0].get("skew_warning") if items else None
-    if skew:
-        click.echo(f"Warning: {skew}")
-        click.echo()
-
-    labeled = 0
-    for i, item in enumerate(items, 1):
-        click.echo(f"[{i}/{len(items)}] {item['actual_action']}")
-        click.echo(f"  Message: {item['user_message'][:80]}")
-        click.echo(f"  Time:    {item['timestamp']}")
-
-        choice = click.prompt(
-            "  Label [++/--/s(kip)/q(uit)]",
-            type=str,
-            default="s",
+    with _db_conn(db_path) as conn:
+        items = get_reviewable(
+            conn, platform, session_id=session, limit=limit,
         )
-        if choice == "q":
-            break
-        if choice in ("++", "--"):
-            note = click.prompt("  Note (optional)", default="", type=str)
-            apply_label(
-                conn, item["id"], choice, note or None,
-            )
-            labeled += 1
-        click.echo()
 
-    conn.close()
+        if not items:
+            click.echo("No unlabeled invocations to review.")
+            return
+
+        skew = items[0].get("skew_warning") if items else None
+        if skew:
+            click.echo(f"Warning: {skew}")
+            click.echo()
+
+        labeled = 0
+        for i, item in enumerate(items, 1):
+            click.echo(f"[{i}/{len(items)}] {item['actual_action']}")
+            click.echo(f"  Message: {item['user_message'][:80]}")
+            click.echo(f"  Time:    {item['timestamp']}")
+
+            choice = click.prompt(
+                "  Label [++/--/s(kip)/q(uit)]",
+                type=str,
+                default="s",
+            )
+            if choice == "q":
+                break
+            if choice in ("++", "--"):
+                note = click.prompt("  Note (optional)", default="", type=str)
+                apply_label(
+                    conn, item["id"], choice, note or None,
+                )
+                labeled += 1
+            click.echo()
+
     click.echo(f"Labeled {labeled} invocations.")
 
 
@@ -143,53 +152,52 @@ def review(platform, session, limit):
 @click.option("--dry-run", is_flag=True, help="Show diff without applying.")
 def optimize(skill_name, platform, optimizer, dry_run):
     """Run prompt optimization for a skill."""
-    click.echo("\u26a0\ufe0f  'sio optimize' is deprecated. Use 'sio optimize-suggestions' instead.", err=True)
-    from sio.core.db.schema import init_db
+    click.echo(
+        "\u26a0\ufe0f  'sio optimize' is deprecated."
+        " Use 'sio optimize-suggestions' instead.",
+        err=True,
+    )
     from sio.core.dspy.optimizer import optimize as run_opt
 
     db_path = os.path.join(_DEFAULT_DB_DIR, "behavior_invocations.db")
     if not os.path.exists(db_path):
         os.makedirs(_DEFAULT_DB_DIR, exist_ok=True)
-    conn = init_db(db_path)
 
-    result = run_opt(
-        conn, skill_name=skill_name, platform=platform,
-        optimizer=optimizer, dry_run=dry_run,
-    )
+    with _db_conn(db_path) as conn:
+        result = run_opt(
+            conn, skill_name=skill_name, platform=platform,
+            optimizer=optimizer, dry_run=dry_run,
+        )
 
-    if result["status"] == "error":
-        click.echo(f"Cannot optimize: {result.get('reason', 'unknown')}")
-        conn.close()
-        raise SystemExit(1)
+        if result["status"] == "error":
+            click.echo(f"Cannot optimize: {result.get('reason', 'unknown')}")
+            raise SystemExit(1)
 
-    click.echo(f"Optimization for '{skill_name}' ({optimizer}):")
-    click.echo()
-    click.echo(result.get("diff", ""))
-    click.echo()
+        click.echo(f"Optimization for '{skill_name}' ({optimizer}):")
+        click.echo()
+        click.echo(result.get("diff", ""))
+        click.echo()
 
-    if dry_run:
-        click.echo("[dry-run] No changes applied.")
-        conn.close()
-        return
+        if dry_run:
+            click.echo("[dry-run] No changes applied.")
+            return
 
-    click.echo(f"Status: {result['status']}")
-    if result.get("optimization_id"):
-        click.echo(f"Optimization ID: {result['optimization_id']}")
+        click.echo(f"Status: {result['status']}")
+        if result.get("optimization_id"):
+            click.echo(f"Optimization ID: {result['optimization_id']}")
 
-    choice = click.prompt(
-        "[a(pprove)/r(eject)/d(etails)]",
-        type=click.Choice(["a", "r", "d"]),
-        default="r",
-    )
+        choice = click.prompt(
+            "[a(pprove)/r(eject)/d(etails)]",
+            type=click.Choice(["a", "r", "d"]),
+            default="r",
+        )
 
-    if choice == "a":
-        click.echo("Optimization approved (pending deployment).")
-    elif choice == "d":
-        click.echo(f"Full result: {_json.dumps(result, indent=2, default=str)}")
-    else:
-        click.echo("Optimization rejected.")
-
-    conn.close()
+        if choice == "a":
+            click.echo("Optimization approved (pending deployment).")
+        elif choice == "d":
+            click.echo(f"Full result: {_json.dumps(result, indent=2, default=str)}")
+        else:
+            click.echo("Optimization rejected.")
 
 
 @cli.command()
@@ -223,7 +231,6 @@ def install(platform, auto_detect):
 def purge(platform, days, dry_run):
     """Purge old telemetry records."""
     from sio.core.db.retention import purge as do_purge
-    from sio.core.db.schema import init_db
 
     db_path = os.path.join(
         os.path.expanduser(f"~/.sio/{platform}"),
@@ -233,9 +240,8 @@ def purge(platform, days, dry_run):
         click.echo("No database found.")
         return
 
-    conn = init_db(db_path)
-    count = do_purge(conn, older_than_days=days, dry_run=dry_run)
-    conn.close()
+    with _db_conn(db_path) as conn:
+        count = do_purge(conn, older_than_days=days, dry_run=dry_run)
 
     if dry_run:
         click.echo(f"Would purge {count} records older than {days} days.")
@@ -257,8 +263,6 @@ def export(platform, fmt, output):
     import csv
     import io
 
-    from sio.core.db.schema import init_db
-
     db_path = os.path.join(
         os.path.expanduser(f"~/.sio/{platform}"),
         "behavior_invocations.db",
@@ -267,9 +271,8 @@ def export(platform, fmt, output):
         click.echo("No database found.")
         return
 
-    conn = init_db(db_path)
-    rows = conn.execute("SELECT * FROM behavior_invocations").fetchall()
-    conn.close()
+    with _db_conn(db_path) as conn:
+        rows = conn.execute("SELECT * FROM behavior_invocations").fetchall()
 
     data = [dict(r) for r in rows]
 
@@ -299,7 +302,13 @@ def export(platform, fmt, output):
 
 
 @cli.command()
-@click.option("--since", required=True, help='Time window: "3 days", "2 weeks", "1 month", "6h", "yesterday", "3 days ago", "2026-01-15".')
+@click.option(
+    "--since", required=True,
+    help=(
+        'Time window: "3 days", "2 weeks", "1 month",'
+        ' "6h", "yesterday", "3 days ago", "2026-01-15".'
+    ),
+)
 @click.option("--project", default=None, help="Filter by project name.")
 @click.option(
     "--source",
@@ -311,12 +320,10 @@ def mine(since, project, source):
     """Mine recent sessions for errors and failures."""
     from pathlib import Path
 
-    from sio.core.db.schema import init_db
     from sio.mining.pipeline import run_mine
 
     db_path = os.path.expanduser("~/.sio/sio.db")
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
-    conn = init_db(db_path)
 
     source_dirs = []
     specstory_dir = Path(os.path.expanduser("~/.specstory/history"))
@@ -333,11 +340,10 @@ def mine(since, project, source):
             click.echo(f"  SpecStory: {specstory_dir}")
         if source in ("jsonl", "both"):
             click.echo(f"  JSONL:     {jsonl_dir}")
-        conn.close()
         return
 
-    result = run_mine(conn, source_dirs, since, source, project)
-    conn.close()
+    with _db_conn(db_path) as conn:
+        result = run_mine(conn, source_dirs, since, source, project)
 
     click.echo(f"Scanned {result['total_files_scanned']} files")
     click.echo(f"Found {result['errors_found']} errors")
@@ -346,10 +352,16 @@ def mine(since, project, source):
 @cli.command()
 @click.option(
     "--type", "error_type", default=None,
-    type=click.Choice(["tool_failure", "user_correction", "repeated_attempt", "undo", "agent_admission"]),
+    type=click.Choice([
+        "tool_failure", "user_correction",
+        "repeated_attempt", "undo", "agent_admission",
+    ]),
     help="Filter by error type.",
 )
-@click.option("--project", default=None, help="Filter by project name (substring match on source path).")
+@click.option(
+    "--project", default=None,
+    help="Filter by project name (substring match on source path).",
+)
 def patterns(error_type, project):
     """Show discovered error patterns ranked by importance."""
     from rich.console import Console
@@ -358,35 +370,35 @@ def patterns(error_type, project):
     from sio.clustering.pattern_clusterer import cluster_errors
     from sio.clustering.ranker import rank_patterns
     from sio.core.db.queries import get_error_records
-    from sio.core.db.schema import init_db
 
     db_path = os.path.expanduser("~/.sio/sio.db")
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio mine' first.")
         return
 
-    conn = init_db(db_path)
-
-    # Get all error records from DB
-    errors = get_error_records(conn, project=project)
-    if not errors:
-        click.echo("No errors mined yet. Run 'sio mine --since \"7 days\"' first.")
-        conn.close()
-        return
-
-    # Filter by type if requested
-    if error_type:
-        errors = [e for e in errors if e.get("error_type") == error_type]
+    with _db_conn(db_path) as conn:
+        # Get all error records from DB
+        errors = get_error_records(conn, project=project)
         if not errors:
-            click.echo(f"No '{error_type}' errors found.")
-            conn.close()
+            click.echo("No errors mined yet. Run 'sio mine --since \"7 days\"' first.")
             return
+
+        # Filter by type if requested
+        if error_type:
+            errors = [e for e in errors if e.get("error_type") == error_type]
+            if not errors:
+                click.echo(f"No '{error_type}' errors found.")
+                return
 
     # Cluster and rank
     clustered = cluster_errors(errors)
     ranked = rank_patterns(clustered)
 
-    title = f"Error Patterns — {error_type}" if error_type else "Error Patterns (ranked by importance)"
+    title = (
+        f"Error Patterns — {error_type}"
+        if error_type
+        else "Error Patterns (ranked by importance)"
+    )
     console = Console()
     table = Table(title=title)
     table.add_column("#", style="bold")
@@ -407,19 +419,24 @@ def patterns(error_type, project):
         )
 
     console.print(table)
-    conn.close()
 
 
 @cli.command()
 @click.option(
     "--type", "error_type", default=None,
-    type=click.Choice(["tool_failure", "user_correction", "repeated_attempt", "undo", "agent_admission"]),
+    type=click.Choice([
+        "tool_failure", "user_correction",
+        "repeated_attempt", "undo", "agent_admission",
+    ]),
     help="Filter by error type.",
 )
 @click.option("--limit", "-n", default=20, help="Max errors to show.")
 @click.option(
     "--grep", "-g", "grep_term", default=None,
-    help="Search content for keyword(s). Comma-separated for OR logic (e.g. 'placeholder,hardcoded,stub').",
+    help=(
+        "Search content for keyword(s). Comma-separated"
+        " for OR logic (e.g. 'placeholder,hardcoded,stub')."
+    ),
 )
 @click.option(
     "--project", default=None,
@@ -434,126 +451,120 @@ def errors(error_type, limit, grep_term, project, exclude_types):
     from rich.console import Console
     from rich.table import Table
 
-    from sio.core.db.schema import init_db
-
     db_path = os.path.expanduser("~/.sio/sio.db")
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio mine' first.")
         return
 
-    conn = init_db(db_path)
+    with _db_conn(db_path) as conn:
+        # Build query based on filters
+        where_clauses = ["1=1"]
+        params: list = []
 
-    # Build query based on filters
-    where_clauses = ["1=1"]
-    params: list = []
-
-    if error_type:
-        where_clauses.append("error_type = ?")
-        params.append(error_type)
-
-    if exclude_types:
-        excluded = [t.strip() for t in exclude_types.split(",") if t.strip()]
-        placeholders = ", ".join(["?"] * len(excluded))
-        where_clauses.append(f"error_type NOT IN ({placeholders})")
-        params.extend(excluded)
-
-    if project:
-        where_clauses.append("source_file LIKE ?")
-        params.append(f"%{project}%")
-
-    if grep_term:
-        # Comma-separated terms use OR logic across all content fields
-        terms = [t.strip() for t in grep_term.split(",") if t.strip()]
-        term_clauses = []
-        for term in terms:
-            term_clauses.append(
-                "(error_text LIKE ? OR user_message LIKE ? OR "
-                "context_before LIKE ? OR context_after LIKE ? OR "
-                "source_file LIKE ?)"
-            )
-            like_term = f"%{term}%"
-            params.extend([like_term] * 5)
-        where_clauses.append(f"({' OR '.join(term_clauses)})")
-
-    where_sql = " AND ".join(where_clauses)
-
-    # Summary counts (respecting grep filter)
-    type_counts = conn.execute(
-        f"SELECT error_type, COUNT(*) FROM error_records "
-        f"WHERE {where_sql} GROUP BY error_type ORDER BY COUNT(*) DESC",
-        params,
-    ).fetchall()
-
-    if not type_counts:
-        if grep_term:
-            click.echo(f"No errors matching '{grep_term}' found.")
-        else:
-            click.echo("No errors mined yet.")
-        conn.close()
-        return
-
-    console = Console()
-
-    # Show type breakdown
-    total_matching = sum(row[1] for row in type_counts)
-    title = "Error Type Summary"
-    if grep_term:
-        title += f" (matching '{grep_term}': {total_matching} hits)"
-    summary = Table(title=title)
-    summary.add_column("Type", style="bold")
-    summary.add_column("Count", justify="right")
-    for row in type_counts:
-        style = "yellow" if row[0] == "agent_admission" else ""
-        summary.add_row(row[0], str(row[1]), style=style)
-    console.print(summary)
-    console.print()
-
-    # Show filtered errors
-    rows = conn.execute(
-        f"SELECT error_type, error_text, tool_name, session_id, timestamp, "
-        f"user_message, source_file "
-        f"FROM error_records WHERE {where_sql} "
-        f"ORDER BY timestamp DESC LIMIT ?",
-        params + [limit],
-    ).fetchall()
-
-    if rows:
-        title_detail = f"errors (latest {limit})"
-        if grep_term:
-            title_detail = f"'{grep_term}' errors (latest {limit})"
         if error_type:
-            title_detail = f"{error_type} " + title_detail
-        detail = Table(title=title_detail)
-        detail.add_column("Type", style="dim")
-        detail.add_column("Error", max_width=60)
-        detail.add_column("Tool")
-        detail.add_column("Source", max_width=30)
-        detail.add_column("Time")
-        for r in rows:
-            # Highlight the grep term in the error text for readability
-            error_display = (r[1] or "")[:60]
-            source = (r[6] or "").split("/")[-1][:30]  # just filename
-            detail.add_row(
-                r[0],
-                error_display,
-                r[2] or "",
-                source,
-                (r[4] or "")[:16],
-            )
-        console.print(detail)
+            where_clauses.append("error_type = ?")
+            params.append(error_type)
 
-        # If grep is active, also show a sample user_message for context
+        if exclude_types:
+            excluded = [t.strip() for t in exclude_types.split(",") if t.strip()]
+            placeholders = ", ".join(["?"] * len(excluded))
+            where_clauses.append(f"error_type NOT IN ({placeholders})")
+            params.extend(excluded)
+
+        if project:
+            where_clauses.append("source_file LIKE ?")
+            params.append(f"%{project}%")
+
         if grep_term:
-            console.print()
-            console.print("[dim]Sample user contexts:[/dim]")
-            seen: set = set()
-            for r in rows[:5]:
-                user_msg = (r[5] or "").strip()[:120]
-                if user_msg and user_msg not in seen:
-                    seen.add(user_msg)
-                    console.print(f"  [dim]>[/dim] {user_msg}")
+            # Comma-separated terms use OR logic across all content fields
+            terms = [t.strip() for t in grep_term.split(",") if t.strip()]
+            term_clauses = []
+            for term in terms:
+                term_clauses.append(
+                    "(error_text LIKE ? OR user_message LIKE ? OR "
+                    "context_before LIKE ? OR context_after LIKE ? OR "
+                    "source_file LIKE ?)"
+                )
+                like_term = f"%{term}%"
+                params.extend([like_term] * 5)
+            where_clauses.append(f"({' OR '.join(term_clauses)})")
 
-    conn.close()
+        where_sql = " AND ".join(where_clauses)
+
+        # Summary counts (respecting grep filter)
+        type_counts = conn.execute(
+            f"SELECT error_type, COUNT(*) FROM error_records "
+            f"WHERE {where_sql} GROUP BY error_type ORDER BY COUNT(*) DESC",
+            params,
+        ).fetchall()
+
+        if not type_counts:
+            if grep_term:
+                click.echo(f"No errors matching '{grep_term}' found.")
+            else:
+                click.echo("No errors mined yet.")
+            return
+
+        console = Console()
+
+        # Show type breakdown
+        total_matching = sum(row[1] for row in type_counts)
+        title = "Error Type Summary"
+        if grep_term:
+            title += f" (matching '{grep_term}': {total_matching} hits)"
+        summary = Table(title=title)
+        summary.add_column("Type", style="bold")
+        summary.add_column("Count", justify="right")
+        for row in type_counts:
+            style = "yellow" if row[0] == "agent_admission" else ""
+            summary.add_row(row[0], str(row[1]), style=style)
+        console.print(summary)
+        console.print()
+
+        # Show filtered errors
+        rows = conn.execute(
+            f"SELECT error_type, error_text, tool_name, session_id, timestamp, "
+            f"user_message, source_file "
+            f"FROM error_records WHERE {where_sql} "
+            f"ORDER BY timestamp DESC LIMIT ?",
+            params + [limit],
+        ).fetchall()
+
+        if rows:
+            title_detail = f"errors (latest {limit})"
+            if grep_term:
+                title_detail = f"'{grep_term}' errors (latest {limit})"
+            if error_type:
+                title_detail = f"{error_type} " + title_detail
+            detail = Table(title=title_detail)
+            detail.add_column("Type", style="dim")
+            detail.add_column("Error", max_width=60)
+            detail.add_column("Tool")
+            detail.add_column("Source", max_width=30)
+            detail.add_column("Time")
+            for r in rows:
+                # Highlight the grep term in the error text for readability
+                error_display = (r[1] or "")[:60]
+                source = (r[6] or "").split("/")[-1][:30]  # just filename
+                detail.add_row(
+                    r[0],
+                    error_display,
+                    r[2] or "",
+                    source,
+                    (r[4] or "")[:16],
+                )
+            console.print(detail)
+
+            # If grep is active, also show a sample user_message for context
+            if grep_term:
+                console.print()
+                console.print("[dim]Sample user contexts:[/dim]")
+                seen: set = set()
+                for r in rows[:5]:
+                    user_msg = (r[5] or "").strip()[:120]
+                    if user_msg and user_msg not in seen:
+                        seen.add(user_msg)
+                        console.print(f"  [dim]>[/dim] {user_msg}")
 
 
 @cli.group(invoke_without_command=True)
@@ -561,19 +572,16 @@ def errors(error_type, limit, grep_term, project, exclude_types):
 def datasets(ctx):
     """Manage pattern datasets."""
     if ctx.invoked_subcommand is None:
-        from sio.core.db.schema import init_db
-
         db_path = os.path.expanduser("~/.sio/sio.db")
         if not os.path.exists(db_path):
             click.echo("No database found. Run 'sio mine' first.")
             return
 
-        conn = init_db(db_path)
-        pattern_rows = conn.execute(
-            "SELECT d.id, d.pattern_id, d.file_path, d.positive_count, d.negative_count, "
-            "d.created_at, d.updated_at FROM datasets d"
-        ).fetchall()
-        conn.close()
+        with _db_conn(db_path) as conn:
+            pattern_rows = conn.execute(
+                "SELECT d.id, d.pattern_id, d.file_path, d.positive_count, d.negative_count, "
+                "d.created_at, d.updated_at FROM datasets d"
+            ).fetchall()
 
         if not pattern_rows:
             click.echo("No datasets built yet.")
@@ -593,7 +601,6 @@ def datasets(ctx):
 @click.option("--error-type", default=None, help="Error type filter.")
 def collect(since, error_type):
     """Collect targeted dataset from specific criteria."""
-    from sio.core.db.schema import init_db
     from sio.datasets.builder import collect_dataset
 
     db_path = os.path.expanduser("~/.sio/sio.db")
@@ -601,9 +608,8 @@ def collect(since, error_type):
         click.echo("No database found. Run 'sio mine' first.")
         return
 
-    conn = init_db(db_path)
-    result = collect_dataset(conn, since=since, error_type=error_type)
-    conn.close()
+    with _db_conn(db_path) as conn:
+        result = collect_dataset(conn, since=since, error_type=error_type)
 
     count = len(result.get("errors", []))
     click.echo(f"Collected {count} error records matching criteria.")
@@ -750,13 +756,20 @@ def inspect(pattern_id):
 @cli.command()
 @click.option(
     "--type", "error_type", default=None,
-    type=click.Choice(["tool_failure", "user_correction", "repeated_attempt", "undo", "agent_admission"]),
+    type=click.Choice([
+        "tool_failure", "user_correction",
+        "repeated_attempt", "undo", "agent_admission",
+    ]),
     help="Only analyze errors of this type.",
 )
 @click.option("--min-examples", default=3, help="Min examples to build a dataset.")
 @click.option(
     "--grep", "-g", "grep_term", default=None,
-    help="Filter errors by keyword(s) in content. Comma-separated for OR logic (e.g. 'placeholder,hardcoded,stub').",
+    help=(
+        "Filter errors by keyword(s) in content."
+        " Comma-separated for OR logic"
+        " (e.g. 'placeholder,hardcoded,stub')."
+    ),
 )
 @click.option(
     "--verbose", "-v", is_flag=True, default=False,
@@ -782,7 +795,10 @@ def inspect(pattern_id):
     "--preview", is_flag=True, default=False,
     help="Preview: filter + cluster + show pattern groupings, then stop. No generation.",
 )
-def suggest(error_type, min_examples, grep_term, verbose, auto_mode, analyze_mode, project, exclude_types, preview):
+def suggest(
+    error_type, min_examples, grep_term, verbose,
+    auto_mode, analyze_mode, project, exclude_types, preview,
+):
     """Run the full pipeline: cluster -> persist -> dataset -> suggestions."""
     from datetime import datetime, timezone
 
@@ -796,7 +812,6 @@ def suggest(error_type, min_examples, grep_term, verbose, auto_mode, analyze_mod
         insert_pattern,
         link_error_to_pattern,
     )
-    from sio.core.db.schema import init_db
     from sio.datasets.builder import build_dataset
     from sio.suggestions.generator import generate_suggestions
 
@@ -805,276 +820,299 @@ def suggest(error_type, min_examples, grep_term, verbose, auto_mode, analyze_mod
         click.echo("No database found. Run 'sio mine' first.")
         return
 
-    conn = init_db(db_path)
-    console = Console()
+    with _db_conn(db_path) as conn:
+        console = Console()
 
-    # 1. Get all errors (no limit), filtered by project if specified
-    all_errors = get_error_records(conn, limit=0, project=project)
-    if not all_errors:
-        filter_hint = f" for project '{project}'" if project else ""
-        click.echo(f"No errors mined yet{filter_hint}. Run 'sio mine --since \"7 days\"' first.")
-        conn.close()
-        return
-
-    errors_to_cluster = all_errors
-
-    # Apply error type filter (include)
-    if error_type:
-        errors_to_cluster = [e for e in errors_to_cluster if e.get("error_type") == error_type]
-
-    # Apply error type exclusion filter
-    if exclude_types:
-        excluded = {t.strip().lower() for t in exclude_types.split(",")}
-        errors_to_cluster = [e for e in errors_to_cluster if (e.get("error_type") or "").lower() not in excluded]
-
-    # Apply content grep filter — comma-separated terms use OR logic
-    # Searches across error_text, user_message, context_before, context_after, source_file
-    # Results are deduped by error ID
-    if grep_term:
-        terms = [t.strip().lower() for t in grep_term.split(",") if t.strip()]
-
-        def _matches_any_term(e: dict) -> bool:
-            for field in ("error_text", "user_message", "context_before", "context_after", "source_file"):
-                val = (e.get(field) or "").lower()
-                for term in terms:
-                    if term in val:
-                        return True
-            return False
-
-        errors_to_cluster = [e for e in errors_to_cluster if _matches_any_term(e)]
-        # Dedup by error record ID
-        seen_ids: set = set()
-        deduped: list = []
-        for e in errors_to_cluster:
-            eid = e.get("id")
-            if eid not in seen_ids:
-                seen_ids.add(eid)
-                deduped.append(e)
-        errors_to_cluster = deduped
-
-    if not errors_to_cluster:
-        filter_desc = []
-        if error_type:
-            filter_desc.append(f"type='{error_type}'")
-        if grep_term:
-            filter_desc.append(f"grep='{grep_term}'")
-        click.echo(f"No errors matching {', '.join(filter_desc)} found.")
-        conn.close()
-        return
-
-    filter_msg = ""
-    if grep_term:
-        filter_msg = f" matching '{grep_term}'"
-    console.print(f"[bold]Step 1:[/bold] Clustering {len(errors_to_cluster)} errors{filter_msg}...")
-
-    # 2. Cluster and rank
-    clustered = cluster_errors(errors_to_cluster)
-    ranked = rank_patterns(clustered)
-    console.print(f"  Found {len(ranked)} patterns")
-
-    # Preview mode: show pattern groupings and stop
-    if preview:
-        console.print()
-        preview_table = Table(title="Pattern Groupings (preview)")
-        preview_table.add_column("#", justify="right", style="dim")
-        preview_table.add_column("Pattern", max_width=50)
-        preview_table.add_column("Errors", justify="right")
-        preview_table.add_column("Sessions", justify="right")
-        preview_table.add_column("Top Error Type")
-        preview_table.add_column("Score", justify="right")
-        preview_table.add_column("Sample", max_width=40)
-
-        for i, p in enumerate(ranked, 1):
-            # Find most common error type in this cluster
-            type_counts: dict[str, int] = {}
-            sample_msg = ""
-            for eid in p.get("error_ids", []):
-                for e in errors_to_cluster:
-                    if e.get("id") == eid:
-                        et = e.get("error_type", "unknown")
-                        type_counts[et] = type_counts.get(et, 0) + 1
-                        if not sample_msg:
-                            sample_msg = (e.get("error_text") or "")[:40]
-                        break
-            top_type = max(type_counts, key=type_counts.get) if type_counts else "unknown"
-
-            preview_table.add_row(
-                str(i),
-                p.get("description", p.get("pattern_id", "?"))[:50],
-                str(p.get("error_count", 0)),
-                str(p.get("session_count", 0)),
-                top_type,
-                f"{p.get('rank_score', 0):.2f}",
-                sample_msg,
+        # 1. Get all errors (no limit), filtered by project if specified
+        all_errors = get_error_records(conn, limit=0, project=project)
+        if not all_errors:
+            filter_hint = f" for project '{project}'" if project else ""
+            click.echo(
+                f"No errors mined yet{filter_hint}."
+                " Run 'sio mine --since \"7 days\"' first."
             )
+            return
 
-        console.print(preview_table)
-        console.print()
-        console.print(f"[bold]{len(ranked)}[/bold] patterns from [bold]{len(errors_to_cluster)}[/bold] filtered errors.")
-        console.print()
+        errors_to_cluster = all_errors
 
-        # Export preview dataset as CSV for external analysis
-        import csv
+        # Apply error type filter (include)
+        if error_type:
+            errors_to_cluster = [e for e in errors_to_cluster if e.get("error_type") == error_type]
 
-        preview_dir = os.path.expanduser("~/.sio/previews")
-        os.makedirs(preview_dir, exist_ok=True)
+        # Apply error type exclusion filter
+        if exclude_types:
+            excluded = {t.strip().lower() for t in exclude_types.split(",")}
+            errors_to_cluster = [
+                e for e in errors_to_cluster
+                if (e.get("error_type") or "").lower() not in excluded
+            ]
 
-        # Export patterns summary
-        patterns_csv = os.path.join(preview_dir, "patterns_preview.csv")
-        with open(patterns_csv, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["rank", "pattern_id", "description", "error_count", "session_count", "rank_score"])
-            for i, p in enumerate(ranked, 1):
-                writer.writerow([
-                    i, p.get("pattern_id", ""), p.get("description", "")[:120],
-                    p.get("error_count", 0), p.get("session_count", 0),
-                    f"{p.get('rank_score', 0):.2f}",
-                ])
+        # Apply content grep filter — comma-separated terms use OR logic
+        # Searches across error_text, user_message, context_before, context_after, source_file
+        # Results are deduped by error ID
+        if grep_term:
+            terms = [t.strip().lower() for t in grep_term.split(",") if t.strip()]
 
-        # Export filtered errors dataset
-        errors_csv = os.path.join(preview_dir, "errors_preview.csv")
-        with open(errors_csv, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["id", "error_type", "error_text", "tool_name", "session_id", "timestamp", "source_file", "user_message"])
+            def _matches_any_term(e: dict) -> bool:
+                searchable = (
+                    "error_text", "user_message",
+                    "context_before", "context_after",
+                    "source_file",
+                )
+                for field in searchable:
+                    val = (e.get(field) or "").lower()
+                    for term in terms:
+                        if term in val:
+                            return True
+                return False
+
+            errors_to_cluster = [e for e in errors_to_cluster if _matches_any_term(e)]
+            # Dedup by error record ID
+            seen_ids: set = set()
+            deduped: list = []
             for e in errors_to_cluster:
+                eid = e.get("id")
+                if eid not in seen_ids:
+                    seen_ids.add(eid)
+                    deduped.append(e)
+            errors_to_cluster = deduped
+
+        if not errors_to_cluster:
+            filter_desc = []
+            if error_type:
+                filter_desc.append(f"type='{error_type}'")
+            if grep_term:
+                filter_desc.append(f"grep='{grep_term}'")
+            click.echo(f"No errors matching {', '.join(filter_desc)} found.")
+            return
+
+        filter_msg = ""
+        if grep_term:
+            filter_msg = f" matching '{grep_term}'"
+        console.print(
+            f"[bold]Step 1:[/bold] Clustering"
+            f" {len(errors_to_cluster)} errors{filter_msg}..."
+        )
+
+        # 2. Cluster and rank
+        clustered = cluster_errors(errors_to_cluster)
+        ranked = rank_patterns(clustered)
+        console.print(f"  Found {len(ranked)} patterns")
+
+        # Preview mode: show pattern groupings and stop
+        if preview:
+            console.print()
+            preview_table = Table(title="Pattern Groupings (preview)")
+            preview_table.add_column("#", justify="right", style="dim")
+            preview_table.add_column("Pattern", max_width=50)
+            preview_table.add_column("Errors", justify="right")
+            preview_table.add_column("Sessions", justify="right")
+            preview_table.add_column("Top Error Type")
+            preview_table.add_column("Score", justify="right")
+            preview_table.add_column("Sample", max_width=40)
+
+            for i, p in enumerate(ranked, 1):
+                # Find most common error type in this cluster
+                type_counts: dict[str, int] = {}
+                sample_msg = ""
+                for eid in p.get("error_ids", []):
+                    for e in errors_to_cluster:
+                        if e.get("id") == eid:
+                            et = e.get("error_type", "unknown")
+                            type_counts[et] = type_counts.get(et, 0) + 1
+                            if not sample_msg:
+                                sample_msg = (e.get("error_text") or "")[:40]
+                            break
+                top_type = max(type_counts, key=type_counts.get) if type_counts else "unknown"
+
+                preview_table.add_row(
+                    str(i),
+                    p.get("description", p.get("pattern_id", "?"))[:50],
+                    str(p.get("error_count", 0)),
+                    str(p.get("session_count", 0)),
+                    top_type,
+                    f"{p.get('rank_score', 0):.2f}",
+                    sample_msg,
+                )
+
+            console.print(preview_table)
+            console.print()
+            console.print(
+                f"[bold]{len(ranked)}[/bold] patterns from"
+                f" [bold]{len(errors_to_cluster)}[/bold]"
+                " filtered errors."
+            )
+            console.print()
+
+            # Export preview dataset as CSV for external analysis
+            import csv
+
+            preview_dir = os.path.expanduser("~/.sio/previews")
+            os.makedirs(preview_dir, exist_ok=True)
+
+            # Export patterns summary
+            patterns_csv = os.path.join(preview_dir, "patterns_preview.csv")
+            with open(patterns_csv, "w", newline="") as f:
+                writer = csv.writer(f)
                 writer.writerow([
-                    e.get("id", ""), e.get("error_type", ""),
-                    (e.get("error_text") or "")[:200], e.get("tool_name", ""),
-                    e.get("session_id", ""), e.get("timestamp", ""),
-                    e.get("source_file", ""), (e.get("user_message") or "")[:200],
+                    "rank", "pattern_id", "description",
+                    "error_count", "session_count", "rank_score",
                 ])
+                for i, p in enumerate(ranked, 1):
+                    writer.writerow([
+                        i, p.get("pattern_id", ""), p.get("description", "")[:120],
+                        p.get("error_count", 0), p.get("session_count", 0),
+                        f"{p.get('rank_score', 0):.2f}",
+                    ])
 
-        console.print(f"[bold]Exported for analysis:[/bold]")
-        console.print(f"  Patterns: {patterns_csv}")
-        console.print(f"  Errors:   {errors_csv}")
-        console.print()
-        console.print("[dim]To generate suggestions, re-run without --preview.[/dim]")
-        console.print("[dim]To refine, adjust --grep, --type, --exclude-type and re-run --preview.[/dim]")
-        conn.close()
-        return
+            # Export filtered errors dataset
+            errors_csv = os.path.join(preview_dir, "errors_preview.csv")
+            with open(errors_csv, "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    "id", "error_type", "error_text",
+                    "tool_name", "session_id", "timestamp",
+                    "source_file", "user_message",
+                ])
+                for e in errors_to_cluster:
+                    writer.writerow([
+                        e.get("id", ""), e.get("error_type", ""),
+                        (e.get("error_text") or "")[:200], e.get("tool_name", ""),
+                        e.get("session_id", ""), e.get("timestamp", ""),
+                        e.get("source_file", ""), (e.get("user_message") or "")[:200],
+                    ])
 
-    # 3. Persist patterns to DB (clear old patterns first for clean state)
-    console.print("[bold]Step 2:[/bold] Persisting patterns to database...")
-    conn.execute("DELETE FROM pattern_errors")
-    conn.execute("DELETE FROM patterns")
-    conn.commit()
+            console.print("[bold]Exported for analysis:[/bold]")
+            console.print(f"  Patterns: {patterns_csv}")
+            console.print(f"  Errors:   {errors_csv}")
+            console.print()
+            console.print("[dim]To generate suggestions, re-run without --preview.[/dim]")
+            console.print(
+                "[dim]To refine, adjust --grep, --type,"
+                " --exclude-type and re-run --preview.[/dim]"
+            )
+            return
 
-    now_iso = datetime.now(timezone.utc).isoformat()
-    seen_slugs: set[str] = set()
-    persisted_patterns: list[dict] = []
-    for p in ranked:
-        # Ensure unique pattern_id slugs
-        slug = p["pattern_id"]
-        if slug in seen_slugs:
-            # Append error count to disambiguate
-            slug = f"{slug}-{p['error_count']}"
-        seen_slugs.add(slug)
-        p["pattern_id"] = slug
+        # 3. Persist patterns to DB (clear old patterns first for clean state)
+        console.print("[bold]Step 2:[/bold] Persisting patterns to database...")
+        conn.execute("DELETE FROM pattern_errors")
+        conn.execute("DELETE FROM patterns")
+        conn.commit()
 
-        p["centroid_embedding"] = None  # skip blob for now
-        p["created_at"] = now_iso
-        p["updated_at"] = now_iso
-        row_id = insert_pattern(conn, p)
-        p["id"] = row_id  # store DB id for dataset builder
-        persisted_patterns.append(p)
+        now_iso = datetime.now(timezone.utc).isoformat()
+        seen_slugs: set[str] = set()
+        persisted_patterns: list[dict] = []
+        for p in ranked:
+            # Ensure unique pattern_id slugs
+            slug = p["pattern_id"]
+            if slug in seen_slugs:
+                # Append error count to disambiguate
+                slug = f"{slug}-{p['error_count']}"
+            seen_slugs.add(slug)
+            p["pattern_id"] = slug
 
-        # Link errors to pattern
-        for eid in p.get("error_ids", []):
-            link_error_to_pattern(conn, row_id, eid)
+            p["centroid_embedding"] = None  # skip blob for now
+            p["created_at"] = now_iso
+            p["updated_at"] = now_iso
+            row_id = insert_pattern(conn, p)
+            p["id"] = row_id  # store DB id for dataset builder
+            persisted_patterns.append(p)
 
-    console.print(f"  Persisted {len(persisted_patterns)} patterns with error links")
+            # Link errors to pattern
+            for eid in p.get("error_ids", []):
+                link_error_to_pattern(conn, row_id, eid)
 
-    # 4. Build datasets (ephemeral — clear stale datasets and rebuild fresh)
-    console.print("[bold]Step 3:[/bold] Building datasets...")
-    conn.execute("DELETE FROM datasets")
-    conn.commit()
+        console.print(f"  Persisted {len(persisted_patterns)} patterns with error links")
 
-    datasets: dict[str, dict] = {}
-    for p in persisted_patterns:
-        metadata = build_dataset(p, all_errors, conn, min_threshold=min_examples)
-        if metadata is not None:
-            pid = metadata["pattern_id"]
-            ds_cur = conn.execute(
-                "INSERT INTO datasets (pattern_id, file_path, positive_count, "
-                "negative_count, min_threshold, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        # 4. Build datasets (ephemeral — clear stale datasets and rebuild fresh)
+        console.print("[bold]Step 3:[/bold] Building datasets...")
+        conn.execute("DELETE FROM datasets")
+        conn.commit()
+
+        datasets: dict[str, dict] = {}
+        for p in persisted_patterns:
+            metadata = build_dataset(p, all_errors, conn, min_threshold=min_examples)
+            if metadata is not None:
+                pid = metadata["pattern_id"]
+                ds_cur = conn.execute(
+                    "INSERT INTO datasets (pattern_id, file_path, positive_count, "
+                    "negative_count, min_threshold, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        p["id"], metadata["file_path"],
+                        metadata["positive_count"], metadata["negative_count"],
+                        min_examples, now_iso, now_iso,
+                    ),
+                )
+                conn.commit()
+                metadata["id"] = ds_cur.lastrowid
+                datasets[pid] = metadata
+
+        console.print(f"  Built {len(datasets)} datasets")
+
+        # 5. Generate targeted suggestions
+        console.print("[bold]Step 4:[/bold] Generating targeted suggestions...")
+        # Determine mode from CLI flags
+        mode = None
+        if auto_mode:
+            mode = "auto"
+        elif analyze_mode:
+            mode = "auto"
+
+        suggestions = generate_suggestions(
+            persisted_patterns, datasets, conn, verbose=verbose, mode=mode,
+        )
+
+        # Clear old suggestions and insert new ones
+        conn.execute("DELETE FROM suggestions WHERE status = 'pending'")
+        conn.commit()
+
+        for s in suggestions:
+            conn.execute(
+                "INSERT INTO suggestions (pattern_id, dataset_id, description, "
+                "confidence, proposed_change, target_file, change_type, status, "
+                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    p["id"], metadata["file_path"],
-                    metadata["positive_count"], metadata["negative_count"],
-                    min_examples, now_iso, now_iso,
+                    s["pattern_id"], s["dataset_id"], s["description"],
+                    s["confidence"], s["proposed_change"], s["target_file"],
+                    s["change_type"], "pending", now_iso,
                 ),
             )
-            conn.commit()
-            metadata["id"] = ds_cur.lastrowid
-            datasets[pid] = metadata
+        conn.commit()
 
-    console.print(f"  Built {len(datasets)} datasets")
-
-    # 5. Generate targeted suggestions
-    console.print("[bold]Step 4:[/bold] Generating targeted suggestions...")
-    # Determine mode from CLI flags
-    mode = None
-    if auto_mode:
-        mode = "auto"
-    elif analyze_mode:
-        mode = "auto"
-
-    suggestions = generate_suggestions(
-        persisted_patterns, datasets, conn, verbose=verbose, mode=mode,
-    )
-
-    # Clear old suggestions and insert new ones
-    conn.execute("DELETE FROM suggestions WHERE status = 'pending'")
-    conn.commit()
-
-    for s in suggestions:
-        conn.execute(
-            "INSERT INTO suggestions (pattern_id, dataset_id, description, "
-            "confidence, proposed_change, target_file, change_type, status, "
-            "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                s["pattern_id"], s["dataset_id"], s["description"],
-                s["confidence"], s["proposed_change"], s["target_file"],
-                s["change_type"], "pending", now_iso,
-            ),
-        )
-    conn.commit()
-
-    console.print(f"  Generated {len(suggestions)} suggestions")
-    console.print()
-
-    # 6. Display results
-    if suggestions:
-        table = Table(title="Generated Suggestions")
-        table.add_column("#", style="bold")
-        table.add_column("Description", max_width=50)
-        table.add_column("Conf.", justify="right")
-        table.add_column("Target")
-        table.add_column("Type")
-        table.add_column("Source")
-
-        for i, s in enumerate(suggestions, 1):
-            source_label = (
-                "[DSPy]" if s.get("_using_dspy") else "[Template]"
-            )
-            table.add_row(
-                str(i),
-                s["description"][:50],
-                f"{s['confidence']:.0%}",
-                s["target_file"],
-                s["change_type"],
-                source_label,
-            )
-        console.print(table)
+        console.print(f"  Generated {len(suggestions)} suggestions")
         console.print()
-        console.print(
-            f"[green]Run 'sio suggest-review' to review {len(suggestions)} "
-            f"pending suggestions interactively.[/green]"
-        )
-    else:
-        console.print("[yellow]No suggestions generated. Need more error data.[/yellow]")
 
-    conn.close()
+        # 6. Display results
+        if suggestions:
+            table = Table(title="Generated Suggestions")
+            table.add_column("#", style="bold")
+            table.add_column("Description", max_width=50)
+            table.add_column("Conf.", justify="right")
+            table.add_column("Target")
+            table.add_column("Type")
+            table.add_column("Source")
+
+            for i, s in enumerate(suggestions, 1):
+                source_label = (
+                    "[DSPy]" if s.get("_using_dspy") else "[Template]"
+                )
+                table.add_row(
+                    str(i),
+                    s["description"][:50],
+                    f"{s['confidence']:.0%}",
+                    s["target_file"],
+                    s["change_type"],
+                    source_label,
+                )
+            console.print(table)
+            console.print()
+            console.print(
+                f"[green]Run 'sio suggest-review' to review {len(suggestions)} "
+                f"pending suggestions interactively.[/green]"
+            )
+        else:
+            console.print("[yellow]No suggestions generated. Need more error data.[/yellow]")
 
 
 @cli.command("suggest-review")
@@ -1083,7 +1121,6 @@ def suggest_review():
     from rich.console import Console
     from rich.table import Table
 
-    from sio.core.db.schema import init_db
     from sio.review.reviewer import approve as do_approve
     from sio.review.reviewer import defer as do_defer
     from sio.review.reviewer import reject as do_reject
@@ -1094,48 +1131,45 @@ def suggest_review():
         click.echo("No database found. Run 'sio mine' first.")
         return
 
-    conn = init_db(db_path)
-    pending = review_pending(conn)
+    with _db_conn(db_path) as conn:
+        pending = review_pending(conn)
 
-    if not pending:
-        click.echo("No pending suggestions to review.")
-        conn.close()
-        return
+        if not pending:
+            click.echo("No pending suggestions to review.")
+            return
 
-    console = Console()
-    for i, s in enumerate(pending, 1):
-        table = Table(title=f"Suggestion {i}/{len(pending)} (ID: {s['id']})")
-        table.add_column("Field", style="bold")
-        table.add_column("Value")
-        table.add_row("Description", s.get("description", ""))
-        table.add_row("Confidence", f"{s.get('confidence', 0):.0%}")
-        table.add_row("Target", s.get("target_file", ""))
-        table.add_row("Type", s.get("change_type", ""))
-        console.print(table)
-        console.print(f"\n[dim]Proposed change:[/dim]\n{s.get('proposed_change', '')}\n")
+        console = Console()
+        for i, s in enumerate(pending, 1):
+            table = Table(title=f"Suggestion {i}/{len(pending)} (ID: {s['id']})")
+            table.add_column("Field", style="bold")
+            table.add_column("Value")
+            table.add_row("Description", s.get("description", ""))
+            table.add_row("Confidence", f"{s.get('confidence', 0):.0%}")
+            table.add_row("Target", s.get("target_file", ""))
+            table.add_row("Type", s.get("change_type", ""))
+            console.print(table)
+            console.print(f"\n[dim]Proposed change:[/dim]\n{s.get('proposed_change', '')}\n")
 
-        choice = click.prompt(
-            "  [a(pprove)/r(eject)/d(efer)/q(uit)]",
-            type=str,
-            default="d",
-        )
-        if choice == "q":
-            break
-        note = ""
-        if choice in ("a", "r"):
-            note = click.prompt("  Note (optional)", default="", type=str)
-        if choice == "a":
-            do_approve(conn, s["id"], note or None)
-            click.echo("  Approved.")
-        elif choice == "r":
-            do_reject(conn, s["id"], note or None)
-            click.echo("  Rejected.")
-        else:
-            do_defer(conn, s["id"])
-            click.echo("  Deferred.")
-        click.echo()
-
-    conn.close()
+            choice = click.prompt(
+                "  [a(pprove)/r(eject)/d(efer)/q(uit)]",
+                type=str,
+                default="d",
+            )
+            if choice == "q":
+                break
+            note = ""
+            if choice in ("a", "r"):
+                note = click.prompt("  Note (optional)", default="", type=str)
+            if choice == "a":
+                do_approve(conn, s["id"], note or None)
+                click.echo("  Approved.")
+            elif choice == "r":
+                do_reject(conn, s["id"], note or None)
+                click.echo("  Rejected.")
+            else:
+                do_defer(conn, s["id"])
+                click.echo("  Deferred.")
+            click.echo()
 
 
 @cli.command()
@@ -1143,7 +1177,6 @@ def suggest_review():
 @click.option("--note", "-n", default=None, help="Optional note.")
 def approve(suggestion_id, note):
     """Approve a suggestion by ID and promote to ground truth."""
-    from sio.core.db.schema import init_db
     from sio.ground_truth.corpus import promote_to_ground_truth
     from sio.review.reviewer import approve as do_approve
 
@@ -1152,21 +1185,19 @@ def approve(suggestion_id, note):
         click.echo("No database found.")
         return
 
-    conn = init_db(db_path)
-    ok = do_approve(conn, suggestion_id, note)
-    if ok:
-        click.echo(f"Suggestion {suggestion_id} approved.")
-        # T047: Auto-promote to ground truth
-        try:
-            gt_id = promote_to_ground_truth(conn, suggestion_id)
-            click.echo(f"  Promoted to ground truth (ID: {gt_id}).")
-        except Exception as exc:
-            click.echo(f"  Ground truth promotion failed: {exc}")
-    else:
-        conn.close()
-        click.echo(f"Suggestion {suggestion_id} not found.")
-        raise SystemExit(1)
-    conn.close()
+    with _db_conn(db_path) as conn:
+        ok = do_approve(conn, suggestion_id, note)
+        if ok:
+            click.echo(f"Suggestion {suggestion_id} approved.")
+            # T047: Auto-promote to ground truth
+            try:
+                gt_id = promote_to_ground_truth(conn, suggestion_id)
+                click.echo(f"  Promoted to ground truth (ID: {gt_id}).")
+            except Exception as exc:
+                click.echo(f"  Ground truth promotion failed: {exc}")
+        else:
+            click.echo(f"Suggestion {suggestion_id} not found.")
+            raise SystemExit(1)
 
 
 @cli.command()
@@ -1174,7 +1205,6 @@ def approve(suggestion_id, note):
 @click.option("--note", "-n", default=None, help="Optional note.")
 def reject(suggestion_id, note):
     """Reject a suggestion by ID."""
-    from sio.core.db.schema import init_db
     from sio.review.reviewer import reject as do_reject
 
     db_path = os.path.expanduser("~/.sio/sio.db")
@@ -1182,9 +1212,8 @@ def reject(suggestion_id, note):
         click.echo("No database found.")
         return
 
-    conn = init_db(db_path)
-    ok = do_reject(conn, suggestion_id, note)
-    conn.close()
+    with _db_conn(db_path) as conn:
+        ok = do_reject(conn, suggestion_id, note)
     if ok:
         click.echo(f"Suggestion {suggestion_id} rejected.")
     else:
@@ -1197,16 +1226,14 @@ def reject(suggestion_id, note):
 def apply_suggestion(suggestion_id):
     """Apply an approved suggestion to its target file."""
     from sio.applier.writer import apply_change
-    from sio.core.db.schema import init_db
 
     db_path = os.path.expanduser("~/.sio/sio.db")
     if not os.path.exists(db_path):
         click.echo("No database found.")
         return
 
-    conn = init_db(db_path)
-    result = apply_change(conn, suggestion_id)
-    conn.close()
+    with _db_conn(db_path) as conn:
+        result = apply_change(conn, suggestion_id)
 
     if result["success"]:
         click.echo(f"Applied suggestion {suggestion_id} to {result['target_file']}")
@@ -1222,16 +1249,14 @@ def apply_suggestion(suggestion_id):
 def rollback(change_id):
     """Rollback an applied change by ID."""
     from sio.applier.rollback import rollback_change
-    from sio.core.db.schema import init_db
 
     db_path = os.path.expanduser("~/.sio/sio.db")
     if not os.path.exists(db_path):
         click.echo("No database found.")
         return
 
-    conn = init_db(db_path)
-    result = rollback_change(conn, change_id)
-    conn.close()
+    with _db_conn(db_path) as conn:
+        result = rollback_change(conn, change_id)
     if result["success"]:
         click.echo(f"Change {change_id} rolled back: {result['target_file']}")
     else:
@@ -1245,22 +1270,19 @@ def changes():
     from rich.console import Console
     from rich.table import Table
 
-    from sio.core.db.schema import init_db
-
     db_path = os.path.expanduser("~/.sio/sio.db")
     if not os.path.exists(db_path):
         click.echo("No database found.")
         return
 
-    conn = init_db(db_path)
-    rows = conn.execute(
-        "SELECT ac.id, ac.suggestion_id, ac.target_file, ac.applied_at, "
-        "ac.rolled_back_at, s.description "
-        "FROM applied_changes ac "
-        "LEFT JOIN suggestions s ON s.id = ac.suggestion_id "
-        "ORDER BY ac.applied_at DESC"
-    ).fetchall()
-    conn.close()
+    with _db_conn(db_path) as conn:
+        rows = conn.execute(
+            "SELECT ac.id, ac.suggestion_id, ac.target_file, ac.applied_at, "
+            "ac.rolled_back_at, s.description "
+            "FROM applied_changes ac "
+            "LEFT JOIN suggestions s ON s.id = ac.suggestion_id "
+            "ORDER BY ac.applied_at DESC"
+        ).fetchall()
 
     if not rows:
         click.echo("No applied changes yet.")
@@ -1464,24 +1486,21 @@ def schedule_status():
 @cli.command("status")
 def sio_status():
     """Show overall SIO v2 status."""
-    from sio.core.db.schema import init_db
-
     db_path = os.path.expanduser("~/.sio/sio.db")
     if not os.path.exists(db_path):
         click.echo("No SIO database found. Run 'sio mine' to start.")
         return
 
-    conn = init_db(db_path)
-    errors = conn.execute("SELECT COUNT(*) FROM error_records").fetchone()[0]
-    patterns = conn.execute("SELECT COUNT(*) FROM patterns").fetchone()[0]
-    datasets = conn.execute("SELECT COUNT(*) FROM datasets").fetchone()[0]
-    pending = conn.execute(
-        "SELECT COUNT(*) FROM suggestions WHERE status = 'pending'"
-    ).fetchone()[0]
-    applied = conn.execute(
-        "SELECT COUNT(*) FROM applied_changes WHERE rolled_back_at IS NULL"
-    ).fetchone()[0]
-    conn.close()
+    with _db_conn(db_path) as conn:
+        errors = conn.execute("SELECT COUNT(*) FROM error_records").fetchone()[0]
+        patterns = conn.execute("SELECT COUNT(*) FROM patterns").fetchone()[0]
+        datasets = conn.execute("SELECT COUNT(*) FROM datasets").fetchone()[0]
+        pending = conn.execute(
+            "SELECT COUNT(*) FROM suggestions WHERE status = 'pending'"
+        ).fetchone()[0]
+        applied = conn.execute(
+            "SELECT COUNT(*) FROM applied_changes WHERE rolled_back_at IS NULL"
+        ).fetchone()[0]
 
     click.echo("SIO v2 Status")
     click.echo("-" * 30)
@@ -1509,16 +1528,14 @@ def ground_truth_group():
 def gt_seed(count, surface):
     """Seed ground truth with representative examples covering all surfaces."""
     from sio.core.config import load_config
-    from sio.core.db.schema import init_db
     from sio.ground_truth.seeder import seed_ground_truth
 
     db_path = os.path.expanduser("~/.sio/sio.db")
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
-    conn = init_db(db_path)
     config = load_config()
 
-    ids = seed_ground_truth(config, conn, count=count, surface=surface)
-    conn.close()
+    with _db_conn(db_path) as conn:
+        ids = seed_ground_truth(config, conn, count=count, surface=surface)
 
     if surface:
         click.echo(f"Seeded {len(ids)} ground truth entries for surface '{surface}'.")
@@ -1533,7 +1550,6 @@ def gt_generate(candidates, pattern_id):
     """Generate ground truth candidates from discovered patterns."""
     from sio.core.config import load_config
     from sio.core.db.queries import get_pattern_by_id, get_patterns
-    from sio.core.db.schema import init_db
     from sio.ground_truth.generator import generate_candidates
 
     db_path = os.path.expanduser("~/.sio/sio.db")
@@ -1541,39 +1557,36 @@ def gt_generate(candidates, pattern_id):
         click.echo("No database found. Run 'sio mine' first.")
         raise SystemExit(1)
 
-    conn = init_db(db_path)
     config = load_config()
 
-    if pattern_id is not None:
-        pat = get_pattern_by_id(conn, pattern_id)
-        if pat is None:
-            click.echo(f"Pattern '{pattern_id}' not found.")
-            conn.close()
+    with _db_conn(db_path) as conn:
+        if pattern_id is not None:
+            pat = get_pattern_by_id(conn, pattern_id)
+            if pat is None:
+                click.echo(f"Pattern '{pattern_id}' not found.")
+                raise SystemExit(1)
+            patterns = [pat]
+        else:
+            patterns = get_patterns(conn)
+
+        if not patterns:
+            click.echo("No patterns found. Run 'sio suggest' first.")
             raise SystemExit(1)
-        patterns = [pat]
-    else:
-        patterns = get_patterns(conn)
 
-    if not patterns:
-        click.echo("No patterns found. Run 'sio suggest' first.")
-        conn.close()
-        raise SystemExit(1)
+        total_ids = []
+        for pattern in patterns:
+            # Build a minimal dataset reference
+            ds_row = conn.execute(
+                "SELECT * FROM datasets WHERE pattern_id = ? LIMIT 1",
+                (pattern["id"],),
+            ).fetchone()
+            dataset = dict(ds_row) if ds_row else {"id": 0, "file_path": ""}
 
-    total_ids = []
-    for pattern in patterns:
-        # Build a minimal dataset reference
-        ds_row = conn.execute(
-            "SELECT * FROM datasets WHERE pattern_id = ? LIMIT 1",
-            (pattern["id"],),
-        ).fetchone()
-        dataset = dict(ds_row) if ds_row else {"id": 0, "file_path": ""}
+            ids = generate_candidates(
+                pattern, dataset, conn, config, n_candidates=candidates,
+            )
+            total_ids.extend(ids)
 
-        ids = generate_candidates(
-            pattern, dataset, conn, config, n_candidates=candidates,
-        )
-        total_ids.extend(ids)
-
-    conn.close()
     click.echo(
         f"Generated {len(total_ids)} ground truth candidates "
         f"from {len(patterns)} patterns."
@@ -1588,7 +1601,6 @@ def gt_review(surface):
     from rich.panel import Panel
 
     from sio.core.db.queries import get_pending_ground_truth
-    from sio.core.db.schema import init_db
     from sio.ground_truth.reviewer import approve, edit, reject
 
     db_path = os.path.expanduser("~/.sio/sio.db")
@@ -1596,69 +1608,67 @@ def gt_review(surface):
         click.echo("No database found.")
         raise SystemExit(1)
 
-    conn = init_db(db_path)
-    pending = get_pending_ground_truth(conn, surface_type=surface)
+    with _db_conn(db_path) as conn:
+        pending = get_pending_ground_truth(conn, surface_type=surface)
 
-    if not pending:
-        click.echo("No pending ground truth entries to review.")
-        conn.close()
-        raise SystemExit(1)
+        if not pending:
+            click.echo("No pending ground truth entries to review.")
+            raise SystemExit(1)
 
-    console = Console()
-    reviewed = 0
+        console = Console()
+        reviewed = 0
 
-    for i, entry in enumerate(pending, 1):
-        # Display entry details
-        console.print()
-        console.print(Panel(
-            f"[bold]Pattern:[/bold] {entry.get('pattern_summary', '')[:120]}\n\n"
-            f"[bold]Surface:[/bold] {entry.get('target_surface', '')}\n"
-            f"[bold]Rule:[/bold] {entry.get('rule_title', '')}\n\n"
-            f"[bold]Prevention:[/bold]\n{entry.get('prevention_instructions', '')}\n\n"
-            f"[bold]Rationale:[/bold] {entry.get('rationale', '')}",
-            title=f"Ground Truth {i}/{len(pending)} (ID: {entry['id']})",
-        ))
+        for i, entry in enumerate(pending, 1):
+            # Display entry details
+            console.print()
+            console.print(Panel(
+                f"[bold]Pattern:[/bold] {entry.get('pattern_summary', '')[:120]}\n\n"
+                f"[bold]Surface:[/bold] {entry.get('target_surface', '')}\n"
+                f"[bold]Rule:[/bold] {entry.get('rule_title', '')}\n\n"
+                f"[bold]Prevention:[/bold]\n{entry.get('prevention_instructions', '')}\n\n"
+                f"[bold]Rationale:[/bold] {entry.get('rationale', '')}",
+                title=f"Ground Truth {i}/{len(pending)} (ID: {entry['id']})",
+            ))
 
-        choice = click.prompt(
-            "  [a]pprove / [r]eject / [e]dit / [s]kip / [q]uit",
-            type=str,
-            default="s",
-        )
-
-        if choice == "q":
-            break
-        elif choice == "a":
-            note = click.prompt("  Note (optional)", default="", type=str)
-            approve(conn, entry["id"], note or None)
-            click.echo("  Approved.")
-            reviewed += 1
-        elif choice == "r":
-            note = click.prompt("  Reason", default="", type=str)
-            reject(conn, entry["id"], note or None)
-            click.echo("  Rejected.")
-            reviewed += 1
-        elif choice == "e":
-            new_title = click.prompt(
-                "  New rule title (Enter to keep)",
-                default=entry.get("rule_title", ""),
+            choice = click.prompt(
+                "  [a]pprove / [r]eject / [e]dit / [s]kip / [q]uit",
+                type=str,
+                default="s",
             )
-            new_instructions = click.prompt(
-                "  New instructions (Enter to keep)",
-                default=entry.get("prevention_instructions", ""),
-            )
-            new_content = {}
-            if new_title != entry.get("rule_title", ""):
-                new_content["rule_title"] = new_title
-            if new_instructions != entry.get("prevention_instructions", ""):
-                new_content["prevention_instructions"] = new_instructions
-            if new_content:
-                new_id = edit(conn, entry["id"], new_content)
-                click.echo(f"  Created edited entry (ID: {new_id}).")
-            else:
-                click.echo("  No changes made.")
-            reviewed += 1
 
-    conn.close()
+            if choice == "q":
+                break
+            elif choice == "a":
+                note = click.prompt("  Note (optional)", default="", type=str)
+                approve(conn, entry["id"], note or None)
+                click.echo("  Approved.")
+                reviewed += 1
+            elif choice == "r":
+                note = click.prompt("  Reason", default="", type=str)
+                reject(conn, entry["id"], note or None)
+                click.echo("  Rejected.")
+                reviewed += 1
+            elif choice == "e":
+                new_title = click.prompt(
+                    "  New rule title (Enter to keep)",
+                    default=entry.get("rule_title", ""),
+                )
+                new_instructions = click.prompt(
+                    "  New instructions (Enter to keep)",
+                    default=entry.get("prevention_instructions", ""),
+                )
+                new_content = {}
+                if new_title != entry.get("rule_title", ""):
+                    new_content["rule_title"] = new_title
+                if new_instructions != entry.get("prevention_instructions", ""):
+                    new_content["prevention_instructions"] = new_instructions
+                if new_content:
+                    new_id = edit(conn, entry["id"], new_content)
+                    click.echo(f"  Created edited entry (ID: {new_id}).")
+                else:
+                    click.echo("  No changes made.")
+                reviewed += 1
+
     click.echo(f"\nReviewed {reviewed} entries.")
 
 
@@ -1669,16 +1679,14 @@ def gt_status():
     from rich.table import Table
 
     from sio.core.db.queries import get_ground_truth_stats
-    from sio.core.db.schema import init_db
 
     db_path = os.path.expanduser("~/.sio/sio.db")
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio ground-truth seed' first.")
         return
 
-    conn = init_db(db_path)
-    stats = get_ground_truth_stats(conn)
-    conn.close()
+    with _db_conn(db_path) as conn:
+        stats = get_ground_truth_stats(conn)
 
     console = Console()
 
@@ -1731,7 +1739,6 @@ def optimize_suggestions_cmd(optimizer, dry_run):
     from rich.table import Table
 
     from sio.core.config import load_config
-    from sio.core.db.schema import init_db
     from sio.core.dspy.optimizer import OptimizationError, optimize_suggestions
 
     db_path = os.path.expanduser("~/.sio/sio.db")
@@ -1739,7 +1746,6 @@ def optimize_suggestions_cmd(optimizer, dry_run):
         click.echo("No database found. Run 'sio ground-truth seed' first.")
         raise SystemExit(1)
 
-    conn = init_db(db_path)
     config = load_config()
     console = Console()
 
@@ -1748,77 +1754,74 @@ def optimize_suggestions_cmd(optimizer, dry_run):
         f"(optimizer={optimizer}, dry_run={dry_run})\n"
     )
 
-    try:
-        result = optimize_suggestions(
-            conn, optimizer=optimizer, dry_run=dry_run, config=config,
-        )
-    except OptimizationError as exc:
-        console.print(f"[red]Optimization failed:[/red] {exc}")
-        conn.close()
-        raise SystemExit(1)
+    with _db_conn(db_path) as conn:
+        try:
+            result = optimize_suggestions(
+                conn, optimizer=optimizer, dry_run=dry_run, config=config,
+            )
+        except OptimizationError as exc:
+            console.print(f"[red]Optimization failed:[/red] {exc}")
+            raise SystemExit(1)
 
-    # Display results
-    if result.status == "error":
-        console.print(f"[red]Cannot optimize:[/red] {result.message}")
-        conn.close()
-        raise SystemExit(1)
+        # Display results
+        if result.status == "error":
+            console.print(f"[red]Cannot optimize:[/red] {result.message}")
+            raise SystemExit(1)
 
-    # T064: Before/after metric display
-    metrics_table = Table(title="Optimization Metrics")
-    metrics_table.add_column("Metric", style="bold")
-    metrics_table.add_column("Value", justify="right")
-    metrics_table.add_row("Optimizer", result.optimizer_used)
-    metrics_table.add_row("Training examples", str(result.training_count))
-    metrics_table.add_row(
-        "Metric (before)",
-        f"{result.metric_before:.3f}" if result.metric_before is not None else "N/A",
-    )
-    metrics_table.add_row(
-        "Metric (after)",
-        f"{result.metric_after:.3f}" if result.metric_after is not None else "N/A",
-    )
-
-    # Compute improvement
-    if result.metric_before is not None and result.metric_after is not None:
-        delta = result.metric_after - result.metric_before
-        delta_pct = (delta / max(result.metric_before, 0.001)) * 100
-        style = "green" if delta > 0 else "red" if delta < 0 else ""
+        # T064: Before/after metric display
+        metrics_table = Table(title="Optimization Metrics")
+        metrics_table.add_column("Metric", style="bold")
+        metrics_table.add_column("Value", justify="right")
+        metrics_table.add_row("Optimizer", result.optimizer_used)
+        metrics_table.add_row("Training examples", str(result.training_count))
         metrics_table.add_row(
-            "Improvement",
-            f"{delta:+.3f} ({delta_pct:+.1f}%)",
-            style=style,
+            "Metric (before)",
+            f"{result.metric_before:.3f}" if result.metric_before is not None else "N/A",
+        )
+        metrics_table.add_row(
+            "Metric (after)",
+            f"{result.metric_after:.3f}" if result.metric_after is not None else "N/A",
         )
 
-    console.print(metrics_table)
-    console.print()
+        # Compute improvement
+        if result.metric_before is not None and result.metric_after is not None:
+            delta = result.metric_after - result.metric_before
+            delta_pct = (delta / max(result.metric_before, 0.001)) * 100
+            style = "green" if delta > 0 else "red" if delta < 0 else ""
+            metrics_table.add_row(
+                "Improvement",
+                f"{delta:+.3f} ({delta_pct:+.1f}%)",
+                style=style,
+            )
 
-    # T064: Show few-shot demo diff if module was saved
-    if result.module_id is not None:
-        _display_optimization_diff(console, conn, result)
+        console.print(metrics_table)
+        console.print()
 
-    if dry_run:
-        console.print("[yellow][dry-run] No changes saved.[/yellow]")
-    else:
-        console.print(Panel(
-            result.message,
-            title="Result",
-            style="green" if result.status == "success" else "yellow",
-        ))
+        # T064: Show few-shot demo diff if module was saved
+        if result.module_id is not None:
+            _display_optimization_diff(console, conn, result)
 
-        # Approval prompt
-        choice = click.prompt(
-            "Keep optimized module? [y]es / [n]o (rollback)",
-            type=click.Choice(["y", "n"]),
-            default="y",
-        )
-        if choice == "n":
-            # Rollback: deactivate the module
-            from sio.core.dspy.module_store import deactivate_previous
+        if dry_run:
+            console.print("[yellow][dry-run] No changes saved.[/yellow]")
+        else:
+            console.print(Panel(
+                result.message,
+                title="Result",
+                style="green" if result.status == "success" else "yellow",
+            ))
 
-            deactivate_previous(conn, "suggestion")
-            console.print("[yellow]Optimized module deactivated.[/yellow]")
+            # Approval prompt
+            choice = click.prompt(
+                "Keep optimized module? [y]es / [n]o (rollback)",
+                type=click.Choice(["y", "n"]),
+                default="y",
+            )
+            if choice == "n":
+                # Rollback: deactivate the module
+                from sio.core.dspy.module_store import deactivate_previous
 
-    conn.close()
+                deactivate_previous(conn, "suggestion")
+                console.print("[yellow]Optimized module deactivated.[/yellow]")
 
 
 def _display_optimization_diff(console, conn, result):

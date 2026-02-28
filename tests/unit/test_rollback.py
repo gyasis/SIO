@@ -54,7 +54,7 @@ class TestRollback:
     def test_marks_rolled_back_at(self, v2_db, tmp_path):
         from sio.applier.rollback import rollback_change
         target = tmp_path / "CLAUDE.md"
-        target.write_text("modified")
+        target.write_text("# Original\n\n## New Rule\nContent.\n")
         _, cid = _seed_applied_change(v2_db, str(target))
         rollback_change(v2_db, cid)
         row = v2_db.execute(
@@ -65,7 +65,7 @@ class TestRollback:
     def test_updates_suggestion_status(self, v2_db, tmp_path):
         from sio.applier.rollback import rollback_change
         target = tmp_path / "CLAUDE.md"
-        target.write_text("modified")
+        target.write_text("# Original\n\n## New Rule\nContent.\n")
         sid, cid = _seed_applied_change(v2_db, str(target))
         rollback_change(v2_db, cid)
         row = v2_db.execute(
@@ -81,7 +81,7 @@ class TestRollback:
     def test_already_rolled_back_returns_error(self, v2_db, tmp_path):
         from sio.applier.rollback import rollback_change
         target = tmp_path / "CLAUDE.md"
-        target.write_text("modified")
+        target.write_text("# Original\n\n## New Rule\nContent.\n")
         _, cid = _seed_applied_change(v2_db, str(target))
         rollback_change(v2_db, cid)  # First rollback
         result = rollback_change(v2_db, cid)  # Second attempt
@@ -99,7 +99,7 @@ class TestRollbackLogging:
     def test_returns_target_file(self, v2_db, tmp_path):
         from sio.applier.rollback import rollback_change
         target = tmp_path / "CLAUDE.md"
-        target.write_text("modified")
+        target.write_text("# Original\n\n## New Rule\nContent.\n")
         _, cid = _seed_applied_change(v2_db, str(target))
         result = rollback_change(v2_db, cid)
         assert result["target_file"] == str(target)
@@ -107,7 +107,7 @@ class TestRollbackLogging:
     def test_returns_change_id(self, v2_db, tmp_path):
         from sio.applier.rollback import rollback_change
         target = tmp_path / "CLAUDE.md"
-        target.write_text("modified")
+        target.write_text("# Original\n\n## New Rule\nContent.\n")
         _, cid = _seed_applied_change(v2_db, str(target))
         result = rollback_change(v2_db, cid)
         assert result["change_id"] == cid

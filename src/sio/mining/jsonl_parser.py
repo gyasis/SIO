@@ -110,7 +110,11 @@ def _parse_real_user(raw: dict[str, Any], tool_use_map: _ToolUseMap) -> list[dic
 
                 error_str: str | None = None
                 if is_error:
-                    error_str = result_content if isinstance(result_content, str) else str(result_content)
+                    error_str = (
+                        result_content
+                        if isinstance(result_content, str)
+                        else str(result_content)
+                    )
 
                 records.append({
                     "role": "assistant",  # treat as assistant context for error extraction

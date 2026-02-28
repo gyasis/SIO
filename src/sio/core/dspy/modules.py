@@ -1,16 +1,31 @@
-"""DSPy Module wrappers — ChainOfThought reasoning over Signatures."""
+"""DSPy Module wrappers — ChainOfThought reasoning over Signatures.
 
-import dspy
+dspy is imported lazily so the rest of SIO can load without it installed.
+"""
 
-from sio.core.dspy.signatures import GroundTruthCandidate, SuggestionGenerator
+from __future__ import annotations
+
+try:
+    import dspy as _dspy
+
+    _Module = _dspy.Module
+except ImportError:  # pragma: no cover
+    _dspy = None  # type: ignore[assignment]
+    _Module = object  # type: ignore[assignment,misc]
 
 
-class SuggestionModule(dspy.Module):
+class SuggestionModule(_Module):
     """Generates improvement suggestions using ChainOfThought reasoning."""
 
     def __init__(self):
+        if _dspy is None:
+            raise ImportError(
+                "dspy is required for SuggestionModule — pip install dspy"
+            )
         super().__init__()
-        self.generate = dspy.ChainOfThought(SuggestionGenerator)
+        from sio.core.dspy.signatures import SuggestionGenerator
+
+        self.generate = _dspy.ChainOfThought(SuggestionGenerator)
 
     def forward(
         self,
@@ -27,12 +42,18 @@ class SuggestionModule(dspy.Module):
         )
 
 
-class GroundTruthModule(dspy.Module):
+class GroundTruthModule(_Module):
     """Generates ground truth candidates using ChainOfThought reasoning."""
 
     def __init__(self):
+        if _dspy is None:
+            raise ImportError(
+                "dspy is required for GroundTruthModule — pip install dspy"
+            )
         super().__init__()
-        self.generate = dspy.ChainOfThought(GroundTruthCandidate)
+        from sio.core.dspy.signatures import GroundTruthCandidate
+
+        self.generate = _dspy.ChainOfThought(GroundTruthCandidate)
 
     def forward(
         self,

@@ -21,7 +21,10 @@ class SuggestionGenerator(dspy.Signature):
     """
 
     error_examples: str = dspy.InputField(
-        desc="JSON array of error examples with error_text, tool_name, user_message, tool_input, tool_output"
+        desc=(
+            "JSON array of error examples with error_text,"
+            " tool_name, user_message, tool_input, tool_output"
+        )
     )
     error_type: str = dspy.InputField(
         desc=(
@@ -66,7 +69,10 @@ class GroundTruthCandidate(dspy.Signature):
     """
 
     error_examples: str = dspy.InputField(
-        desc="JSON array of error examples with error_text, tool_name, user_message, tool_input, tool_output"
+        desc=(
+            "JSON array of error examples with error_text,"
+            " tool_name, user_message, tool_input, tool_output"
+        )
     )
     error_type: str = dspy.InputField(
         desc=(

@@ -11,8 +11,33 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+_ALLOWED_ROOTS: list[Path] = [
+    Path.home() / ".sio",
+    Path.home() / ".claude",
+]
 
-def rollback_change(db: sqlite3.Connection, change_id: int) -> dict:
+
+def _validate_target_path(
+    path: Path, *, extra_roots: tuple[Path, ...] = (),
+) -> str | None:
+    """Return an error message if path is outside allowed roots or cwd."""
+    resolved = path.resolve()
+    allowed = (*_ALLOWED_ROOTS, Path.cwd(), *extra_roots)
+    for root in allowed:
+        try:
+            resolved.relative_to(root.resolve())
+            return None
+        except ValueError:
+            continue
+    return (
+        f"Target path {resolved} is outside allowed directories: "
+        f"{', '.join(str(r) for r in allowed)}"
+    )
+
+
+def rollback_change(
+    db: sqlite3.Connection, change_id: int, *, force: bool = False,
+) -> dict:
     """Rollback an applied change by restoring diff_before content.
 
     Returns a dict with keys: success, change_id, target_file, reason (on failure).
@@ -35,7 +60,24 @@ def rollback_change(db: sqlite3.Connection, change_id: int) -> dict:
         }
 
     target_path = Path(change["target_file"])
+
+    path_error = _validate_target_path(target_path)
+    if path_error:
+        return {"success": False, "reason": path_error}
+
     diff_before = change["diff_before"]
+    diff_after = change.get("diff_after", "")
+
+    # H1: Check if file was modified since SIO wrote it
+    if target_path.exists() and not force:
+        current_content = target_path.read_text()
+        if current_content != diff_after:
+            return {
+                "success": False,
+                "change_id": change_id,
+                "target_file": change["target_file"],
+                "reason": "File modified since apply — use force=True to override",
+            }
 
     # Restore file to original content
     target_path.parent.mkdir(parents=True, exist_ok=True)

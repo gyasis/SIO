@@ -11,6 +11,29 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+_ALLOWED_ROOTS: list[Path] = [
+    Path.home() / ".sio",
+    Path.home() / ".claude",
+]
+
+
+def _validate_target_path(
+    path: Path, *, extra_roots: tuple[Path, ...] = (),
+) -> str | None:
+    """Return an error message if path is outside allowed roots or cwd."""
+    resolved = path.resolve()
+    allowed = (*_ALLOWED_ROOTS, Path.cwd(), *extra_roots)
+    for root in allowed:
+        try:
+            resolved.relative_to(root.resolve())
+            return None
+        except ValueError:
+            continue
+    return (
+        f"Target path {resolved} is outside allowed directories: "
+        f"{', '.join(str(r) for r in allowed)}"
+    )
+
 
 def apply_change(db: sqlite3.Connection, suggestion_id: int) -> dict:
     """Apply an approved suggestion to its target file.
@@ -27,13 +50,18 @@ def apply_change(db: sqlite3.Connection, suggestion_id: int) -> dict:
 
     suggestion = dict(row)
 
-    if suggestion["status"] != "approved":
+    if suggestion["status"] not in ("approved", "auto_approved"):
         return {
             "success": False,
             "reason": f"Suggestion is not approved (status: {suggestion['status']})",
         }
 
     target_path = Path(suggestion["target_file"])
+
+    path_error = _validate_target_path(target_path)
+    if path_error:
+        return {"success": False, "reason": path_error}
+
     proposed_change = suggestion["proposed_change"]
 
     # Read existing content (or empty if file doesn't exist)

@@ -37,6 +37,15 @@ class FastEmbedBackend(EmbeddingBackend):
             )
             self._cache_conn.commit()
 
+    def close(self) -> None:
+        """Close the cache database connection."""
+        if self._cache_conn:
+            self._cache_conn.close()
+            self._cache_conn = None
+
+    def __del__(self) -> None:
+        self.close()
+
     def _text_hash(self, text: str) -> str:
         return hashlib.sha256(text.encode("utf-8")).hexdigest()
 

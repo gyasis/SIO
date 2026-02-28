@@ -479,7 +479,11 @@ def _extract_real_tool_calls(lines: list[str]) -> list[dict[str, Any]]:
                     break
 
                 # Inline backtick command (like `git status`)
-                if next_line.startswith("`") and next_line.endswith("`") and not next_line.startswith("```"):
+                if (
+                    next_line.startswith("`")
+                    and next_line.endswith("`")
+                    and not next_line.startswith("```")
+                ):
                     tool_input = next_line.strip("`")
                     i += 1
                     continue
@@ -509,7 +513,10 @@ def _extract_real_tool_calls(lines: list[str]) -> list[dict[str, Any]]:
                 if next_line.startswith("```"):
                     block_content = _consume_code_block(lines, i)
                     # If it contains "Exit code" or error indicators, treat as error
-                    if block_content and ("Exit code 1" in block_content or "Error" in block_content[:50]):
+                    if block_content and (
+                        "Exit code 1" in block_content
+                        or "Error" in block_content[:50]
+                    ):
                         error = block_content
                     elif block_content and tool_output is None:
                         tool_output = block_content

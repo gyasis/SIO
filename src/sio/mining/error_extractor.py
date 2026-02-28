@@ -24,6 +24,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any  # noqa: UP035
 
+
 def _to_text(value: Any) -> str | None:
     """Coerce a value to a TEXT-safe string for SQLite storage."""
     if value is None:
@@ -104,7 +105,10 @@ _ADMISSION_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\bthat['']?s\s+not\s+(?:right|correct)\b.*\blet\s+me\b", re.IGNORECASE),
     re.compile(r"\bi\s+need\s+to\s+(?:fix|correct|redo)\b", re.IGNORECASE),
     # "didn't" patterns
-    re.compile(r"\bi\s+didn['']t\s+(?:account|consider|notice|check|read|realize)\b", re.IGNORECASE),
+    re.compile(
+        r"\bi\s+didn['']t\s+(?:account|consider|notice|check|read|realize)\b",
+        re.IGNORECASE,
+    ),
 ]
 
 # Guard against false undo from "git push …"

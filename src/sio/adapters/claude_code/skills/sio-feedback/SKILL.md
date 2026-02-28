@@ -20,7 +20,8 @@ SESSION_ID="${CLAUDE_SESSION_ID:-unknown}"
 SIGNAL="$(echo "$USER_INPUT" | head -c2)"
 NOTE="$(echo "$USER_INPUT" | cut -c3- | sed 's/^ *//')"
 
-python3 -m sio.core.feedback.labeler_cli \
+SIO_PYTHON="$(command -v sio | xargs head -1 | sed 's/^#!//' || echo python3)"
+"$SIO_PYTHON" -m sio.core.feedback.labeler_cli \
     --session "$SESSION_ID" \
     --signal "$SIGNAL" \
     ${NOTE:+--note "$NOTE"}

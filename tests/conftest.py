@@ -1,10 +1,25 @@
 """Shared pytest fixtures for SIO test suite."""
 
 import json
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _allow_tmp_path_for_applier():
+    """Allow writer/rollback path validation to accept pytest tmp dirs."""
+    import sio.applier.rollback as _rb
+    import sio.applier.writer as _wr
+
+    tmp_root = Path(tempfile.gettempdir())
+    _wr._ALLOWED_ROOTS.append(tmp_root)
+    _rb._ALLOWED_ROOTS.append(tmp_root)
+    yield
+    _wr._ALLOWED_ROOTS.remove(tmp_root)
+    _rb._ALLOWED_ROOTS.remove(tmp_root)
 
 
 @pytest.fixture
