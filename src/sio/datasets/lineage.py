@@ -60,24 +60,13 @@ def track_lineage(
             seen.add(s)
             merged.append(s)
 
+    # Encode sessions + time_window together as a JSON object to avoid a
+    # schema migration (lineage_sessions is a TEXT column):
+    #   {"sessions": [...], "time_window": "2 weeks"}
+    full_lineage = json.dumps({"sessions": merged, "time_window": time_window})
     db_conn.execute(
         "UPDATE datasets SET lineage_sessions = ?, updated_at = datetime('now') "
         "WHERE id = ?",
-        (json.dumps(merged), dataset_id),
-    )
-    # Store time_window in the metadata column.  The datasets table does not
-    # have a dedicated time_window column so we persist it in a simple JSON
-    # sidecar field reusing the lineage_sessions mechanism via a separate
-    # helper column.  Because the schema uses lineage_sessions (TEXT) only,
-    # we encode both pieces of data together.
-    #
-    # To avoid a schema migration we store the time_window alongside the
-    # sessions JSON as a JSON object:
-    #   {"sessions": [...], "time_window": "2 weeks"}
-    # Re-encode with time_window included.
-    full_lineage = json.dumps({"sessions": merged, "time_window": time_window})
-    db_conn.execute(
-        "UPDATE datasets SET lineage_sessions = ? WHERE id = ?",
         (full_lineage, dataset_id),
     )
     db_conn.commit()

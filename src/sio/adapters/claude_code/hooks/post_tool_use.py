@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import sys
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -85,9 +86,7 @@ def _detect_passive_signals(conn, session_id, user_message):
             signal = "correction"
         elif detect_undo(
             session_id,
-            __import__("datetime").datetime.now(
-                __import__("datetime").timezone.utc
-            ).isoformat(),
+            datetime.now(timezone.utc).isoformat(),
             conn,
         ):
             signal = "undo"

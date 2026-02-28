@@ -188,6 +188,22 @@ def v2_db():
     conn = init_db(":memory:")
     for ddl in _V2_DDL_STATEMENTS:
         conn.execute(ddl)
+    # Seed stub parent rows so FK references from test helpers work.
+    # Use id=1 for the common case; tests that explicitly INSERT id=1
+    # should use INSERT OR REPLACE or a different id.
+    conn.execute(
+        "INSERT INTO patterns (id, pattern_id, description, tool_name, "
+        "error_count, session_count, first_seen, last_seen, rank_score, "
+        "created_at, updated_at) VALUES "
+        "(1, 'test-pattern', 'test', 'Read', 1, 1, "
+        "datetime('now'), datetime('now'), 1.0, "
+        "datetime('now'), datetime('now'))"
+    )
+    conn.execute(
+        "INSERT INTO datasets (id, pattern_id, file_path, positive_count, "
+        "negative_count, created_at, updated_at) VALUES "
+        "(1, 1, '/tmp/test.json', 0, 0, datetime('now'), datetime('now'))"
+    )
     conn.commit()
     yield conn
     conn.close()

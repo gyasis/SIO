@@ -497,9 +497,9 @@ class TestGeneratorDspyIntegration:
             "session_count": 2,
             "rank_score": 0.5,
         }
-        # Insert pattern into DB
+        # Insert pattern into DB (OR REPLACE in case conftest seeded id=1)
         v2_db.execute(
-            "INSERT INTO patterns (id, pattern_id, description, tool_name, "
+            "INSERT OR REPLACE INTO patterns (id, pattern_id, description, tool_name, "
             "error_count, session_count, first_seen, last_seen, rank_score, "
             "created_at, updated_at) VALUES (1, 'pat-test-001', 'Test error', "
             "'Read', 5, 2, '2026-01-01', '2026-01-02', 0.5, '2026-01-01', '2026-01-01')"

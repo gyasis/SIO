@@ -631,50 +631,59 @@ def inspect(pattern_id):
 
     console = Console()
 
-    conn = _get_sio_db_conn()
-    if conn is None:
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio mine' first.")
         return
 
-    # Look up pattern
-    from sio.core.db.queries import get_pattern_by_id
-    pattern = get_pattern_by_id(conn, pattern_id)
-    if pattern is None:
-        click.echo(f"No pattern found with id '{pattern_id}'.")
-        conn.close()
-        return
+    from sio.core.db.queries import (
+        get_errors_for_pattern,
+        get_ground_truth_by_pattern,
+        get_pattern_by_id,
+    )
 
-    pat_row_id = pattern["id"]
+    with _db_conn(db_path) as conn:
+        # Look up pattern
+        pattern = get_pattern_by_id(conn, pattern_id)
+        if pattern is None:
+            click.echo(f"No pattern found with id '{pattern_id}'.")
+            return
 
-    # --- Error distribution ---
-    from sio.core.db.queries import get_errors_for_pattern
-    errors = get_errors_for_pattern(conn, pat_row_id)
+        pat_row_id = pattern["id"]
 
-    error_type_counts: Counter = Counter()
-    session_ids: set = set()
-    tool_counts: Counter = Counter()
-    timestamps: list = []
-    top_messages: list = []
-    seen_msg_prefixes: set = set()
+        # --- Error distribution ---
+        errors = get_errors_for_pattern(conn, pat_row_id)
 
-    for e in errors:
-        et = e.get("error_type") or "unknown"
-        error_type_counts[et] += 1
-        sid = e.get("session_id")
-        if sid:
-            session_ids.add(sid)
-        tn = e.get("tool_name")
-        if tn:
-            tool_counts[tn] += 1
-        ts = e.get("timestamp")
-        if ts:
-            timestamps.append(ts)
-        msg = (e.get("error_text") or "").strip()
-        if msg:
-            prefix = msg[:80].lower()
-            if prefix not in seen_msg_prefixes and len(top_messages) < 5:
-                seen_msg_prefixes.add(prefix)
-                top_messages.append(msg[:120])
+        error_type_counts: Counter = Counter()
+        session_ids: set = set()
+        tool_counts: Counter = Counter()
+        timestamps: list = []
+        top_messages: list = []
+        seen_msg_prefixes: set = set()
+
+        for e in errors:
+            et = e.get("error_type") or "unknown"
+            error_type_counts[et] += 1
+            sid = e.get("session_id")
+            if sid:
+                session_ids.add(sid)
+            tn = e.get("tool_name")
+            if tn:
+                tool_counts[tn] += 1
+            ts = e.get("timestamp")
+            if ts:
+                timestamps.append(ts)
+            msg = (e.get("error_text") or "").strip()
+            if msg:
+                prefix = msg[:80].lower()
+                if prefix not in seen_msg_prefixes and len(top_messages) < 5:
+                    seen_msg_prefixes.add(prefix)
+                    top_messages.append(msg[:120])
+
+        # Ground truth info
+        gt_entries = get_ground_truth_by_pattern(conn, pattern_id)
+
+    # --- Display (no DB needed) ---
 
     # Error distribution table
     err_table = Table(title="Error Distribution by Type")
@@ -710,9 +719,7 @@ def inspect(pattern_id):
         console.print(tool_table)
         console.print()
 
-    # Ground truth info
-    from sio.core.db.queries import get_ground_truth_by_pattern
-    gt_entries = get_ground_truth_by_pattern(conn, pattern_id)
+    # Ground truth
     gt_label_counts: Counter = Counter()
     gt_surface_counts: Counter = Counter()
     for gt in gt_entries:
@@ -733,7 +740,8 @@ def inspect(pattern_id):
     # Coverage gaps per surface type
     all_surfaces = {
         "claude_md_rule", "skill_update", "hook_config",
-        "mcp_config", "settings_config", "agent_profile", "project_config",
+        "mcp_config", "settings_config", "agent_profile",
+        "project_config",
     }
     covered_surfaces = set(gt_surface_counts.keys())
 
@@ -747,10 +755,10 @@ def inspect(pattern_id):
                 surface, f"[green]covered ({cnt})[/green]",
             )
         else:
-            coverage_table.add_row(surface, "[yellow]no ground truth[/yellow]")
+            coverage_table.add_row(
+                surface, "[yellow]no ground truth[/yellow]",
+            )
     console.print(coverage_table)
-
-    conn.close()
 
 
 @cli.command()
@@ -1057,7 +1065,7 @@ def suggest(
         if auto_mode:
             mode = "auto"
         elif analyze_mode:
-            mode = "auto"
+            mode = "hitl"
 
         suggestions = generate_suggestions(
             persisted_patterns, datasets, conn, verbose=verbose, mode=mode,

@@ -259,6 +259,7 @@ def init_db(db_path: str) -> sqlite3.Connection:
     # Set pragmas — WAL for concurrent reads/writes
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=1000")
+    conn.execute("PRAGMA foreign_keys=ON")
 
     # Create v1 tables
     conn.execute(_BEHAVIOR_INVOCATIONS_DDL)

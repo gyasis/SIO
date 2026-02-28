@@ -12,7 +12,16 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from typing import Any
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
+
+
+def _mock_db_conn(conn):
+    """Return a callable that mimics _db_conn(db_path) context manager."""
+    @contextmanager
+    def _inner(_db_path=None):
+        yield conn
+    return _inner
 
 import pytest
 from click.testing import CliRunner
@@ -427,7 +436,8 @@ class TestDatasetInspect:
         pattern_slug = self._setup_db_with_data(in_memory_db)
 
         runner = CliRunner()
-        with patch("sio.cli.main._get_sio_db_conn", return_value=in_memory_db):
+        with patch("sio.cli.main._db_conn", _mock_db_conn(in_memory_db)), \
+             patch("os.path.exists", return_value=True):
             result = runner.invoke(cli, ["datasets", "inspect", pattern_slug])
 
         assert result.exit_code == 0, f"CLI error: {result.output}"
@@ -442,7 +452,8 @@ class TestDatasetInspect:
         pattern_slug = self._setup_db_with_data(in_memory_db)
 
         runner = CliRunner()
-        with patch("sio.cli.main._get_sio_db_conn", return_value=in_memory_db):
+        with patch("sio.cli.main._db_conn", _mock_db_conn(in_memory_db)), \
+             patch("os.path.exists", return_value=True):
             result = runner.invoke(cli, ["datasets", "inspect", pattern_slug])
 
         assert result.exit_code == 0, f"CLI error: {result.output}"
@@ -453,7 +464,8 @@ class TestDatasetInspect:
         from sio.cli.main import cli
 
         runner = CliRunner()
-        with patch("sio.cli.main._get_sio_db_conn", return_value=in_memory_db):
+        with patch("sio.cli.main._db_conn", _mock_db_conn(in_memory_db)), \
+             patch("os.path.exists", return_value=True):
             result = runner.invoke(cli, ["datasets", "inspect", "nonexistent-pattern"])
 
         assert result.exit_code == 0
@@ -466,7 +478,8 @@ class TestDatasetInspect:
         pattern_slug = self._setup_db_with_data(in_memory_db)
 
         runner = CliRunner()
-        with patch("sio.cli.main._get_sio_db_conn", return_value=in_memory_db):
+        with patch("sio.cli.main._db_conn", _mock_db_conn(in_memory_db)), \
+             patch("os.path.exists", return_value=True):
             result = runner.invoke(cli, ["datasets", "inspect", pattern_slug])
 
         assert result.exit_code == 0, f"CLI error: {result.output}"
@@ -480,7 +493,8 @@ class TestDatasetInspect:
         pattern_slug = self._setup_db_with_data(in_memory_db)
 
         runner = CliRunner()
-        with patch("sio.cli.main._get_sio_db_conn", return_value=in_memory_db):
+        with patch("sio.cli.main._db_conn", _mock_db_conn(in_memory_db)), \
+             patch("os.path.exists", return_value=True):
             result = runner.invoke(cli, ["datasets", "inspect", pattern_slug])
 
         assert result.exit_code == 0, f"CLI error: {result.output}"

@@ -144,8 +144,14 @@ def _register_hooks(settings_path: str) -> bool:
     Merges with existing hooks — never overwrites.
     """
     if os.path.exists(settings_path):
-        with open(settings_path) as f:
-            settings = json.load(f)
+        try:
+            with open(settings_path) as f:
+                settings = json.load(f)
+        except (json.JSONDecodeError, ValueError):
+            # Back up corrupt file and start fresh
+            backup = settings_path + ".bak"
+            shutil.copy2(settings_path, backup)
+            settings = {}
     else:
         settings = {}
 

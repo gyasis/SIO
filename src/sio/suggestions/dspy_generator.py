@@ -86,7 +86,7 @@ def _load_optimized_or_default(config: Any) -> Any:
             )
             return load_module(SuggestionModule, active["file_path"])
     except Exception:
-        logger.debug(
+        logger.warning(
             "Failed to load optimized module, falling back to default",
             exc_info=True,
         )

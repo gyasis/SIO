@@ -15,7 +15,7 @@ def _seed_suggestions(conn: sqlite3.Connection, count: int = 3) -> list[int]:
             "(pattern_id, dataset_id, description, confidence, proposed_change, "
             " target_file, change_type, status, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now'))",
-            (i, i, f"desc-{i}", 0.5 + i * 0.1, f"change-{i}",
+            (1, 1, f"desc-{i}", 0.5 + i * 0.1, f"change-{i}",
              "CLAUDE.md", "claude_md_rule"),
         )
         ids.append(cur.lastrowid)

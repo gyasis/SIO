@@ -179,7 +179,12 @@ def count_by_pattern(
         "not_activated": "activated = 0",
         "wrong_action": "correct_action = 0",
     }
-    condition = mode_map.get(failure_mode, "correct_outcome = 0")
+    condition = mode_map.get(failure_mode)
+    if condition is None:
+        raise ValueError(
+            f"Unknown failure_mode: {failure_mode!r}. "
+            f"Valid: {sorted(mode_map)}"
+        )
     row = conn.execute(
         f"SELECT COUNT(*) FROM behavior_invocations WHERE behavior_type = ? AND {condition}",
         (behavior_type,),
