@@ -1,153 +1,383 @@
 # SIO — Self-Improving Organism
 
-A closed-loop system that mines your AI coding sessions for error patterns, clusters them, builds datasets, generates improvement suggestions, and applies approved changes — all passively.
+**A closed-loop system that learns from your AI coding sessions and makes your agent better over time.**
 
-SIO watches how you use AI coding tools (Claude Code, etc.), learns from your mistakes and friction points, and proposes config/rule changes that prevent them from recurring.
+SIO watches how you use AI coding tools (Claude Code, Cursor, etc.), mines your session transcripts for error patterns, clusters them into actionable insights, generates improvement suggestions, and applies approved changes to your configuration — all with human oversight.
+
+Your AI agent makes the same mistakes repeatedly. SIO fixes that.
+
+---
+
+## The Problem
+
+AI coding assistants are powerful but repetitive in their failures:
+- They read files that don't exist
+- They run commands that fail the same way each time
+- They ignore corrections you've given before
+- They use the wrong tool for the job
+
+These patterns are buried in session transcripts. SIO extracts them, finds the signal, and proposes targeted fixes (CLAUDE.md rules, hook configs, skill updates) that prevent recurrence.
 
 ## How It Works
 
 ```
-Session Files          Error Patterns         Suggestions           Config Changes
-(SpecStory/JSONL) ---> (clustered by    ---> (ranked by       ---> (CLAUDE.md rules,
-                        similarity)          confidence)           hooks, skills)
-                                                  |
-                                           Human Review
-                                         (approve/reject)
+Session Transcripts        Error Patterns           Suggestions            Config Changes
+(SpecStory / JSONL)  --->  (clustered by      --->  (ranked by       --->  (CLAUDE.md rules,
+                            embedding                confidence)           hooks, skills)
+                            similarity)                  |
+                                                  Human Review
+                                                (approve / reject)
 ```
 
-**The pipeline:**
+**The full pipeline:**
 
-1. **Mine** — Parse SpecStory markdown and Claude JSONL transcripts for tool failures, user corrections, repeated attempts, and undos
-2. **Cluster** — Group similar errors using embedding similarity (fastembed, cosine distance)
-3. **Dataset** — Build labeled pos/neg datasets from each pattern
-4. **Suggest** — Generate improvement proposals with confidence scores
-5. **Review** — Human approves/rejects via interactive CLI or home file
-6. **Apply** — Write approved changes to config files with full rollback support
-7. **Schedule** — Passive daily/weekly cron runs keep suggestions fresh
+| Stage | What Happens | CLI Command |
+|-------|-------------|-------------|
+| **Mine** | Parse SpecStory `.md` and Claude `.jsonl` transcripts for tool failures, user corrections, repeated attempts, agent admissions | `sio mine --since "7 days"` |
+| **Cluster** | Group similar errors using fastembed embeddings + cosine similarity | (automatic) |
+| **Rank** | Score patterns by frequency x recency x session spread | `sio patterns` |
+| **Dataset** | Build labeled positive/negative training datasets per pattern | `sio datasets collect` |
+| **Suggest** | Generate improvement proposals via DSPy modules or template engine | `sio suggest` |
+| **Review** | Human approves, rejects, or defers each suggestion | `sio suggest-review` |
+| **Apply** | Write approved changes to target files with full rollback support | `sio apply <id>` |
+| **Schedule** | Passive daily/weekly cron runs keep suggestions fresh | `sio schedule install` |
 
-## Quick Install
+## Quick Start
+
+### Prerequisites
+
+- Python 3.11+
+- An AI coding tool that produces session transcripts (Claude Code, Cursor, etc.)
+
+### Install
 
 ```bash
+# Clone and install in editable mode
+git clone https://github.com/gyasisutton/SIO.git
+cd SIO
 pip install -e ".[dev]"
+
+# Verify
+sio --version
 ```
 
-## Quick Start (5 minutes)
+### First Run (5 minutes)
 
 ```bash
-# 1. Mine errors from your recent sessions
+# 1. Install SIO hooks into Claude Code
+sio install
+
+# 2. Mine errors from your recent sessions
 sio mine --since "7 days"
 
-# 2. See what patterns were found
+# 3. See what patterns were found
 sio patterns
 
-# 3. Review and approve suggestions
+# 4. Generate improvement suggestions
+sio suggest
+
+# 5. Review and approve/reject
 sio suggest-review
 
-# 4. (Optional) Set up daily passive analysis
+# 6. Apply an approved suggestion
+sio apply <suggestion-id>
+
+# 7. (Optional) Set up daily passive analysis
 sio schedule install
 
-# 5. Check overall status
+# 8. Check overall pipeline status
 sio status
 ```
 
-## Documentation
+## CLI Reference
 
-| Document | Description |
-|----------|-------------|
-| [Getting Started](docs/getting-started.md) | Installation, first run, verification |
-| [User Guide](docs/user-guide.md) | Complete CLI reference with examples |
-| [Architecture](docs/architecture.md) | System design, module map, data flow |
-| [Cookbook](docs/cookbook.md) | Recipes for common workflows |
-| [Configuration](docs/configuration.md) | All config options explained |
-| [v1 Guide](specs/001-self-improving-organism/quickstart.md) | v1 telemetry/optimization features |
-| [v2 Guide](specs/002-sio-redesign/quickstart.md) | v2 mining/suggestion features |
+### Core Pipeline Commands
 
-## CLI Commands
-
-### v2 — Session Mining & Suggestions
 | Command | Description |
 |---------|-------------|
-| `sio mine --since "3 days"` | Mine errors from recent sessions |
-| `sio patterns` | Show discovered error patterns ranked |
-| `sio datasets` | List built datasets |
-| `sio datasets collect` | Collect dataset from criteria |
-| `sio suggest-review` | Interactive suggestion review |
-| `sio approve <id>` | Approve a suggestion |
-| `sio reject <id>` | Reject a suggestion |
-| `sio rollback <id>` | Rollback an applied change |
-| `sio schedule install` | Install daily/weekly cron jobs |
+| `sio mine --since "3 days"` | Mine errors from recent session transcripts |
+| `sio mine --source specstory` | Mine only SpecStory markdown files |
+| `sio mine --source jsonl` | Mine only Claude JSONL transcripts |
+| `sio patterns` | Show discovered error patterns, ranked by importance |
+| `sio errors` | List individual error records with filtering |
+| `sio errors --grep "FileNotFound"` | Search errors by text |
+
+### Dataset Management
+
+| Command | Description |
+|---------|-------------|
+| `sio datasets` | List all built datasets |
+| `sio datasets collect` | Build datasets from mined patterns |
+| `sio datasets inspect <id>` | Inspect a specific dataset |
+
+### Suggestions & Review
+
+| Command | Description |
+|---------|-------------|
+| `sio suggest` | Generate suggestions from patterns (supports `--mode auto\|hitl`) |
+| `sio suggest-review` | Interactive review of pending suggestions |
+| `sio approve <id>` | Approve a suggestion (with optional `--note`) |
+| `sio reject <id>` | Reject a suggestion (with optional `--note`) |
+| `sio apply <id>` | Apply an approved suggestion to its target file |
+| `sio rollback <id>` | Revert an applied change |
+
+### Ground Truth Management
+
+| Command | Description |
+|---------|-------------|
+| `sio ground-truth seed` | Seed initial ground truth corpus |
+| `sio ground-truth generate` | Generate new ground truth examples |
+| `sio ground-truth review` | Review and label ground truth entries |
+
+### Configuration & Setup
+
+| Command | Description |
+|---------|-------------|
+| `sio install` | Install SIO hooks and skills into Claude Code |
+| `sio config show` | Display current configuration |
+| `sio config test` | Test configuration validity |
+| `sio schedule install` | Install cron jobs for passive analysis |
 | `sio schedule status` | Check scheduler status |
-| `sio status` | Show pipeline stats |
+| `sio status` | Show full pipeline statistics |
 
-### v1 — Telemetry & Optimization
+### Telemetry & Maintenance
+
 | Command | Description |
 |---------|-------------|
-| `sio install` | Install SIO hooks for Claude Code |
 | `sio health` | Show per-skill health metrics |
 | `sio review` | Batch-review unlabeled invocations |
 | `sio optimize <skill>` | Run DSPy prompt optimization |
-| `sio purge` | Purge old telemetry records |
-| `sio export` | Export telemetry data |
+| `sio purge --days 90` | Purge old telemetry records |
+| `sio export --format json` | Export telemetry data |
 
-## Project Structure
+## Architecture
 
 ```
 src/sio/
-  cli/main.py              # Click CLI entry point
-  mining/                   # Session file parsers + error extraction
-    specstory_parser.py     # SpecStory markdown parser
-    jsonl_parser.py         # Claude JSONL transcript parser
-    error_extractor.py      # Classify errors (4 types)
-    time_filter.py          # Flexible date filtering (dateutil)
-    pipeline.py             # Orchestrates mine → store
-  clustering/               # Error pattern discovery
-    pattern_clusterer.py    # fastembed + greedy clustering
-    ranker.py               # Frequency * recency scoring
-  datasets/                 # Training data management
-    builder.py              # Build pos/neg datasets per pattern
-    accumulator.py          # Auto-accumulate errors into datasets
-    lineage.py              # Track contributing sessions
-  suggestions/              # Improvement proposals
-    generator.py            # Generate suggestions from patterns
-    confidence.py           # Score suggestion quality
-    home_file.py            # Write ~/.sio/suggestions.md
-  review/                   # Human-in-the-loop
-    reviewer.py             # Approve/reject/defer
-    tagger.py               # AI + human tagging
-  applier/                  # Change application
-    writer.py               # Apply changes to config files
-    rollback.py             # Revert applied changes
-    changelog.py            # Log all changes
-  scheduler/                # Passive automation
-    runner.py               # Orchestrate full pipeline
-    cron.py                 # Install/manage cron jobs
-  core/                     # Shared infrastructure (v1)
-    db/                     # SQLite schema, queries, retention
-    config.py               # Configuration management
-    embeddings/             # fastembed + API backends
-    arena/                  # Drift/collision detection
-    telemetry/              # v1 hook-based capture
-    feedback/               # v1 labeling system
-    health/                 # v1 health aggregator
-    dspy/                   # v1 DSPy optimization
-  adapters/claude_code/     # Claude Code integration
-    hooks/                  # PostToolUse hook
-    skills/                 # sio-feedback, sio-health, etc.
-    installer.py            # One-command setup
+├── cli/                          # Click CLI entry point (25+ commands)
+│   └── main.py
+│
+├── mining/                       # Stage 1: Session transcript parsing
+│   ├── specstory_parser.py       #   SpecStory markdown → structured records
+│   ├── jsonl_parser.py           #   Claude JSONL transcripts → structured records
+│   ├── error_extractor.py        #   Classify errors into 4 types
+│   ├── time_filter.py            #   Flexible date/time filtering (dateutil)
+│   └── pipeline.py               #   Orchestrates mine → store
+│
+├── clustering/                   # Stage 2: Pattern discovery
+│   ├── pattern_clusterer.py      #   fastembed embeddings + greedy cosine clustering
+│   └── ranker.py                 #   Frequency × recency × spread scoring
+│
+├── datasets/                     # Stage 3: Training data
+│   ├── builder.py                #   Build pos/neg datasets per pattern
+│   ├── accumulator.py            #   Auto-accumulate new errors into datasets
+│   └── lineage.py                #   Track which sessions contributed
+│
+├── suggestions/                  # Stage 4: Improvement proposals
+│   ├── generator.py              #   Template-based suggestion generation
+│   ├── dspy_generator.py         #   DSPy-powered suggestion generation
+│   ├── confidence.py             #   Score suggestion quality
+│   └── home_file.py              #   Write ~/.sio/suggestions.md summary
+│
+├── review/                       # Stage 5: Human-in-the-loop
+│   ├── reviewer.py               #   Approve / reject / defer
+│   └── tagger.py                 #   AI + human tagging
+│
+├── applier/                      # Stage 6: Change application
+│   ├── writer.py                 #   Apply changes to config files (path-validated)
+│   ├── rollback.py               #   Revert applied changes (with safety checks)
+│   └── changelog.py              #   Log all changes
+│
+├── scheduler/                    # Stage 7: Passive automation
+│   ├── runner.py                 #   Orchestrate full pipeline
+│   └── cron.py                   #   Install/manage cron jobs
+│
+├── ground_truth/                 # Training corpus management
+│   ├── corpus.py                 #   Ground truth corpus operations
+│   ├── seeder.py                 #   Seed initial examples
+│   ├── generator.py              #   Generate new examples
+│   └── reviewer.py               #   Review/label ground truth
+│
+├── core/                         # Shared infrastructure
+│   ├── db/                       #   SQLite schema, queries, retention (WAL mode, FK enforced)
+│   ├── config.py                 #   TOML configuration loader
+│   ├── embeddings/               #   fastembed local + API backends with caching
+│   ├── dspy/                     #   DSPy modules, signatures, optimizer, LM factory
+│   ├── arena/                    #   Drift detection, regression testing, collision checks
+│   ├── telemetry/                #   PostToolUse hook capture, secret scrubbing
+│   ├── feedback/                 #   Batch review, labeling, pattern flagging
+│   └── health/                   #   Per-skill health aggregation
+│
+└── adapters/
+    └── claude_code/              # Claude Code integration
+        ├── installer.py          #   One-command hook + skill setup
+        ├── hooks/                #   PostToolUse hook (captures tool invocations)
+        └── skills/               #   8 bundled slash commands
+            ├── sio-scan/         #     Mine recent sessions
+            ├── sio-suggest/      #     Generate suggestions
+            ├── sio-review/       #     Interactive review
+            ├── sio-apply/        #     Apply a suggestion
+            ├── sio-status/       #     Pipeline status
+            ├── sio-health/       #     Health metrics
+            ├── sio-optimize/     #     DSPy optimization
+            └── sio-feedback/     #     Submit feedback
 ```
 
-## Requirements
+## Error Types
 
-- Python 3.11+
-- Dependencies: click, rich, fastembed, numpy, python-dateutil, dspy
+SIO classifies errors into four categories:
 
-## Tests
+| Type | What It Catches | Example |
+|------|----------------|---------|
+| **tool_failure** | Tool calls that return errors | `FileNotFoundError`, `PermissionError`, command timeouts |
+| **user_correction** | User telling the agent it did the wrong thing | "That's not what I asked", "Wrong file" |
+| **repeated_attempt** | Same tool called 3+ times with similar input | Agent retrying a failing command |
+| **agent_admission** | Agent acknowledging its own mistake | "I should have read the file first" |
+
+## Suggestion Targets
+
+Generated suggestions can target multiple configuration surfaces:
+
+| Target | File | What Changes |
+|--------|------|-------------|
+| `claude_md_rule` | `CLAUDE.md` | Add behavioral rules the agent follows |
+| `hook_config` | `.claude/settings.json` | Modify hook behavior |
+| `skill_update` | `skills/*/SKILL.md` | Update skill instructions |
+| `mcp_config` | MCP server config | Adjust MCP tool settings |
+| `settings_config` | `.claude/settings.json` | Modify Claude Code settings |
+| `project_config` | Project files | Update project-level config |
+
+## DSPy Integration
+
+SIO optionally uses [DSPy](https://github.com/stanfordnlp/dspy) for smarter suggestion generation:
+
+- **Modules**: `SuggestionModule` generates structured suggestions from error patterns
+- **Signatures**: Typed input/output schemas for LLM calls
+- **Optimization**: Bootstrap few-shot optimization with ground truth corpus
+- **Fallback**: Template engine works without DSPy or any LLM API key
+
+Configure via `~/.sio/config.toml`:
+
+```toml
+[llm]
+provider = "openai"           # or "anthropic"
+model = "gpt-4o-mini"
+max_tokens = 2000
+
+[dspy]
+enabled = true
+optimizer = "bootstrap"
+```
+
+## Data Storage
+
+All data is stored locally in SQLite (WAL mode, FK enforced):
+
+```
+~/.sio/
+├── sio.db                    # Main database (error_records, patterns, suggestions, etc.)
+├── config.toml               # User configuration
+├── datasets/                 # Built training datasets (JSON)
+├── ground_truth/             # Ground truth corpus
+├── optimized/                # DSPy optimized modules
+└── suggestions.md            # Human-readable suggestion summary
+```
+
+**Key tables**: `error_records`, `patterns`, `pattern_errors`, `datasets`, `suggestions`, `applied_changes`, `ground_truth`, `optimized_modules`, `behavior_invocations`
+
+## Security
+
+- **Path validation**: All file writes are restricted to `~/.sio/`, `~/.claude/`, and the current working directory. Arbitrary path traversal is blocked.
+- **Secret scrubbing**: API keys (OpenAI, Anthropic, GitHub, AWS), SSH/PEM keys, JWTs, and bearer tokens are scrubbed before any LLM processing.
+- **Rollback safety**: Applied changes check for manual edits before overwriting. Use `--force` to override.
+- **No data exfiltration**: All processing is local. LLM calls (when DSPy is enabled) only send scrubbed error summaries, never raw session content.
+
+## Development
+
+### Setup
 
 ```bash
-pytest                    # 756 tests
-ruff check src/ tests/    # Linting
+git clone https://github.com/gyasisutton/SIO.git
+cd SIO
+pip install -e ".[dev]"
 ```
+
+### Tests
+
+```bash
+# Run the full suite (1040 tests)
+pytest
+
+# Run with coverage
+pytest --cov=sio
+
+# Run specific test categories
+pytest tests/unit/              # Fast unit tests
+pytest tests/integration/       # Integration tests (slower, uses embeddings)
+
+# Lint
+ruff check src/ tests/
+```
+
+### Test Coverage
+
+| Module | Tests | Coverage |
+|--------|-------|---------|
+| Mining (parsers, extractors, pipeline) | 180+ | Core parsing, error classification, time filtering |
+| Clustering (embeddings, ranker) | 90+ | Cosine similarity, pattern ranking, edge cases |
+| Datasets (builder, accumulator, lineage) | 60+ | Positive/negative generation, lineage tracking |
+| Suggestions (generator, DSPy, confidence) | 120+ | Template + DSPy generation, confidence scoring |
+| Review (approve, reject, defer) | 40+ | State transitions, persistence |
+| Applier (writer, rollback) | 50+ | Path validation, safety checks, rollback |
+| Core (DB, config, embeddings, arena) | 200+ | Schema, queries, FK enforcement, drift detection |
+| CLI (commands, flags, output) | 150+ | All 25+ commands with Click test runner |
+| Integration (full pipeline) | 50+ | End-to-end mine → suggest → apply |
+
+## Configuration
+
+Create `~/.sio/config.toml`:
+
+```toml
+# Mining
+[mining]
+source_dirs = ["~/.claude/projects"]   # Where to find session transcripts
+since = "7 days"                        # Default look-back window
+source_type = "both"                    # "specstory", "jsonl", or "both"
+
+# Clustering
+[clustering]
+similarity_threshold = 0.70             # Cosine similarity for grouping
+min_cluster_size = 2                    # Minimum errors per pattern
+
+# Suggestions
+[suggestions]
+auto_approve_threshold = 0.95           # Auto-approve above this confidence
+mode = "hitl"                           # "hitl" (human review) or "auto"
+
+# LLM (optional, for DSPy-powered suggestions)
+[llm]
+provider = "openai"
+model = "gpt-4o-mini"
+max_tokens = 2000
+
+# Scheduling
+[schedule]
+daily = true
+weekly_report = true
+```
+
+## Roadmap
+
+- [ ] Multi-platform support (Cursor, Windsurf, Copilot)
+- [ ] Web dashboard for suggestion review
+- [ ] Team-level pattern sharing
+- [ ] Custom embedding model fine-tuning
+- [ ] VS Code extension
 
 ## License
 
-MIT
+[MIT](LICENSE)
+
+## Author
+
+Gyasi Sutton — [@gyasisutton](https://github.com/gyasisutton)
