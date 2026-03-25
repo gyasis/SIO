@@ -27,6 +27,17 @@ Session Transcripts        Error Patterns           Suggestions            Confi
                             similarity)                  |
                                                   Human Review
                                                 (approve / reject)
+
+v2.1 additions:
+
+Session Transcripts  --->  Tool Flows    --->  Distilled       --->  Training Data
+(same input)               (n-gram +           Playbooks              (JSONL / Parquet)
+                            RLE compress)      (winning path           |
+                                                extraction)      DSPy Training
+                                                    |            (BootstrapFewShot / GEPA)
+                                              Recall Queries
+                                              (topic filter +
+                                               Gemini polish)
 ```
 
 **The full pipeline:**
@@ -41,6 +52,12 @@ Session Transcripts        Error Patterns           Suggestions            Confi
 | **Review** | Human approves, rejects, or defers each suggestion | `sio suggest-review` |
 | **Apply** | Write approved changes to target files with full rollback support | `sio apply <id>` |
 | **Schedule** | Passive daily/weekly cron runs keep suggestions fresh | `sio schedule install` |
+| **Flows** | Discover recurring positive tool sequences (n-gram + RLE, no LLM) | `sio flows` |
+| **Distill** | Extract the winning path from a long session (removes failures/retries) | `sio distill --latest` |
+| **Recall** | Topic-filtered distill with struggle-fix detection + optional Gemini polish | `sio recall "query"` |
+| **Export** | Export JSONL/Parquet training data (routing, recovery, flow) | `sio export-dataset --task all` |
+| **Collect** | Store labeled recall examples for DSPy training | `sio collect-recall "query"` |
+| **Train** | DSPy BootstrapFewShot/GEPA optimization on exported datasets | `sio train --task all` |
 
 ## Quick Start
 
@@ -55,7 +72,10 @@ Session Transcripts        Error Patterns           Suggestions            Confi
 # Clone and install in editable mode
 git clone https://github.com/gyasisutton/SIO.git
 cd SIO
-pip install -e ".[dev]"
+pip install -e ".[all,dev]"
+
+# Install Claude Code slash commands (10 skills)
+bash scripts/install-skills.sh
 
 # Verify
 sio --version
@@ -140,6 +160,29 @@ sio status
 | `sio schedule status` | Check scheduler status |
 | `sio status` | Show full pipeline statistics |
 
+### Positive Pattern Mining & Recall (v2.1)
+
+| Command | Description |
+|---------|-------------|
+| `sio flows` | Discover recurring positive tool sequences (n-gram + RLE compression) |
+| `sio flows --min-support 3` | Only show flows that appear in 3+ sessions |
+| `sio distill --latest` | Extract winning path from the most recent session |
+| `sio distill --session <id>` | Distill a specific session |
+| `sio recall "cube query optimization"` | Topic-filtered distill with struggle-fix detection |
+| `sio recall "query" --polish` | Same as above + Gemini polish pass (~$0.02-0.05) |
+
+### Training Data & DSPy (v2.1)
+
+| Command | Description |
+|---------|-------------|
+| `sio export-dataset --task routing` | Export routing task training data (JSONL) |
+| `sio export-dataset --task recovery` | Export recovery task training data |
+| `sio export-dataset --task flow` | Export flow task training data |
+| `sio export-dataset --task all` | Export all tasks (JSONL + Parquet) |
+| `sio collect-recall "query"` | Store labeled recall examples for DSPy training |
+| `sio train --task all` | Run DSPy BootstrapFewShot/GEPA on exported datasets |
+| `sio train --task recall --optimizer gepa` | Train recall model with GEPA optimizer |
+
 ### Telemetry & Maintenance
 
 | Command | Description |
@@ -162,7 +205,11 @@ src/sio/
 │   ├── jsonl_parser.py           #   Claude JSONL transcripts → structured records
 │   ├── error_extractor.py        #   Classify errors into 4 types
 │   ├── time_filter.py            #   Flexible date/time filtering (dateutil)
-│   └── pipeline.py               #   Orchestrates mine → store
+│   ├── pipeline.py               #   Orchestrates mine → store
+│   ├── flow_extractor.py         #   Tool sequence extraction, RLE compression, success heuristics
+│   ├── flow_pipeline.py          #   Flow mining pipeline + aggregation queries
+│   ├── session_distiller.py      #   Session → playbook distillation (winning path extraction)
+│   └── recall.py                 #   Topic filtering, struggle detection, Gemini polish prompt builder
 │
 ├── clustering/                   # Stage 2: Pattern discovery
 │   ├── pattern_clusterer.py      #   fastembed embeddings + greedy cosine clustering
@@ -208,19 +255,27 @@ src/sio/
 │   ├── feedback/                 #   Batch review, labeling, pattern flagging
 │   └── health/                   #   Per-skill health aggregation
 │
+├── export/                       # v2.1: Training data export
+│   └── dataset_builder.py       #   JSONL/Parquet dataset builders (routing, recovery, flow)
+│
+├── training/                    # v2.1: DSPy training pipeline
+│   └── recall_trainer.py        #   DSPy signatures, training loop, Azure OpenAI support
+│
 └── adapters/
     └── claude_code/              # Claude Code integration
         ├── installer.py          #   One-command hook + skill setup
         ├── hooks/                #   PostToolUse hook (captures tool invocations)
-        └── skills/               #   8 bundled slash commands
+        └── skills/               #   10 bundled slash commands
+            ├── sio/              #     Main entry point
             ├── sio-scan/         #     Mine recent sessions
             ├── sio-suggest/      #     Generate suggestions
             ├── sio-review/       #     Interactive review
             ├── sio-apply/        #     Apply a suggestion
             ├── sio-status/       #     Pipeline status
-            ├── sio-health/       #     Health metrics
-            ├── sio-optimize/     #     DSPy optimization
-            └── sio-feedback/     #     Submit feedback
+            ├── sio-flows/        #     Discover positive tool flows
+            ├── sio-distill/      #     Distill session to playbook
+            ├── sio-recall/       #     Topic-filtered recall
+            └── sio-export/       #     Export training data
 ```
 
 ## Error Types
@@ -283,7 +338,28 @@ All data is stored locally in SQLite (WAL mode, FK enforced):
 └── suggestions.md            # Human-readable suggestion summary
 ```
 
-**Key tables**: `error_records`, `patterns`, `pattern_errors`, `datasets`, `suggestions`, `applied_changes`, `ground_truth`, `optimized_modules`, `behavior_invocations`
+**Key tables**: `error_records`, `patterns`, `pattern_errors`, `datasets`, `suggestions`, `applied_changes`, `ground_truth`, `optimized_modules`, `behavior_invocations`, `flow_events`, `recall_examples`
+
+## Two-Tier Cost Model (v2.1)
+
+SIO v2.1 separates commands into two cost tiers:
+
+| Tier | Cost | Commands | Engine |
+|------|------|----------|--------|
+| **Cheap** | $0 | `mine`, `errors`, `flows`, `distill`, `recall` (no `--polish`), `export-dataset` | Regex + SQLite only |
+| **Expensive** | ~$0.02-0.05 | `suggest`, `recall --polish`, `train` | LLM (Azure gpt-5-mini or any litellm model) |
+
+## DSPy Training Pipeline (v2.1)
+
+The full training loop from raw sessions to optimized models:
+
+```
+sio mine → sio flows → sio export-dataset    (collect data — $0)
+sio collect-recall "query"                     (label examples — $0)
+gemini polish → save polished runbook          (clean the data — ~$0.02)
+sio train --task all                           (train DSPy modules — ~$0.05)
+sio recall "query"                             (uses trained model — $0)
+```
 
 ## Security
 
@@ -299,7 +375,8 @@ All data is stored locally in SQLite (WAL mode, FK enforced):
 ```bash
 git clone https://github.com/gyasisutton/SIO.git
 cd SIO
-pip install -e ".[dev]"
+pip install -e ".[all,dev]"
+bash scripts/install-skills.sh   # Install 10 Claude Code slash commands
 ```
 
 ### Tests

@@ -190,6 +190,241 @@ Reports: errors mined, patterns found, datasets built, pending reviews, applied 
 
 ---
 
+## v2.1 Commands — Positive Pattern Mining, Recall & Training
+
+### `sio flows`
+
+Discover recurring positive tool sequences using n-gram extraction and RLE compression. No LLM required ($0).
+
+```bash
+sio flows [--min-support <n>] [--since <time>] [--top <n>]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--min-support` | `2` | Minimum number of sessions a flow must appear in |
+| `--since` | `7 days` | Time window for session analysis |
+| `--top` | `20` | Maximum number of flows to display |
+
+**How it works:**
+
+1. Parses session transcripts for tool call sequences
+2. Extracts n-grams (2-5 tool sequences)
+3. Applies RLE compression to collapse repeated tool calls
+4. Scores flows using success heuristics (no errors after the sequence)
+5. Stores results in the `flow_events` table
+
+**Examples:**
+
+```bash
+# Show flows from the last 7 days
+sio flows
+
+# Only show flows appearing in 3+ sessions
+sio flows --min-support 3
+
+# Analyze the last month
+sio flows --since "1 month"
+```
+
+---
+
+### `sio distill`
+
+Extract the winning path from a session, removing failed attempts, retries, and dead ends. No LLM required ($0).
+
+```bash
+sio distill [--latest] [--session <id>] [--output <path>]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--latest` | — | Distill the most recent session |
+| `--session` | — | Distill a specific session by ID |
+| `--output` | stdout | Write the playbook to a file |
+
+**What it produces:**
+
+A focused playbook containing only the steps that led to a successful outcome. Failed tool calls, repeated attempts, and exploratory dead ends are stripped out.
+
+**Examples:**
+
+```bash
+# Distill the latest session
+sio distill --latest
+
+# Distill a specific session and save to file
+sio distill --session abc123 --output playbook.md
+```
+
+---
+
+### `sio recall`
+
+Topic-filtered distillation with struggle-then-fix detection and optional Gemini polish.
+
+```bash
+sio recall "<query>" [--polish] [--since <time>]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `<query>` | (required) | Topic to search for across sessions |
+| `--polish` | off | Apply Gemini polish pass (~$0.02-0.05) |
+| `--since` | `30 days` | Time window to search |
+
+**How it works:**
+
+1. Filters sessions by topic relevance to the query
+2. Detects struggle-then-fix patterns (repeated failures followed by a success)
+3. Extracts the fix as the key insight
+4. Optionally sends to Gemini for polishing into a clean runbook
+
+**Cost:** $0 without `--polish`, ~$0.02-0.05 with `--polish`.
+
+**Examples:**
+
+```bash
+# Find how you solved dbt model issues
+sio recall "dbt model debugging"
+
+# Same but with Gemini cleanup
+sio recall "dbt model debugging" --polish
+
+# Search a wider window
+sio recall "Snowflake permissions" --since "3 months"
+```
+
+---
+
+### `sio export-dataset`
+
+Export JSONL and Parquet training datasets for DSPy optimization.
+
+```bash
+sio export-dataset --task <task> [--output-dir <path>] [--format <fmt>] [--dry-run]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--task` | (required) | Task type: `routing`, `recovery`, `flow`, or `all` |
+| `--output-dir` | `~/.sio/datasets/` | Output directory |
+| `--format` | `jsonl` | Output format: `jsonl` or `parquet` |
+| `--dry-run` | off | Show what would be exported without writing files |
+
+**Task types:**
+
+| Task | Training Data | Use Case |
+|------|--------------|----------|
+| `routing` | Error → correct tool mapping | Teach the agent which tool to use |
+| `recovery` | Failed attempt → recovery steps | Teach error recovery patterns |
+| `flow` | Tool sequence → outcome | Teach positive workflows |
+
+**Examples:**
+
+```bash
+# Export all tasks as JSONL
+sio export-dataset --task all
+
+# Export only flow data as Parquet
+sio export-dataset --task flow --format parquet
+
+# Preview what would be exported
+sio export-dataset --task all --dry-run
+```
+
+---
+
+### `sio collect-recall`
+
+Store labeled recall examples for DSPy training. These examples serve as ground truth for optimizing the recall module.
+
+```bash
+sio collect-recall "<query>" [--label <label>]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `<query>` | (required) | The recall query to store |
+| `--label` | — | Quality label for the example |
+
+**Examples:**
+
+```bash
+# Collect an example from a topic search
+sio collect-recall "fixing Playwright timeouts"
+
+# Collect with an explicit quality label
+sio collect-recall "Cube API connection" --label good
+```
+
+Stored examples go into the `recall_examples` DB table and are used by `sio train --task recall`.
+
+---
+
+### `sio train`
+
+Run DSPy BootstrapFewShot or GEPA optimization on exported datasets. Requires an LLM API key (~$0.02-0.05 per run).
+
+```bash
+sio train --task <task> [--optimizer <opt>] [--model <model>] [--max-demos <n>]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--task` | (required) | Task: `routing`, `recovery`, `flow`, `recall`, or `all` |
+| `--optimizer` | `bootstrap` | Optimizer: `bootstrap` (BootstrapFewShot) or `gepa` (GEPA) |
+| `--model` | config default | LLM model (any litellm-compatible model or Azure OpenAI) |
+| `--max-demos` | `8` | Maximum few-shot examples |
+
+**Full training pipeline:**
+
+```bash
+# Step 1: Collect data ($0)
+sio mine --since "30 days"
+sio flows
+sio export-dataset --task all
+
+# Step 2: Label recall examples ($0)
+sio collect-recall "common topic"
+
+# Step 3: Polish with Gemini (optional, ~$0.02)
+sio recall "common topic" --polish
+
+# Step 4: Train DSPy modules (~$0.05)
+sio train --task all
+
+# Step 5: Use the trained model ($0)
+sio recall "new query"
+```
+
+**Examples:**
+
+```bash
+# Train all tasks with default optimizer
+sio train --task all
+
+# Train recall with GEPA optimizer
+sio train --task recall --optimizer gepa
+
+# Train with a specific model
+sio train --task routing --model azure/gpt-5-mini
+```
+
+---
+
 ## v1 Commands — Telemetry & Optimization
 
 ### `sio install`

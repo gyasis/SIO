@@ -13,12 +13,17 @@
 git clone https://github.com/yourusername/SIO.git
 cd SIO
 
-# Install in editable mode with dev dependencies
-pip install -e ".[dev]"
+# Install in editable mode with all dependencies
+pip install -e ".[all,dev]"
+
+# Install Claude Code slash commands (10 skills)
+bash scripts/install-skills.sh
 
 # Verify installation
 sio --version
 ```
+
+The `[all]` extra includes DSPy, Parquet, and Gemini polish dependencies. If you only need the core error mining pipeline, `pip install -e ".[dev]"` is sufficient.
 
 ## First Run
 
@@ -106,6 +111,43 @@ Check schedule status:
 sio schedule status
 ```
 
+### 5. Discover positive tool flows (v2.1)
+
+```bash
+sio flows
+```
+
+This finds recurring tool sequences that led to successful outcomes — patterns worth repeating.
+
+### 6. Distill a session to a playbook (v2.1)
+
+```bash
+sio distill --latest
+```
+
+Extracts the winning path from your most recent session, stripping out failed attempts and dead ends.
+
+### 7. Topic-filtered recall (v2.1)
+
+```bash
+sio recall "dbt model debugging"
+```
+
+Searches your session history for a specific topic, detects struggle-then-fix patterns, and returns a focused playbook. Add `--polish` for a Gemini-cleaned version (~$0.02).
+
+### 8. Quick verification of v2.1 features
+
+```bash
+# Verify flows work
+sio flows --min-support 1
+
+# Verify distill works
+sio distill --latest
+
+# Verify export works
+sio export-dataset --task all --dry-run
+```
+
 ## What Happens Next
 
 SIO runs passively in the background:
@@ -127,6 +169,18 @@ pytest
 ```
 
 All 756 tests should pass.
+
+## Setup on a New Machine (Quick Reference)
+
+```bash
+git clone <repo>
+cd SIO
+pip install -e ".[all,dev]"
+bash scripts/install-skills.sh
+sio mine --since "7 days"
+```
+
+This gives you the full pipeline: error mining, flow discovery, session distillation, recall, dataset export, and DSPy training.
 
 ## Next Steps
 
