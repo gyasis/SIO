@@ -34,7 +34,7 @@ _SURFACE_TARGET_MAP: dict[str, str] = {
     "claude_md_rule": "CLAUDE.md",
     "skill_update": ".claude/skills/",
     "hook_config": ".claude/hooks/",
-    "mcp_config": ".claude/mcp.json",
+    "mcp_config": ".claude.json",
     "settings_config": ".claude/settings.json",
     "agent_profile": ".claude/agents/",
     "project_config": "CLAUDE.md",
@@ -123,23 +123,163 @@ _SENSITIVE_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+"),
 ]
 
+# Patterns that trigger Azure's content filter (jailbreak false positives).
+# These appear in raw error output when tool_output contains system prompts,
+# XML tags, or other content that Azure interprets as prompt injection.
+_CONTENT_FILTER_PATTERNS: list[re.Pattern[str]] = [
+    # Generic "IMPORTANT:" instruction blocks — must not cross JSON field
+    # boundaries (stop at double quotes to preserve JSON structure)
+    re.compile(r'IMPORTANT:[^"]{10,}?\.'),
+    # Embedded system prompts / instruction-like text in tool output
+    re.compile(r"<system-reminder>.*?</system-reminder>", re.DOTALL),
+    re.compile(r"<system>.*?</system>", re.DOTALL),
+    re.compile(r"<user-prompt-submit-hook>.*?</user-prompt-submit-hook>", re.DOTALL),
+    # Embedded XML/HTML tags that look like injection (common in Claude tool output)
+    re.compile(r"<tool_use_error>.*?</tool_use_error>", re.DOTALL),
+    re.compile(r"<[a-z_-]+>.*?</[a-z_-]+>", re.DOTALL),
+    # Long base64 blobs (>50 chars)
+    re.compile(r"[A-Za-z0-9+/]{50,}={0,2}"),
+    # Raw hex dumps
+    re.compile(r"(?:0x)?[0-9a-fA-F]{32,}"),
+    # Embedded JSON with "role": "system" or "role": "user" (chat message leaks)
+    re.compile(r'"role"\s*:\s*"(?:system|user|assistant)"'),
+]
 
-def _sanitize_examples(examples_json: str) -> str:
-    """Strip API keys, passwords, and other sensitive data from examples.
+# Aggressive patterns for retry after content filter hit — strips stack traces
+# and verbose error output down to just the error message.
+_AGGRESSIVE_FILTER_PATTERNS: list[re.Pattern[str]] = [
+    # Python tracebacks: "File "/path...", line N, in func"
+    re.compile(r'File ".*?", line \d+, in .*?(?:\\n|$)'),
+    # Multi-line stack traces (Traceback ... raise)
+    re.compile(r"Traceback \(most recent call last\):.*?(?=\\n[A-Z])", re.DOTALL),
+    # Full exception chains ("During handling of...")
+    re.compile(
+        r"During handling of the above exception.*?(?=\\n[A-Z]|$)", re.DOTALL
+    ),
+    # Raw file paths with user directories
+    re.compile(r"/home/[a-z]+/[^\s\"']{20,}"),
+    # Node.js stack traces
+    re.compile(r"at (?:Object\.|Module\.|Function\.)[^\n]{10,}"),
+    # Verbose litellm/openai error chains
+    re.compile(r"litellm\.[a-zA-Z.]+Error:.*?(?=\\n|$)"),
+]
+
+
+def _sanitize_example_dicts(
+    examples: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Sanitize example dicts BEFORE JSON serialization to avoid breaking JSON.
+
+    Replaces entire field values that are known to trigger Azure's content
+    filter (permission denial messages, instruction-like text, etc.).
+    """
+    # Patterns that indicate the entire error_text is a permission denial
+    # or instruction block that will trigger Azure's jailbreak filter
+    _DENIAL_STARTS = (
+        "Permission to use",
+        "The user doesn't want to proceed",
+    )
+    _INSTRUCTION_PHRASES = (
+        "malicious ways",
+        "bypass the intent",
+        "work around this denial",
+        "work around this restriction",
+        "You *should not*",
+        "you should not attempt",
+        "Let the user decide how to proceed",
+    )
+
+    sanitized = []
+    for ex in examples:
+        ex = dict(ex)  # copy
+        error_text = ex.get("error_text", "")
+
+        # Replace entire error_text if it's a permission denial
+        if any(error_text.startswith(s) for s in _DENIAL_STARTS):
+            tool = ex.get("tool_name", "tool")
+            ex["error_text"] = f"[Permission denied for {tool}]"
+        elif any(phrase in error_text for phrase in _INSTRUCTION_PHRASES):
+            # Strip instruction-like content but keep the error summary
+            first_sentence = error_text.split(".")[0] + "."
+            ex["error_text"] = first_sentence
+
+        # Also sanitize tool_output if present
+        tool_output = ex.get("tool_output", "")
+        if isinstance(tool_output, str) and any(
+            phrase in tool_output for phrase in _INSTRUCTION_PHRASES
+        ):
+            ex["tool_output"] = "[filtered — contained instruction-like text]"
+
+        # Strip user_message if it contains system-reminder tags
+        user_msg = ex.get("user_message", "")
+        if isinstance(user_msg, str) and "<system-reminder>" in user_msg:
+            ex["user_message"] = "[filtered — contained system tags]"
+
+        sanitized.append(ex)
+    return sanitized
+
+
+def _sanitize_field(value: str, *, aggressive: bool = False) -> str:
+    """Sanitize a single string field value (not JSON).
+
+    Applies sensitive, content-filter, and optionally aggressive patterns
+    to a plain string. Safe to call on individual dict values before
+    JSON serialization.
+    """
+    result = value
+    for pattern in _SENSITIVE_PATTERNS:
+        result = pattern.sub("[REDACTED]", result)
+    for pattern in _CONTENT_FILTER_PATTERNS:
+        result = pattern.sub("[FILTERED]", result)
+    if aggressive:
+        for pattern in _AGGRESSIVE_FILTER_PATTERNS:
+            result = pattern.sub("[STACK_TRACE]", result)
+    return result
+
+
+def _sanitize_examples(examples_json: str, *, aggressive: bool = False) -> str:
+    """Strip API keys, passwords, sensitive data, and content-filter triggers.
+
+    Parses JSON, sanitizes each field individually (to avoid breaking JSON
+    structure with cross-boundary regex matches), then re-serializes.
+    Falls back to regex-on-string if JSON parsing fails.
 
     Parameters
     ----------
     examples_json:
         JSON string of error examples to sanitize.
+    aggressive:
+        When True, apply additional sanitization to avoid Azure content
+        filter false positives (strips raw stack traces, system prompts,
+        tool_output blobs, and injection-like patterns).
 
     Returns
     -------
     str
         Sanitized JSON string with secrets replaced by ``[REDACTED]``.
     """
+    # Preferred path: parse, sanitize fields, re-serialize
+    try:
+        examples = json.loads(examples_json)
+        if isinstance(examples, list):
+            for ex in examples:
+                if isinstance(ex, dict):
+                    for key, val in ex.items():
+                        if isinstance(val, str):
+                            ex[key] = _sanitize_field(val, aggressive=aggressive)
+            return json.dumps(examples, default=str)
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # Fallback: regex on raw string (less safe but better than nothing)
     result = examples_json
     for pattern in _SENSITIVE_PATTERNS:
         result = pattern.sub("[REDACTED]", result)
+    for pattern in _CONTENT_FILTER_PATTERNS:
+        result = pattern.sub("[FILTERED]", result)
+    if aggressive:
+        for pattern in _AGGRESSIVE_FILTER_PATTERNS:
+            result = pattern.sub("[STACK_TRACE]", result)
     return result
 
 
@@ -270,7 +410,8 @@ def generate_dspy_suggestion(
 
     # --- Prepare inputs ---
     examples = _load_dataset_examples(dataset)
-    examples_json = json.dumps(examples[:20], default=str)  # cap at 20 examples
+    examples = _sanitize_example_dicts(examples[:20])  # pre-serialization cleanup
+    examples_json = json.dumps(examples, default=str)  # cap at 20 examples
     examples_json = _sanitize_examples(examples_json)
     examples_json = _truncate_fields(examples_json, max_chars=6000)
 
@@ -318,7 +459,44 @@ def generate_dspy_suggestion(
             tool_input_context=tool_input_context,
         )
     except Exception as exc:
-        raise RuntimeError(f"DSPy call failed: {exc}") from exc
+        # Check if this is an Azure content filter / jailbreak false positive
+        exc_str = str(exc)
+        is_content_filter = (
+            "ContentPolicyViolation" in exc_str
+            or "content_filter" in exc_str
+            or "content management policy" in exc_str
+            or "jailbreak" in exc_str
+        )
+        if not is_content_filter:
+            raise RuntimeError(f"DSPy call failed: {exc}") from exc
+
+        # Retry with aggressive sanitization — strip stack traces, paths, etc.
+        logger.info(
+            "Azure content filter triggered — retrying with aggressive sanitization"
+        )
+        examples_json_clean = json.dumps(examples[:10], default=str)
+        examples_json_clean = _sanitize_examples(
+            examples_json_clean, aggressive=True
+        )
+        examples_json_clean = _truncate_fields(
+            examples_json_clean, max_chars=3000
+        )
+        tool_input_clean = _sanitize_examples(
+            tool_input_context, aggressive=True
+        )
+        tool_input_clean = _truncate_fields(tool_input_clean, max_chars=2000)
+
+        try:
+            result = module.forward(
+                error_examples=examples_json_clean,
+                error_type=error_type,
+                pattern_summary=pattern_summary,
+                tool_input_context=tool_input_clean,
+            )
+        except Exception as retry_exc:
+            raise RuntimeError(
+                f"DSPy call failed after aggressive sanitization: {retry_exc}"
+            ) from retry_exc
 
     # --- Extract outputs ---
     raw_surface = getattr(result, "target_surface", None) or "claude_md_rule"

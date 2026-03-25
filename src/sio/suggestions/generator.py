@@ -33,32 +33,90 @@ from sio.suggestions.confidence import score_confidence
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-_DEFAULT_CHANGE_TYPE = "claude_md_rule"
-_DEFAULT_TARGET_FILE = "CLAUDE.md"
+_DEFAULT_CHANGE_TYPE = "tool_rule"
+_DEFAULT_TARGET_FILE = ".claude/rules/tools/"
 
 # Map change_type -> canonical target file
 _TARGET_FILE_MAP: dict[str, str] = {
     "claude_md_rule": "CLAUDE.md",
+    "tool_rule": ".claude/rules/tools/",
+    "domain_rule": ".claude/rules/domains/",
     "skill_update": ".claude/skills/",
     "hook_config": ".claude/hooks/",
+}
+
+# Known tool name -> rule file mapping for tiered routing
+_TOOL_RULE_FILES: dict[str, str] = {
+    "graphiti": ".claude/rules/tools/graphiti.md",
+    "atlassian": ".claude/rules/tools/atlassian.md",
+    "superset": ".claude/rules/tools/superset.md",
+    "playwright": ".claude/rules/tools/playwright.md",
+    "snowflake": ".claude/rules/tools/snowflake.md",
+    "read": ".claude/rules/tools/read.md",
+    "bash": ".claude/rules/tools/bash.md",
+    "clipboard": ".claude/rules/tools/clipboard.md",
 }
 
 
 def _infer_change_type(pattern: dict) -> str:
     """Infer the change type from pattern metadata.
 
+    CLAUDE.md Constitution: CLAUDE.md must stay under 200 lines.
+    Tool-specific rules go to ~/.claude/rules/tools/{tool}.md.
+    Domain rules go to ~/.claude/rules/domains/{domain}.md.
+    Only CORE behavioral rules go to CLAUDE.md.
+
     Rules
     -----
-    - Patterns whose tool_name contains "hook" -> "hook_config"
-    - Patterns whose tool_name contains "skill" -> "skill_md_update"
-    - Everything else (the vast majority) -> "claude_md_rule"
+    - Patterns about a specific tool -> "tool_rule" (routed to rules/tools/)
+    - Patterns about hooks -> "hook_config"
+    - Patterns about skills -> "skill_update"
+    - Patterns about general behavior -> "claude_md_rule" (ONLY if no tool match)
     """
     tool_name: str = (pattern.get("tool_name") or "").lower()
+
+    # Check if this matches a known tool rule file
+    for key in _TOOL_RULE_FILES:
+        if key in tool_name:
+            return "tool_rule"
+
     if "hook" in tool_name:
         return "hook_config"
     if "skill" in tool_name:
         return "skill_update"
-    return _DEFAULT_CHANGE_TYPE
+
+    # If tool_name is a specific tool (not "unknown"), route to tool rules
+    if tool_name and tool_name != "unknown" and tool_name != "unknown tool":
+        return "tool_rule"
+
+    # Only truly general patterns go to CLAUDE.md
+    return "claude_md_rule"
+
+
+def _infer_target_file(pattern: dict, change_type: str) -> str:
+    """Determine the exact target file for a suggestion.
+
+    For tool_rule type, tries to match to an existing rule file.
+    Falls back to creating a new one based on tool name.
+    """
+    if change_type != "tool_rule":
+        return _TARGET_FILE_MAP.get(change_type, "CLAUDE.md")
+
+    tool_name: str = (pattern.get("tool_name") or "").lower()
+
+    # Check known tool mappings
+    for key, filepath in _TOOL_RULE_FILES.items():
+        if key in tool_name:
+            return filepath
+
+    # For unknown tools, create a new rule file
+    # Sanitize tool name for filename
+    safe_name = tool_name.replace("mcp__", "").split("__")[0]
+    safe_name = safe_name.replace(" ", "_").replace("/", "_")
+    if safe_name:
+        return f".claude/rules/tools/{safe_name}.md"
+
+    return _TARGET_FILE_MAP.get(change_type, ".claude/rules/tools/")
 
 
 # ---------------------------------------------------------------------------
@@ -758,7 +816,7 @@ def generate_suggestions(
         examples = _load_dataset_examples(dataset)
 
         change_type = _infer_change_type(pattern)
-        target_file = _TARGET_FILE_MAP.get(change_type, _DEFAULT_TARGET_FILE)
+        target_file = _infer_target_file(pattern, change_type)
         confidence = score_confidence(pattern, dataset)
         proposed_change = _build_proposed_change(pattern, examples)
         description = _build_description(pattern, dataset, examples)
@@ -775,5 +833,70 @@ def generate_suggestions(
             "_using_dspy": False,
         }
         suggestions.append(suggestion_dict)
+
+    # --- SECOND PASS: Refine all suggestions for specificity ---
+    suggestions = _refine_all_suggestions(suggestions, datasets, _log)
+
+    return suggestions
+
+
+def _refine_all_suggestions(
+    suggestions: list[dict[str, Any]],
+    datasets: dict[str, dict[str, Any]],
+    _log: Any,
+) -> list[dict[str, Any]]:
+    """Second pass: refine generic suggestions into specific, actionable rules.
+
+    For each suggestion, extracts error samples from the dataset and runs
+    the refiner to produce concise, machine-actionable rules. If refinement
+    fails or produces lower-quality output, keeps the original.
+    """
+    try:
+        from sio.suggestions.refiner import refine_suggestion
+    except ImportError:
+        _log.debug("Refiner module not available, skipping second pass")
+        return suggestions
+
+    refined_count = 0
+    for suggestion in suggestions:
+        # Get the original proposed change
+        original = suggestion.get("proposed_change", "")
+        if not original:
+            continue
+
+        # Extract error samples from the dataset
+        pattern_id = suggestion.get("pattern_id")
+        # Find dataset by looking through all datasets for matching pattern
+        error_samples: list[str] = []
+        for ds in datasets.values():
+            ds_examples = _load_dataset_examples(ds)
+            for ex in ds_examples:
+                error_text = ex.get("error_text", "")
+                if error_text:
+                    error_samples.append(error_text)
+            if error_samples:
+                break  # Use first dataset with examples
+
+        if not error_samples:
+            continue
+
+        # Extract tool name from suggestion description
+        tool_name = "unknown"
+        desc = suggestion.get("description", "")
+        if "of " in desc:
+            # "Improve reliability of Bash: ..." -> "Bash"
+            tool_name = desc.split("of ", 1)[1].split(":")[0].strip()
+
+        try:
+            refined = refine_suggestion(original, error_samples, tool_name)
+            if refined != original:
+                suggestion["proposed_change"] = refined
+                suggestion["_refined"] = True
+                refined_count += 1
+        except Exception as exc:  # noqa: BLE001
+            _log.debug("Refinement failed for suggestion: %s", exc)
+
+    if refined_count > 0:
+        _log.info("Refined %d/%d suggestions", refined_count, len(suggestions))
 
     return suggestions

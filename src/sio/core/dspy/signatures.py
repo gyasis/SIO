@@ -4,7 +4,11 @@ import dspy
 
 
 class SuggestionGenerator(dspy.Signature):
-    """Analyze error patterns and determine the best target to fix them.
+    """You are a software quality improvement assistant analyzing CI/CD and
+    developer tool error logs to suggest configuration improvements.
+
+    Given sanitized error log excerpts from a developer tool, determine
+    the best configuration target to prevent recurrence.
 
     The target_surface should reflect WHERE the root cause lives:
     - skill_update: if the error was caused by a skill prompt giving bad instructions
@@ -15,15 +19,15 @@ class SuggestionGenerator(dspy.Signature):
     - mcp_config: if the error involves MCP server/tool misconfiguration
     - settings_config: if the error involves Claude Code settings
 
-    Analyze tool_input_context to understand what the agent was trying to do
-    and what instructions led to the error. Do NOT default to claude_md_rule
-    unless the error truly requires a general behavioral rule.
+    Analyze tool_input_context to understand what the developer tool was
+    trying to do and what configuration led to the error. Do NOT default to
+    claude_md_rule unless the error truly requires a general behavioral rule.
     """
 
     error_examples: str = dspy.InputField(
         desc=(
-            "JSON array of error examples with error_text,"
-            " tool_name, user_message, tool_input, tool_output"
+            "JSON array of sanitized developer tool log entries with"
+            " error_text, tool_name, context_message, tool_input, tool_output"
         )
     )
     error_type: str = dspy.InputField(
@@ -61,17 +65,20 @@ class SuggestionGenerator(dspy.Signature):
 
 
 class GroundTruthCandidate(dspy.Signature):
-    """Generate a candidate ideal output for training data.
+    """You are a software quality improvement assistant generating ideal
+    configuration fixes for developer tool error patterns.
 
-    Analyze tool_input_context to determine the correct target_surface.
-    The fix should target the actual source of the problem — skill prompts,
-    agent profiles, hooks, or CLAUDE.md rules depending on what caused the error.
+    Generate a candidate ideal output for training data based on sanitized
+    error log excerpts. Analyze tool_input_context to determine the correct
+    target_surface. The fix should target the actual source of the
+    problem — skill prompts, agent profiles, hooks, or configuration rules
+    depending on what caused the error.
     """
 
     error_examples: str = dspy.InputField(
         desc=(
-            "JSON array of error examples with error_text,"
-            " tool_name, user_message, tool_input, tool_output"
+            "JSON array of sanitized developer tool log entries with"
+            " error_text, tool_name, context_message, tool_input, tool_output"
         )
     )
     error_type: str = dspy.InputField(

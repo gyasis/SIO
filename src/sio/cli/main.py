@@ -349,6 +349,335 @@ def mine(since, project, source):
     click.echo(f"Found {result['errors_found']} errors")
 
 
+# ---------------------------------------------------------------------------
+# Flow discovery commands (v2.1 — positive pattern mining)
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.option(
+    "--since", default="14 days",
+    help='Time window: "7 days", "14 days", "30 days".',
+)
+@click.option("--project", default=None, help="Filter by project name.")
+@click.option(
+    "--min-count", default=3, type=int,
+    help="Minimum occurrence count to show a flow.",
+)
+@click.option(
+    "--limit", default=20, type=int,
+    help="Maximum number of flows to display.",
+)
+@click.option(
+    "--mine-first/--no-mine", default=True,
+    help="Mine flow data before querying (default: yes).",
+)
+def flows(since, project, min_count, limit, mine_first):
+    """Discover recurring positive tool sequence patterns.
+
+    Analyzes JSONL session transcripts to find tool sequences that
+    consistently lead to successful outcomes. No LLM required — pure
+    regex + sequence matching.
+
+    Examples:
+        sio flows                         # Default: 14 days, min 3 occurrences
+        sio flows --since "7 days"        # Last week
+        sio flows --min-count 5           # Only frequent patterns
+        sio flows --no-mine               # Skip mining, query existing data
+    """
+    from pathlib import Path
+
+    from sio.mining.flow_pipeline import query_flows, run_flow_mine
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+
+    with _db_conn(db_path) as conn:
+        # Optionally mine fresh flow data
+        if mine_first:
+            source_dirs = []
+            jsonl_dir = Path(os.path.expanduser("~/.claude/projects"))
+            if jsonl_dir.exists():
+                source_dirs.append(jsonl_dir)
+
+            if source_dirs:
+                result = run_flow_mine(conn, source_dirs, since, "jsonl", project)
+                click.echo(
+                    f"Mined {result['total_files_scanned']} sessions, "
+                    f"found {result['flows_found']} flow events"
+                )
+            else:
+                click.echo("No JSONL source directories found.")
+                return
+
+        # Query aggregated flows
+        results = query_flows(conn, since=since, min_count=min_count, limit=limit)
+
+    if not results:
+        click.echo("\nNo flows discovered yet. Try lowering --min-count or widening --since.")
+        return
+
+    # Display results
+    try:
+        from rich.console import Console
+        from rich.table import Table
+
+        console = Console()
+        table = Table(title=f"Discovered Flows (last {since}, min {min_count} occurrences)")
+        table.add_column("#", style="dim", width=3)
+        table.add_column("Flow", style="cyan", max_width=50)
+        table.add_column("Count", justify="right")
+        table.add_column("Success", justify="right")
+        table.add_column("Avg Time", justify="right")
+        table.add_column("Sessions", justify="right")
+        table.add_column("Confidence", justify="center")
+
+        for i, flow in enumerate(results, 1):
+            # Format duration
+            dur = flow["avg_duration"]
+            if dur >= 60:
+                dur_str = f"{dur / 60:.1f}m"
+            else:
+                dur_str = f"{dur:.0f}s"
+
+            # Color confidence
+            conf = flow["confidence"]
+            if conf == "HIGH":
+                conf_str = f"[green]{conf}[/green]"
+            elif conf == "MEDIUM":
+                conf_str = f"[yellow]{conf}[/yellow]"
+            else:
+                conf_str = f"[dim]{conf}[/dim]"
+
+            table.add_row(
+                str(i),
+                flow["sequence"],
+                str(flow["count"]),
+                f"{flow['success_rate']:.0f}%",
+                dur_str,
+                str(flow["session_count"]),
+                conf_str,
+            )
+
+        console.print(table)
+
+    except ImportError:
+        # Fallback without rich
+        click.echo(f"\nDiscovered Flows (last {since}):\n")
+        click.echo(f"{'#':>3}  {'Flow':<50} {'Count':>5} {'Success':>7} {'Time':>6} {'Conf':>6}")
+        click.echo("-" * 85)
+        for i, flow in enumerate(results, 1):
+            dur = flow["avg_duration"]
+            dur_str = f"{dur / 60:.1f}m" if dur >= 60 else f"{dur:.0f}s"
+            click.echo(
+                f"{i:>3}  {flow['sequence']:<50} {flow['count']:>5} "
+                f"{flow['success_rate']:>6.0f}% {dur_str:>6} {flow['confidence']:>6}"
+            )
+
+
+@cli.command()
+@click.argument("session_path", required=False, default=None)
+@click.option(
+    "--latest", is_flag=True, default=False,
+    help="Distill the most recent JSONL session.",
+)
+@click.option(
+    "--output", "-o", default=None,
+    help="Save playbook to file (default: print to stdout).",
+)
+@click.option(
+    "--project", default=None,
+    help="Filter latest session by project name.",
+)
+def distill(session_path, latest, output, project):
+    """Distill a long session into a clean playbook of winning steps.
+
+    Takes a messy exploratory session and extracts just the steps that worked,
+    removing failures, retries, and dead ends. Outputs a numbered playbook.
+
+    Examples:
+        sio distill --latest                          # Most recent session
+        sio distill --latest --project jira-issues    # Most recent for project
+        sio distill /path/to/session.jsonl            # Specific session file
+        sio distill --latest -o playbook.md           # Save to file
+    """
+    from pathlib import Path
+
+    from sio.mining.jsonl_parser import parse_jsonl
+    from sio.mining.session_distiller import distill_session, format_playbook
+
+    # Find the session file
+    if session_path:
+        jsonl_file = Path(session_path)
+        if not jsonl_file.exists():
+            click.echo(f"File not found: {session_path}")
+            return
+    elif latest:
+        # Find most recent JSONL in ~/.claude/projects/
+        projects_dir = Path(os.path.expanduser("~/.claude/projects"))
+        if not projects_dir.exists():
+            click.echo("No projects directory found at ~/.claude/projects/")
+            return
+
+        jsonl_files = sorted(projects_dir.rglob("*.jsonl"), key=lambda f: f.stat().st_mtime, reverse=True)
+
+        if project:
+            jsonl_files = [f for f in jsonl_files if project.lower() in str(f).lower()]
+
+        if not jsonl_files:
+            click.echo("No JSONL sessions found.")
+            return
+
+        jsonl_file = jsonl_files[0]
+        click.echo(f"Distilling: {jsonl_file.name} ({jsonl_file.stat().st_size // 1024}KB)")
+    else:
+        click.echo("Provide a session path or use --latest")
+        click.echo("  sio distill --latest")
+        click.echo("  sio distill /path/to/session.jsonl")
+        return
+
+    # Parse and distill
+    parsed = parse_jsonl(jsonl_file)
+    if not parsed:
+        click.echo("No messages found in session.")
+        return
+
+    distilled = distill_session(parsed)
+
+    if not distilled["steps"]:
+        click.echo("No successful tool calls found to distill.")
+        return
+
+    # Format output
+    title = f"Playbook: {jsonl_file.stem}"
+    playbook = format_playbook(distilled, title=title)
+
+    # Stats line
+    stats = distilled["stats"]
+    click.echo(
+        f"\nDistilled {stats['total_tool_calls']} tool calls → "
+        f"{stats['winning_steps']} winning steps "
+        f"({stats['failed_calls']} failures, {stats['retries']} retries removed)"
+    )
+
+    if output:
+        out_path = Path(output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(playbook)
+        click.echo(f"Playbook saved → {output}")
+    else:
+        click.echo("")
+        click.echo(playbook)
+
+
+@cli.command()
+@click.argument("query")
+@click.option(
+    "--session", default=None,
+    help="Path to specific JSONL session. Default: latest.",
+)
+@click.option(
+    "--project", default=None,
+    help="Filter latest session by project name.",
+)
+@click.option(
+    "--polish/--no-polish", default=False,
+    help="Use Gemini to polish into a clean runbook (costs ~$0.02).",
+)
+@click.option(
+    "--output", "-o", default=None,
+    help="Save runbook to file.",
+)
+def recall(query, session, project, polish, output):
+    """Recall how a specific task was solved in a previous session.
+
+    Topic-filters a distilled session to only the steps matching your query,
+    detects struggle→fix transitions, and optionally polishes via Gemini.
+
+    Examples:
+        sio recall "dbt hhdev"                    # Cheap: filter + format
+        sio recall "dbt hhdev" --polish            # Expensive: + Gemini runbook
+        sio recall "auth fix" --project hh-dev     # Filter by project
+        sio recall "snowflake deploy" -o runbook.md
+    """
+    from pathlib import Path
+
+    from sio.mining.jsonl_parser import parse_jsonl
+    from sio.mining.recall import (
+        build_gemini_polish_prompt,
+        detect_struggles,
+        format_recall_output,
+        topic_filter,
+    )
+    from sio.mining.session_distiller import distill_session
+
+    # Find session
+    if session:
+        jsonl_file = Path(session)
+    else:
+        projects_dir = Path(os.path.expanduser("~/.claude/projects"))
+        jsonl_files = sorted(
+            projects_dir.rglob("*.jsonl"),
+            key=lambda f: f.stat().st_mtime,
+            reverse=True,
+        )
+        if project:
+            jsonl_files = [f for f in jsonl_files if project.lower() in str(f).lower()]
+        if not jsonl_files:
+            click.echo("No sessions found.")
+            return
+        jsonl_file = jsonl_files[0]
+
+    click.echo(f"Session: {jsonl_file.name} ({jsonl_file.stat().st_size // 1024}KB)")
+
+    # Step 1: Distill
+    parsed = parse_jsonl(jsonl_file)
+    if not parsed:
+        click.echo("No messages found.")
+        return
+
+    distilled = distill_session(parsed)
+    total_steps = distilled["stats"]["winning_steps"]
+
+    # Step 2: Topic filter
+    filtered = topic_filter(distilled, query)
+    topic_steps = len(filtered["steps"])
+    click.echo(f"Distilled {total_steps} steps → {topic_steps} matching '{query}'")
+
+    if not filtered["steps"]:
+        click.echo(f"No steps found matching '{query}'. Try broader keywords.")
+        return
+
+    # Step 3: Struggle detection
+    struggles = detect_struggles(filtered["steps"])
+    if struggles:
+        click.echo(f"Found {len(struggles)} struggle→fix transitions")
+
+    # Step 4: Format output
+    if polish:
+        # Build Gemini prompt
+        prompt = build_gemini_polish_prompt(filtered, struggles, query)
+        click.echo("Polishing via Gemini...")
+        click.echo(f"\n--- GEMINI POLISH PROMPT ({len(prompt)} chars) ---")
+        click.echo("Run this manually or use --no-polish for raw output:")
+        click.echo(f"  gemini_brainstorm(topic='Create runbook: {query}', context='...')")
+        click.echo("--- END PROMPT ---\n")
+        # For CLI, we output the prompt. The /sio-recall skill will call Gemini directly.
+        runbook = format_recall_output(filtered, struggles)
+        runbook += f"\n\n---\n*Gemini polish prompt saved. Use /sio-recall skill for auto-polish.*\n"
+    else:
+        runbook = format_recall_output(filtered, struggles)
+
+    if output:
+        out_path = Path(output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(runbook)
+        click.echo(f"Runbook saved → {output}")
+    else:
+        click.echo("")
+        click.echo(runbook)
+
+
 @cli.command()
 @click.option(
     "--type", "error_type", default=None,
@@ -1002,7 +1331,12 @@ def suggest(
             return
 
         # 3. Persist patterns to DB (clear old patterns first for clean state)
+        #    Delete order: children before parents to respect foreign key constraints.
+        #    Chain: patterns -> datasets -> suggestions -> applied_changes
         console.print("[bold]Step 2:[/bold] Persisting patterns to database...")
+        conn.execute("DELETE FROM applied_changes")
+        conn.execute("DELETE FROM suggestions")
+        conn.execute("DELETE FROM datasets")
         conn.execute("DELETE FROM pattern_errors")
         conn.execute("DELETE FROM patterns")
         conn.commit()
@@ -1033,7 +1367,10 @@ def suggest(
         console.print(f"  Persisted {len(persisted_patterns)} patterns with error links")
 
         # 4. Build datasets (ephemeral — clear stale datasets and rebuild fresh)
+        #    Delete children of datasets before datasets itself.
         console.print("[bold]Step 3:[/bold] Building datasets...")
+        conn.execute("DELETE FROM applied_changes")
+        conn.execute("DELETE FROM suggestions")
         conn.execute("DELETE FROM datasets")
         conn.commit()
 
@@ -1861,6 +2198,300 @@ def _display_optimization_diff(console, conn, result):
     except Exception:
         # Non-critical display — don't crash
         pass
+
+
+# ---------------------------------------------------------------------------
+# Dataset export commands (v2.1 — training data generation)
+# ---------------------------------------------------------------------------
+
+
+@cli.command(name="export-dataset")
+@click.option(
+    "--task",
+    type=click.Choice(["routing", "recovery", "flow", "all"]),
+    required=True,
+    help="Dataset type to export.",
+)
+@click.option(
+    "--since", default="14 days",
+    help='Time window: "7 days", "14 days", "30 days".',
+)
+@click.option(
+    "--format", "fmt",
+    type=click.Choice(["jsonl", "parquet"]),
+    default="jsonl",
+    help="Output format.",
+)
+@click.option(
+    "--output", "-o", default=None,
+    help="Output file path (default: ~/.sio/datasets/<task>_<date>.<fmt>).",
+)
+def export_dataset(task, since, fmt, output):
+    """Export structured training datasets for DSPy/ML.
+
+    Generates labeled training data from mined sessions:
+    - routing: (user_query, tool_choice) pairs
+    - recovery: (error, fix_applied, success) triples
+    - flow: (current_state, next_tools) sequence predictions
+    - all: exports all three types
+
+    Examples:
+        sio export-dataset --task routing
+        sio export-dataset --task all --format parquet
+        sio export-dataset --task recovery --since "30 days" -o ./data/recovery.jsonl
+    """
+    from datetime import datetime
+
+    from sio.export.dataset_builder import (
+        build_flow_dataset,
+        build_recovery_dataset,
+        build_routing_dataset,
+        export_jsonl,
+        export_parquet,
+    )
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found. Run 'sio mine' first.")
+        return
+
+    from pathlib import Path
+
+    output_dir = Path(os.path.expanduser("~/.sio/datasets"))
+    output_dir.mkdir(parents=True, exist_ok=True)
+    date_str = datetime.now().strftime("%Y%m%d")
+
+    tasks_to_run = [task] if task != "all" else ["routing", "recovery", "flow"]
+    total_records = 0
+
+    with _db_conn(db_path) as conn:
+        for t in tasks_to_run:
+            if t == "routing":
+                records = build_routing_dataset(conn, since=since)
+            elif t == "recovery":
+                records = build_recovery_dataset(conn, since=since)
+            elif t == "flow":
+                records = build_flow_dataset(conn, since=since)
+            else:
+                continue
+
+            if not records:
+                click.echo(f"  {t}: No data found. Run 'sio mine' and 'sio flows' first.")
+                continue
+
+            # Determine output path
+            if output and task != "all":
+                out_path = output
+            else:
+                ext = fmt
+                out_path = str(output_dir / f"{t}_{date_str}.{ext}")
+
+            # Export
+            if fmt == "parquet":
+                count = export_parquet(records, out_path)
+            else:
+                count = export_jsonl(records, out_path)
+
+            total_records += count
+            click.echo(f"  {t}: {count} records → {out_path}")
+
+    click.echo(f"\nTotal: {total_records} training records exported")
+
+
+# ---------------------------------------------------------------------------
+# DSPy training commands (v2.1 — ML pipeline)
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.option(
+    "--task",
+    type=click.Choice(["router", "distiller", "recovery", "flow", "all"]),
+    default="all",
+    help="Which module to train.",
+)
+@click.option(
+    "--optimizer",
+    type=click.Choice(["bootstrap", "gepa"]),
+    default="bootstrap",
+    help="DSPy optimizer (bootstrap for <50 examples, gepa for 50+).",
+)
+@click.option(
+    "--model", default=None,
+    help="LLM model for training (default: DSPY_MODEL env or gpt-4o-mini).",
+)
+@click.option(
+    "--max-examples", default=200, type=int,
+    help="Maximum training examples per task.",
+)
+def train(task, optimizer, model, max_examples):
+    """Train DSPy modules on exported datasets.
+
+    Uses BootstrapFewShot (<50 examples) or GEPA (50+) to optimize
+    recall modules. Trained models are saved to ~/.sio/models/ and
+    used by `sio recall` for inference.
+
+    Prerequisites:
+        1. Run `sio mine --since "14 days"` to mine sessions
+        2. Run `sio flows --since "14 days"` to extract flow patterns
+        3. Run `sio export-dataset --task all` to create training data
+        4. Run `sio train` to optimize modules
+
+    Examples:
+        sio train                             # Train all modules
+        sio train --task distiller            # Train only the recall distiller
+        sio train --optimizer gepa            # Use GEPA optimizer
+        sio train --model gpt-4o             # Use specific model
+    """
+    from sio.training.recall_trainer import (
+        load_training_data,
+        save_trained_module,
+        train_recall_module,
+    )
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found. Run 'sio mine' first.")
+        return
+
+    with _db_conn(db_path) as conn:
+        # Load all training data
+        click.echo("Loading training data...")
+        data = load_training_data(conn)
+
+        for key, records in data.items():
+            click.echo(f"  {key}: {len(records)} examples")
+
+        tasks_to_train = [task] if task != "all" else ["router", "distiller", "recovery", "flow"]
+
+        for t in tasks_to_train:
+            click.echo(f"\nTraining: {t} (optimizer={optimizer})...")
+            result = train_recall_module(
+                data,
+                task=t,
+                optimizer=optimizer,
+                model=model,
+                max_examples=max_examples,
+            )
+
+            if result["error"]:
+                click.echo(f"  ERROR: {result['error']}")
+                continue
+
+            metrics = result["metrics"]
+            click.echo(
+                f"  Before: {metrics.get('before', '?')} → "
+                f"After: {metrics.get('after', '?')} "
+                f"({metrics.get('examples', 0)} train, {metrics.get('val_size', 0)} val)"
+            )
+
+            if result["output_path"]:
+                # Register in DB
+                save_trained_module(conn, t, optimizer, result["output_path"], metrics)
+                click.echo(f"  Saved → {result['output_path']}")
+            else:
+                click.echo("  WARNING: Module not saved to disk.")
+
+    click.echo("\nTraining complete.")
+
+
+@cli.command(name="collect-recall")
+@click.argument("query")
+@click.option("--session", default=None, help="Session JSONL path.")
+@click.option("--project", default=None, help="Filter by project name.")
+@click.option("--runbook", default=None, help="Path to polished runbook (from Gemini).")
+@click.option(
+    "--label",
+    type=click.Choice(["positive", "negative", "pending"]),
+    default="pending",
+    help="Quality label for this example.",
+)
+def collect_recall(query, session, project, runbook, label):
+    """Collect a recall example for training.
+
+    This is the data collection step: distill a session, optionally attach
+    a Gemini-polished runbook, and store as a training example.
+
+    The pipeline: collect → (optional: LLM polish) → label → train
+
+    Examples:
+        sio collect-recall "dbt hhdev" --project dev
+        sio collect-recall "dbt hhdev" --runbook polished.md --label positive
+    """
+    from pathlib import Path
+
+    from sio.mining.jsonl_parser import parse_jsonl
+    from sio.mining.recall import format_recall_output, detect_struggles, topic_filter
+    from sio.mining.session_distiller import distill_session
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+
+    # Find session
+    if session:
+        jsonl_file = Path(session)
+    else:
+        projects_dir = Path(os.path.expanduser("~/.claude/projects"))
+        jsonl_files = sorted(
+            projects_dir.rglob("*.jsonl"),
+            key=lambda f: f.stat().st_mtime,
+            reverse=True,
+        )
+        if project:
+            jsonl_files = [f for f in jsonl_files if project.lower() in str(f).lower()]
+        if not jsonl_files:
+            click.echo("No sessions found.")
+            return
+        jsonl_file = jsonl_files[0]
+
+    # Distill + filter
+    parsed = parse_jsonl(jsonl_file)
+    if not parsed:
+        click.echo("No messages found.")
+        return
+
+    distilled = distill_session(parsed)
+    filtered = topic_filter(distilled, query)
+    struggles = detect_struggles(filtered["steps"])
+    raw_output = format_recall_output(filtered, struggles)
+
+    # Load polished runbook if provided
+    polished = None
+    polish_model = None
+    if runbook:
+        runbook_path = Path(runbook)
+        if runbook_path.exists():
+            polished = runbook_path.read_text()
+            polish_model = "gemini_brainstorm"  # Or detect from content
+
+    # Store in DB
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+
+    with _db_conn(db_path) as conn:
+        conn.execute(
+            """INSERT INTO recall_examples
+               (query, session_id, raw_steps, polished_runbook, label, polish_model, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                query,
+                jsonl_file.stem,
+                raw_output[:10000],  # Cap at 10KB
+                polished,
+                label,
+                polish_model,
+                now,
+            ),
+        )
+        conn.commit()
+
+    step_count = len(filtered["steps"])
+    click.echo(f"Collected recall example: '{query}' ({step_count} steps, label={label})")
+    if polished:
+        click.echo(f"  Polished runbook attached ({len(polished)} chars)")
+    else:
+        click.echo("  No polished runbook yet. Use Gemini to polish, then re-run with --runbook")
+    click.echo(f"  Session: {jsonl_file.name}")
 
 
 if __name__ == "__main__":

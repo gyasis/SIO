@@ -199,6 +199,36 @@ CREATE TABLE IF NOT EXISTS ground_truth (
 )
 """
 
+_RECALL_EXAMPLES_DDL = """
+CREATE TABLE IF NOT EXISTS recall_examples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    query TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    raw_steps TEXT NOT NULL,
+    polished_runbook TEXT,
+    label TEXT NOT NULL DEFAULT 'pending'
+        CHECK(label IN ('pending', 'positive', 'negative', 'edited')),
+    polish_model TEXT,
+    created_at TEXT NOT NULL,
+    reviewed_at TEXT
+)
+"""
+
+_FLOW_EVENTS_DDL = """
+CREATE TABLE IF NOT EXISTS flow_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    flow_hash TEXT NOT NULL,
+    sequence TEXT NOT NULL,
+    ngram_size INTEGER NOT NULL,
+    was_successful INTEGER NOT NULL DEFAULT 0,
+    duration_seconds REAL DEFAULT 0,
+    source_file TEXT,
+    timestamp TEXT NOT NULL,
+    mined_at TEXT NOT NULL
+)
+"""
+
 _OPTIMIZED_MODULES_DDL = """
 CREATE TABLE IF NOT EXISTS optimized_modules (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -233,6 +263,10 @@ _INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_gt_surface ON ground_truth(target_surface)",
     # optimized_modules indexes
     "CREATE INDEX IF NOT EXISTS idx_om_active ON optimized_modules(module_type, is_active)",
+    # flow_events indexes
+    "CREATE INDEX IF NOT EXISTS idx_flow_hash ON flow_events(flow_hash)",
+    "CREATE INDEX IF NOT EXISTS idx_flow_session ON flow_events(session_id)",
+    "CREATE INDEX IF NOT EXISTS idx_flow_timestamp ON flow_events(timestamp)",
 ]
 
 
@@ -274,6 +308,12 @@ def init_db(db_path: str) -> sqlite3.Connection:
     conn.execute(_DATASETS_DDL)
     conn.execute(_SUGGESTIONS_DDL)
     conn.execute(_APPLIED_CHANGES_DDL)
+
+    # Create flow events table (v2.1 — positive pattern mining)
+    conn.execute(_FLOW_EVENTS_DDL)
+
+    # Create recall examples table (v2.1 — DSPy training data)
+    conn.execute(_RECALL_EXAMPLES_DDL)
 
     # Create DSPy suggestion engine tables
     conn.execute(_GROUND_TRUTH_DDL)
