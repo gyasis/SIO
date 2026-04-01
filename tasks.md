@@ -1,1 +1,1 @@
-specs/003-dspy-suggestion-engine/tasks.md
+specs/001-self-improving-organism/tasks.md
