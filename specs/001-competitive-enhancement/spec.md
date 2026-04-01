@@ -137,7 +137,7 @@ As a developer, I want SIO to automatically test rules before permanently applyi
 1. **Given** a suggestion ready for testing, **When** the user applies it as an experiment, **Then** the rule is applied on an isolated branch separate from the main working configuration
 2. **Given** an active experiment, **When** assertion checks run after sufficient sessions, **Then** the experiment passes if the target error rate decreased and no new regressions appeared
 3. **Given** a failed experiment, **When** assertions fail, **Then** the experiment branch is removed and the suggestion is marked as "failed_experiment"
-4. **Given** the autonomous optimization loop is running, **When** a cycle completes, **Then** exactly one suggestion is tested per cycle with a maximum of 3 concurrent experiments, and a transaction log records all actions
+4. **Given** the autonomous optimization loop is running, **When** a cycle completes and an experiment passes validation, **Then** the loop pauses and notifies the user for approval before promoting the rule to main configuration; exactly one suggestion is tested per cycle with a maximum of 3 concurrent experiments, and a transaction log records all actions
 5. **Given** an anomalous session (e.g., 10x normal error rate), **When** anomaly detection runs, **Then** the session is flagged for manual review before being used in validation
 
 ---
@@ -230,9 +230,9 @@ As a developer, I want to generate a visual report showing session metrics trend
 - **FR-038**: System MUST support user-defined custom assertions via configuration
 - **FR-039**: System MUST create isolated experiment branches before applying rules, keeping them separate from the user's main configuration
 - **FR-040**: System MUST automatically validate experiments after a configurable number of sessions by running assertions
-- **FR-041**: Experiments that pass validation MUST be promoted to the main configuration; experiments that fail MUST be rolled back and marked as "failed_experiment"
-- **FR-042**: System MUST support an autonomous optimization loop that cycles through: mine, cluster, grade, generate, assert, experiment, validate, promote/rollback
-- **FR-043**: Autonomous loop MUST enforce safety limits: maximum 3 concurrent experiments, maximum 1 new rule per cycle, budget enforcement on every application
+- **FR-041**: Experiments that pass validation MUST require human approval before promotion to main configuration; experiments that fail MUST be automatically rolled back and marked as "failed_experiment"
+- **FR-042**: System MUST support an autonomous optimization loop that cycles through: mine, cluster, grade, generate, assert, experiment, validate, then pause for human approval before promote/rollback
+- **FR-043**: Autonomous loop MUST enforce safety limits: maximum 3 concurrent experiments, maximum 1 new rule per cycle, budget enforcement on every application, and human approval gate before any promotion to main configuration
 - **FR-044**: Autonomous loop MUST maintain an append-only transaction log of all actions taken
 - **FR-045**: Autonomous loop MUST support immediate stop via user command
 - **FR-046**: System MUST detect statistically anomalous sessions using deviation-based analysis and flag them for manual review
@@ -256,6 +256,12 @@ As a developer, I want to generate a visual report showing session metrics trend
 - **Experiment**: An isolated test of a proposed rule with binary assertions; tracks status (active, passed, failed) and links to the transaction log
 - **Transaction Log Entry**: An immutable record of an autonomous loop action (mine, apply, promote, rollback) with timestamp and outcome
 - **Session Facet**: A qualitative summary of a session's character (e.g., tool mastery, error-prone area); cached for reuse
+
+## Clarifications
+
+### Session 2026-04-01
+
+- Q: Should the autonomous loop require human approval before promoting experiments, or run fully autonomously? → A: Autonomous with promotion gate — loop experiments freely but requires human approval to promote passed experiments to main config.
 
 ## Assumptions
 
