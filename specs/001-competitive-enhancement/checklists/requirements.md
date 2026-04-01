@@ -29,9 +29,16 @@
 - [x] Feature meets measurable outcomes defined in Success Criteria
 - [x] No implementation details leak into specification
 
+## Clarification Session (2026-04-01)
+
+3 questions asked, 3 answered:
+1. Autonomous loop human gate → Promotion gate (autonomous experimentation, human approval for promotion)
+2. Experiment validation window → 5 sessions default
+3. Hook failure behavior → Retry once silently, then fail silent + log
+
 ## Notes
 
 - All 50 functional requirements map to user stories and acceptance scenarios
-- PRD contained 21 detailed feature requirements; these were consolidated into 50 technology-agnostic functional requirements grouped by domain
-- Assumptions section documents reasonable defaults chosen for unspecified details (sentiment method, skill directory, loop execution model)
-- No [NEEDS CLARIFICATION] markers needed — the PRD was exceptionally detailed
+- PRD contained 21 detailed feature requirements; consolidated into 50 technology-agnostic FRs grouped by domain
+- Assumptions section documents reasonable defaults
+- Clarifications integrated into FR-032, FR-035, FR-040, FR-041, FR-042, FR-043, and User Story 8

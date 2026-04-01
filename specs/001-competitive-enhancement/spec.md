@@ -218,10 +218,10 @@ As a developer, I want to generate a visual report showing session metrics trend
 **Lifecycle Hooks**
 
 - **FR-031**: System MUST provide a pre-compaction hook that captures a snapshot of current session metrics and recent positive signals before context compression occurs
-- **FR-032**: Pre-compaction hook MUST never block the compaction process
+- **FR-032**: Pre-compaction hook MUST never block the compaction process. If a hook crashes, it MUST retry once silently; if the retry also fails, it MUST log the error locally and allow the host process to continue (data from that invocation is lost)
 - **FR-033**: System MUST provide a session-end hook that finalizes session metrics, runs lightweight pattern detection, and auto-saves high-confidence patterns (>0.8 threshold) to the learned skills directory
 - **FR-034**: System MUST provide a prompt-submit hook that detects corrections, undo requests, and frustration escalation in the user's message before the assistant processes it
-- **FR-035**: Prompt-submit hook MUST never block the user's message from being processed
+- **FR-035**: Prompt-submit hook MUST never block the user's message from being processed. All hooks follow the same failure policy: retry once silently, then fail silent with local error logging
 - **FR-036**: System MUST register all lifecycle hooks through a single installation command
 
 **Automated Validation & Experimentation**
@@ -263,6 +263,7 @@ As a developer, I want to generate a visual report showing session metrics trend
 
 - Q: Should the autonomous loop require human approval before promoting experiments, or run fully autonomously? → A: Autonomous with promotion gate — loop experiments freely but requires human approval to promote passed experiments to main config.
 - Q: How many sessions should an experiment run before validation? → A: Default 5 sessions — balanced signal-to-speed, aligns with velocity tracking thresholds.
+- Q: What happens when a lifecycle hook crashes? → A: Retry once silently; if retry fails, log error locally and continue without blocking the host process. Data from that invocation is lost.
 
 ## Assumptions
 
