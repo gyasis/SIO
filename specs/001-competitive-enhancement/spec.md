@@ -229,7 +229,7 @@ As a developer, I want to generate a visual report showing session metrics trend
 - **FR-037**: System MUST support binary pass/fail assertion checks including: error rate decreased, no new regressions introduced, confidence above threshold, budget within limits, no rule collisions
 - **FR-038**: System MUST support user-defined custom assertions via configuration
 - **FR-039**: System MUST create isolated experiment branches before applying rules, keeping them separate from the user's main configuration
-- **FR-040**: System MUST automatically validate experiments after a configurable number of sessions by running assertions
+- **FR-040**: System MUST automatically validate experiments after a configurable number of sessions (default: 5) by running assertions
 - **FR-041**: Experiments that pass validation MUST require human approval before promotion to main configuration; experiments that fail MUST be automatically rolled back and marked as "failed_experiment"
 - **FR-042**: System MUST support an autonomous optimization loop that cycles through: mine, cluster, grade, generate, assert, experiment, validate, then pause for human approval before promote/rollback
 - **FR-043**: Autonomous loop MUST enforce safety limits: maximum 3 concurrent experiments, maximum 1 new rule per cycle, budget enforcement on every application, and human approval gate before any promotion to main configuration
@@ -262,6 +262,7 @@ As a developer, I want to generate a visual report showing session metrics trend
 ### Session 2026-04-01
 
 - Q: Should the autonomous loop require human approval before promoting experiments, or run fully autonomously? → A: Autonomous with promotion gate — loop experiments freely but requires human approval to promote passed experiments to main config.
+- Q: How many sessions should an experiment run before validation? → A: Default 5 sessions — balanced signal-to-speed, aligns with velocity tracking thresholds.
 
 ## Assumptions
 
