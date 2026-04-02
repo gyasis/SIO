@@ -45,9 +45,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from sio.core.db.queries import insert_error_record, insert_session_metrics
+from sio.core.db.queries import (
+    insert_error_record,
+    insert_positive_record,
+    insert_session_metrics,
+)
+from sio.mining.approval_detector import detect_approvals
 from sio.mining.error_extractor import extract_errors
 from sio.mining.jsonl_parser import parse_jsonl
+from sio.mining.positive_extractor import extract_positive_signals
+from sio.mining.sentiment_scorer import (
+    detect_frustration_escalation,
+    score_sentiment,
+)
 from sio.mining.specstory_parser import parse_specstory
 from sio.mining.time_filter import filter_files
 
@@ -66,6 +76,88 @@ def _file_hash(file_path: Path) -> str:
         for chunk in iter(lambda: f.read(8192), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _pre_scan_file(
+    file_path: Path,
+    min_messages: int = 5,
+    min_tool_calls: int = 2,
+) -> tuple[bool, int, int]:
+    """Lightweight pre-scan to decide whether a file is worth full parsing.
+
+    For .jsonl files: counts lines (proxy for messages) and lines containing
+    ``"tool_use"`` or ``"tool_name"`` (proxy for tool calls).
+
+    For .md files: counts ``---`` horizontal-rule separators (each separates a
+    conversational turn, so count approximates messages) and lines matching
+    ``Tool call:`` or ``Tool use:`` patterns.
+
+    Parameters
+    ----------
+    file_path:
+        Path to the session file.
+    min_messages:
+        Minimum message count to pass the filter.
+    min_tool_calls:
+        Minimum tool-call count to pass the filter.
+
+    Returns
+    -------
+    tuple[bool, int, int]
+        (passes_filter, estimated_messages, estimated_tool_calls).
+    """
+    estimated_messages = 0
+    estimated_tool_calls = 0
+
+    try:
+        with open(file_path, encoding="utf-8", errors="replace") as f:
+            if file_path.suffix == ".jsonl":
+                for line in f:
+                    stripped = line.strip()
+                    if not stripped:
+                        continue
+                    estimated_messages += 1
+                    if '"tool_use"' in stripped or '"tool_name"' in stripped:
+                        estimated_tool_calls += 1
+            else:
+                # .md (SpecStory) — count separator lines and tool markers
+                for line in f:
+                    stripped = line.strip()
+                    if stripped == "---":
+                        estimated_messages += 1
+                    if "Tool call:" in stripped or "Tool use:" in stripped:
+                        estimated_tool_calls += 1
+                # Each --- ends a turn; add 1 for the final block
+                if estimated_messages > 0:
+                    estimated_messages += 1
+    except OSError:
+        # If we cannot read the file, let it through to fail
+        # during full parsing where the error is logged properly.
+        return True, 0, 0
+
+    passes = (
+        estimated_messages >= min_messages
+        and estimated_tool_calls >= min_tool_calls
+    )
+    return passes, estimated_messages, estimated_tool_calls
+
+
+def _mark_skipped(
+    conn: sqlite3.Connection,
+    file_path: Path,
+    file_hash: str,
+    message_count: int,
+    tool_call_count: int,
+) -> None:
+    """Record a skipped file in processed_sessions (skipped=1)."""
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "INSERT OR IGNORE INTO processed_sessions "
+        "(file_path, file_hash, message_count, tool_call_count, skipped, mined_at) "
+        "VALUES (?, ?, ?, ?, 1, ?)",
+        (str(file_path), file_hash, message_count, tool_call_count, now),
+    )
+    conn.commit()
 
 
 def _is_already_processed(
@@ -480,6 +572,26 @@ def run_mine(
             skipped_files += 1
             continue
 
+        # --- 4b. Smart filter: skip tiny sessions (T011) ------------------
+        passes, est_msgs, est_tools = _pre_scan_file(file_path)
+        if not passes:
+            logger.debug(
+                "Skipping file below thresholds "
+                "(messages=%d, tool_calls=%d): %s",
+                est_msgs, est_tools, file_path,
+            )
+            try:
+                _mark_skipped(
+                    db_conn, file_path, fhash, est_msgs, est_tools,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Failed to record skipped session for %s: %s: %s",
+                    file_path, type(exc).__name__, exc,
+                )
+            skipped_files += 1
+            continue
+
         # Determine the source type label for this specific file.
         source_label = "specstory" if file_path.suffix == ".md" else "jsonl"
 
@@ -507,11 +619,84 @@ def run_mine(
                     file_path, type(exc).__name__, exc,
                 )
 
-        # --- 4b. Compute and insert session metrics -----------------------
+        # --- 4c. Positive signals, approvals, sentiment (T026) -----------
+        session_id = f"{file_path}:{fhash[:16]}"
+        now_ts = datetime.now(timezone.utc).isoformat()
+
+        # -- Positive signal extraction --
+        positive_signals: list[dict[str, Any]] = []
+        try:
+            positive_signals = extract_positive_signals(parsed_messages)
+            for sig in positive_signals:
+                pr_record = {
+                    "session_id": session_id,
+                    "timestamp": sig.get("timestamp") or now_ts,
+                    "signal_type": sig["signal_type"],
+                    "signal_text": sig.get("signal_text", ""),
+                    "context_before": sig.get("context_before"),
+                    "tool_name": sig.get("tool_name"),
+                    "sentiment_score": None,
+                    "source_file": str(file_path),
+                    "mined_at": now_ts,
+                }
+                insert_positive_record(db_conn, pr_record)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Positive signal extraction failed for %s: %s: %s",
+                file_path, type(exc).__name__, exc,
+            )
+
+        # -- Approval detection --
+        approval_result: dict[str, Any] = {}
+        try:
+            approval_result = detect_approvals(parsed_messages)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Approval detection failed for %s: %s: %s",
+                file_path, type(exc).__name__, exc,
+            )
+
+        # -- Sentiment scoring --
+        avg_sentiment: float | None = None
+        frustration_detected = False
+        try:
+            user_texts: list[str] = []
+            sentiment_scores: list[float] = []
+            for m in parsed_messages:
+                if m.get("role") in ("human", "user") and not m.get("tool_name"):
+                    content = m.get("content") or ""
+                    if content.strip():
+                        user_texts.append(content)
+                        sentiment_scores.append(score_sentiment(content))
+            if sentiment_scores:
+                avg_sentiment = sum(sentiment_scores) / len(sentiment_scores)
+                frustration_detected = detect_frustration_escalation(
+                    sentiment_scores, user_texts,
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Sentiment scoring failed for %s: %s: %s",
+                file_path, type(exc).__name__, exc,
+            )
+
+        if frustration_detected:
+            logger.info(
+                "Frustration escalation detected in session: %s",
+                file_path,
+            )
+
+        # -- Derive correction_count from approval rejections --
+        correction_count = approval_result.get("rejected", 0)
+        positive_signal_count = len(positive_signals)
+
+        # --- 4d. Compute and insert session metrics -----------------------
         try:
             metrics = _compute_session_metrics(
                 parsed_messages, error_records, file_path, fhash,
             )
+            # Patch in signals computed by T026 extractors
+            metrics["positive_signal_count"] = positive_signal_count
+            metrics["correction_count"] = correction_count
             insert_session_metrics(db_conn, metrics)
             total_cost_tracked += metrics.get("total_cost_usd") or 0.0
         except Exception as exc:  # noqa: BLE001
@@ -520,7 +705,7 @@ def run_mine(
                 file_path, type(exc).__name__, exc,
             )
 
-        # --- 4c. Mark file as processed ------------------------------------
+        # --- 4e. Mark file as processed ------------------------------------
         try:
             _mark_processed(
                 db_conn, file_path, fhash, message_count, tool_call_count,

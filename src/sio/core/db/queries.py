@@ -320,7 +320,7 @@ def get_pattern_by_id(conn: sqlite3.Connection, pattern_id: str) -> dict | None:
 _PATTERN_UPDATE_ALLOWED = frozenset({
     "description", "tool_name", "error_count", "session_count",
     "first_seen", "last_seen", "rank_score", "centroid_embedding",
-    "updated_at",
+    "updated_at", "grade",
 })
 
 
@@ -769,6 +769,34 @@ def insert_session_metrics(
     values = [record.get(c) for c in cols]
     cur = conn.execute(
         f"INSERT OR REPLACE INTO session_metrics ({col_names}) VALUES ({placeholders})",
+        values,
+    )
+    if not _batch:
+        conn.commit()
+    return cur.lastrowid
+
+
+# ---------------------------------------------------------------------------
+# v3 — Positive Records queries (competitive enhancement)
+# ---------------------------------------------------------------------------
+
+_POSITIVE_RECORD_COLS = [
+    "session_id", "timestamp", "signal_type", "signal_text",
+    "context_before", "tool_name", "sentiment_score",
+    "source_file", "mined_at",
+]
+
+
+def insert_positive_record(
+    conn: sqlite3.Connection, record: dict, *, _batch: bool = False,
+) -> int:
+    """Insert a positive signal record. Returns the new row ID."""
+    cols = _POSITIVE_RECORD_COLS
+    placeholders = ", ".join(["?"] * len(cols))
+    col_names = ", ".join(cols)
+    values = [record.get(c) for c in cols]
+    cur = conn.execute(
+        f"INSERT INTO positive_records ({col_names}) VALUES ({placeholders})",
         values,
     )
     if not _batch:
