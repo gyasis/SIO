@@ -667,7 +667,7 @@ class TestGetViolationReport:
         file1.write_text("- Never use SELECT * in queries\n")
 
         file2 = tmp_path / "rules2.md"
-        file2.write_text("- Always validate user input\n")
+        file2.write_text("- Always run linters before deploying\n")
 
         in_memory_db.execute(
             "INSERT INTO error_records "
@@ -676,7 +676,7 @@ class TestGetViolationReport:
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 "session-1", "2026-02-25T10:00:00Z", "specstory",
-                "test.md", "SELECT * FROM users",
+                "test.md", "SELECT * FROM orders",
                 "tool_failure", "2026-02-25T12:00:00Z",
             ),
         )
@@ -687,7 +687,7 @@ class TestGetViolationReport:
         )
 
         assert report["total_rules"] == 2
-        # SELECT * violation should be found; validate input should be compliant.
+        # SELECT * violation should be found; linters rule should be compliant.
         assert len(report["violation_summary"]) >= 1
         assert report["compliant_rules"] >= 1
 

@@ -18,10 +18,8 @@ from __future__ import annotations
 import re
 import sqlite3
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, NamedTuple
-
 
 # ---------------------------------------------------------------------------
 # Data types
@@ -143,11 +141,18 @@ def _extract_key_terms(rule_text: str) -> list[str]:
             terms.append(match.group(0))
 
     # 3. Extract significant single words (3+ chars, not stop words)
+    #    Also add simple singular/plural variants for better recall.
     words = re.findall(r"[A-Za-z_*]+(?:\s*\*)?", rule_text)
     for word in words:
         w_lower = word.lower().strip()
         if len(w_lower) >= 3 and w_lower not in _STOP_WORDS:
             terms.append(w_lower)
+            # Add singular variant if word ends with 's'
+            if w_lower.endswith("s") and len(w_lower) >= 4:
+                terms.append(w_lower[:-1])
+            # Add plural variant
+            elif not w_lower.endswith("s"):
+                terms.append(w_lower + "s")
 
     return terms
 
@@ -286,14 +291,19 @@ def detect_violations(
     for v in violations:
         rule_freq[v.rule.text] += 1
 
-    def _sort_key(v: Violation) -> tuple[int, str]:
-        freq = rule_freq[v.rule.text]
-        # Negate frequency so higher counts sort first.
-        # Use timestamp for recency (reverse chronological).
-        ts = v.error_record.get("timestamp", "")
-        return (-freq, ts)
-
-    violations.sort(key=_sort_key, reverse=True)
+    # Sort: highest frequency first, then most recent timestamp first.
+    violations.sort(
+        key=lambda v: (
+            -rule_freq[v.rule.text],
+            v.error_record.get("timestamp", ""),
+        ),
+        reverse=False,
+    )
+    # Within same frequency group, reverse timestamp order (most recent first).
+    # Since Python sort is stable, we can do a two-pass sort:
+    # First sort by timestamp descending, then by frequency descending.
+    violations.sort(key=lambda v: v.error_record.get("timestamp", ""), reverse=True)
+    violations.sort(key=lambda v: -rule_freq[v.rule.text])
 
     return violations
 
