@@ -37,13 +37,15 @@ Human blocks are emitted as-is with None tool fields.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import sqlite3
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from sio.core.db.queries import insert_error_record
+from sio.core.db.queries import insert_error_record, insert_session_metrics
 from sio.mining.error_extractor import extract_errors
 from sio.mining.jsonl_parser import parse_jsonl
 from sio.mining.specstory_parser import parse_specstory
@@ -217,8 +219,8 @@ def _process_file(
     source_type_label: str,
     *,
     exclude_sidechains: bool = False,
-) -> tuple[list[dict[str, Any]], int, int]:
-    """Parse a single file and return error records plus message/tool counts.
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, int]:
+    """Parse a single file and return error records, messages, plus counts.
 
     Parameters
     ----------
@@ -232,8 +234,8 @@ def _process_file(
 
     Returns
     -------
-    tuple[list[dict], int, int]
-        (error_records, message_count, tool_call_count).
+    tuple[list[dict], list[dict], int, int]
+        (error_records, parsed_messages, message_count, tool_call_count).
     """
     if file_path.suffix == ".md":
         blocks = parse_specstory(file_path)
@@ -250,7 +252,140 @@ def _process_file(
 
     source_label = "specstory" if file_path.suffix == ".md" else "jsonl"
     error_records = extract_errors(messages, str(file_path), source_label)
-    return error_records, message_count, tool_call_count
+    return error_records, messages, message_count, tool_call_count
+
+
+def _parse_iso_timestamp(ts: str | None) -> datetime | None:
+    """Parse an ISO-8601 timestamp string into a datetime, or return None."""
+    if not ts:
+        return None
+    try:
+        # Handle trailing Z
+        if ts.endswith("Z"):
+            ts = ts[:-1] + "+00:00"
+        return datetime.fromisoformat(ts)
+    except (ValueError, TypeError):
+        return None
+
+
+def _compute_session_metrics(
+    messages: list[dict[str, Any]],
+    error_records: list[dict[str, Any]],
+    file_path: Path,
+    file_hash: str,
+) -> dict[str, Any]:
+    """Compute per-session aggregate metrics from parsed messages.
+
+    Parameters
+    ----------
+    messages:
+        Flat list of parsed message dicts (from JSONL or flattened SpecStory).
+    error_records:
+        Error records extracted from the session.
+    file_path:
+        Path to the session file (used for session_id derivation).
+    file_hash:
+        SHA-256 hash of the file (used for session_id derivation).
+
+    Returns
+    -------
+    dict
+        A record suitable for ``insert_session_metrics``.
+    """
+    # --- session_id: derive from file_path + file_hash ---
+    session_id = f"{file_path}:{file_hash[:16]}"
+
+    # --- Token aggregation (skip None values) ---
+    total_input_tokens = sum(
+        m.get("input_tokens") or 0 for m in messages
+        if m.get("input_tokens") is not None
+    )
+    total_output_tokens = sum(
+        m.get("output_tokens") or 0 for m in messages
+        if m.get("output_tokens") is not None
+    )
+    total_cache_read_tokens = sum(
+        m.get("cache_read_input_tokens") or 0 for m in messages
+        if m.get("cache_read_input_tokens") is not None
+    )
+    total_cache_create_tokens = sum(
+        m.get("cache_creation_input_tokens") or 0 for m in messages
+        if m.get("cache_creation_input_tokens") is not None
+    )
+
+    # --- Cache hit ratio ---
+    denom = total_cache_read_tokens + total_input_tokens
+    cache_hit_ratio = (
+        total_cache_read_tokens / denom if denom > 0 else None
+    )
+
+    # --- Cost ---
+    total_cost_usd = sum(
+        m.get("cost_usd") or 0.0 for m in messages
+        if m.get("cost_usd") is not None
+    )
+
+    # --- Session duration (first timestamp to last timestamp) ---
+    timestamps: list[datetime] = []
+    for m in messages:
+        dt = _parse_iso_timestamp(m.get("timestamp"))
+        if dt is not None:
+            timestamps.append(dt)
+
+    session_duration_seconds: float | None = None
+    if len(timestamps) >= 2:
+        timestamps.sort()
+        delta = timestamps[-1] - timestamps[0]
+        session_duration_seconds = delta.total_seconds()
+
+    # --- Counts ---
+    message_count = len(messages)
+    tool_call_count = sum(1 for m in messages if m.get("tool_name"))
+    error_count = len(error_records)
+    sidechain_count = sum(1 for m in messages if m.get("is_sidechain"))
+
+    # --- Stop reason distribution ---
+    stop_reasons: Counter[str] = Counter()
+    for m in messages:
+        sr = m.get("stop_reason")
+        if sr is not None:
+            stop_reasons[sr] += 1
+    stop_reason_distribution = (
+        json.dumps(dict(stop_reasons)) if stop_reasons else None
+    )
+
+    # --- Model used (most common) ---
+    model_counts: Counter[str] = Counter()
+    for m in messages:
+        model = m.get("model")
+        if model is not None:
+            model_counts[model] += 1
+    model_used = (
+        model_counts.most_common(1)[0][0] if model_counts else None
+    )
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    return {
+        "session_id": session_id,
+        "file_path": str(file_path),
+        "total_input_tokens": total_input_tokens,
+        "total_output_tokens": total_output_tokens,
+        "total_cache_read_tokens": total_cache_read_tokens,
+        "total_cache_create_tokens": total_cache_create_tokens,
+        "cache_hit_ratio": cache_hit_ratio,
+        "total_cost_usd": total_cost_usd,
+        "session_duration_seconds": session_duration_seconds,
+        "message_count": message_count,
+        "tool_call_count": tool_call_count,
+        "error_count": error_count,
+        "correction_count": 0,  # populated later by positive_extractor
+        "positive_signal_count": 0,  # populated later by positive_extractor
+        "sidechain_count": sidechain_count,
+        "stop_reason_distribution": stop_reason_distribution,
+        "model_used": model_used,
+        "mined_at": now,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -332,6 +467,7 @@ def run_mine(
     # --- 4. Process each file ----------------------------------------------
     inserted_ids: list[int] = []
     skipped_files: int = 0
+    total_cost_tracked: float = 0.0
 
     for file_path in project_filtered:
         # --- 4a. Deduplicate via processed_sessions ------------------------
@@ -348,9 +484,11 @@ def run_mine(
         source_label = "specstory" if file_path.suffix == ".md" else "jsonl"
 
         try:
-            error_records, message_count, tool_call_count = _process_file(
-                file_path, source_label,
-                exclude_sidechains=exclude_sidechains,
+            error_records, parsed_messages, message_count, tool_call_count = (
+                _process_file(
+                    file_path, source_label,
+                    exclude_sidechains=exclude_sidechains,
+                )
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning(
@@ -369,7 +507,20 @@ def run_mine(
                     file_path, type(exc).__name__, exc,
                 )
 
-        # --- 4b. Mark file as processed ------------------------------------
+        # --- 4b. Compute and insert session metrics -----------------------
+        try:
+            metrics = _compute_session_metrics(
+                parsed_messages, error_records, file_path, fhash,
+            )
+            insert_session_metrics(db_conn, metrics)
+            total_cost_tracked += metrics.get("total_cost_usd") or 0.0
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Failed to insert session metrics for %s: %s: %s",
+                file_path, type(exc).__name__, exc,
+            )
+
+        # --- 4c. Mark file as processed ------------------------------------
         try:
             _mark_processed(
                 db_conn, file_path, fhash, message_count, tool_call_count,
@@ -381,9 +532,12 @@ def run_mine(
             )
 
     # --- 5. Return summary -------------------------------------------------
+    newly_mined = len(project_filtered) - skipped_files
     return {
         "total_files_scanned": total_files_scanned,
         "errors_found": len(inserted_ids),
         "error_records": inserted_ids,
         "skipped_files": skipped_files,
+        "newly_mined": newly_mined,
+        "total_cost_tracked": total_cost_tracked,
     }

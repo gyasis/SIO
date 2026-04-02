@@ -353,10 +353,39 @@ def mine(since, project, source, exclude_sidechains):
             exclude_sidechains=exclude_sidechains,
         )
 
-    click.echo(f"Scanned {result['total_files_scanned']} files")
-    click.echo(f"Found {result['errors_found']} errors")
-    if result.get("skipped_files"):
-        click.echo(f"Skipped {result['skipped_files']} already-processed files")
+    from rich.console import Console
+    from rich.table import Table
+
+    console = Console()
+
+    table = Table(
+        title="Mining Summary",
+        show_header=False,
+        title_style="bold cyan",
+        border_style="dim",
+    )
+    table.add_column("Metric", style="bold")
+    table.add_column("Value", justify="right")
+
+    total_scanned = result["total_files_scanned"]
+    skipped = result.get("skipped_files", 0)
+    newly_mined = result.get("newly_mined", total_scanned - skipped)
+    errors_found = result["errors_found"]
+    total_cost = result.get("total_cost_tracked", 0.0)
+
+    table.add_row("Sessions found", str(total_scanned))
+    table.add_row(
+        "Already processed (skipped)", str(skipped),
+    )
+    table.add_row("Newly mined", str(newly_mined))
+    table.add_row(
+        "Total cost tracked",
+        f"${total_cost:.2f}" if total_cost else "$0.00",
+    )
+    table.add_row("Errors captured", str(errors_found))
+
+    console.print()
+    console.print(table)
 
 
 # ---------------------------------------------------------------------------

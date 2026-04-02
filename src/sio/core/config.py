@@ -37,6 +37,16 @@ class SIOConfig:
     daily_enabled: bool = True
     weekly_enabled: bool = True
     stale_days: int = 30
+    # competitive enhancement fields
+    budget_cap_primary: int = 100
+    budget_cap_supplementary: int = 50
+    decay_floor: float = 0.3
+    decay_fresh_days: int = 14
+    decay_stale_days: int = 28
+    validation_window_sessions: int = 5
+    autoresearch_interval_minutes: int = 30
+    max_experiments: int = 3
+    dedup_threshold: float = 0.85
     # [llm] section
     llm_model: str | None = None
     llm_api_key_env: str | None = None
@@ -82,6 +92,11 @@ def load_config(path: str | None = None) -> SIOConfig:
         "drift_threshold", "collision_threshold", "similarity_threshold",
         "min_pattern_occurrences", "min_dataset_examples", "daily_enabled",
         "weekly_enabled", "stale_days", "llm",
+        # competitive enhancement keys
+        "budget_cap_primary", "budget_cap_supplementary",
+        "decay_floor", "decay_fresh_days", "decay_stale_days",
+        "validation_window_sessions", "autoresearch_interval_minutes",
+        "max_experiments", "dedup_threshold",
     })
     unknown_keys = set(data.keys()) - _KNOWN_TOP_KEYS
     if unknown_keys:
@@ -122,6 +137,34 @@ def load_config(path: str | None = None) -> SIOConfig:
         daily_enabled=data.get("daily_enabled", _DEFAULTS.daily_enabled),
         weekly_enabled=data.get("weekly_enabled", _DEFAULTS.weekly_enabled),
         stale_days=data.get("stale_days", _DEFAULTS.stale_days),
+        # competitive enhancement keys
+        budget_cap_primary=data.get(
+            "budget_cap_primary", _DEFAULTS.budget_cap_primary,
+        ),
+        budget_cap_supplementary=data.get(
+            "budget_cap_supplementary", _DEFAULTS.budget_cap_supplementary,
+        ),
+        decay_floor=data.get("decay_floor", _DEFAULTS.decay_floor),
+        decay_fresh_days=data.get(
+            "decay_fresh_days", _DEFAULTS.decay_fresh_days,
+        ),
+        decay_stale_days=data.get(
+            "decay_stale_days", _DEFAULTS.decay_stale_days,
+        ),
+        validation_window_sessions=data.get(
+            "validation_window_sessions",
+            _DEFAULTS.validation_window_sessions,
+        ),
+        autoresearch_interval_minutes=data.get(
+            "autoresearch_interval_minutes",
+            _DEFAULTS.autoresearch_interval_minutes,
+        ),
+        max_experiments=data.get(
+            "max_experiments", _DEFAULTS.max_experiments,
+        ),
+        dedup_threshold=data.get(
+            "dedup_threshold", _DEFAULTS.dedup_threshold,
+        ),
         # [llm] keys
         llm_model=llm_section.get("model", _DEFAULTS.llm_model),
         llm_api_key_env=llm_section.get("api_key_env", _DEFAULTS.llm_api_key_env),

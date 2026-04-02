@@ -740,3 +740,37 @@ def get_ground_truth_stats(conn: sqlite3.Connection) -> dict:
         "by_label": by_label,
         "by_surface": by_surface,
     }
+
+
+# ---------------------------------------------------------------------------
+# v3 — Session Metrics queries (competitive enhancement)
+# ---------------------------------------------------------------------------
+
+_SESSION_METRICS_COLS = [
+    "session_id", "file_path", "total_input_tokens", "total_output_tokens",
+    "total_cache_read_tokens", "total_cache_create_tokens", "cache_hit_ratio",
+    "total_cost_usd", "session_duration_seconds", "message_count",
+    "tool_call_count", "error_count", "correction_count",
+    "positive_signal_count", "sidechain_count", "stop_reason_distribution",
+    "model_used", "mined_at",
+]
+
+
+def insert_session_metrics(
+    conn: sqlite3.Connection, record: dict, *, _batch: bool = False,
+) -> int:
+    """Insert or replace a session_metrics row. Returns the row ID.
+
+    Uses INSERT OR REPLACE keyed on session_id (UNIQUE constraint).
+    """
+    cols = _SESSION_METRICS_COLS
+    placeholders = ", ".join(["?"] * len(cols))
+    col_names = ", ".join(cols)
+    values = [record.get(c) for c in cols]
+    cur = conn.execute(
+        f"INSERT OR REPLACE INTO session_metrics ({col_names}) VALUES ({placeholders})",
+        values,
+    )
+    if not _batch:
+        conn.commit()
+    return cur.lastrowid
