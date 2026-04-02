@@ -157,23 +157,31 @@ def _register_hooks(settings_path: str) -> bool:
 
     hooks = settings.setdefault("hooks", {})
 
-    _MODULE_PATH = "sio.adapters.claude_code.hooks.post_tool_use"
-    sio_hook = {
-        "type": "command",
-        "command": f"{sys.executable} -m {_MODULE_PATH}",
-    }
+    # All SIO hook registrations: (event_name, module_path)
+    _HOOK_DEFS = [
+        ("PostToolUse", "sio.adapters.claude_code.hooks.post_tool_use"),
+        ("PreCompact", "sio.adapters.claude_code.hooks.pre_compact"),
+        ("Stop", "sio.adapters.claude_code.hooks.stop"),
+        ("UserPromptSubmit", "sio.adapters.claude_code.hooks.user_prompt_submit"),
+    ]
 
-    post_hooks = hooks.setdefault("PostToolUse", [])
+    for event_name, module_path in _HOOK_DEFS:
+        sio_hook = {
+            "type": "command",
+            "command": f"{sys.executable} -m {module_path}",
+        }
 
-    # Check if SIO hook already registered (match on module path, not full command,
-    # since the python path will differ across installs)
-    already_registered = any(
-        _MODULE_PATH in h.get("command", "")
-        for h in post_hooks
-        if isinstance(h, dict)
-    )
-    if not already_registered:
-        post_hooks.append(sio_hook)
+        event_hooks = hooks.setdefault(event_name, [])
+
+        # Check if SIO hook already registered (match on module path,
+        # not full command, since the python path differs across installs)
+        already_registered = any(
+            module_path in h.get("command", "")
+            for h in event_hooks
+            if isinstance(h, dict)
+        )
+        if not already_registered:
+            event_hooks.append(sio_hook)
 
     with open(settings_path, "w") as f:
         json.dump(settings, f, indent=2)

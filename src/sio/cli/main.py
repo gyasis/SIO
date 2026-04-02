@@ -1607,24 +1607,96 @@ def reject(suggestion_id, note):
 
 @cli.command("apply")
 @click.argument("suggestion_id", type=int)
-def apply_suggestion(suggestion_id):
-    """Apply an approved suggestion to its target file."""
+@click.option(
+    "--experiment", is_flag=True, default=False,
+    help="Apply on experiment branch instead of main.",
+)
+@click.option(
+    "--force", is_flag=True, default=False,
+    help="Skip budget check (not recommended).",
+)
+def apply_suggestion(suggestion_id, experiment, force):
+    """Apply an approved suggestion to its target file.
+
+    Checks the instruction budget before applying. Uses delta-based
+    writing (merge if >80% similar to an existing rule). If the budget
+    is near capacity, triggers automatic consolidation.
+
+    Examples:
+        sio apply 5                 # Normal apply with budget check
+        sio apply 5 --force         # Skip budget check
+        sio apply 5 --experiment    # Apply on experiment branch
+    """
     from sio.applier.writer import apply_change
+    from sio.core.config import load_config
 
     db_path = os.path.expanduser("~/.sio/sio.db")
     if not os.path.exists(db_path):
         click.echo("No database found.")
         return
 
+    config = load_config()
+
+    if experiment:
+        from sio.core.arena.experiment import create_experiment
+
+        with _db_conn(db_path) as conn:
+            try:
+                branch = create_experiment(suggestion_id, conn)
+                click.echo(f"Experiment branch created: {branch}")
+                click.echo(
+                    f"Suggestion will be validated after "
+                    f"{config.validation_window_sessions} sessions."
+                )
+            except RuntimeError as exc:
+                click.echo(f"Experiment creation failed: {exc}")
+                raise SystemExit(1)
+        return
+
     with _db_conn(db_path) as conn:
-        result = apply_change(conn, suggestion_id)
+        result = apply_change(
+            conn, suggestion_id, config=config, force=force,
+        )
 
     if result["success"]:
-        click.echo(f"Applied suggestion {suggestion_id} to {result['target_file']}")
-        cid = result['change_id']
-        click.echo(f"Change ID: {cid} (use 'sio rollback {cid}' to undo)")
+        # Show budget info
+        budget_msg = result.get("budget_message", "")
+        if budget_msg:
+            click.echo(f"  Budget: {budget_msg}")
+
+        consolidation = result.get("consolidation_triggered", False)
+        if consolidation:
+            click.echo("  Consolidation triggered: merged similar rules")
+
+        delta_type = result.get("delta_type", "append")
+        if delta_type == "merge":
+            click.echo(
+                "  Action: merge (similar to existing rule)"
+            )
+        else:
+            click.echo(f"  Action: {delta_type}")
+
+        click.echo(
+            f"Applied suggestion {suggestion_id} "
+            f"to {result['target_file']}"
+        )
+        cid = result["change_id"]
+        click.echo(
+            f"Change ID: {cid} (use 'sio rollback {cid}' to undo)"
+        )
     else:
-        click.echo(f"Apply failed: {result.get('reason', 'unknown')}")
+        reason = result.get("reason", "unknown")
+        budget_msg = result.get("budget_message", "")
+        consolidation = result.get("consolidation_triggered", False)
+
+        if budget_msg:
+            click.echo(f"  Budget: {budget_msg}")
+        if consolidation:
+            click.echo(
+                "  Consolidation attempted: no candidates found"
+            )
+
+        click.echo(f"Apply failed: {reason}")
         raise SystemExit(1)
 
 
@@ -2460,7 +2532,7 @@ def collect_recall(query, session, project, runbook, label):
     from pathlib import Path
 
     from sio.mining.jsonl_parser import parse_jsonl
-    from sio.mining.recall import format_recall_output, detect_struggles, topic_filter
+    from sio.mining.recall import detect_struggles, format_recall_output, topic_filter
     from sio.mining.session_distiller import distill_session
 
     db_path = os.path.expanduser("~/.sio/sio.db")
@@ -2874,6 +2946,554 @@ def violations(since, fmt):
                 f"\nAll rules are being followed."
                 f" Checked {report['total_rules']} rules."
             )
+
+
+# ---------------------------------------------------------------------------
+# Instruction budget management (US4 — T041)
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.option(
+    "--file", "file_path", default=None,
+    help="Check specific file only.",
+)
+def budget(file_path):
+    """Show instruction budget usage per file.
+
+    Scans CLAUDE.md and supplementary rule files, counting meaningful
+    lines (non-blank, non-comment) and comparing against the configured
+    caps (default: 100 for CLAUDE.md, 50 for supplementary files).
+
+    Examples:
+        sio budget                          # All tracked files
+        sio budget --file ~/.claude/CLAUDE.md   # Specific file
+    """
+    from pathlib import Path
+
+    from rich.console import Console
+    from rich.table import Table
+
+    from sio.applier.budget import count_meaningful_lines
+    from sio.core.config import load_config
+
+    config = load_config()
+    console = Console()
+
+    # Discover files to check
+    files_to_check: list[Path] = []
+
+    if file_path:
+        target = Path(file_path).expanduser().resolve()
+        if target.exists():
+            files_to_check.append(target)
+        else:
+            click.echo(f"File not found: {file_path}")
+            return
+    else:
+        # Auto-discover: CLAUDE.md + rules/ directory files
+        claude_md_candidates = [
+            Path.home() / ".claude" / "CLAUDE.md",
+            Path.cwd() / "CLAUDE.md",
+        ]
+        for candidate in claude_md_candidates:
+            if candidate.exists() and candidate not in files_to_check:
+                files_to_check.append(candidate)
+
+        rules_dir = Path.home() / ".claude" / "rules"
+        if rules_dir.exists():
+            for md_file in sorted(rules_dir.rglob("*.md")):
+                if md_file not in files_to_check:
+                    files_to_check.append(md_file)
+
+        project_claude_md = Path.cwd() / "CLAUDE.md"
+        if (
+            project_claude_md.exists()
+            and project_claude_md not in files_to_check
+        ):
+            files_to_check.append(project_claude_md)
+
+        project_rules_dir = Path.cwd() / "rules"
+        if project_rules_dir.exists():
+            for md_file in sorted(project_rules_dir.rglob("*.md")):
+                if md_file not in files_to_check:
+                    files_to_check.append(md_file)
+
+    if not files_to_check:
+        click.echo("No instruction files found to check.")
+        return
+
+    table = Table(
+        title="Instruction Budget Report",
+        title_style="bold cyan",
+    )
+    table.add_column("File", style="cyan", max_width=40)
+    table.add_column("Lines", justify="right")
+    table.add_column("Cap", justify="right")
+    table.add_column("Status", justify="right")
+
+    for fp in files_to_check:
+        lines = count_meaningful_lines(fp)
+        name_upper = fp.name.upper()
+        cap = (
+            config.budget_cap_primary
+            if name_upper == "CLAUDE.MD"
+            else config.budget_cap_supplementary
+        )
+        utilization = lines / cap if cap > 0 else 1.0
+        pct = utilization * 100
+
+        if pct >= 95:
+            status = f"[red]{pct:.0f}%[/red]"
+        elif pct >= 80:
+            status = f"[yellow]{pct:.0f}%[/yellow]"
+        else:
+            status = f"[green]{pct:.0f}%[/green]"
+
+        # Show abbreviated path
+        try:
+            display_path = str(fp.relative_to(Path.home()))
+            display_path = "~/" + display_path
+        except ValueError:
+            display_path = str(fp)
+
+        table.add_row(display_path, str(lines), str(cap), status)
+
+    console.print()
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# Deduplication command (US4 — T042)
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.option(
+    "--threshold", default=0.85, type=float,
+    help="Similarity threshold (default: 0.85).",
+)
+@click.option(
+    "--dry-run", is_flag=True, default=False,
+    help="Show proposals without applying.",
+)
+@click.option(
+    "--auto", "auto_apply", is_flag=True, default=False,
+    help="Apply all proposals without confirmation.",
+)
+def dedupe(threshold, dry_run, auto_apply):
+    """Find and consolidate semantically duplicate rules.
+
+    Scans all instruction files (CLAUDE.md + rules/) for rule blocks
+    that are semantically similar above the threshold. Shows duplicate
+    pairs with proposed merges.
+
+    Examples:
+        sio dedupe                          # Default: threshold 0.85
+        sio dedupe --threshold 0.80         # Lower threshold
+        sio dedupe --dry-run                # Show without applying
+        sio dedupe --auto                   # Apply all without prompts
+    """
+    from pathlib import Path
+
+    from rich.console import Console
+
+    from sio.applier.deduplicator import (
+        DuplicatePair,
+        find_duplicates,
+        propose_merge,
+    )
+
+    console = Console()
+
+    # Discover instruction files
+    file_paths: list[str] = []
+
+    claude_md_candidates = [
+        Path.home() / ".claude" / "CLAUDE.md",
+        Path.cwd() / "CLAUDE.md",
+    ]
+    for candidate in claude_md_candidates:
+        if candidate.exists():
+            file_paths.append(str(candidate))
+
+    rules_dir = Path.home() / ".claude" / "rules"
+    if rules_dir.exists():
+        for md_file in sorted(rules_dir.rglob("*.md")):
+            file_paths.append(str(md_file))
+
+    project_claude_md = Path.cwd() / "CLAUDE.md"
+    if (
+        project_claude_md.exists()
+        and str(project_claude_md) not in file_paths
+    ):
+        file_paths.append(str(project_claude_md))
+
+    project_rules_dir = Path.cwd() / "rules"
+    if project_rules_dir.exists():
+        for md_file in sorted(project_rules_dir.rglob("*.md")):
+            if str(md_file) not in file_paths:
+                file_paths.append(str(md_file))
+
+    if not file_paths:
+        click.echo("No instruction files found to scan.")
+        return
+
+    console.print(
+        f"Scanning {len(file_paths)} files "
+        f"(threshold: {threshold:.2f})..."
+    )
+
+    pairs: list[DuplicatePair] = find_duplicates(file_paths, threshold)
+
+    if not pairs:
+        console.print(
+            "\n[green]No duplicates found above "
+            f"threshold {threshold:.2f}.[/green]"
+        )
+        return
+
+    console.print(
+        f"\n[bold]Duplicate Rule Analysis "
+        f"(threshold: {threshold:.2f})[/bold]\n"
+    )
+
+    applied_count = 0
+    for i, pair in enumerate(pairs, 1):
+        # Show the pair
+        console.print(
+            f"[bold]Pair {i}[/bold] "
+            f"(similarity: {pair.similarity:.2f}):"
+        )
+
+        # Abbreviate file paths for display
+        try:
+            display_a = str(
+                Path(pair.file_a).relative_to(Path.home())
+            )
+            display_a = "~/" + display_a
+        except ValueError:
+            display_a = pair.file_a
+
+        try:
+            display_b = str(
+                Path(pair.file_b).relative_to(Path.home())
+            )
+            display_b = "~/" + display_b
+        except ValueError:
+            display_b = pair.file_b
+
+        text_a_short = pair.text_a[:80].replace("\n", " ")
+        text_b_short = pair.text_b[:80].replace("\n", " ")
+
+        console.print(
+            f'  A: "{text_a_short}" '
+            f"({display_a}:{pair.line_a})"
+        )
+        console.print(
+            f'  B: "{text_b_short}" '
+            f"({display_b}:{pair.line_b})"
+        )
+
+        merged = propose_merge(pair)
+        merged_short = merged[:100].replace("\n", " ")
+        console.print(
+            f'  Proposed merge: "{merged_short}"'
+        )
+
+        if dry_run:
+            console.print("  [dim][dry-run] Skipped.[/dim]")
+            console.print()
+            continue
+
+        if auto_apply:
+            console.print("  [green]Auto-applied.[/green]")
+            applied_count += 1
+            console.print()
+            continue
+
+        choice = click.prompt(
+            "  Apply? [y/n]",
+            type=click.Choice(["y", "n"]),
+            default="n",
+        )
+        if choice == "y":
+            applied_count += 1
+            console.print("  [green]Applied.[/green]")
+        else:
+            console.print("  [dim]Skipped.[/dim]")
+        console.print()
+
+    if applied_count > 0 and not dry_run:
+        # If any were applied, trigger consolidation on affected files
+        from sio.applier.budget import trigger_consolidation
+        from sio.core.config import load_config
+
+        config = load_config()
+        affected_files = {pair.file_a for pair in pairs}
+        affected_files |= {pair.file_b for pair in pairs}
+        for fp in affected_files:
+            trigger_consolidation(fp, config)
+
+        console.print(
+            f"[green]Consolidated {applied_count} "
+            f"duplicate pair(s).[/green]"
+        )
+    elif dry_run:
+        console.print(
+            f"[yellow]{len(pairs)} duplicate pair(s) found. "
+            f"Run without --dry-run to apply.[/yellow]"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Autoresearch commands (T076 / US8)
+# ---------------------------------------------------------------------------
+
+
+@cli.group()
+def autoresearch():
+    """Autonomous optimisation loop — mine, cluster, grade, generate, experiment."""
+    pass
+
+
+@autoresearch.command("start")
+@click.option(
+    "--interval", default=30, type=int,
+    help="Minutes between cycles (default: 30).",
+)
+@click.option(
+    "--max-cycles", default=None, type=int,
+    help="Stop after N cycles (default: unlimited).",
+)
+@click.option(
+    "--max-experiments", default=3, type=int,
+    help="Max concurrent experiments (default: 3).",
+)
+@click.option("--dry-run", is_flag=True, help="Run pipeline but don't create experiments.")
+def autoresearch_start(interval, max_cycles, max_experiments, dry_run):
+    """Start the autonomous optimisation loop."""
+    from sio.core.arena.autoresearch import AutoResearchLoop
+    from sio.core.config import load_config
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+
+    config = load_config()
+    config.max_experiments = max_experiments
+
+    click.echo(
+        f"AutoResearch Loop started "
+        f"(interval: {interval}m, max experiments: {max_experiments})"
+    )
+
+    with _db_conn(db_path) as conn:
+        loop = AutoResearchLoop(conn, config)
+        loop.start(
+            interval_minutes=interval,
+            max_cycles=max_cycles,
+        )
+
+    click.echo("AutoResearch Loop stopped.")
+
+
+@autoresearch.command("stop")
+def autoresearch_stop():
+    """Stop the autonomous optimisation loop."""
+    sentinel = os.path.expanduser("~/.sio/autoresearch.stop")
+    os.makedirs(os.path.dirname(sentinel), exist_ok=True)
+    with open(sentinel, "w") as f:
+        f.write("")
+    click.echo("Stop sentinel written. Loop will exit after current cycle.")
+
+
+@autoresearch.command("status")
+def autoresearch_status():
+    """Show autoresearch loop status."""
+    from sio.core.arena.txlog import TxLog
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found. Run 'sio mine' first.")
+        return
+
+    sentinel = os.path.expanduser("~/.sio/autoresearch.stop")
+    running = not os.path.exists(sentinel)
+
+    with _db_conn(db_path) as conn:
+        txlog = TxLog(conn)
+        entries = txlog.read_log()
+        active = txlog.active_experiment_count()
+
+    if not entries:
+        click.echo("AutoResearch has not been run yet.")
+        return
+
+    cycles = set(e.get("cycle_number") for e in entries)
+    promoted = sum(
+        1 for e in entries
+        if e.get("action") == "promote" and e.get("status") == "success"
+    )
+    rolled_back = sum(
+        1 for e in entries
+        if e.get("action") == "rollback" and e.get("status") == "success"
+    )
+
+    click.echo("AutoResearch Status")
+    click.echo(f"  Running:           {'yes' if running else 'no (stopped)'}")
+    click.echo(f"  Cycles completed:  {len(cycles)}")
+    click.echo(f"  Active experiments: {active}")
+    click.echo(f"  Promoted:          {promoted}")
+    click.echo(f"  Rolled back:       {rolled_back}")
+
+
+# ---------------------------------------------------------------------------
+# Interactive reporting (US9)
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.option("--html", "html_flag", is_flag=True, help="Generate HTML report.")
+@click.option(
+    "--output", "-o", default=None,
+    help="Output file path (default: ~/.sio/reports/report-YYYYMMDD.html).",
+)
+@click.option(
+    "--days", default=30, type=int,
+    help="Lookback period in days (default: 30).",
+)
+@click.option(
+    "--open", "open_flag", is_flag=True,
+    help="Open report in browser after generation.",
+)
+def report(html_flag, output, days, open_flag):
+    """Generate a session report (terminal or HTML).
+
+    Without --html: show a plain text summary via Rich.
+    With --html: generate a self-contained HTML file.
+
+    Examples:
+        sio report                          # Terminal summary
+        sio report --html                   # HTML report (default path)
+        sio report --html -o my-report.html # Custom output path
+        sio report --html --open            # Generate and open in browser
+    """
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found. Run 'sio mine' first.")
+        return
+
+    if html_flag:
+        _report_html(db_path, output, days, open_flag)
+    else:
+        _report_terminal(db_path, days)
+
+
+def _report_html(
+    db_path: str, output: str | None, days: int, open_flag: bool,
+) -> None:
+    """Generate and write an HTML report."""
+    from datetime import datetime as _dt
+
+    from sio.reports.html_report import generate_html_report
+
+    with _db_conn(db_path) as conn:
+        html = generate_html_report(conn, days=days)
+
+    if output is None:
+        reports_dir = os.path.expanduser("~/.sio/reports")
+        os.makedirs(reports_dir, exist_ok=True)
+        datestamp = _dt.now().strftime("%Y%m%d")
+        output = os.path.join(reports_dir, f"report-{datestamp}.html")
+
+    # Ensure parent directory exists
+    os.makedirs(os.path.dirname(os.path.abspath(output)), exist_ok=True)
+
+    with open(output, "w", encoding="utf-8") as f:
+        f.write(html)
+
+    click.echo(f"Report saved: {output}")
+
+    if open_flag:
+        import webbrowser
+
+        webbrowser.open(f"file://{os.path.abspath(output)}")
+        click.echo("Opening in browser...")
+
+
+def _report_terminal(db_path: str, days: int) -> None:
+    """Show a plain text summary using Rich."""
+    from datetime import datetime as _dt
+    from datetime import timedelta, timezone
+
+    with _db_conn(db_path) as conn:
+        cutoff = (
+            _dt.now(timezone.utc) - timedelta(days=days)
+        ).isoformat()
+
+        # Session metrics summary
+        metrics = conn.execute(
+            "SELECT COUNT(*) as cnt, "
+            "COALESCE(SUM(total_input_tokens + total_output_tokens), 0) as tokens, "
+            "COALESCE(SUM(total_cost_usd), 0) as cost, "
+            "COALESCE(SUM(error_count), 0) as errors, "
+            "COALESCE(AVG(cache_hit_ratio), 0) as cache_avg "
+            "FROM session_metrics WHERE mined_at >= ?",
+            (cutoff,),
+        ).fetchone()
+
+        # Pattern count
+        pattern_count = conn.execute(
+            "SELECT COUNT(*) FROM patterns",
+        ).fetchone()[0]
+
+        # Suggestion count
+        suggestion_count = conn.execute(
+            "SELECT COUNT(*) FROM suggestions "
+            "WHERE status IN ('pending', 'approved')",
+        ).fetchone()[0]
+
+    try:
+        from rich.console import Console
+        from rich.table import Table
+
+        console = Console()
+        table = Table(
+            title=f"SIO Report ({days}-day window)",
+            show_header=False,
+            title_style="bold cyan",
+            border_style="dim",
+        )
+        table.add_column("Metric", style="bold")
+        table.add_column("Value", justify="right")
+
+        table.add_row("Sessions analyzed", str(metrics[0]))
+        table.add_row("Total tokens", f"{metrics[1]:,}")
+        table.add_row("Total cost", f"${metrics[2]:.2f}")
+        table.add_row("Total errors", str(metrics[3]))
+        table.add_row(
+            "Avg cache efficiency", f"{metrics[4] * 100:.1f}%",
+        )
+        table.add_row("Patterns discovered", str(pattern_count))
+        table.add_row("Pending suggestions", str(suggestion_count))
+
+        console.print()
+        console.print(table)
+        console.print()
+        console.print(
+            "[dim]Use --html for a full interactive report"
+            " with charts.[/dim]",
+        )
+
+    except ImportError:
+        click.echo(f"SIO Report ({days}-day window)")
+        click.echo(f"  Sessions:    {metrics[0]}")
+        click.echo(f"  Tokens:      {metrics[1]:,}")
+        click.echo(f"  Cost:        ${metrics[2]:.2f}")
+        click.echo(f"  Errors:      {metrics[3]}")
+        click.echo(f"  Cache:       {metrics[4] * 100:.1f}%")
+        click.echo(f"  Patterns:    {pattern_count}")
+        click.echo(f"  Suggestions: {suggestion_count}")
 
 
 if __name__ == "__main__":

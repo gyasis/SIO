@@ -2,7 +2,7 @@
 
 Public API
 ----------
-    apply_change(db, suggestion_id, config=None) -> dict
+    apply_change(db, suggestion_id, config=None, force=False) -> dict
 """
 
 from __future__ import annotations
@@ -14,8 +14,9 @@ from pathlib import Path
 
 import numpy as np
 
+from sio.applier.budget import BudgetResult, check_budget, trigger_consolidation
 from sio.clustering.pattern_clusterer import _get_backend
-from sio.core.config import SIOConfig
+from sio.core.config import SIOConfig, load_config
 
 _ALLOWED_ROOTS: list[Path] = [
     Path.home() / ".sio",
@@ -165,6 +166,8 @@ def apply_change(
     db: sqlite3.Connection,
     suggestion_id: int,
     config: SIOConfig | None = None,
+    *,
+    force: bool = False,
 ) -> dict:
     """Apply an approved suggestion to its target file.
 
@@ -172,9 +175,18 @@ def apply_change(
     change is >similarity_threshold similar to an existing rule block,
     it merges in place instead of appending.
 
+    Before writing, checks the instruction budget for the target file.
+    If the budget is near capacity, triggers consolidation automatically.
+    If the budget is exceeded and consolidation cannot free space, the
+    write is blocked (unless *force* is True).
+
     Returns a dict with keys: success, change_id, diff_before, diff_after,
-    target_file, delta_type, reason (on failure).
+    target_file, delta_type, budget_message, consolidation_triggered,
+    reason (on failure).
     """
+    if config is None:
+        config = load_config()
+
     row = db.execute(
         "SELECT * FROM suggestions WHERE id = ?", (suggestion_id,)
     ).fetchone()
@@ -187,7 +199,10 @@ def apply_change(
     if suggestion["status"] not in ("approved", "auto_approved"):
         return {
             "success": False,
-            "reason": f"Suggestion is not approved (status: {suggestion['status']})",
+            "reason": (
+                f"Suggestion is not approved "
+                f"(status: {suggestion['status']})"
+            ),
         }
 
     target_path = Path(suggestion["target_file"])
@@ -197,6 +212,40 @@ def apply_change(
         return {"success": False, "reason": path_error}
 
     proposed_change = suggestion["proposed_change"]
+
+    # ---------------------------------------------------------------
+    # Budget check (T040): verify file has room before writing
+    # ---------------------------------------------------------------
+    new_rule_lines = sum(
+        1 for line in proposed_change.splitlines() if line.strip()
+    )
+    budget_result: BudgetResult = check_budget(
+        target_path, new_rule_lines, config,
+    )
+    consolidation_triggered = False
+
+    if budget_result.status == "consolidate" and not force:
+        # Attempt automatic consolidation to free space
+        merged = trigger_consolidation(target_path, config)
+        consolidation_triggered = merged
+        if merged:
+            # Re-check after consolidation
+            budget_result = check_budget(
+                target_path, new_rule_lines, config,
+            )
+
+        if budget_result.status == "consolidate":
+            # Still over budget after consolidation attempt
+            return {
+                "success": False,
+                "reason": (
+                    f"BLOCKED: Cannot apply -- instruction budget exceeded. "
+                    f"{budget_result.message}. "
+                    f"Run 'sio dedupe' to find consolidation opportunities."
+                ),
+                "budget_message": budget_result.message,
+                "consolidation_triggered": consolidation_triggered,
+            }
 
     # Read existing content (or empty if file doesn't exist)
     if target_path.exists():
@@ -284,4 +333,6 @@ def apply_change(
         "diff_after": diff_after,
         "target_file": str(target_path),
         "delta_type": delta_type,
+        "budget_message": budget_result.message,
+        "consolidation_triggered": consolidation_triggered,
     }

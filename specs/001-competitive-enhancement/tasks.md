@@ -139,12 +139,12 @@
 - [x] T037 [P] [US4] Create `src/sio/applier/budget.py` — implement `count_meaningful_lines(file_path) -> int` (exclude blanks, comments); implement `check_budget(file_path, new_rule_lines, config) -> BudgetResult` returning status (ok, consolidate, blocked); implement `trigger_consolidation(file_path, config) -> bool` merging semantically similar rules via FastEmbed (reuse `_get_backend()` from pattern_clusterer.py)
 - [x] T038 [P] [US4] Create `src/sio/applier/deduplicator.py` — implement `find_duplicates(file_paths, threshold=0.85) -> list[DuplicatePair]` scanning all rule files; implement `propose_merge(pair) -> str` generating consolidated text; reuse `_get_backend()` singleton
 - [x] T039 [US4] Modify `src/sio/applier/writer.py` to use delta-based writing — before appending, embed the new rule and compare against existing rules; if >80% similarity, update existing rule in place (merge); otherwise append; track delta_type ('merge' or 'append') in applied_changes table
-- [ ] T040 [US4] Integrate budget check into `src/sio/applier/writer.py` — call `check_budget()` before any write; trigger consolidation if near cap; block if over cap
-- [ ] T041 [US4] Add `sio budget` CLI command to `src/sio/cli/main.py` — display per-file budget usage (lines/cap/status) as Rich table per contracts/cli-commands.md
-- [ ] T042 [US4] Add `sio dedupe` CLI command to `src/sio/cli/main.py` — options: `--threshold` (default 0.85), `--dry-run`, `--auto`; display duplicate pairs with proposed merges per contracts/cli-commands.md
-- [ ] T043 [US4] Update `sio apply` CLI command in `src/sio/cli/main.py` — add budget check output, consolidation messaging, and block warnings per contracts/cli-commands.md
-- [ ] T044 [US4] Run `pytest tests/test_budget.py tests/test_deduplicator.py tests/test_delta_writer.py -v` — all must pass
-- [ ] T045 [US4] Run `ruff check src/sio/applier/ src/sio/cli/main.py --fix`
+- [x] T040 [US4] Integrate budget check into `src/sio/applier/writer.py` — call `check_budget()` before any write; trigger consolidation if near cap; block if over cap
+- [x] T041 [US4] Add `sio budget` CLI command to `src/sio/cli/main.py` — display per-file budget usage (lines/cap/status) as Rich table per contracts/cli-commands.md
+- [x] T042 [US4] Add `sio dedupe` CLI command to `src/sio/cli/main.py` — options: `--threshold` (default 0.85), `--dry-run`, `--auto`; display duplicate pairs with proposed merges per contracts/cli-commands.md
+- [x] T043 [US4] Update `sio apply` CLI command in `src/sio/cli/main.py` — add budget check output, consolidation messaging, and block warnings per contracts/cli-commands.md
+- [x] T044 [US4] Run `pytest tests/test_budget.py tests/test_deduplicator.py tests/test_delta_writer.py -v` — all must pass
+- [x] T045 [US4] Run `ruff check src/sio/applier/ src/sio/cli/main.py --fix`
 
 **Checkpoint**: US4 complete — instruction files stay within budget. Test with real CLAUDE.md.
 
@@ -164,8 +164,8 @@
 
 - [x] T047 [US5] Create `src/sio/mining/violation_detector.py` — implement `parse_rules(file_path) -> list[Rule]` extracting constraint text from markdown instruction files; implement `detect_violations(rules, error_records) -> list[Violation]` matching mined errors against parsed rules using keyword and semantic matching; flag violations at higher priority than new patterns
 - [x] T048 [US5] Add `sio violations` CLI command to `src/sio/cli/main.py` — options: `--since`, `--format table|json`; display violations sorted by frequency and recency per contracts/cli-commands.md
-- [ ] T049 [US5] Run `pytest tests/test_violation_detector.py -v` — must pass
-- [ ] T050 [US5] Run `ruff check src/sio/mining/violation_detector.py src/sio/cli/main.py --fix`
+- [x] T049 [US5] Run `pytest tests/test_violation_detector.py -v` — must pass
+- [x] T050 [US5] Run `ruff check src/sio/mining/violation_detector.py src/sio/cli/main.py --fix`
 
 **Checkpoint**: US5 complete — `sio violations` identifies enforcement failures.
 
@@ -186,8 +186,8 @@
 
 - [x] T053 [US6] Modify `src/sio/suggestions/confidence.py` — add temporal decay as a 4th multiplicative factor in `score_confidence()`; implement `_compute_decay_multiplier(last_seen_date) -> float` with bands: Fresh (0-14 days, 1.0), Cooling (15-28 days, linear 1.0→0.6), Stale (29+ days, linear 0.6→floor 0.3)
 - [x] T054 [US6] Create `src/sio/clustering/grader.py` — implement `grade_pattern(pattern_row) -> str` computing grade from error_count, session_count, first_seen, last_seen, confidence; implement `run_grading(db) -> list[dict]` updating all patterns' grade column; implement `auto_generate_suggestions(db, strong_patterns)` creating suggestions for newly-promoted "strong" patterns without human trigger
-- [ ] T055 [US6] Run `pytest tests/test_confidence_decay.py tests/test_grader.py -v` — all must pass
-- [ ] T056 [US6] Run `ruff check src/sio/suggestions/confidence.py src/sio/clustering/grader.py --fix`
+- [x] T055 [US6] Run `pytest tests/test_confidence_decay.py tests/test_grader.py -v` — all must pass
+- [x] T056 [US6] Run `ruff check src/sio/suggestions/confidence.py src/sio/clustering/grader.py --fix`
 
 **Checkpoint**: US6 complete — stale patterns decay, recurring patterns promote, strong patterns auto-generate suggestions.
 
@@ -201,19 +201,19 @@
 
 ### Tests for User Story 7
 
-- [ ] T057 [P] [US7] Write test for PreCompact hook (captures session snapshot, always returns allow, retry-on-failure) in `tests/test_hooks.py::TestPreCompact` — simulate hook input JSON → verify session_metrics snapshot saved and output is `{"action": "allow"}`
-- [ ] T058 [P] [US7] Write test for Stop hook (finalizes metrics, saves high-confidence patterns to skills/) in `tests/test_hooks.py::TestStop` — simulate hook input → verify session_metrics finalized and pattern with confidence >0.8 saved to skills directory
-- [ ] T059 [P] [US7] Write test for UserPromptSubmit hook (detects corrections, detects frustration, never blocks) in `tests/test_hooks.py::TestUserPromptSubmit` — simulate "no that's wrong, do X instead" → verify correction detected; simulate 3 negative messages → verify frustration logged
-- [ ] T060 [P] [US7] Write test for hook installer registering all 4 hooks in settings.json in `tests/test_hooks.py::TestInstaller`
+- [x] T057 [P] [US7] Write test for PreCompact hook (captures session snapshot, always returns allow, retry-on-failure) in `tests/test_hooks.py::TestPreCompact` — simulate hook input JSON → verify session_metrics snapshot saved and output is `{"action": "allow"}`
+- [x] T058 [P] [US7] Write test for Stop hook (finalizes metrics, saves high-confidence patterns to skills/) in `tests/test_hooks.py::TestStop` — simulate hook input → verify session_metrics finalized and pattern with confidence >0.8 saved to skills directory
+- [x] T059 [P] [US7] Write test for UserPromptSubmit hook (detects corrections, detects frustration, never blocks) in `tests/test_hooks.py::TestUserPromptSubmit` — simulate "no that's wrong, do X instead" → verify correction detected; simulate 3 negative messages → verify frustration logged
+- [x] T060 [P] [US7] Write test for hook installer registering all 4 hooks in settings.json in `tests/test_hooks.py::TestInstaller`
 
 ### Implementation for User Story 7
 
-- [ ] T061 [P] [US7] Create `src/sio/adapters/claude_code/hooks/pre_compact.py` — read stdin JSON with session_id/transcript_path; capture session_metrics snapshot and recent positive signals; output `{"action": "allow"}`; implement retry-once-then-fail-silent error handling with logging to `~/.sio/hook_errors.log`
-- [ ] T062 [P] [US7] Create `src/sio/adapters/claude_code/hooks/stop.py` — read stdin JSON; finalize session_metrics entry; run lightweight pattern detection; auto-save patterns with confidence >0.8 to `~/.claude/skills/learned/`; update processed_sessions; implement retry-once error handling
-- [ ] T063 [P] [US7] Create `src/sio/adapters/claude_code/hooks/user_prompt_submit.py` — read stdin JSON with user_message; detect corrections/undo keywords; increment session correction counter; detect frustration escalation; output `{"action": "allow"}`; implement retry-once error handling; timeout budget: <2000ms
-- [ ] T064 [US7] Update `src/sio/adapters/claude_code/installer.py` — register PreCompact, Stop, and UserPromptSubmit hooks alongside existing PostToolUse; update `sio install` to show all 4 hooks
-- [ ] T065 [US7] Run `pytest tests/test_hooks.py -v` — all must pass
-- [ ] T066 [US7] Run `ruff check src/sio/adapters/claude_code/hooks/ src/sio/adapters/claude_code/installer.py --fix`
+- [x] T061 [P] [US7] Create `src/sio/adapters/claude_code/hooks/pre_compact.py` — read stdin JSON with session_id/transcript_path; capture session_metrics snapshot and recent positive signals; output `{"action": "allow"}`; implement retry-once-then-fail-silent error handling with logging to `~/.sio/hook_errors.log`
+- [x] T062 [P] [US7] Create `src/sio/adapters/claude_code/hooks/stop.py` — read stdin JSON; finalize session_metrics entry; run lightweight pattern detection; auto-save patterns with confidence >0.8 to `~/.claude/skills/learned/`; update processed_sessions; implement retry-once error handling
+- [x] T063 [P] [US7] Create `src/sio/adapters/claude_code/hooks/user_prompt_submit.py` — read stdin JSON with user_message; detect corrections/undo keywords; increment session correction counter; detect frustration escalation; output `{"action": "allow"}`; implement retry-once error handling; timeout budget: <2000ms
+- [x] T064 [US7] Update `src/sio/adapters/claude_code/installer.py` — register PreCompact, Stop, and UserPromptSubmit hooks alongside existing PostToolUse; update `sio install` to show all 4 hooks
+- [x] T065 [US7] Run `pytest tests/test_hooks.py -v` — all must pass
+- [x] T066 [US7] Run `ruff check src/sio/adapters/claude_code/hooks/ src/sio/adapters/claude_code/installer.py --fix`
 
 **Checkpoint**: US7 complete — all hooks fire at designated moments. Test with real Claude Code session.
 
@@ -227,22 +227,22 @@
 
 ### Tests for User Story 8
 
-- [ ] T067 [P] [US8] Write test for binary assertions (error_rate_decreased, no_new_regressions, confidence_above_threshold, budget_within_limits, no_collisions) in `tests/test_assertions.py` — fixture with pre/post session_metrics → verify pass/fail results with actual_value
-- [ ] T068 [P] [US8] Write test for experiment lifecycle (create worktree, validate after N sessions, promote on pass, rollback on fail) in `tests/test_experiment.py` — mock git operations → verify branch creation, assertion running, merge or delete based on result
-- [ ] T069 [P] [US8] Write test for autoresearch loop (single cycle: mine→cluster→grade→generate→assert→experiment, safety limits, stop mechanism, txlog) in `tests/test_autoresearch.py` — mock pipeline components → verify cycle completes, txlog populated, max-experiments enforced, stop file honored
-- [ ] T070 [P] [US8] Write test for MAD anomaly detection (flag sessions >3 MADs from median) in `tests/test_anomaly.py` — fixture with 10 normal sessions + 1 outlier → verify outlier flagged
+- [x] T067 [P] [US8] Write test for binary assertions (error_rate_decreased, no_new_regressions, confidence_above_threshold, budget_within_limits, no_collisions) in `tests/test_assertions.py` — fixture with pre/post session_metrics → verify pass/fail results with actual_value
+- [x] T068 [P] [US8] Write test for experiment lifecycle (create worktree, validate after N sessions, promote on pass, rollback on fail) in `tests/test_experiment.py` — mock git operations → verify branch creation, assertion running, merge or delete based on result
+- [x] T069 [P] [US8] Write test for autoresearch loop (single cycle: mine→cluster→grade→generate→assert→experiment, safety limits, stop mechanism, txlog) in `tests/test_autoresearch.py` — mock pipeline components → verify cycle completes, txlog populated, max-experiments enforced, stop file honored
+- [x] T070 [P] [US8] Write test for MAD anomaly detection (flag sessions >3 MADs from median) in `tests/test_anomaly.py` — fixture with 10 normal sessions + 1 outlier → verify outlier flagged
 
 ### Implementation for User Story 8
 
-- [ ] T071 [P] [US8] Create `src/sio/core/arena/assertions.py` — implement `AssertionResult(passed, name, actual_value, threshold)` dataclass; implement built-in assertions: `error_rate_decreased(pre, post)`, `no_new_regressions(pre, post)`, `confidence_above_threshold(pattern, threshold)`, `budget_within_limits(file_path, config)`, `no_collisions(suggestion, existing)`; implement `run_assertions(assertion_names, context) -> list[AssertionResult]`; support custom assertions via config dict
-- [ ] T072 [P] [US8] Create `src/sio/core/arena/anomaly.py` — implement `compute_mad(values) -> (median, mad)` for Median Absolute Deviation; implement `detect_anomalies(db, metric_name, threshold_mads=3) -> list[session_id]` checking error_rate, token_usage, session_duration, cost_per_session
-- [ ] T073 [US8] Create `src/sio/core/arena/txlog.py` — implement `TxLog(db)` class with `append(cycle_number, action, status, details, suggestion_id=None, experiment_branch=None, assertion_results=None)` inserting into `autoresearch_txlog` SQL table (defined in schema.py T007); implement `read_log(cycle=None) -> list[dict]`; implement `active_experiment_count() -> int` counting experiments without corresponding promote/rollback entries
-- [ ] T074 [US8] Create `src/sio/core/arena/experiment.py` — implement `create_experiment(suggestion_id, db) -> str` creating git worktree at `experiment/<sug-id>-<timestamp>`, applying rule in worktree; implement `validate_experiment(experiment_branch, db, assertions) -> bool` running assertions after configured sessions (default 5); implement `promote_experiment(experiment_branch, db)` merging worktree to main (requires human approval flag); implement `rollback_experiment(experiment_branch, db)` deleting worktree and marking suggestion as 'failed_experiment'
-- [ ] T075 [US8] Create `src/sio/core/arena/autoresearch.py` — implement `AutoResearchLoop(db, config)` with `run_cycle() -> CycleResult` executing mine→cluster→grade→generate→assert→experiment→validate pipeline; enforce safety limits (max 3 experiments, max 1 rule/cycle, budget check); check for stop sentinel file at cycle start; pause for human approval before promotion per clarification Q1; implement `start(interval_minutes=30, max_cycles=None)` and `stop()` (writes sentinel file)
-- [ ] T076 [US8] Add `sio autoresearch start|stop|status` CLI commands to `src/sio/cli/main.py` — options per contracts/cli-commands.md; `start` accepts `--interval`, `--max-cycles`, `--max-experiments`, `--dry-run`; `status` shows cycle count, active experiments, promoted/rolled back counts
-- [ ] T077 [US8] Add `--experiment` flag to `sio apply` CLI command in `src/sio/cli/main.py` — when set, route through experiment.create_experiment instead of direct apply
-- [ ] T078 [US8] Run `pytest tests/test_assertions.py tests/test_experiment.py tests/test_autoresearch.py tests/test_anomaly.py -v` — all must pass
-- [ ] T079 [US8] Run `ruff check src/sio/core/arena/ src/sio/cli/main.py --fix`
+- [x] T071 [P] [US8] Create `src/sio/core/arena/assertions.py` — implement `AssertionResult(passed, name, actual_value, threshold)` dataclass; implement built-in assertions: `error_rate_decreased(pre, post)`, `no_new_regressions(pre, post)`, `confidence_above_threshold(pattern, threshold)`, `budget_within_limits(file_path, config)`, `no_collisions(suggestion, existing)`; implement `run_assertions(assertion_names, context) -> list[AssertionResult]`; support custom assertions via config dict
+- [x] T072 [P] [US8] Create `src/sio/core/arena/anomaly.py` — implement `compute_mad(values) -> (median, mad)` for Median Absolute Deviation; implement `detect_anomalies(db, metric_name, threshold_mads=3) -> list[session_id]` checking error_rate, token_usage, session_duration, cost_per_session
+- [x] T073 [US8] Create `src/sio/core/arena/txlog.py` — implement `TxLog(db)` class with `append(cycle_number, action, status, details, suggestion_id=None, experiment_branch=None, assertion_results=None)` inserting into `autoresearch_txlog` SQL table (defined in schema.py T007); implement `read_log(cycle=None) -> list[dict]`; implement `active_experiment_count() -> int` counting experiments without corresponding promote/rollback entries
+- [x] T074 [US8] Create `src/sio/core/arena/experiment.py` — implement `create_experiment(suggestion_id, db) -> str` creating git worktree at `experiment/<sug-id>-<timestamp>`, applying rule in worktree; implement `validate_experiment(experiment_branch, db, assertions) -> bool` running assertions after configured sessions (default 5); implement `promote_experiment(experiment_branch, db)` merging worktree to main (requires human approval flag); implement `rollback_experiment(experiment_branch, db)` deleting worktree and marking suggestion as 'failed_experiment'
+- [x] T075 [US8] Create `src/sio/core/arena/autoresearch.py` — implement `AutoResearchLoop(db, config)` with `run_cycle() -> CycleResult` executing mine→cluster→grade→generate→assert→experiment→validate pipeline; enforce safety limits (max 3 experiments, max 1 rule/cycle, budget check); check for stop sentinel file at cycle start; pause for human approval before promotion per clarification Q1; implement `start(interval_minutes=30, max_cycles=None)` and `stop()` (writes sentinel file)
+- [x] T076 [US8] Add `sio autoresearch start|stop|status` CLI commands to `src/sio/cli/main.py` — options per contracts/cli-commands.md; `start` accepts `--interval`, `--max-cycles`, `--max-experiments`, `--dry-run`; `status` shows cycle count, active experiments, promoted/rolled back counts
+- [x] T077 [US8] Add `--experiment` flag to `sio apply` CLI command in `src/sio/cli/main.py` — when set, route through experiment.create_experiment instead of direct apply
+- [x] T078 [US8] Run `pytest tests/test_assertions.py tests/test_experiment.py tests/test_autoresearch.py tests/test_anomaly.py -v` — all must pass
+- [x] T079 [US8] Run `ruff check src/sio/core/arena/ src/sio/cli/main.py --fix`
 
 **Checkpoint**: US8 complete — experiments create worktrees, assertions validate, autoresearch completes cycles with txlog. Test with `sio autoresearch start --max-cycles 1 --dry-run`.
 
@@ -256,16 +256,16 @@
 
 ### Tests for User Story 9
 
-- [ ] T080 [P] [US9] Write test for HTML report generation (standalone file, embedded CSS/JS, required sections) in `tests/test_html_report.py` — fixture with session_metrics, patterns, suggestions → verify output is valid HTML with all required sections
-- [ ] T081 [P] [US9] Write test for session facet extraction (4 categories, caching by file hash) in `tests/test_facet_extractor.py` — fixture with complex session → verify facets generated; re-run → verify cached result returned
+- [x] T080 [P] [US9] Write test for HTML report generation (standalone file, embedded CSS/JS, required sections) in `tests/test_html_report.py` — fixture with session_metrics, patterns, suggestions → verify output is valid HTML with all required sections
+- [x] T081 [P] [US9] Write test for session facet extraction (4 categories, caching by file hash) in `tests/test_facet_extractor.py` — fixture with complex session → verify facets generated; re-run → verify cached result returned
 
 ### Implementation for User Story 9
 
-- [ ] T082 [P] [US9] Create `src/sio/mining/facet_extractor.py` — implement `extract_facets(parsed_messages, session_metrics) -> dict` using keyword-based heuristics (no LLM): tool_mastery (count distinct tools used + approval rates), error_prone_area (most frequent error_type), user_satisfaction (average sentiment score), session_complexity (message count + token count + tool diversity); implement file-hash-based caching in `~/.sio/facets/`
-- [ ] T083 [US9] Create `src/sio/reports/html_report.py` with `__init__.py` — implement `generate_html_report(db, days=30) -> str` producing self-contained HTML with: session metrics dashboard (tokens, cost, cache efficiency over time), error trend chart (30-day rolling), pattern table (confidence + grade + decay visualization), copy-ready suggestion cards, learning velocity graph; use Python string.Template for HTML generation; embed Chart.js inline
-- [ ] T084 [US9] Add `sio report --html` CLI command to `src/sio/cli/main.py` — options: `--html`, `--output` (default ~/.sio/reports/report-YYYYMMDD.html), `--days` (default 30), `--open` (opens in browser); display generation progress and output path
-- [ ] T085 [US9] Run `pytest tests/test_html_report.py tests/test_facet_extractor.py -v` — all must pass
-- [ ] T086 [US9] Run `ruff check src/sio/reports/ src/sio/mining/facet_extractor.py src/sio/cli/main.py --fix`
+- [x] T082 [P] [US9] Create `src/sio/mining/facet_extractor.py` — implement `extract_facets(parsed_messages, session_metrics) -> dict` using keyword-based heuristics (no LLM): tool_mastery (count distinct tools used + approval rates), error_prone_area (most frequent error_type), user_satisfaction (average sentiment score), session_complexity (message count + token count + tool diversity); implement file-hash-based caching in `~/.sio/facets/`
+- [x] T083 [US9] Create `src/sio/reports/html_report.py` with `__init__.py` — implement `generate_html_report(db, days=30) -> str` producing self-contained HTML with: session metrics dashboard (tokens, cost, cache efficiency over time), error trend chart (30-day rolling), pattern table (confidence + grade + decay visualization), copy-ready suggestion cards, learning velocity graph; use Python string.Template for HTML generation; embed Chart.js inline
+- [x] T084 [US9] Add `sio report --html` CLI command to `src/sio/cli/main.py` — options: `--html`, `--output` (default ~/.sio/reports/report-YYYYMMDD.html), `--days` (default 30), `--open` (opens in browser); display generation progress and output path
+- [x] T085 [US9] Run `pytest tests/test_html_report.py tests/test_facet_extractor.py -v` — all must pass
+- [x] T086 [US9] Run `ruff check src/sio/reports/ src/sio/mining/facet_extractor.py src/sio/cli/main.py --fix`
 
 **Checkpoint**: US9 complete — `sio report --html` generates viewable report. Open in browser to validate.
 
@@ -275,11 +275,11 @@
 
 **Purpose**: Final validation, integration testing, and cleanup
 
-- [ ] T087 [P] Write end-to-end integration test in `tests/test_integration_competitive.py` — mine a real session file → verify all new tables populated (session_metrics, positive_records, processed_sessions); run velocity, budget, violations commands → verify output
-- [ ] T088 Run full test suite: `pytest tests/ -v` — all tests (existing + new) must pass
-- [ ] T089 Run full lint: `ruff check src/ tests/ --fix`
-- [ ] T090 Verify quickstart.md steps work: follow setup instructions, run each command in sequence
-- [ ] T091 Verify all configurable defaults from `src/sio/core/config.py` (T014) are used consistently across all new modules — no hardcoded magic numbers
+- [x] T087 [P] Write end-to-end integration test in `tests/test_integration_competitive.py` — mine a real session file → verify all new tables populated (session_metrics, positive_records, processed_sessions); run velocity, budget, violations commands → verify output
+- [x] T088 Run full test suite: `pytest tests/ -v` — all tests (existing + new) must pass
+- [x] T089 Run full lint: `ruff check src/ tests/ --fix`
+- [x] T090 Verify quickstart.md steps work: follow setup instructions, run each command in sequence
+- [x] T091 Verify all configurable defaults from `src/sio/core/config.py` (T014) are used consistently across all new modules — no hardcoded magic numbers
 
 ---
 
