@@ -16,7 +16,6 @@ import pytest
 
 from sio.mining.pipeline import _compute_session_metrics, _parse_iso_timestamp
 
-
 # ---------------------------------------------------------------------------
 # Fixtures: message factories
 # ---------------------------------------------------------------------------

@@ -2533,5 +2533,348 @@ def collect_recall(query, session, project, runbook, label):
     click.echo(f"  Session: {jsonl_file.name}")
 
 
+# ---------------------------------------------------------------------------
+# Learning velocity tracking (US3 — FR-014, FR-015, FR-016)
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.option(
+    "--error-type", default=None,
+    help="Filter to specific error type.",
+)
+@click.option(
+    "--window", default=7, type=int,
+    help="Rolling window in days (default: 7).",
+)
+@click.option(
+    "--format", "fmt",
+    type=click.Choice(["table", "json"]),
+    default="table",
+    help="Output format (default: table).",
+)
+def velocity(error_type, window, fmt):
+    """Show learning velocity trends — how error rates change after rules.
+
+    Computes error frequency per type over a rolling window, measures
+    correction decay after rule application, and flags ineffective rules.
+
+    Examples:
+        sio velocity                          # All error types, 7-day window
+        sio velocity --error-type unused_import
+        sio velocity --window 14 --format json
+    """
+    from sio.core.metrics.velocity import (
+        compute_velocity_snapshot,
+        get_velocity_trends,
+    )
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found. Run 'sio mine' first.")
+        return
+
+    with _db_conn(db_path) as conn:
+        # Determine which error types to compute snapshots for
+        if error_type:
+            error_types = [error_type]
+        else:
+            rows = conn.execute(
+                "SELECT DISTINCT error_type FROM error_records "
+                "WHERE error_type IS NOT NULL"
+            ).fetchall()
+            error_types = [r[0] for r in rows]
+
+        if not error_types:
+            click.echo(
+                "No error records found. Run 'sio mine --since \"7 days\"' first."
+            )
+            return
+
+        # Compute fresh snapshots for each error type
+        snapshots = []
+        for etype in error_types:
+            snap = compute_velocity_snapshot(conn, etype, window_days=window)
+            snapshots.append(snap)
+
+        # Get historical trends for delta computation
+        all_trends: dict[str, list[dict]] = {}
+        for etype in error_types:
+            all_trends[etype] = get_velocity_trends(conn, error_type=etype)
+
+    if fmt == "json":
+        click.echo(_json.dumps(snapshots, indent=2, default=str))
+        return
+
+    # Table output using Rich
+    try:
+        from rich.console import Console
+        from rich.table import Table
+
+        console = Console()
+
+        table = Table(
+            title=f"Learning Velocity Report ({window}-day rolling window)",
+            title_style="bold cyan",
+        )
+        table.add_column("Error Type", style="cyan")
+        table.add_column("Rate", justify="right")
+        table.add_column("\u0394", justify="right")
+        table.add_column("Count", justify="right")
+        table.add_column("Rule Applied", justify="center")
+
+        warnings: list[str] = []
+
+        for snap in snapshots:
+            etype = snap["error_type"]
+            rate_str = f"{snap['error_rate']:.2f}"
+            count_str = str(snap["error_count_in_window"])
+
+            # Compute delta from previous snapshot
+            trends = all_trends.get(etype, [])
+            if len(trends) >= 2:
+                prev_rate = trends[-2]["error_rate"]
+                curr_rate = snap["error_rate"]
+                if prev_rate > 0:
+                    delta_pct = ((curr_rate - prev_rate) / prev_rate) * 100
+                    if delta_pct < 0:
+                        delta_str = f"[green]{delta_pct:+.0f}%[/green]"
+                    elif delta_pct > 0:
+                        delta_str = f"[red]{delta_pct:+.0f}%[/red]"
+                    else:
+                        delta_str = "0%"
+                else:
+                    delta_str = "N/A"
+            else:
+                delta_str = "-"
+
+            # Rule info
+            if snap["rule_applied"]:
+                sug_id = snap.get("rule_suggestion_id", "?")
+                rule_str = f"#{sug_id}"
+
+                # Flag ineffective rules: applied but no improvement after 5+ sessions
+                if snap["adaptation_speed"] is not None and snap["adaptation_speed"] >= 5:
+                    decay = snap.get("correction_decay_rate")
+                    if decay is not None and decay <= 0:
+                        warnings.append(
+                            f"[red]\u2717[/red] Rule #{sug_id} ({etype}): "
+                            f"no improvement after {snap['adaptation_speed']} "
+                            f"sessions -- review recommended"
+                        )
+                    elif snap["adaptation_speed"] <= 5:
+                        warnings.append(
+                            f"[yellow]\u26a0[/yellow] Rule #{sug_id} ({etype}): "
+                            f"only {snap['adaptation_speed']} sessions since "
+                            f"applied -- velocity uncertain"
+                        )
+            else:
+                rule_str = "none"
+
+            table.add_row(etype, rate_str, delta_str, count_str, rule_str)
+
+        console.print()
+        console.print(table)
+
+        # Show warnings
+        if warnings:
+            console.print()
+            for w in warnings:
+                console.print(f"  {w}")
+
+    except ImportError:
+        # Fallback without Rich
+        click.echo(
+            f"\nLearning Velocity Report ({window}-day rolling window)\n"
+        )
+        click.echo(
+            f"{'Error Type':<25} {'Rate':>6} {'Count':>6} {'Rule Applied':>14}"
+        )
+        click.echo("-" * 55)
+        for snap in snapshots:
+            rule_str = (
+                f"#{snap.get('rule_suggestion_id', '?')}"
+                if snap["rule_applied"]
+                else "none"
+            )
+            click.echo(
+                f"{snap['error_type']:<25} "
+                f"{snap['error_rate']:>6.2f} "
+                f"{snap['error_count_in_window']:>6} "
+                f"{rule_str:>14}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# Rule violation detection (US5 — FR-026, FR-027)
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.option(
+    "--since", default=None,
+    help="Filter errors after this date (ISO-8601).",
+)
+@click.option(
+    "--format", "fmt",
+    type=click.Choice(["table", "json"]),
+    default="table",
+    help="Output format.",
+)
+def violations(since, fmt):
+    """Show detected rule violations (existing rules the assistant ignored).
+
+    Scans CLAUDE.md and all files in the rules/ directory for imperative
+    constraints (NEVER, ALWAYS, MUST, DO NOT), then compares mined errors
+    against them to detect enforcement failures.
+
+    Violations are flagged at higher priority than new patterns since they
+    indicate the rule text is insufficient or the assistant is failing to
+    follow it.
+
+    Examples:
+        sio violations                          # Default: scan all rule files
+        sio violations --since 2026-03-01       # Only recent errors
+        sio violations --format json            # JSON output for piping
+    """
+    from pathlib import Path
+
+    from sio.mining.violation_detector import get_violation_report
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found. Run 'sio mine' first.")
+        return
+
+    # Discover rule files: CLAUDE.md + rules/ directory.
+    rule_file_paths: list[str] = []
+
+    # Check for CLAUDE.md in common locations.
+    claude_md_candidates = [
+        Path.home() / ".claude" / "CLAUDE.md",
+        Path.cwd() / "CLAUDE.md",
+    ]
+    for candidate in claude_md_candidates:
+        if candidate.exists():
+            rule_file_paths.append(str(candidate))
+
+    # Check for rules/ directory files.
+    rules_dir = Path.home() / ".claude" / "rules"
+    if rules_dir.exists():
+        for md_file in sorted(rules_dir.rglob("*.md")):
+            rule_file_paths.append(str(md_file))
+
+    # Also check project-level CLAUDE.md and rules/.
+    project_claude_md = Path.cwd() / "CLAUDE.md"
+    if project_claude_md.exists() and str(project_claude_md) not in rule_file_paths:
+        rule_file_paths.append(str(project_claude_md))
+
+    project_rules_dir = Path.cwd() / "rules"
+    if project_rules_dir.exists():
+        for md_file in sorted(project_rules_dir.rglob("*.md")):
+            if str(md_file) not in rule_file_paths:
+                rule_file_paths.append(str(md_file))
+
+    if not rule_file_paths:
+        click.echo("No instruction files found to scan.")
+        click.echo("  Checked: ~/.claude/CLAUDE.md, ./CLAUDE.md, ~/.claude/rules/, ./rules/")
+        return
+
+    with _db_conn(db_path) as conn:
+        report = get_violation_report(conn, rule_file_paths, since=since)
+
+    if fmt == "json":
+        click.echo(_json.dumps(report, indent=2, default=str))
+        return
+
+    # Table output using Rich.
+    try:
+        from rich.console import Console
+        from rich.table import Table
+
+        console = Console()
+
+        summary = report["violation_summary"]
+        date_range = report["date_range"]
+
+        # Build title with date range.
+        title = "Rule Violation Report"
+        if date_range["start"] and date_range["end"]:
+            start_short = (date_range["start"] or "")[:10]
+            end_short = (date_range["end"] or "")[:10]
+            title += f" ({start_short} to {end_short})"
+
+        if summary:
+            table = Table(title=title)
+            table.add_column("#", style="bold", width=4)
+            table.add_column("Rule", style="cyan", max_width=50)
+            table.add_column("Count", justify="right")
+            table.add_column("Last", justify="right")
+            table.add_column("Sessions", justify="right")
+
+            for i, s in enumerate(summary, 1):
+                last_display = (s["last_seen"] or "")[:10]
+                table.add_row(
+                    str(i),
+                    s["rule_text"][:50],
+                    str(s["count"]),
+                    last_display,
+                    str(s["sessions"]),
+                )
+
+            console.print()
+            console.print(table)
+
+        compliant = report["compliant_rules"]
+        if compliant > 0:
+            console.print()
+            console.print(
+                f"No violations: {compliant} rules fully complied with"
+            )
+
+        if not summary:
+            console.print()
+            console.print("[green]All rules are being followed.[/green]")
+            console.print(
+                f"  Checked {report['total_rules']} rules"
+                f" across {len(rule_file_paths)} files"
+            )
+
+        # Show which files were scanned.
+        console.print()
+        console.print("[dim]Files scanned:[/dim]")
+        for fp in rule_file_paths:
+            console.print(f"  [dim]{fp}[/dim]")
+
+    except ImportError:
+        # Fallback without Rich.
+        summary = report["violation_summary"]
+        if summary:
+            click.echo("\nRule Violation Report\n")
+            click.echo(
+                f"{'#':>3}  {'Rule':<50} {'Count':>5} {'Last':>10} {'Sessions':>8}"
+            )
+            click.echo("-" * 80)
+            for i, s in enumerate(summary, 1):
+                click.echo(
+                    f"{i:>3}  {s['rule_text'][:50]:<50} "
+                    f"{s['count']:>5} "
+                    f"{(s['last_seen'] or '')[:10]:>10} "
+                    f"{s['sessions']:>8}"
+                )
+
+        compliant = report["compliant_rules"]
+        if compliant > 0:
+            click.echo(
+                f"\nNo violations: {compliant} rules fully complied with"
+            )
+
+        if not summary:
+            click.echo(
+                f"\nAll rules are being followed."
+                f" Checked {report['total_rules']} rules."
+            )
+
+
 if __name__ == "__main__":
     cli()

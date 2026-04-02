@@ -681,7 +681,9 @@ def run_mine(
 
         if frustration_detected:
             logger.info(
-                "Frustration escalation detected in session: %s",
+                "Frustration escalation detected in session "
+                "(avg_sentiment=%.2f): %s",
+                avg_sentiment if avg_sentiment is not None else 0.0,
                 file_path,
             )
 
