@@ -241,7 +241,7 @@ As a developer, I want to generate a visual report showing session metrics trend
 
 - **FR-047**: System MUST generate a standalone visual report (no external dependencies required to view)
 - **FR-048**: Report MUST include: session metrics dashboard, error trend visualization (30-day rolling), pattern table with confidence and decay status, copy-ready suggestion cards, learning velocity trends
-- **FR-049**: System MUST generate qualitative session summaries categorized as: tool mastery, error-prone area, user satisfaction, session complexity
+- **FR-049**: System MUST generate qualitative session summaries using keyword-based heuristics (no LLM required), categorized as: tool mastery (tool diversity + approval rates), error-prone area (most frequent error type), user satisfaction (average sentiment), session complexity (message/token/tool counts)
 - **FR-050**: Session facets MUST be cached by session file content hash to avoid recomputation
 
 ### Key Entities

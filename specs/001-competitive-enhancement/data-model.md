@@ -62,7 +62,6 @@ Per-session aggregate metrics computed during mining.
 | correction_count | INTEGER | NOT NULL DEFAULT 0 | User corrections detected |
 | positive_signal_count | INTEGER | NOT NULL DEFAULT 0 | Positive signals detected |
 | sidechain_count | INTEGER | NOT NULL DEFAULT 0 | Sub-agent messages |
-| plan_mode_ratio | REAL | | Fraction of messages in plan mode |
 | stop_reason_distribution | TEXT | | JSON: {"end_turn": N, "max_tokens": M} |
 | model_used | TEXT | | Primary model identifier |
 | mined_at | TEXT | NOT NULL | ISO-8601 timestamp |

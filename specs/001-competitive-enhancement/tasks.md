@@ -46,7 +46,8 @@
 - [ ] T011 Add smart filtering to `src/sio/mining/pipeline.py` — skip sessions with <5 messages or <2 tool calls; record as skipped in processed_sessions
 - [ ] T012 Add `--exclude-sidechains` flag to mining pipeline via `src/sio/cli/main.py` mine command — when set, filter out messages where isSidechain=True before aggregation
 - [ ] T013 Run foundation tests: `pytest tests/test_schema_enhancement.py tests/test_jsonl_parser_enhanced.py tests/test_processed_sessions.py -v` — all must pass
-- [ ] T014 Run `ruff check src/sio/core/db/schema.py src/sio/mining/jsonl_parser.py src/sio/mining/pipeline.py --fix`
+- [ ] T014 [P] Update `src/sio/core/config.py` — add configurable defaults for: budget caps (100/50 lines), decay floor (0.3), decay bands (14/28 days), validation window (5 sessions), autoresearch interval (30 min), max experiments (3), dedup threshold (0.85), similarity threshold (0.80)
+- [ ] T015_0 Run `ruff check src/sio/core/db/schema.py src/sio/mining/jsonl_parser.py src/sio/mining/pipeline.py src/sio/core/config.py --fix`
 
 **Checkpoint**: Enhanced parser extracts all metadata; session tracking prevents re-mining; schema has all new tables. Run `sio mine` on a real session file to verify end-to-end.
 
@@ -235,7 +236,7 @@
 
 - [ ] T071 [P] [US8] Create `src/sio/core/arena/assertions.py` — implement `AssertionResult(passed, name, actual_value, threshold)` dataclass; implement built-in assertions: `error_rate_decreased(pre, post)`, `no_new_regressions(pre, post)`, `confidence_above_threshold(pattern, threshold)`, `budget_within_limits(file_path, config)`, `no_collisions(suggestion, existing)`; implement `run_assertions(assertion_names, context) -> list[AssertionResult]`; support custom assertions via config dict
 - [ ] T072 [P] [US8] Create `src/sio/core/arena/anomaly.py` — implement `compute_mad(values) -> (median, mad)` for Median Absolute Deviation; implement `detect_anomalies(db, metric_name, threshold_mads=3) -> list[session_id]` checking error_rate, token_usage, session_duration, cost_per_session
-- [ ] T073 [US8] Create `src/sio/core/arena/txlog.py` — implement `TxLog(log_path)` class with `append(cycle_number, action, status, details, suggestion_id=None, experiment_branch=None, assertion_results=None)` writing append-only JSONL; implement `read_log() -> list[dict]`; implement `active_experiment_count() -> int`
+- [ ] T073 [US8] Create `src/sio/core/arena/txlog.py` — implement `TxLog(db)` class with `append(cycle_number, action, status, details, suggestion_id=None, experiment_branch=None, assertion_results=None)` inserting into `autoresearch_txlog` SQL table (defined in schema.py T007); implement `read_log(cycle=None) -> list[dict]`; implement `active_experiment_count() -> int` counting experiments without corresponding promote/rollback entries
 - [ ] T074 [US8] Create `src/sio/core/arena/experiment.py` — implement `create_experiment(suggestion_id, db) -> str` creating git worktree at `experiment/<sug-id>-<timestamp>`, applying rule in worktree; implement `validate_experiment(experiment_branch, db, assertions) -> bool` running assertions after configured sessions (default 5); implement `promote_experiment(experiment_branch, db)` merging worktree to main (requires human approval flag); implement `rollback_experiment(experiment_branch, db)` deleting worktree and marking suggestion as 'failed_experiment'
 - [ ] T075 [US8] Create `src/sio/core/arena/autoresearch.py` — implement `AutoResearchLoop(db, config)` with `run_cycle() -> CycleResult` executing mine→cluster→grade→generate→assert→experiment→validate pipeline; enforce safety limits (max 3 experiments, max 1 rule/cycle, budget check); check for stop sentinel file at cycle start; pause for human approval before promotion per clarification Q1; implement `start(interval_minutes=30, max_cycles=None)` and `stop()` (writes sentinel file)
 - [ ] T076 [US8] Add `sio autoresearch start|stop|status` CLI commands to `src/sio/cli/main.py` — options per contracts/cli-commands.md; `start` accepts `--interval`, `--max-cycles`, `--max-experiments`, `--dry-run`; `status` shows cycle count, active experiments, promoted/rolled back counts
@@ -260,7 +261,7 @@
 
 ### Implementation for User Story 9
 
-- [ ] T082 [P] [US9] Create `src/sio/mining/facet_extractor.py` — implement `extract_facets(parsed_messages, session_metrics) -> dict` generating qualitative summaries for categories: tool_mastery, error_prone_area, user_satisfaction, session_complexity; implement file-hash-based caching in `~/.sio/facets/`
+- [ ] T082 [P] [US9] Create `src/sio/mining/facet_extractor.py` — implement `extract_facets(parsed_messages, session_metrics) -> dict` using keyword-based heuristics (no LLM): tool_mastery (count distinct tools used + approval rates), error_prone_area (most frequent error_type), user_satisfaction (average sentiment score), session_complexity (message count + token count + tool diversity); implement file-hash-based caching in `~/.sio/facets/`
 - [ ] T083 [US9] Create `src/sio/reports/html_report.py` with `__init__.py` — implement `generate_html_report(db, days=30) -> str` producing self-contained HTML with: session metrics dashboard (tokens, cost, cache efficiency over time), error trend chart (30-day rolling), pattern table (confidence + grade + decay visualization), copy-ready suggestion cards, learning velocity graph; use Python string.Template for HTML generation; embed Chart.js inline
 - [ ] T084 [US9] Add `sio report --html` CLI command to `src/sio/cli/main.py` — options: `--html`, `--output` (default ~/.sio/reports/report-YYYYMMDD.html), `--days` (default 30), `--open` (opens in browser); display generation progress and output path
 - [ ] T085 [US9] Run `pytest tests/test_html_report.py tests/test_facet_extractor.py -v` — all must pass
@@ -278,7 +279,7 @@
 - [ ] T088 Run full test suite: `pytest tests/ -v` — all tests (existing + new) must pass
 - [ ] T089 Run full lint: `ruff check src/ tests/ --fix`
 - [ ] T090 Verify quickstart.md steps work: follow setup instructions, run each command in sequence
-- [ ] T091 Update `src/sio/core/config.py` — add configurable defaults for: budget caps (100/50 lines), decay floor (0.3), decay bands (14/28 days), validation window (5 sessions), autoresearch interval (30 min), max experiments (3), dedup threshold (0.85), similarity threshold (0.80)
+- [ ] T091 Verify all configurable defaults from `src/sio/core/config.py` (T014) are used consistently across all new modules — no hardcoded magic numbers
 
 ---
 
