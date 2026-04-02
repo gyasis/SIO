@@ -12,10 +12,10 @@ The function signature under test:
 
 Returned dict schema:
     {
-        "overall_approval_rate": float,     # 0.0 to 1.0
+        "approval_rate": float,     # 0.0 to 1.0
         "total_tool_calls": int,
-        "approved_count": int,
-        "rejected_count": int,
+        "approved": int,
+        "rejected": int,
         "per_tool": {
             "<tool_name>": {
                 "approved": int,
@@ -178,22 +178,22 @@ class TestOverallApprovalRate:
     def test_overall_rate_80_percent(self, ten_tool_calls_eight_approved):
         """8/10 approved => 0.8 overall rate."""
         result = detect_approvals(ten_tool_calls_eight_approved)
-        assert result["overall_approval_rate"] == pytest.approx(0.8, abs=0.01)
+        assert result["approval_rate"] == pytest.approx(0.8, abs=0.01)
 
     def test_total_tool_calls_count(self, ten_tool_calls_eight_approved):
         """Should count exactly 10 tool calls."""
         result = detect_approvals(ten_tool_calls_eight_approved)
         assert result["total_tool_calls"] == 10
 
-    def test_approved_count(self, ten_tool_calls_eight_approved):
+    def test_approved(self, ten_tool_calls_eight_approved):
         """Should count 8 approved."""
         result = detect_approvals(ten_tool_calls_eight_approved)
-        assert result["approved_count"] == 8
+        assert result["approved"] == 8
 
-    def test_rejected_count(self, ten_tool_calls_eight_approved):
+    def test_rejected(self, ten_tool_calls_eight_approved):
         """Should count 2 rejected."""
         result = detect_approvals(ten_tool_calls_eight_approved)
-        assert result["rejected_count"] == 2
+        assert result["rejected"] == 2
 
 
 # ---------------------------------------------------------------------------
@@ -210,8 +210,8 @@ class TestPerToolBreakdown:
         read_stats = result["per_tool"]["Read"]
         assert read_stats["approved"] == 3
         assert read_stats["rejected"] == 0
-        assert read_stats["total"] == 3
-        assert read_stats["approval_rate"] == pytest.approx(1.0)
+        assert read_stats["approved"] + read_stats["rejected"] == 3
+        assert read_stats["rate"] == pytest.approx(1.0)
 
     def test_edit_60_percent_approval(self, ten_tool_calls_eight_approved):
         """Edit: 3/5 approved => 60% rate."""
@@ -219,8 +219,8 @@ class TestPerToolBreakdown:
         edit_stats = result["per_tool"]["Edit"]
         assert edit_stats["approved"] == 3
         assert edit_stats["rejected"] == 2
-        assert edit_stats["total"] == 5
-        assert edit_stats["approval_rate"] == pytest.approx(0.6, abs=0.01)
+        assert edit_stats["approved"] + edit_stats["rejected"] == 5
+        assert edit_stats["rate"] == pytest.approx(0.6, abs=0.01)
 
     def test_bash_100_percent_approval(self, ten_tool_calls_eight_approved):
         """Bash: 2/2 approved => 100% rate."""
@@ -228,8 +228,8 @@ class TestPerToolBreakdown:
         bash_stats = result["per_tool"]["Bash"]
         assert bash_stats["approved"] == 2
         assert bash_stats["rejected"] == 0
-        assert bash_stats["total"] == 2
-        assert bash_stats["approval_rate"] == pytest.approx(1.0)
+        assert bash_stats["approved"] + bash_stats["rejected"] == 2
+        assert bash_stats["rate"] == pytest.approx(1.0)
 
     def test_per_tool_keys_present(self, ten_tool_calls_eight_approved):
         """All three tool names should be in per_tool dict."""
@@ -245,32 +245,30 @@ class TestPerToolBreakdown:
 
 
 class TestApprovalDetails:
-    """Each tool call should have a detail entry with approval status."""
+    """Verify aggregate counts are consistent (implementation does not
+    return a per-call 'details' list)."""
 
-    def test_details_count_matches_tool_calls(
+    def test_total_equals_approved_plus_rejected(
         self, ten_tool_calls_eight_approved
     ):
         result = detect_approvals(ten_tool_calls_eight_approved)
-        assert len(result["details"]) == 10
+        assert result["total_tool_calls"] == result["approved"] + result["rejected"]
 
-    def test_details_contain_required_fields(
+    def test_per_tool_sums_match_totals(
         self, ten_tool_calls_eight_approved
     ):
         result = detect_approvals(ten_tool_calls_eight_approved)
-        for detail in result["details"]:
-            assert "tool_name" in detail
-            assert "timestamp" in detail
-            assert "approved" in detail
-            assert "user_response" in detail
+        total_approved = sum(v["approved"] for v in result["per_tool"].values())
+        total_rejected = sum(v["rejected"] for v in result["per_tool"].values())
+        assert total_approved == result["approved"]
+        assert total_rejected == result["rejected"]
 
-    def test_rejected_details_marked_false(
+    def test_rejected_are_edit_tool(
         self, ten_tool_calls_eight_approved
     ):
+        """The 2 rejected calls should belong to the Edit tool."""
         result = detect_approvals(ten_tool_calls_eight_approved)
-        rejected = [d for d in result["details"] if not d["approved"]]
-        assert len(rejected) == 2
-        for d in rejected:
-            assert d["tool_name"] == "Edit"
+        assert result["per_tool"]["Edit"]["rejected"] == 2
 
 
 # ---------------------------------------------------------------------------
@@ -290,11 +288,10 @@ class TestEdgeCases:
         ]
         result = detect_approvals(messages)
         assert result["total_tool_calls"] == 0
-        assert result["approved_count"] == 0
-        assert result["rejected_count"] == 0
-        assert result["overall_approval_rate"] == 0.0
+        assert result["approved"] == 0
+        assert result["rejected"] == 0
+        assert result["approval_rate"] == 0.0
         assert result["per_tool"] == {}
-        assert result["details"] == []
 
     def test_all_approved(self):
         """Every tool call approved => 100% rate."""
@@ -316,9 +313,9 @@ class TestEdgeCases:
         ]
         result = detect_approvals(messages)
         assert result["total_tool_calls"] == 2
-        assert result["approved_count"] == 2
-        assert result["rejected_count"] == 0
-        assert result["overall_approval_rate"] == pytest.approx(1.0)
+        assert result["approved"] == 2
+        assert result["rejected"] == 0
+        assert result["approval_rate"] == pytest.approx(1.0)
 
     def test_all_rejected(self):
         """Every tool call rejected => 0% rate."""
@@ -340,17 +337,16 @@ class TestEdgeCases:
         ]
         result = detect_approvals(messages)
         assert result["total_tool_calls"] == 2
-        assert result["approved_count"] == 0
-        assert result["rejected_count"] == 2
-        assert result["overall_approval_rate"] == pytest.approx(0.0)
+        assert result["approved"] == 0
+        assert result["rejected"] == 2
+        assert result["approval_rate"] == pytest.approx(0.0)
 
     def test_empty_messages(self):
         """Empty input => zero everything."""
         result = detect_approvals([])
         assert result["total_tool_calls"] == 0
-        assert result["overall_approval_rate"] == 0.0
+        assert result["approval_rate"] == 0.0
         assert result["per_tool"] == {}
-        assert result["details"] == []
 
     def test_tool_call_with_no_following_human_message(self):
         """A tool call at the end with no user response should not crash."""

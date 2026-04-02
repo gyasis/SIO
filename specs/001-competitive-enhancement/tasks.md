@@ -42,11 +42,11 @@
 - [x] T007 Add 5 new table DDLs (processed_sessions, session_metrics, positive_records, velocity_snapshots, autoresearch_txlog) and 2 ALTER column additions (patterns.grade, applied_changes.delta_type) to `src/sio/core/db/schema.py` — follow existing DDL pattern, add indexes per data-model.md
 - [x] T008 Enhance `src/sio/mining/jsonl_parser.py` to extract `usage` object fields (input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens), `costUsd`, `stopReason`, `isSidechain`, `model` from assistant messages — add these as new keys in returned dicts alongside existing role/content/tool_name/etc.
 - [x] T009 Implement processed_sessions check in `src/sio/mining/pipeline.py` — before parsing a file, compute SHA-256 hash and check processed_sessions table; skip if hash matches; insert tracking record after successful mining
-- [ ] T010 Add session_metrics aggregation to `src/sio/mining/pipeline.py` — after mining a session, compute and insert per-session totals (tokens, cost, cache_hit_ratio, duration, message/tool/error/positive counts, stop_reason_distribution) into session_metrics table
+- [x] T010 Add session_metrics aggregation to `src/sio/mining/pipeline.py` — after mining a session, compute and insert per-session totals (tokens, cost, cache_hit_ratio, duration, message/tool/error/positive counts, stop_reason_distribution) into session_metrics table
 - [ ] T011 Add smart filtering to `src/sio/mining/pipeline.py` — skip sessions with <5 messages or <2 tool calls; record as skipped in processed_sessions
 - [x] T012 Add `--exclude-sidechains` flag to mining pipeline via `src/sio/cli/main.py` mine command — when set, filter out messages where isSidechain=True before aggregation
-- [ ] T013 Run foundation tests: `pytest tests/test_schema_enhancement.py tests/test_jsonl_parser_enhanced.py tests/test_processed_sessions.py -v` — all must pass
-- [ ] T014 [P] Update `src/sio/core/config.py` — add configurable defaults for: budget caps (100/50 lines), decay floor (0.3), decay bands (14/28 days), validation window (5 sessions), autoresearch interval (30 min), max experiments (3), dedup threshold (0.85), similarity threshold (0.80)
+- [x] T013 Run foundation tests: `pytest tests/test_schema_enhancement.py tests/test_jsonl_parser_enhanced.py tests/test_processed_sessions.py -v` — all must pass
+- [x] T014 [P] Update `src/sio/core/config.py` — add configurable defaults for: budget caps (100/50 lines), decay floor (0.3), decay bands (14/28 days), validation window (5 sessions), autoresearch interval (30 min), max experiments (3), dedup threshold (0.85), similarity threshold (0.80)
 - [ ] T015_0 Run `ruff check src/sio/core/db/schema.py src/sio/mining/jsonl_parser.py src/sio/mining/pipeline.py src/sio/core/config.py --fix`
 
 **Checkpoint**: Enhanced parser extracts all metadata; session tracking prevents re-mining; schema has all new tables. Run `sio mine` on a real session file to verify end-to-end.
@@ -68,7 +68,7 @@
 ### Implementation for User Story 1
 
 - [ ] T016 [US1] Implement inter-message latency computation in `src/sio/mining/pipeline.py` — compute timestamp diffs between consecutive messages, store session_duration_seconds in session_metrics
-- [ ] T017 [US1] Update `sio mine` CLI output in `src/sio/cli/main.py` to display: sessions found, skipped (already processed), filtered (too small), newly mined, total cost tracked, and per-session token summary
+- [x] T017 [US1] Update `sio mine` CLI output in `src/sio/cli/main.py` to display: sessions found, skipped (already processed), filtered (too small), newly mined, total cost tracked, and per-session token summary
 - [ ] T018 [US1] Run `pytest tests/test_session_metrics.py -v` — must pass
 - [ ] T019 [US1] Run `ruff check src/sio/mining/ src/sio/cli/main.py --fix`
 
@@ -84,15 +84,15 @@
 
 ### Tests for User Story 2
 
-- [ ] T020 [P] [US2] Write test for positive signal extraction (7+ regex patterns, 4 signal types) in `tests/test_positive_extractor.py` — fixture messages with "yes exactly", "thanks great work", short positive after tool, session ending positively → verify each produces correct signal_type and context_before
-- [ ] T021 [P] [US2] Write test for tool approval/rejection detection and per-tool approval rates in `tests/test_approval_detector.py` — fixture with 10 tool calls where user approves 8 and rejects 2 → verify 80% overall rate and per-tool breakdown
-- [ ] T022 [P] [US2] Write test for sentiment scoring (-1.0 to +1.0) and frustration escalation (3+ consecutive negative) in `tests/test_sentiment_scorer.py` — fixture with escalating negative messages → verify scores decline and frustration flag triggers
+- [x] T020 [P] [US2] Write test for positive signal extraction (7+ regex patterns, 4 signal types) in `tests/test_positive_extractor.py` — fixture messages with "yes exactly", "thanks great work", short positive after tool, session ending positively → verify each produces correct signal_type and context_before
+- [x] T021 [P] [US2] Write test for tool approval/rejection detection and per-tool approval rates in `tests/test_approval_detector.py` — fixture with 10 tool calls where user approves 8 and rejects 2 → verify 80% overall rate and per-tool breakdown
+- [x] T022 [P] [US2] Write test for sentiment scoring (-1.0 to +1.0) and frustration escalation (3+ consecutive negative) in `tests/test_sentiment_scorer.py` — fixture with escalating negative messages → verify scores decline and frustration flag triggers
 
 ### Implementation for User Story 2
 
-- [ ] T023 [P] [US2] Create `src/sio/mining/positive_extractor.py` — implement `extract_positive_signals(parsed_messages) -> list[dict]` with 7+ compiled regex patterns for confirmation, gratitude, implicit approval, session success; coordinate with `_POSITIVE_KEYWORDS` in `flow_extractor.py` to avoid duplication; each result includes signal_type, signal_text, context_before, tool_name
-- [ ] T024 [P] [US2] Create `src/sio/mining/approval_detector.py` — implement `detect_approvals(parsed_messages) -> dict` analyzing user response after each tool_use block; classify as approved/rejected based on response patterns; compute per-tool approval rates
-- [ ] T025 [P] [US2] Create `src/sio/mining/sentiment_scorer.py` — implement `score_sentiment(text) -> float` returning -1.0 to +1.0 using keyword frequency ratios; implement `detect_frustration_escalation(scores: list[float]) -> bool` returning True when 3+ consecutive scores are negative; include escalation keywords: "frustrated", "annoying", "waste of time", "just do X", "stop"
+- [x] T023 [P] [US2] Create `src/sio/mining/positive_extractor.py` — implement `extract_positive_signals(parsed_messages) -> list[dict]` with 7+ compiled regex patterns for confirmation, gratitude, implicit approval, session success; coordinate with `_POSITIVE_KEYWORDS` in `flow_extractor.py` to avoid duplication; each result includes signal_type, signal_text, context_before, tool_name
+- [x] T024 [P] [US2] Create `src/sio/mining/approval_detector.py` — implement `detect_approvals(parsed_messages) -> dict` analyzing user response after each tool_use block; classify as approved/rejected based on response patterns; compute per-tool approval rates
+- [x] T025 [P] [US2] Create `src/sio/mining/sentiment_scorer.py` — implement `score_sentiment(text) -> float` returning -1.0 to +1.0 using keyword frequency ratios; implement `detect_frustration_escalation(scores: list[float]) -> bool` returning True when 3+ consecutive scores are negative; include escalation keywords: "frustrated", "annoying", "waste of time", "just do X", "stop"
 - [ ] T026 [US2] Integrate positive_extractor, approval_detector, and sentiment_scorer into `src/sio/mining/pipeline.py` — call extractors during mining, insert results into positive_records table, update session_metrics.positive_signal_count and correction_count
 - [ ] T027 [US2] Run `pytest tests/test_positive_extractor.py tests/test_approval_detector.py tests/test_sentiment_scorer.py -v` — all must pass
 - [ ] T028 [US2] Run `ruff check src/sio/mining/positive_extractor.py src/sio/mining/approval_detector.py src/sio/mining/sentiment_scorer.py --fix`

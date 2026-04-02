@@ -50,7 +50,7 @@ def _make_error_record(
     error_text: str = "FileNotFoundError: No such file",
     error_type: str = "tool_failure",
     user_message: str = "Read the config file",
-    source_file: str = "2026-02-25_10-00-00Z-sio-dev-session.md",
+    source_file: str = "2026-04-02_10-00-00Z-sio-dev-session.md",
     days_ago: int = 0,
 ) -> dict[str, Any]:
     return {
@@ -233,7 +233,7 @@ class TestSelfPipelineIntegration:
             "sqlite3.OperationalError: no such table: patterns",
         ]
         md_content = _build_specstory_md(errors)
-        md_file = specstory_dir / "2026-02-25_10-00-00Z-sio-dev.md"
+        md_file = specstory_dir / "2026-04-02_10-00-00Z-sio-dev.md"
         md_file.write_text(md_content, encoding="utf-8")
 
         result = run_mine(

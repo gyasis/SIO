@@ -34,6 +34,10 @@ from sio.mining.pipeline import run_mine
 # Shared constants
 # ---------------------------------------------------------------------------
 
+# Use today's date so the "7 days" filter always includes test files.
+_TODAY = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
 _SPECSTORY_ERRORS = [
     "FileNotFoundError: [Errno 2] No such file or directory: '/tmp/missing.py'",
     "PermissionError: [Errno 13] Permission denied: '/etc/secret'",
@@ -64,14 +68,16 @@ class TestMineSpecstoryFiles:
         source_dir = tmp_path / "specstory"
         source_dir.mkdir()
 
+        today = _TODAY
+
         # Create five SpecStory files, one distinct error each.
         for i, err in enumerate(_SPECSTORY_ERRORS):
             sample_specstory_file(
-                filename=f"2026-02-25_10-0{i}-00Z-session-{i}.md",
+                filename=f"{today}_10-0{i}-00Z-session-{i}.md",
                 errors=[err],
             )
             # Move the written file from tmp_path root into source_dir.
-            written = tmp_path / f"2026-02-25_10-0{i}-00Z-session-{i}.md"
+            written = tmp_path / f"{today}_10-0{i}-00Z-session-{i}.md"
             written.rename(source_dir / written.name)
 
         result = run_mine(
@@ -106,11 +112,11 @@ class TestMineSpecstoryFiles:
         source_dir.mkdir()
 
         sample_specstory_file(
-            filename="2026-02-25_10-00-00Z-single.md",
+            filename=f"{_TODAY}_10-00-00Z-single.md",
             errors=[_SPECSTORY_ERRORS[0]],
         )
-        (tmp_path / "2026-02-25_10-00-00Z-single.md").rename(
-            source_dir / "2026-02-25_10-00-00Z-single.md"
+        (tmp_path / f"{_TODAY}_10-00-00Z-single.md").rename(
+            source_dir / f"{_TODAY}_10-00-00Z-single.md"
         )
 
         result = run_mine(
@@ -211,10 +217,10 @@ class TestMineBothSources:
         # Three SpecStory files.
         for i in range(3):
             sample_specstory_file(
-                filename=f"2026-02-25_10-0{i}-00Z-ss-{i}.md",
+                filename=f"{_TODAY}_10-0{i}-00Z-ss-{i}.md",
                 errors=[_SPECSTORY_ERRORS[i]],
             )
-            written = tmp_path / f"2026-02-25_10-0{i}-00Z-ss-{i}.md"
+            written = tmp_path / f"{_TODAY}_10-0{i}-00Z-ss-{i}.md"
             written.rename(source_dir / written.name)
 
         # Two JSONL files.
@@ -263,11 +269,11 @@ class TestMineBothSources:
         source_dir.mkdir()
 
         sample_specstory_file(
-            filename="2026-02-25_10-00-00Z-only.md",
+            filename=f"{_TODAY}_10-00-00Z-only.md",
             errors=[_SPECSTORY_ERRORS[0]],
         )
-        (tmp_path / "2026-02-25_10-00-00Z-only.md").rename(
-            source_dir / "2026-02-25_10-00-00Z-only.md"
+        (tmp_path / f"{_TODAY}_10-00-00Z-only.md").rename(
+            source_dir / f"{_TODAY}_10-00-00Z-only.md"
         )
 
         sample_jsonl_file(filename="only.jsonl", errors=[_JSONL_ERRORS[0]])
@@ -431,11 +437,11 @@ class TestMineStoresToDb:
         source_dir.mkdir()
 
         sample_specstory_file(
-            filename="2026-02-25_10-00-00Z-check.md",
+            filename=f"{_TODAY}_10-00-00Z-check.md",
             errors=[_SPECSTORY_ERRORS[0]],
         )
-        (tmp_path / "2026-02-25_10-00-00Z-check.md").rename(
-            source_dir / "2026-02-25_10-00-00Z-check.md"
+        (tmp_path / f"{_TODAY}_10-00-00Z-check.md").rename(
+            source_dir / f"{_TODAY}_10-00-00Z-check.md"
         )
 
         run_mine(
@@ -461,7 +467,7 @@ class TestMineStoresToDb:
         source_dir = tmp_path / "db_path"
         source_dir.mkdir()
 
-        filename = "2026-02-25_10-00-00Z-path-check.md"
+        filename = f"{_TODAY}_10-00-00Z-path-check.md"
         sample_specstory_file(filename=filename, errors=[_SPECSTORY_ERRORS[0]])
         expected_path = source_dir / filename
         (tmp_path / filename).rename(expected_path)
@@ -492,11 +498,11 @@ class TestMineStoresToDb:
 
         injected_error = "FileNotFoundError: [Errno 2] No such file or directory: '/tmp/missing.py'"
         sample_specstory_file(
-            filename="2026-02-25_10-00-00Z-errtext.md",
+            filename=f"{_TODAY}_10-00-00Z-errtext.md",
             errors=[injected_error],
         )
-        (tmp_path / "2026-02-25_10-00-00Z-errtext.md").rename(
-            source_dir / "2026-02-25_10-00-00Z-errtext.md"
+        (tmp_path / f"{_TODAY}_10-00-00Z-errtext.md").rename(
+            source_dir / f"{_TODAY}_10-00-00Z-errtext.md"
         )
 
         run_mine(
@@ -523,11 +529,11 @@ class TestMineStoresToDb:
         source_dir.mkdir()
 
         sample_specstory_file(
-            filename="2026-02-25_10-00-00Z-tool.md",
+            filename=f"{_TODAY}_10-00-00Z-tool.md",
             errors=[_SPECSTORY_ERRORS[0]],
         )
-        (tmp_path / "2026-02-25_10-00-00Z-tool.md").rename(
-            source_dir / "2026-02-25_10-00-00Z-tool.md"
+        (tmp_path / f"{_TODAY}_10-00-00Z-tool.md").rename(
+            source_dir / f"{_TODAY}_10-00-00Z-tool.md"
         )
 
         run_mine(
@@ -555,11 +561,11 @@ class TestMineStoresToDb:
         source_dir.mkdir()
 
         sample_specstory_file(
-            filename="2026-02-25_10-00-00Z-minedat.md",
+            filename=f"{_TODAY}_10-00-00Z-minedat.md",
             errors=[_SPECSTORY_ERRORS[0]],
         )
-        (tmp_path / "2026-02-25_10-00-00Z-minedat.md").rename(
-            source_dir / "2026-02-25_10-00-00Z-minedat.md"
+        (tmp_path / f"{_TODAY}_10-00-00Z-minedat.md").rename(
+            source_dir / f"{_TODAY}_10-00-00Z-minedat.md"
         )
 
         run_mine(
@@ -611,11 +617,11 @@ class TestMineStoresToDb:
         source_dir.mkdir()
 
         sample_specstory_file(
-            filename="2026-02-25_10-00-00Z-notnull.md",
+            filename=f"{_TODAY}_10-00-00Z-notnull.md",
             errors=[_SPECSTORY_ERRORS[0]],
         )
-        (tmp_path / "2026-02-25_10-00-00Z-notnull.md").rename(
-            source_dir / "2026-02-25_10-00-00Z-notnull.md"
+        (tmp_path / f"{_TODAY}_10-00-00Z-notnull.md").rename(
+            source_dir / f"{_TODAY}_10-00-00Z-notnull.md"
         )
 
         run_mine(
@@ -735,10 +741,10 @@ class TestMineSkipsMalformedFiles:
         # Two good files.
         for i in range(2):
             sample_specstory_file(
-                filename=f"2026-02-25_10-0{i}-00Z-good-{i}.md",
+                filename=f"{_TODAY}_10-0{i}-00Z-good-{i}.md",
                 errors=[_SPECSTORY_ERRORS[i]],
             )
-            written = tmp_path / f"2026-02-25_10-0{i}-00Z-good-{i}.md"
+            written = tmp_path / f"{_TODAY}_10-0{i}-00Z-good-{i}.md"
             written.rename(source_dir / written.name)
 
         # Two malformed .md files.
@@ -829,11 +835,11 @@ class TestMineSkipsMalformedFiles:
 
         # One valid file.
         sample_specstory_file(
-            filename="2026-02-25_10-00-00Z-valid.md",
+            filename=f"{_TODAY}_10-00-00Z-valid.md",
             errors=[_SPECSTORY_ERRORS[0]],
         )
-        (tmp_path / "2026-02-25_10-00-00Z-valid.md").rename(
-            source_dir / "2026-02-25_10-00-00Z-valid.md"
+        (tmp_path / f"{_TODAY}_10-00-00Z-valid.md").rename(
+            source_dir / f"{_TODAY}_10-00-00Z-valid.md"
         )
 
         # Several corrupt files.
@@ -877,19 +883,19 @@ class TestMineMultipleSourceDirs:
         # Two files in dir_a.
         for i in range(2):
             sample_specstory_file(
-                filename=f"2026-02-25_10-0{i}-00Z-a-{i}.md",
+                filename=f"{_TODAY}_10-0{i}-00Z-a-{i}.md",
                 errors=[_SPECSTORY_ERRORS[i]],
             )
-            written = tmp_path / f"2026-02-25_10-0{i}-00Z-a-{i}.md"
+            written = tmp_path / f"{_TODAY}_10-0{i}-00Z-a-{i}.md"
             written.rename(dir_a / written.name)
 
         # Two files in dir_b.
         for i in range(2, 4):
             sample_specstory_file(
-                filename=f"2026-02-25_10-0{i}-00Z-b-{i}.md",
+                filename=f"{_TODAY}_10-0{i}-00Z-b-{i}.md",
                 errors=[_SPECSTORY_ERRORS[i]],
             )
-            written = tmp_path / f"2026-02-25_10-0{i}-00Z-b-{i}.md"
+            written = tmp_path / f"{_TODAY}_10-0{i}-00Z-b-{i}.md"
             written.rename(dir_b / written.name)
 
         result = run_mine(
@@ -916,11 +922,11 @@ class TestMineMultipleSourceDirs:
         populated_dir.mkdir()
 
         sample_specstory_file(
-            filename="2026-02-25_10-00-00Z-pop.md",
+            filename=f"{_TODAY}_10-00-00Z-pop.md",
             errors=[_SPECSTORY_ERRORS[0]],
         )
-        (tmp_path / "2026-02-25_10-00-00Z-pop.md").rename(
-            populated_dir / "2026-02-25_10-00-00Z-pop.md"
+        (tmp_path / f"{_TODAY}_10-00-00Z-pop.md").rename(
+            populated_dir / f"{_TODAY}_10-00-00Z-pop.md"
         )
 
         result = run_mine(
@@ -950,11 +956,11 @@ class TestMineProjectFilter:
         source_dir.mkdir()
 
         sample_specstory_file(
-            filename="2026-02-25_10-00-00Z-proj.md",
+            filename=f"{_TODAY}_10-00-00Z-proj.md",
             errors=[_SPECSTORY_ERRORS[0]],
         )
-        (tmp_path / "2026-02-25_10-00-00Z-proj.md").rename(
-            source_dir / "2026-02-25_10-00-00Z-proj.md"
+        (tmp_path / f"{_TODAY}_10-00-00Z-proj.md").rename(
+            source_dir / f"{_TODAY}_10-00-00Z-proj.md"
         )
 
         # Must not raise.
@@ -977,11 +983,11 @@ class TestMineProjectFilter:
         source_dir.mkdir()
 
         sample_specstory_file(
-            filename="2026-02-25_10-00-00Z-no-proj.md",
+            filename=f"{_TODAY}_10-00-00Z-no-proj.md",
             errors=[_SPECSTORY_ERRORS[0]],
         )
-        (tmp_path / "2026-02-25_10-00-00Z-no-proj.md").rename(
-            source_dir / "2026-02-25_10-00-00Z-no-proj.md"
+        (tmp_path / f"{_TODAY}_10-00-00Z-no-proj.md").rename(
+            source_dir / f"{_TODAY}_10-00-00Z-no-proj.md"
         )
 
         result_implicit = run_mine(
