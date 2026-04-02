@@ -19,9 +19,9 @@
 
 **Purpose**: Project initialization — no code changes, just validation
 
-- [ ] T001 Verify branch `001-competitive-enhancement` is checked out and clean via `git status`
-- [ ] T002 Run existing test suite (`pytest tests/ -v`) to establish baseline — all must pass
-- [ ] T003 Verify existing schema loads cleanly: `python -c "from sio.core.db.schema import init_db; init_db(':memory:')"`
+- [x] T001 Verify branch `001-competitive-enhancement` is checked out and clean via `git status`
+- [x] T002 Run existing test suite (`pytest tests/ -v`) to establish baseline — all must pass
+- [x] T003 Verify existing schema loads cleanly: `python -c "from sio.core.db.schema import init_db; init_db(':memory:')"`
 
 ---
 
@@ -33,18 +33,18 @@
 
 ### Tests for Foundation
 
-- [ ] T004 [P] Write test for new DDL tables (processed_sessions, session_metrics, positive_records, velocity_snapshots, autoresearch_txlog) and new columns (patterns.grade, applied_changes.delta_type) in `tests/test_schema_enhancement.py` — test that `init_db(':memory:')` creates all new tables and columns, verify constraints and indexes
-- [ ] T005 [P] Write test for enhanced JSONL parser extracting usage, costUsd, stopReason, isSidechain, model fields in `tests/test_jsonl_parser_enhanced.py` — create fixture JSONL with real Claude Code wire format containing these fields, verify extracted records include all new fields
-- [ ] T006 [P] Write test for processed_sessions tracking (skip re-mining, hash-based change detection) in `tests/test_processed_sessions.py` — test mine-once-skip-twice, test re-mine on content change
+- [x] T004 [P] Write test for new DDL tables (processed_sessions, session_metrics, positive_records, velocity_snapshots, autoresearch_txlog) and new columns (patterns.grade, applied_changes.delta_type) in `tests/test_schema_enhancement.py` — test that `init_db(':memory:')` creates all new tables and columns, verify constraints and indexes
+- [x] T005 [P] Write test for enhanced JSONL parser extracting usage, costUsd, stopReason, isSidechain, model fields in `tests/test_jsonl_parser_enhanced.py` — create fixture JSONL with real Claude Code wire format containing these fields, verify extracted records include all new fields
+- [x] T006 [P] Write test for processed_sessions tracking (skip re-mining, hash-based change detection) in `tests/test_processed_sessions.py` — test mine-once-skip-twice, test re-mine on content change
 
 ### Implementation for Foundation
 
-- [ ] T007 Add 5 new table DDLs (processed_sessions, session_metrics, positive_records, velocity_snapshots, autoresearch_txlog) and 2 ALTER column additions (patterns.grade, applied_changes.delta_type) to `src/sio/core/db/schema.py` — follow existing DDL pattern, add indexes per data-model.md
-- [ ] T008 Enhance `src/sio/mining/jsonl_parser.py` to extract `usage` object fields (input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens), `costUsd`, `stopReason`, `isSidechain`, `model` from assistant messages — add these as new keys in returned dicts alongside existing role/content/tool_name/etc.
-- [ ] T009 Implement processed_sessions check in `src/sio/mining/pipeline.py` — before parsing a file, compute SHA-256 hash and check processed_sessions table; skip if hash matches; insert tracking record after successful mining
+- [x] T007 Add 5 new table DDLs (processed_sessions, session_metrics, positive_records, velocity_snapshots, autoresearch_txlog) and 2 ALTER column additions (patterns.grade, applied_changes.delta_type) to `src/sio/core/db/schema.py` — follow existing DDL pattern, add indexes per data-model.md
+- [x] T008 Enhance `src/sio/mining/jsonl_parser.py` to extract `usage` object fields (input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens), `costUsd`, `stopReason`, `isSidechain`, `model` from assistant messages — add these as new keys in returned dicts alongside existing role/content/tool_name/etc.
+- [x] T009 Implement processed_sessions check in `src/sio/mining/pipeline.py` — before parsing a file, compute SHA-256 hash and check processed_sessions table; skip if hash matches; insert tracking record after successful mining
 - [ ] T010 Add session_metrics aggregation to `src/sio/mining/pipeline.py` — after mining a session, compute and insert per-session totals (tokens, cost, cache_hit_ratio, duration, message/tool/error/positive counts, stop_reason_distribution) into session_metrics table
 - [ ] T011 Add smart filtering to `src/sio/mining/pipeline.py` — skip sessions with <5 messages or <2 tool calls; record as skipped in processed_sessions
-- [ ] T012 Add `--exclude-sidechains` flag to mining pipeline via `src/sio/cli/main.py` mine command — when set, filter out messages where isSidechain=True before aggregation
+- [x] T012 Add `--exclude-sidechains` flag to mining pipeline via `src/sio/cli/main.py` mine command — when set, filter out messages where isSidechain=True before aggregation
 - [ ] T013 Run foundation tests: `pytest tests/test_schema_enhancement.py tests/test_jsonl_parser_enhanced.py tests/test_processed_sessions.py -v` — all must pass
 - [ ] T014 [P] Update `src/sio/core/config.py` — add configurable defaults for: budget caps (100/50 lines), decay floor (0.3), decay bands (14/28 days), validation window (5 sessions), autoresearch interval (30 min), max experiments (3), dedup threshold (0.85), similarity threshold (0.80)
 - [ ] T015_0 Run `ruff check src/sio/core/db/schema.py src/sio/mining/jsonl_parser.py src/sio/mining/pipeline.py src/sio/core/config.py --fix`

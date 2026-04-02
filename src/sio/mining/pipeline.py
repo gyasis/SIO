@@ -36,8 +36,10 @@ Human blocks are emitted as-is with None tool fields.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +55,46 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _file_hash(file_path: Path) -> str:
+    """Compute SHA-256 hex digest of a file's contents."""
+    h = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _is_already_processed(
+    conn: sqlite3.Connection,
+    file_path: Path,
+    file_hash: str,
+) -> bool:
+    """Return True if (file_path, file_hash) already exists in processed_sessions."""
+    row = conn.execute(
+        "SELECT 1 FROM processed_sessions WHERE file_path = ? AND file_hash = ?",
+        (str(file_path), file_hash),
+    ).fetchone()
+    return row is not None
+
+
+def _mark_processed(
+    conn: sqlite3.Connection,
+    file_path: Path,
+    file_hash: str,
+    message_count: int,
+    tool_call_count: int,
+) -> None:
+    """Insert a row into processed_sessions after successful mining."""
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "INSERT OR IGNORE INTO processed_sessions "
+        "(file_path, file_hash, message_count, tool_call_count, skipped, mined_at) "
+        "VALUES (?, ?, ?, ?, 0, ?)",
+        (str(file_path), file_hash, message_count, tool_call_count, now),
+    )
+    conn.commit()
 
 
 def _collect_files(
@@ -173,8 +215,10 @@ def _flatten_specstory_blocks(
 def _process_file(
     file_path: Path,
     source_type_label: str,
-) -> list[dict[str, Any]]:
-    """Parse a single file and return a list of ErrorRecord dicts.
+    *,
+    exclude_sidechains: bool = False,
+) -> tuple[list[dict[str, Any]], int, int]:
+    """Parse a single file and return error records plus message/tool counts.
 
     Parameters
     ----------
@@ -182,20 +226,31 @@ def _process_file(
         Path to the file to parse.
     source_type_label:
         "specstory" or "jsonl" — passed through to extract_errors.
+    exclude_sidechains:
+        When True, filter out messages where ``is_sidechain`` is True before
+        error extraction.
 
     Returns
     -------
-    list[dict]
-        Zero or more ErrorRecord dicts.  Never raises; exceptions are re-raised
-        to the caller for handling.
+    tuple[list[dict], int, int]
+        (error_records, message_count, tool_call_count).
     """
     if file_path.suffix == ".md":
         blocks = parse_specstory(file_path)
         messages = _flatten_specstory_blocks(blocks)
-        return extract_errors(messages, str(file_path), "specstory")
     else:
         messages = parse_jsonl(file_path)
-        return extract_errors(messages, str(file_path), "jsonl")
+
+    # Filter out sidechain messages when requested.
+    if exclude_sidechains:
+        messages = [m for m in messages if not m.get("is_sidechain")]
+
+    message_count = len(messages)
+    tool_call_count = sum(1 for m in messages if m.get("tool_name"))
+
+    source_label = "specstory" if file_path.suffix == ".md" else "jsonl"
+    error_records = extract_errors(messages, str(file_path), source_label)
+    return error_records, message_count, tool_call_count
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +264,8 @@ def run_mine(
     since: str,
     source_type: str = "both",
     project: str | None = None,
+    *,
+    exclude_sidechains: bool = False,
 ) -> dict[str, Any]:
     """Run the full mining pipeline.
 
@@ -217,8 +274,10 @@ def run_mine(
     1. Collect all .md / .jsonl files from source_dirs according to source_type.
     2. Apply the time-window filter (since).
     3. Apply the optional project substring filter on file paths.
-    4. Parse each surviving file, extract errors, and insert into the DB.
-    5. Return a summary dict.
+    4. Compute SHA-256 hash; skip files already in ``processed_sessions``.
+    5. Parse each surviving file, extract errors, and insert into the DB.
+    6. Record successfully mined files in ``processed_sessions``.
+    7. Return a summary dict.
 
     Parameters
     ----------
@@ -236,13 +295,17 @@ def run_mine(
     project:
         Optional project name.  When not None, only files whose path contains
         this string (case-sensitive substring match) are processed.
+    exclude_sidechains:
+        When True, messages where ``is_sidechain`` is True are filtered out
+        before error extraction / aggregation.
 
     Returns
     -------
     dict
-        ``total_files_scanned`` (int) — number of files processed after all filters.
-        ``errors_found`` (int)        — total error records inserted.
-        ``error_records`` (list[int]) — auto-assigned row IDs of inserted records.
+        ``total_files_scanned`` (int)  — number of files processed after all filters.
+        ``errors_found`` (int)         — total error records inserted.
+        ``error_records`` (list[int])  — auto-assigned row IDs of inserted records.
+        ``skipped_files`` (int)        — files skipped because already processed.
     """
     # --- 1. Collect candidate files ----------------------------------------
     all_files = _collect_files(source_dirs, source_type)
@@ -268,13 +331,27 @@ def run_mine(
 
     # --- 4. Process each file ----------------------------------------------
     inserted_ids: list[int] = []
+    skipped_files: int = 0
 
     for file_path in project_filtered:
+        # --- 4a. Deduplicate via processed_sessions ------------------------
+        fhash = _file_hash(file_path)
+        if _is_already_processed(db_conn, file_path, fhash):
+            logger.info(
+                "Skipping already-processed file: %s (hash=%s)",
+                file_path, fhash[:12],
+            )
+            skipped_files += 1
+            continue
+
         # Determine the source type label for this specific file.
         source_label = "specstory" if file_path.suffix == ".md" else "jsonl"
 
         try:
-            error_records = _process_file(file_path, source_label)
+            error_records, message_count, tool_call_count = _process_file(
+                file_path, source_label,
+                exclude_sidechains=exclude_sidechains,
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "Skipping %s due to exception: %s: %s",
@@ -292,9 +369,21 @@ def run_mine(
                     file_path, type(exc).__name__, exc,
                 )
 
+        # --- 4b. Mark file as processed ------------------------------------
+        try:
+            _mark_processed(
+                db_conn, file_path, fhash, message_count, tool_call_count,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Failed to record processed session for %s: %s: %s",
+                file_path, type(exc).__name__, exc,
+            )
+
     # --- 5. Return summary -------------------------------------------------
     return {
         "total_files_scanned": total_files_scanned,
         "errors_found": len(inserted_ids),
         "error_records": inserted_ids,
+        "skipped_files": skipped_files,
     }

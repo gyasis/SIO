@@ -214,6 +214,99 @@ CREATE TABLE IF NOT EXISTS recall_examples (
 )
 """
 
+_PROCESSED_SESSIONS_DDL = """
+CREATE TABLE IF NOT EXISTS processed_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_path TEXT NOT NULL,
+    file_hash TEXT NOT NULL,
+    message_count INTEGER NOT NULL,
+    tool_call_count INTEGER NOT NULL,
+    skipped INTEGER NOT NULL DEFAULT 0,
+    mined_at TEXT NOT NULL,
+    UNIQUE(file_path, file_hash)
+)
+"""
+
+_SESSION_METRICS_DDL = """
+CREATE TABLE IF NOT EXISTS session_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL UNIQUE,
+    file_path TEXT NOT NULL,
+    total_input_tokens INTEGER NOT NULL DEFAULT 0,
+    total_output_tokens INTEGER NOT NULL DEFAULT 0,
+    total_cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+    total_cache_create_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_hit_ratio REAL,
+    total_cost_usd REAL NOT NULL DEFAULT 0,
+    session_duration_seconds REAL,
+    message_count INTEGER NOT NULL DEFAULT 0,
+    tool_call_count INTEGER NOT NULL DEFAULT 0,
+    error_count INTEGER NOT NULL DEFAULT 0,
+    correction_count INTEGER NOT NULL DEFAULT 0,
+    positive_signal_count INTEGER NOT NULL DEFAULT 0,
+    sidechain_count INTEGER NOT NULL DEFAULT 0,
+    stop_reason_distribution TEXT,
+    model_used TEXT,
+    mined_at TEXT NOT NULL
+)
+"""
+
+_POSITIVE_RECORDS_DDL = """
+CREATE TABLE IF NOT EXISTS positive_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    signal_type TEXT NOT NULL CHECK(
+        signal_type IN (
+            'confirmation', 'gratitude', 'implicit_approval', 'session_success'
+        )
+    ),
+    signal_text TEXT NOT NULL,
+    context_before TEXT,
+    tool_name TEXT,
+    sentiment_score REAL,
+    source_file TEXT NOT NULL,
+    mined_at TEXT NOT NULL
+)
+"""
+
+_VELOCITY_SNAPSHOTS_DDL = """
+CREATE TABLE IF NOT EXISTS velocity_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    error_type TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    error_rate REAL NOT NULL,
+    error_count_in_window INTEGER NOT NULL,
+    window_start TEXT NOT NULL,
+    window_end TEXT NOT NULL,
+    rule_applied INTEGER NOT NULL DEFAULT 0,
+    rule_suggestion_id INTEGER REFERENCES suggestions(id),
+    created_at TEXT NOT NULL
+)
+"""
+
+_AUTORESEARCH_TXLOG_DDL = """
+CREATE TABLE IF NOT EXISTS autoresearch_txlog (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cycle_number INTEGER NOT NULL,
+    action TEXT NOT NULL CHECK(
+        action IN (
+            'mine', 'cluster', 'grade', 'generate', 'assert',
+            'experiment_create', 'validate', 'promote', 'rollback',
+            'error', 'stop'
+        )
+    ),
+    suggestion_id INTEGER REFERENCES suggestions(id),
+    experiment_branch TEXT,
+    assertion_results TEXT,
+    details TEXT,
+    status TEXT NOT NULL CHECK(
+        status IN ('success', 'failure', 'skipped', 'pending_approval')
+    ),
+    created_at TEXT NOT NULL
+)
+"""
+
 _FLOW_EVENTS_DDL = """
 CREATE TABLE IF NOT EXISTS flow_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -267,7 +360,48 @@ _INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_flow_hash ON flow_events(flow_hash)",
     "CREATE INDEX IF NOT EXISTS idx_flow_session ON flow_events(session_id)",
     "CREATE INDEX IF NOT EXISTS idx_flow_timestamp ON flow_events(timestamp)",
+    # processed_sessions indexes
+    "CREATE INDEX IF NOT EXISTS idx_ps_path ON processed_sessions(file_path)",
+    "CREATE INDEX IF NOT EXISTS idx_ps_hash ON processed_sessions(file_hash)",
+    # session_metrics indexes
+    "CREATE INDEX IF NOT EXISTS idx_sm_session ON session_metrics(session_id)",
+    "CREATE INDEX IF NOT EXISTS idx_sm_mined ON session_metrics(mined_at)",
+    # positive_records indexes
+    "CREATE INDEX IF NOT EXISTS idx_pr_session ON positive_records(session_id)",
+    "CREATE INDEX IF NOT EXISTS idx_pr_type ON positive_records(signal_type)",
+    "CREATE INDEX IF NOT EXISTS idx_pr_tool ON positive_records(tool_name)",
+    # velocity_snapshots indexes
+    "CREATE INDEX IF NOT EXISTS idx_vs_type ON velocity_snapshots(error_type)",
+    ("CREATE INDEX IF NOT EXISTS idx_vs_window "
+     "ON velocity_snapshots(window_start, window_end)"),
+    # autoresearch_txlog indexes
+    "CREATE INDEX IF NOT EXISTS idx_tx_cycle ON autoresearch_txlog(cycle_number)",
+    "CREATE INDEX IF NOT EXISTS idx_tx_action ON autoresearch_txlog(action)",
 ]
+
+
+def _migrate_v3(conn: sqlite3.Connection) -> None:
+    """Add v3 columns to existing tables (competitive enhancement).
+
+    Uses try/except since ALTER TABLE does not support IF NOT EXISTS.
+    """
+    # patterns: add grade column for pattern lifecycle tracking
+    try:
+        conn.execute(
+            "ALTER TABLE patterns ADD COLUMN grade TEXT DEFAULT 'emerging' "
+            "CHECK(grade IN ('emerging', 'strong', 'established', 'declining'))"
+        )
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # applied_changes: add delta_type column for rule write strategy
+    try:
+        conn.execute(
+            "ALTER TABLE applied_changes ADD COLUMN delta_type TEXT DEFAULT 'append' "
+            "CHECK(delta_type IN ('append', 'merge'))"
+        )
+    except sqlite3.OperationalError:
+        pass  # Column already exists
 
 
 def init_db(db_path: str) -> sqlite3.Connection:
@@ -318,6 +452,16 @@ def init_db(db_path: str) -> sqlite3.Connection:
     # Create DSPy suggestion engine tables
     conn.execute(_GROUND_TRUTH_DDL)
     conn.execute(_OPTIMIZED_MODULES_DDL)
+
+    # Create v3 tables (competitive enhancement)
+    conn.execute(_PROCESSED_SESSIONS_DDL)
+    conn.execute(_SESSION_METRICS_DDL)
+    conn.execute(_POSITIVE_RECORDS_DDL)
+    conn.execute(_VELOCITY_SNAPSHOTS_DDL)
+    conn.execute(_AUTORESEARCH_TXLOG_DDL)
+
+    # v3 migrations: add columns to existing tables
+    _migrate_v3(conn)
 
     # Migration: add columns to suggestions (safe with try/except since
     # ALTER TABLE doesn't support IF NOT EXISTS)

@@ -28,6 +28,15 @@ Each returned dict has the following keys:
     tool_output str | None     output from the tool
     error       str | None     error string when present
     timestamp   str | None     ISO-8601 timestamp, preserved verbatim
+
+    input_tokens                int | None   from message.usage.input_tokens
+    output_tokens               int | None   from message.usage.output_tokens
+    cache_creation_input_tokens int | None   from message.usage.cache_creation_input_tokens
+    cache_read_input_tokens     int | None   from message.usage.cache_read_input_tokens
+    cost_usd                    float | None from message.costUsd
+    stop_reason                 str | None   from message.stopReason
+    is_sidechain                bool | None  from message.isSidechain
+    model                       str | None   from message.model
 """
 
 from __future__ import annotations
@@ -44,6 +53,67 @@ from typing import Any
 # tool_use blocks that produced them.  This dict maps tool_use_id -> record
 # so that when we encounter a tool_result we can back-fill the error field.
 _ToolUseMap = dict[str, dict[str, Any]]
+
+
+# Keys added by T008 — token usage, cost, model metadata.
+# Every record gets these keys; they are None unless the source line provides them.
+_META_FIELD_DEFAULTS: dict[str, Any] = {
+    "input_tokens": None,
+    "output_tokens": None,
+    "cache_creation_input_tokens": None,
+    "cache_read_input_tokens": None,
+    "cost_usd": None,
+    "stop_reason": None,
+    "is_sidechain": None,
+    "model": None,
+}
+
+
+def _get_camel_or_snake(d: dict[str, Any], snake: str, camel: str) -> Any:
+    """Return d[snake] or d[camel], preferring snake_case, else None."""
+    val = d.get(snake)
+    if val is not None:
+        return val
+    return d.get(camel)
+
+
+def _extract_message_metadata(raw: dict[str, Any]) -> dict[str, Any]:
+    """Extract token-usage / cost / model metadata from a raw wire-format line.
+
+    Handles both camelCase (real wire) and snake_case variants.
+    Returns a dict with exactly the keys in ``_META_FIELD_DEFAULTS``.
+    """
+    meta: dict[str, Any] = dict(_META_FIELD_DEFAULTS)
+
+    # usage lives either on the top-level raw or nested under raw["message"]
+    usage: dict[str, Any] = {}
+    if isinstance(raw.get("usage"), dict):
+        usage = raw["usage"]
+    else:
+        message = raw.get("message")
+        if isinstance(message, dict) and isinstance(message.get("usage"), dict):
+            usage = message["usage"]
+
+    if usage:
+        meta["input_tokens"] = _get_camel_or_snake(
+            usage, "input_tokens", "inputTokens"
+        )
+        meta["output_tokens"] = _get_camel_or_snake(
+            usage, "output_tokens", "outputTokens"
+        )
+        meta["cache_creation_input_tokens"] = _get_camel_or_snake(
+            usage, "cache_creation_input_tokens", "cacheCreationInputTokens"
+        )
+        meta["cache_read_input_tokens"] = _get_camel_or_snake(
+            usage, "cache_read_input_tokens", "cacheReadInputTokens"
+        )
+
+    meta["cost_usd"] = _get_camel_or_snake(raw, "cost_usd", "costUsd")
+    meta["stop_reason"] = _get_camel_or_snake(raw, "stop_reason", "stopReason")
+    meta["is_sidechain"] = _get_camel_or_snake(raw, "is_sidechain", "isSidechain")
+    meta["model"] = raw.get("model")
+
+    return meta
 
 
 def _serialise_input(tool_input_raw: Any) -> str | None:
@@ -124,6 +194,7 @@ def _parse_real_user(raw: dict[str, Any], tool_use_map: _ToolUseMap) -> list[dic
                     "tool_output": result_content if not is_error else None,
                     "error": error_str,
                     "timestamp": timestamp,
+                    **_META_FIELD_DEFAULTS,
                 })
 
         # Also emit the text portions as a user message
@@ -137,6 +208,7 @@ def _parse_real_user(raw: dict[str, Any], tool_use_map: _ToolUseMap) -> list[dic
                 "tool_output": None,
                 "error": None,
                 "timestamp": timestamp,
+                **_META_FIELD_DEFAULTS,
             })
     else:
         # Plain string content
@@ -148,6 +220,7 @@ def _parse_real_user(raw: dict[str, Any], tool_use_map: _ToolUseMap) -> list[dic
             "tool_output": None,
             "error": None,
             "timestamp": timestamp,
+            **_META_FIELD_DEFAULTS,
         })
 
     return records
@@ -163,6 +236,7 @@ def _parse_real_assistant(raw: dict[str, Any], tool_use_map: _ToolUseMap) -> lis
     message: dict[str, Any] = raw.get("message") or {}
     content = message.get("content", "")
     timestamp = raw.get("timestamp")
+    meta = _extract_message_metadata(raw)
     records: list[dict[str, Any]] = []
 
     # Emit one record for the assistant's text
@@ -175,6 +249,7 @@ def _parse_real_assistant(raw: dict[str, Any], tool_use_map: _ToolUseMap) -> lis
         "tool_output": None,
         "error": None,
         "timestamp": timestamp,
+        **meta,
     })
 
     # Extract tool_use blocks
@@ -199,6 +274,7 @@ def _parse_real_assistant(raw: dict[str, Any], tool_use_map: _ToolUseMap) -> lis
                     "tool_output": None,
                     "error": None,
                     "timestamp": timestamp,
+                    **meta,
                 })
 
     return records
@@ -223,6 +299,7 @@ def _parse_legacy_human_or_assistant(raw: dict[str, Any]) -> dict[str, Any] | No
         "tool_output": None,
         "error": None,
         "timestamp": raw.get("timestamp"),
+        **_META_FIELD_DEFAULTS,
     }
 
 
@@ -236,6 +313,7 @@ def _parse_legacy_tool_use(raw: dict[str, Any]) -> dict[str, Any]:
         "tool_output": raw.get("tool_output"),
         "error": raw.get("error"),
         "timestamp": raw.get("timestamp"),
+        **_META_FIELD_DEFAULTS,
     }
 
 
@@ -249,6 +327,7 @@ def _parse_normalised_record(raw: dict[str, Any]) -> dict[str, Any]:
         "tool_output": raw.get("tool_output"),
         "error": raw.get("error"),
         "timestamp": raw.get("timestamp"),
+        **_META_FIELD_DEFAULTS,
     }
 
 
@@ -306,7 +385,10 @@ def parse_jsonl(file_path: Path) -> list[dict]:
     Returns:
         A list of normalised message dicts.  Each dict has the keys:
         ``role``, ``content``, ``tool_name``, ``tool_input``,
-        ``tool_output``, ``error``, ``timestamp``.
+        ``tool_output``, ``error``, ``timestamp``,
+        ``input_tokens``, ``output_tokens``,
+        ``cache_creation_input_tokens``, ``cache_read_input_tokens``,
+        ``cost_usd``, ``stop_reason``, ``is_sidechain``, ``model``.
         Returns an empty list for an empty or whitespace-only file.
 
     Examples:

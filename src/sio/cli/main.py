@@ -316,7 +316,12 @@ def export(platform, fmt, output):
     default="both",
     help="Source type.",
 )
-def mine(since, project, source):
+@click.option(
+    "--exclude-sidechains/--no-sidechains",
+    default=False,
+    help="Filter out sidechain messages before aggregation.",
+)
+def mine(since, project, source, exclude_sidechains):
     """Mine recent sessions for errors and failures."""
     from pathlib import Path
 
@@ -343,10 +348,15 @@ def mine(since, project, source):
         return
 
     with _db_conn(db_path) as conn:
-        result = run_mine(conn, source_dirs, since, source, project)
+        result = run_mine(
+            conn, source_dirs, since, source, project,
+            exclude_sidechains=exclude_sidechains,
+        )
 
     click.echo(f"Scanned {result['total_files_scanned']} files")
     click.echo(f"Found {result['errors_found']} errors")
+    if result.get("skipped_files"):
+        click.echo(f"Skipped {result['skipped_files']} already-processed files")
 
 
 # ---------------------------------------------------------------------------
