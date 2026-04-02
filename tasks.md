@@ -1,1 +1,1 @@
-specs/001-self-improving-organism/tasks.md
+specs/001-competitive-enhancement/tasks.md

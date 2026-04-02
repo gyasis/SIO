@@ -1,4 +1,4 @@
-# Competitive Landscape: Claude Code Self-Improving Agent Ecosystem
+not aoen aoer the # Competitive Landscape: Claude Code Self-Improving Agent Ecosystem
 
 > **Purpose**: Master reference for SIO improvement targets. Maps the full ecosystem of tools, techniques, and concepts that enable Claude Code to analyze previous sessions and improve itself. Use this to identify features SIO should adopt, gaps to fill, and differentiation opportunities.
 >
