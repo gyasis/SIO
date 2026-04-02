@@ -43,11 +43,11 @@
 - [x] T008 Enhance `src/sio/mining/jsonl_parser.py` to extract `usage` object fields (input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens), `costUsd`, `stopReason`, `isSidechain`, `model` from assistant messages — add these as new keys in returned dicts alongside existing role/content/tool_name/etc.
 - [x] T009 Implement processed_sessions check in `src/sio/mining/pipeline.py` — before parsing a file, compute SHA-256 hash and check processed_sessions table; skip if hash matches; insert tracking record after successful mining
 - [x] T010 Add session_metrics aggregation to `src/sio/mining/pipeline.py` — after mining a session, compute and insert per-session totals (tokens, cost, cache_hit_ratio, duration, message/tool/error/positive counts, stop_reason_distribution) into session_metrics table
-- [ ] T011 Add smart filtering to `src/sio/mining/pipeline.py` — skip sessions with <5 messages or <2 tool calls; record as skipped in processed_sessions
+- [x] T011 Add smart filtering to `src/sio/mining/pipeline.py` — skip sessions with <5 messages or <2 tool calls; record as skipped in processed_sessions
 - [x] T012 Add `--exclude-sidechains` flag to mining pipeline via `src/sio/cli/main.py` mine command — when set, filter out messages where isSidechain=True before aggregation
 - [x] T013 Run foundation tests: `pytest tests/test_schema_enhancement.py tests/test_jsonl_parser_enhanced.py tests/test_processed_sessions.py -v` — all must pass
 - [x] T014 [P] Update `src/sio/core/config.py` — add configurable defaults for: budget caps (100/50 lines), decay floor (0.3), decay bands (14/28 days), validation window (5 sessions), autoresearch interval (30 min), max experiments (3), dedup threshold (0.85), similarity threshold (0.80)
-- [ ] T015_0 Run `ruff check src/sio/core/db/schema.py src/sio/mining/jsonl_parser.py src/sio/mining/pipeline.py src/sio/core/config.py --fix`
+- [x] T015_0 Run `ruff check src/sio/core/db/schema.py src/sio/mining/jsonl_parser.py src/sio/mining/pipeline.py src/sio/core/config.py --fix`
 
 **Checkpoint**: Enhanced parser extracts all metadata; session tracking prevents re-mining; schema has all new tables. Run `sio mine` on a real session file to verify end-to-end.
 
@@ -63,14 +63,14 @@
 
 ### Tests for User Story 1
 
-- [ ] T015 [P] [US1] Write test for inter-message latency computation and cache_hit_ratio calculation in `tests/test_session_metrics.py` — fixture with known timestamps and token counts → verify derived metrics
+- [x] T015 [P] [US1] Write test for inter-message latency computation and cache_hit_ratio calculation in `tests/test_session_metrics.py` — fixture with known timestamps and token counts → verify derived metrics
 
 ### Implementation for User Story 1
 
-- [ ] T016 [US1] Implement inter-message latency computation in `src/sio/mining/pipeline.py` — compute timestamp diffs between consecutive messages, store session_duration_seconds in session_metrics
+- [x] T016 [US1] Implement inter-message latency computation in `src/sio/mining/pipeline.py` — compute timestamp diffs between consecutive messages, store session_duration_seconds in session_metrics
 - [x] T017 [US1] Update `sio mine` CLI output in `src/sio/cli/main.py` to display: sessions found, skipped (already processed), filtered (too small), newly mined, total cost tracked, and per-session token summary
-- [ ] T018 [US1] Run `pytest tests/test_session_metrics.py -v` — must pass
-- [ ] T019 [US1] Run `ruff check src/sio/mining/ src/sio/cli/main.py --fix`
+- [x] T018 [US1] Run `pytest tests/test_session_metrics.py -v` — must pass
+- [x] T019 [US1] Run `ruff check src/sio/mining/ src/sio/cli/main.py --fix`
 
 **Checkpoint**: US1 complete — `sio mine` extracts >90% of available fields. Verify with real session file.
 
@@ -93,9 +93,9 @@
 - [x] T023 [P] [US2] Create `src/sio/mining/positive_extractor.py` — implement `extract_positive_signals(parsed_messages) -> list[dict]` with 7+ compiled regex patterns for confirmation, gratitude, implicit approval, session success; coordinate with `_POSITIVE_KEYWORDS` in `flow_extractor.py` to avoid duplication; each result includes signal_type, signal_text, context_before, tool_name
 - [x] T024 [P] [US2] Create `src/sio/mining/approval_detector.py` — implement `detect_approvals(parsed_messages) -> dict` analyzing user response after each tool_use block; classify as approved/rejected based on response patterns; compute per-tool approval rates
 - [x] T025 [P] [US2] Create `src/sio/mining/sentiment_scorer.py` — implement `score_sentiment(text) -> float` returning -1.0 to +1.0 using keyword frequency ratios; implement `detect_frustration_escalation(scores: list[float]) -> bool` returning True when 3+ consecutive scores are negative; include escalation keywords: "frustrated", "annoying", "waste of time", "just do X", "stop"
-- [ ] T026 [US2] Integrate positive_extractor, approval_detector, and sentiment_scorer into `src/sio/mining/pipeline.py` — call extractors during mining, insert results into positive_records table, update session_metrics.positive_signal_count and correction_count
-- [ ] T027 [US2] Run `pytest tests/test_positive_extractor.py tests/test_approval_detector.py tests/test_sentiment_scorer.py -v` — all must pass
-- [ ] T028 [US2] Run `ruff check src/sio/mining/positive_extractor.py src/sio/mining/approval_detector.py src/sio/mining/sentiment_scorer.py --fix`
+- [x] T026 [US2] Integrate positive_extractor, approval_detector, and sentiment_scorer into `src/sio/mining/pipeline.py` — call extractors during mining, insert results into positive_records table, update session_metrics.positive_signal_count and correction_count
+- [x] T027 [US2] Run `pytest tests/test_positive_extractor.py tests/test_approval_detector.py tests/test_sentiment_scorer.py -v` — all must pass
+- [x] T028 [US2] Run `ruff check src/sio/mining/positive_extractor.py src/sio/mining/approval_detector.py src/sio/mining/sentiment_scorer.py --fix`
 
 **Checkpoint**: US2 complete — system captures both errors AND positive signals. Mine a real session and verify positive_records populated.
 
@@ -109,14 +109,14 @@
 
 ### Tests for User Story 3
 
-- [ ] T029 [P] [US3] Write test for velocity computation (rolling window error frequency, correction decay rate, adaptation speed) in `tests/test_velocity.py` — fixture with pre-rule and post-rule session data → verify error_rate decreases, adaptation_speed computed correctly
+- [x] T029 [P] [US3] Write test for velocity computation (rolling window error frequency, correction decay rate, adaptation speed) in `tests/test_velocity.py` — fixture with pre-rule and post-rule session data → verify error_rate decreases, adaptation_speed computed correctly
 
 ### Implementation for User Story 3
 
-- [ ] T030 [US3] Create `src/sio/core/metrics/velocity.py` with `__init__.py` — implement `compute_velocity_snapshot(db, error_type, window_days=7) -> dict` computing error_rate_in_window, correction_decay_rate, adaptation_speed; implement `get_velocity_trends(db, error_type=None) -> list[dict]` returning snapshots over time; insert results into velocity_snapshots table linking to applied rule suggestion_id
-- [ ] T031 [US3] Add `sio velocity` CLI command to `src/sio/cli/main.py` — options: `--error-type`, `--window` (default 7), `--format table|json`; display Rich table per contracts/cli-commands.md; flag ineffective rules (no improvement after 5 sessions)
-- [ ] T032 [US3] Run `pytest tests/test_velocity.py -v` — must pass
-- [ ] T033 [US3] Run `ruff check src/sio/core/metrics/ src/sio/cli/main.py --fix`
+- [x] T030 [US3] Create `src/sio/core/metrics/velocity.py` with `__init__.py` — implement `compute_velocity_snapshot(db, error_type, window_days=7) -> dict` computing error_rate_in_window, correction_decay_rate, adaptation_speed; implement `get_velocity_trends(db, error_type=None) -> list[dict]` returning snapshots over time; insert results into velocity_snapshots table linking to applied rule suggestion_id
+- [x] T031 [US3] Add `sio velocity` CLI command to `src/sio/cli/main.py` — options: `--error-type`, `--window` (default 7), `--format table|json`; display Rich table per contracts/cli-commands.md; flag ineffective rules (no improvement after 5 sessions)
+- [x] T032 [US3] Run `pytest tests/test_velocity.py -v` — must pass
+- [x] T033 [US3] Run `ruff check src/sio/core/metrics/ src/sio/cli/main.py --fix`
 
 **Checkpoint**: US3 complete — `sio velocity` shows measurable error rate trends.
 
@@ -130,15 +130,15 @@
 
 ### Tests for User Story 4
 
-- [ ] T034 [P] [US4] Write test for budget enforcement (line counting, cap checking, consolidation triggering, blocking) in `tests/test_budget.py` — test under budget (apply), near budget (consolidate), at budget (block)
-- [ ] T035 [P] [US4] Write test for semantic deduplication (>85% similarity detection, merge proposal) in `tests/test_deduplicator.py` — fixture with two near-identical rules → verify consolidation proposed
-- [ ] T036 [P] [US4] Write test for delta-based writer (merge vs append based on >80% similarity) in `tests/test_delta_writer.py` — test overlap detection, in-place update vs new append, delta_type tracking
+- [x] T034 [P] [US4] Write test for budget enforcement (line counting, cap checking, consolidation triggering, blocking) in `tests/test_budget.py` — test under budget (apply), near budget (consolidate), at budget (block)
+- [x] T035 [P] [US4] Write test for semantic deduplication (>85% similarity detection, merge proposal) in `tests/test_deduplicator.py` — fixture with two near-identical rules → verify consolidation proposed
+- [x] T036 [P] [US4] Write test for delta-based writer (merge vs append based on >80% similarity) in `tests/test_delta_writer.py` — test overlap detection, in-place update vs new append, delta_type tracking
 
 ### Implementation for User Story 4
 
-- [ ] T037 [P] [US4] Create `src/sio/applier/budget.py` — implement `count_meaningful_lines(file_path) -> int` (exclude blanks, comments); implement `check_budget(file_path, new_rule_lines, config) -> BudgetResult` returning status (ok, consolidate, blocked); implement `trigger_consolidation(file_path, config) -> bool` merging semantically similar rules via FastEmbed (reuse `_get_backend()` from pattern_clusterer.py)
-- [ ] T038 [P] [US4] Create `src/sio/applier/deduplicator.py` — implement `find_duplicates(file_paths, threshold=0.85) -> list[DuplicatePair]` scanning all rule files; implement `propose_merge(pair) -> str` generating consolidated text; reuse `_get_backend()` singleton
-- [ ] T039 [US4] Modify `src/sio/applier/writer.py` to use delta-based writing — before appending, embed the new rule and compare against existing rules; if >80% similarity, update existing rule in place (merge); otherwise append; track delta_type ('merge' or 'append') in applied_changes table
+- [x] T037 [P] [US4] Create `src/sio/applier/budget.py` — implement `count_meaningful_lines(file_path) -> int` (exclude blanks, comments); implement `check_budget(file_path, new_rule_lines, config) -> BudgetResult` returning status (ok, consolidate, blocked); implement `trigger_consolidation(file_path, config) -> bool` merging semantically similar rules via FastEmbed (reuse `_get_backend()` from pattern_clusterer.py)
+- [x] T038 [P] [US4] Create `src/sio/applier/deduplicator.py` — implement `find_duplicates(file_paths, threshold=0.85) -> list[DuplicatePair]` scanning all rule files; implement `propose_merge(pair) -> str` generating consolidated text; reuse `_get_backend()` singleton
+- [x] T039 [US4] Modify `src/sio/applier/writer.py` to use delta-based writing — before appending, embed the new rule and compare against existing rules; if >80% similarity, update existing rule in place (merge); otherwise append; track delta_type ('merge' or 'append') in applied_changes table
 - [ ] T040 [US4] Integrate budget check into `src/sio/applier/writer.py` — call `check_budget()` before any write; trigger consolidation if near cap; block if over cap
 - [ ] T041 [US4] Add `sio budget` CLI command to `src/sio/cli/main.py` — display per-file budget usage (lines/cap/status) as Rich table per contracts/cli-commands.md
 - [ ] T042 [US4] Add `sio dedupe` CLI command to `src/sio/cli/main.py` — options: `--threshold` (default 0.85), `--dry-run`, `--auto`; display duplicate pairs with proposed merges per contracts/cli-commands.md
@@ -158,12 +158,12 @@
 
 ### Tests for User Story 5
 
-- [ ] T046 [P] [US5] Write test for violation detection (parse rules, match against mined errors, priority flagging) in `tests/test_violation_detector.py` — fixture with CLAUDE.md rules and session errors matching a rule → verify violation detected with higher priority than new patterns
+- [x] T046 [P] [US5] Write test for violation detection (parse rules, match against mined errors, priority flagging) in `tests/test_violation_detector.py` — fixture with CLAUDE.md rules and session errors matching a rule → verify violation detected with higher priority than new patterns
 
 ### Implementation for User Story 5
 
-- [ ] T047 [US5] Create `src/sio/mining/violation_detector.py` — implement `parse_rules(file_path) -> list[Rule]` extracting constraint text from markdown instruction files; implement `detect_violations(rules, error_records) -> list[Violation]` matching mined errors against parsed rules using keyword and semantic matching; flag violations at higher priority than new patterns
-- [ ] T048 [US5] Add `sio violations` CLI command to `src/sio/cli/main.py` — options: `--since`, `--format table|json`; display violations sorted by frequency and recency per contracts/cli-commands.md
+- [x] T047 [US5] Create `src/sio/mining/violation_detector.py` — implement `parse_rules(file_path) -> list[Rule]` extracting constraint text from markdown instruction files; implement `detect_violations(rules, error_records) -> list[Violation]` matching mined errors against parsed rules using keyword and semantic matching; flag violations at higher priority than new patterns
+- [x] T048 [US5] Add `sio violations` CLI command to `src/sio/cli/main.py` — options: `--since`, `--format table|json`; display violations sorted by frequency and recency per contracts/cli-commands.md
 - [ ] T049 [US5] Run `pytest tests/test_violation_detector.py -v` — must pass
 - [ ] T050 [US5] Run `ruff check src/sio/mining/violation_detector.py src/sio/cli/main.py --fix`
 
@@ -179,13 +179,13 @@
 
 ### Tests for User Story 6
 
-- [ ] T051 [P] [US6] Write test for temporal decay (Fresh/Cooling/Stale bands, floor at 0.3) in `tests/test_confidence_decay.py` — fixtures with patterns at 0, 14, 21, 30+ day ages → verify multipliers match bands
-- [ ] T052 [P] [US6] Write test for pattern grading lifecycle (emerging→strong→established→declining) and auto-suggestion at "strong" in `tests/test_grader.py` — fixture with pattern at various occurrence/session counts → verify correct grade transitions and suggestion generation trigger
+- [x] T051 [P] [US6] Write test for temporal decay (Fresh/Cooling/Stale bands, floor at 0.3) in `tests/test_confidence_decay.py` — fixtures with patterns at 0, 14, 21, 30+ day ages → verify multipliers match bands
+- [x] T052 [P] [US6] Write test for pattern grading lifecycle (emerging→strong→established→declining) and auto-suggestion at "strong" in `tests/test_grader.py` — fixture with pattern at various occurrence/session counts → verify correct grade transitions and suggestion generation trigger
 
 ### Implementation for User Story 6
 
-- [ ] T053 [US6] Modify `src/sio/suggestions/confidence.py` — add temporal decay as a 4th multiplicative factor in `score_confidence()`; implement `_compute_decay_multiplier(last_seen_date) -> float` with bands: Fresh (0-14 days, 1.0), Cooling (15-28 days, linear 1.0→0.6), Stale (29+ days, linear 0.6→floor 0.3)
-- [ ] T054 [US6] Create `src/sio/clustering/grader.py` — implement `grade_pattern(pattern_row) -> str` computing grade from error_count, session_count, first_seen, last_seen, confidence; implement `run_grading(db) -> list[dict]` updating all patterns' grade column; implement `auto_generate_suggestions(db, strong_patterns)` creating suggestions for newly-promoted "strong" patterns without human trigger
+- [x] T053 [US6] Modify `src/sio/suggestions/confidence.py` — add temporal decay as a 4th multiplicative factor in `score_confidence()`; implement `_compute_decay_multiplier(last_seen_date) -> float` with bands: Fresh (0-14 days, 1.0), Cooling (15-28 days, linear 1.0→0.6), Stale (29+ days, linear 0.6→floor 0.3)
+- [x] T054 [US6] Create `src/sio/clustering/grader.py` — implement `grade_pattern(pattern_row) -> str` computing grade from error_count, session_count, first_seen, last_seen, confidence; implement `run_grading(db) -> list[dict]` updating all patterns' grade column; implement `auto_generate_suggestions(db, strong_patterns)` creating suggestions for newly-promoted "strong" patterns without human trigger
 - [ ] T055 [US6] Run `pytest tests/test_confidence_decay.py tests/test_grader.py -v` — all must pass
 - [ ] T056 [US6] Run `ruff check src/sio/suggestions/confidence.py src/sio/clustering/grader.py --fix`
 
