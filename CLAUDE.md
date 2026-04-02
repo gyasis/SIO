@@ -30,8 +30,8 @@ Python 3.11+: Follow standard conventions
 
 ## Recent Changes
 - 001-competitive-enhancement: Added Python 3.11+ + Click >=8.1 (CLI), Rich >=13.0 (terminal UI), fastembed >=0.2 (embeddings), numpy >=1.24, DSPy >=3.1.3 (optimization)
+- 001-competitive-enhancement: Added Python 3.11+ + Click >=8.1 (CLI), Rich >=13.0 (terminal UI), fastembed >=0.2 (embeddings), numpy >=1.24, DSPy >=3.1.3 (optimization)
 - 003-dspy-suggestion-engine: Added Python 3.11+ + DSPy >=3.1.3, Click >=8.1, Rich >=13.0, fastembed >=0.2, numpy >=1.24, tomllib (stdlib)
-- 002-sio-redesign: Added Python 3.11+ + Click (CLI), Rich (terminal UI), fastembed (embeddings), numpy
 
 <!-- MANUAL ADDITIONS START -->
 
