@@ -187,22 +187,25 @@ class AutoResearchLoop:
         """Grade patterns to find strong candidates."""
         try:
             from sio.clustering.grader import run_grading
-            from sio.clustering.ranker import rank_patterns
 
             # Update lifecycle grades (emerging/strong/established/declining)
             run_grading(self._db, self._config)
 
-            patterns = cluster_result.get("patterns", [])
-            ranked = rank_patterns(patterns)
-            # Filter to patterns graded as "strong" with sufficient occurrences
+            # Re-read patterns from DB where grades are actually stored,
+            # rather than filtering in-memory dicts that lack a 'grade' key.
+            rows = self._db.execute(
+                "SELECT * FROM patterns WHERE grade IN ('strong', 'established')",
+            ).fetchall()
             strong = [
-                p for p in ranked
-                if p.get("grade") in ("strong", "established")
-                and p.get("error_count", 0) >= self._config.min_pattern_occurrences
+                p for p in (dict(r) for r in rows)
+                if p.get("error_count", 0) >= self._config.min_pattern_occurrences
             ]
+            total_rows = self._db.execute(
+                "SELECT COUNT(*) FROM patterns",
+            ).fetchone()[0]
             self._txlog.append(
                 cycle, "grade", "success",
-                f"{len(strong)} strong patterns from {len(ranked)} total",
+                f"{len(strong)} strong patterns from {total_rows} total",
             )
             return {"strong_patterns": strong}
         except Exception as exc:
@@ -226,7 +229,20 @@ class AutoResearchLoop:
 
             # Take only the top pattern (max 1 rule per cycle)
             top = strong[0]
-            suggestions = generate_suggestions(self._db, [top])
+            pattern_id = top.get("id") or top.get("pattern_id")
+
+            # Build datasets dict for this pattern (same shape as CLI)
+            datasets: dict = {}
+            if pattern_id is not None:
+                ds_rows = self._db.execute(
+                    "SELECT * FROM datasets WHERE pattern_id = ?",
+                    (pattern_id,),
+                ).fetchall()
+                for row in ds_rows:
+                    ds = dict(row)
+                    datasets[pattern_id] = ds
+
+            suggestions = generate_suggestions([top], datasets, self._db)
             if not suggestions:
                 self._txlog.append(
                     cycle, "generate", "skipped",
