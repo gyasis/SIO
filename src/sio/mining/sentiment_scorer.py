@@ -41,7 +41,11 @@ _NEGATIVE_KEYWORDS: list[re.Pattern[str]] = [
     re.compile(r"\bfail\b", re.IGNORECASE),
     re.compile(r"\bundo\b", re.IGNORECASE),
     re.compile(r"\brevert\b", re.IGNORECASE),
-    re.compile(r"\bstop\b", re.IGNORECASE),
+    re.compile(
+        r"\bstop\s+(?:doing|it|this|that|changing|trying)\b"
+        r"|(?:^|\s)stop[,!.]",
+        re.IGNORECASE | re.MULTILINE,
+    ),
     re.compile(r"\bfrustrated\b", re.IGNORECASE),
     re.compile(r"\bannoying\b", re.IGNORECASE),
     re.compile(r"\bwaste\b", re.IGNORECASE),
@@ -54,7 +58,10 @@ _ESCALATION_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\bannoying\b", re.IGNORECASE),
     re.compile(r"\bwaste\s+of\s+time\b", re.IGNORECASE),
     re.compile(r"\bjust\s+do\s+\w+\b", re.IGNORECASE),
-    re.compile(r"\bstop\b", re.IGNORECASE),
+    re.compile(
+        r"\bstop\s+(?:doing|it|this|that|trying)\b|^stop[!.]?\s*$",
+        re.IGNORECASE | re.MULTILINE,
+    ),
 ]
 
 

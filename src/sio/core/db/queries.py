@@ -776,6 +776,29 @@ def insert_session_metrics(
     return cur.lastrowid
 
 
+def insert_session_metrics_if_new(
+    conn: sqlite3.Connection, record: dict, *, _batch: bool = False,
+) -> int:
+    """Insert a session_metrics row only if no row exists for this session_id.
+
+    Uses INSERT OR IGNORE so that existing data (e.g. from the mining
+    pipeline) is never overwritten by a hook writing placeholder zeros.
+
+    Returns the row ID on insert, or 0 if the row already existed.
+    """
+    cols = _SESSION_METRICS_COLS
+    placeholders = ", ".join(["?"] * len(cols))
+    col_names = ", ".join(cols)
+    values = [record.get(c) for c in cols]
+    cur = conn.execute(
+        f"INSERT OR IGNORE INTO session_metrics ({col_names}) VALUES ({placeholders})",
+        values,
+    )
+    if not _batch:
+        conn.commit()
+    return cur.lastrowid
+
+
 # ---------------------------------------------------------------------------
 # v3 — Positive Records queries (competitive enhancement)
 # ---------------------------------------------------------------------------

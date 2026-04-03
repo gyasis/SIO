@@ -113,6 +113,18 @@ def _extract_message_metadata(raw: dict[str, Any]) -> dict[str, Any]:
     meta["is_sidechain"] = _get_camel_or_snake(raw, "is_sidechain", "isSidechain")
     meta["model"] = raw.get("model")
 
+    # Fallback: real Claude Code JSONL nests these inside raw['message']
+    message = raw.get("message") or {}
+    if isinstance(message, dict):
+        if meta["cost_usd"] is None:
+            meta["cost_usd"] = _get_camel_or_snake(message, "cost_usd", "costUsd")
+        if meta["stop_reason"] is None:
+            meta["stop_reason"] = _get_camel_or_snake(
+                message, "stop_reason", "stopReason"
+            )
+        if meta["model"] is None:
+            meta["model"] = message.get("model")
+
     return meta
 
 

@@ -269,33 +269,28 @@ def extract_positive_signals(
         if _has_any_positive(last_content) and not _has_pending_errors(
             parsed_messages, last_user_idx
         ):
-            # Avoid duplicate if we already emitted a signal for this same message
-            already_emitted = any(
-                s["signal_text"] == last_content
-                and s["timestamp"] == parsed_messages[last_user_idx].get("timestamp")
+            # Emit session_success as a distinct signal type even if
+            # the same message was already classified as gratitude/confirmation.
+            # Only deduplicate if session_success was already emitted for this
+            # exact message (prevents true duplicates, not cross-type overlap).
+            already_session_success = any(
+                s["signal_type"] == "session_success"
+                and s["signal_text"] == last_content
                 for s in signals
             )
-            if not already_emitted or True:
-                # Always emit session_success as a distinct signal type even if
-                # the same message was already classified differently.
-                # Deduplicate only if it was already tagged as session_success.
-                if not any(
-                    s["signal_type"] == "session_success"
-                    and s["signal_text"] == last_content
-                    for s in signals
-                ):
-                    signals.append({
-                        "signal_type": "session_success",
-                        "signal_text": last_content,
-                        "context_before": _prev_assistant_content(
-                            parsed_messages, last_user_idx
-                        ),
-                        "tool_name": _prev_tool_name(
-                            parsed_messages, last_user_idx
-                        ),
-                        "timestamp": parsed_messages[last_user_idx].get(
-                            "timestamp"
-                        ),
-                    })
+            if not already_session_success:
+                signals.append({
+                    "signal_type": "session_success",
+                    "signal_text": last_content,
+                    "context_before": _prev_assistant_content(
+                        parsed_messages, last_user_idx
+                    ),
+                    "tool_name": _prev_tool_name(
+                        parsed_messages, last_user_idx
+                    ),
+                    "timestamp": parsed_messages[last_user_idx].get(
+                        "timestamp"
+                    ),
+                })
 
     return signals

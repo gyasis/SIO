@@ -271,11 +271,23 @@ def detect_violations(
 
             matched = False
             for term in terms:
-                # Case-insensitive check. For terms with special chars (like *)
-                # use literal string search, not regex.
-                if term.lower() in searchable_lower:
-                    matched = True
-                    break
+                term_lower = term.lower()
+                # For terms that are purely alphanumeric/underscores, use
+                # word-boundary regex to avoid substring false positives
+                # (e.g. "import" matching "important").
+                # For terms with special chars (like * or --), fall back
+                # to plain substring matching since \b won't work reliably.
+                if re.fullmatch(r'\w+', term_lower):
+                    if re.search(
+                        r'\b' + re.escape(term_lower) + r'\b',
+                        searchable_lower,
+                    ):
+                        matched = True
+                        break
+                else:
+                    if term_lower in searchable_lower:
+                        matched = True
+                        break
 
             if matched:
                 violations.append(Violation(

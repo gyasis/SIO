@@ -186,14 +186,18 @@ class AutoResearchLoop:
     def _step_grade(self, cycle: int, cluster_result: dict) -> dict:
         """Grade patterns to find strong candidates."""
         try:
+            from sio.clustering.grader import run_grading
             from sio.clustering.ranker import rank_patterns
+
+            # Update lifecycle grades (emerging/strong/established/declining)
+            run_grading(self._db, self._config)
 
             patterns = cluster_result.get("patterns", [])
             ranked = rank_patterns(patterns)
-            # Filter to patterns with sufficient strength
+            # Filter to patterns graded as "strong" with sufficient occurrences
             strong = [
                 p for p in ranked
-                if p.get("rank_score", 0) >= 0.5
+                if p.get("grade") in ("strong", "established")
                 and p.get("error_count", 0) >= self._config.min_pattern_occurrences
             ]
             self._txlog.append(

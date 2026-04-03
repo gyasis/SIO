@@ -120,10 +120,20 @@ def _pre_scan_file(
                     if '"tool_use"' in stripped or '"tool_name"' in stripped:
                         estimated_tool_calls += 1
             else:
-                # .md (SpecStory) — count separator lines and tool markers
+                # .md (SpecStory) — count separator lines and role markers
+                # as message boundaries.  SpecStory files use several formats:
+                #   - "---" separators between turns
+                #   - "**Human:**" / "**Assistant:**" (legacy inline)
+                #   - "_**User**_" / "_**Agent" (real SpecStory)
                 for line in f:
                     stripped = line.strip()
                     if stripped == "---":
+                        estimated_messages += 1
+                    elif "**Human:**" in stripped or "**Assistant:**" in stripped:
+                        estimated_messages += 1
+                    elif "_**User**_" in stripped:
+                        estimated_messages += 1
+                    elif "_**Agent" in stripped:
                         estimated_messages += 1
                     if "Tool call:" in stripped or "Tool use:" in stripped:
                         estimated_tool_calls += 1
@@ -559,6 +569,7 @@ def run_mine(
     # --- 4. Process each file ----------------------------------------------
     inserted_ids: list[int] = []
     skipped_files: int = 0
+    error_files: int = 0
     total_cost_tracked: float = 0.0
 
     for file_path in project_filtered:
@@ -607,6 +618,7 @@ def run_mine(
                 "Skipping %s due to exception: %s: %s",
                 file_path, type(exc).__name__, exc,
             )
+            error_files += 1
             continue
 
         for record in error_records:
@@ -719,7 +731,7 @@ def run_mine(
             )
 
     # --- 5. Return summary -------------------------------------------------
-    newly_mined = len(project_filtered) - skipped_files
+    newly_mined = len(project_filtered) - skipped_files - error_files
     return {
         "total_files_scanned": total_files_scanned,
         "errors_found": len(inserted_ids),

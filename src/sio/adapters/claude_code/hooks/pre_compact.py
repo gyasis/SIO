@@ -35,7 +35,7 @@ def _do_snapshot(stdin_json: str, *, conn=None) -> None:
     """
     payload = json.loads(stdin_json)
 
-    from sio.core.db.queries import insert_session_metrics
+    from sio.core.db.queries import insert_session_metrics_if_new
     from sio.core.db.schema import init_db
 
     own_conn = conn is None
@@ -96,7 +96,7 @@ def _do_snapshot(stdin_json: str, *, conn=None) -> None:
             "model_used": None,
             "mined_at": now,
         }
-        insert_session_metrics(conn, record)
+        insert_session_metrics_if_new(conn, record)
     finally:
         if own_conn:
             conn.close()

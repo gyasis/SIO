@@ -121,7 +121,7 @@ def _do_finalize(stdin_json: str, *, conn=None) -> list[str]:
     """
     payload = json.loads(stdin_json)
 
-    from sio.core.db.queries import insert_session_metrics
+    from sio.core.db.queries import insert_session_metrics_if_new
     from sio.core.db.schema import init_db
 
     own_conn = conn is None
@@ -183,7 +183,7 @@ def _do_finalize(stdin_json: str, *, conn=None) -> list[str]:
             "model_used": None,
             "mined_at": now,
         }
-        insert_session_metrics(conn, record)
+        insert_session_metrics_if_new(conn, record)
 
         # Lightweight pattern detection
         patterns = _lightweight_pattern_detection(conn, session_id)

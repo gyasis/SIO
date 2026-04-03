@@ -196,7 +196,19 @@ def check_budget(
             ),
         )
 
-    # Over budget -- need consolidation.
+    # Already at or over cap — no room even after consolidation.
+    if current >= cap:
+        return BudgetResult(
+            status="blocked",
+            current_lines=current,
+            cap=cap,
+            message=(
+                f"Budget: {current}/{cap} lines ({utilization:.0%}) "
+                f"-- at capacity, cannot add {new_rule_lines} lines"
+            ),
+        )
+
+    # Over budget with new lines but still below cap -- need consolidation.
     return BudgetResult(
         status="consolidate",
         current_lines=current,

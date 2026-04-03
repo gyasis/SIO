@@ -150,13 +150,13 @@ class TestCheckBudget:
         assert result.current_lines == 95
         assert result.cap == 100
 
-    def test_consolidate_at_exact_cap(self, tmp_path: Path):
-        """File at 100/100 lines adding 1 -> consolidate."""
+    def test_blocked_at_exact_cap(self, tmp_path: Path):
+        """File at 100/100 lines adding 1 -> blocked (already at capacity)."""
         lines = "\n".join(f"Rule line {i}" for i in range(100))
         f = _write_md(tmp_path / "CLAUDE.md", lines + "\n")
         config = self._make_config(primary=100)
         result = check_budget(f, new_rule_lines=1, config=config)
-        assert result.status == "consolidate"
+        assert result.status == "blocked"
 
     def test_uses_supplementary_cap_for_non_claude_md(self, tmp_path: Path):
         """Non-CLAUDE.md files use budget_cap_supplementary."""
@@ -316,7 +316,7 @@ class TestConsolidationTriggersAndBlocking:
         config = SIOConfig(budget_cap_primary=100, dedup_threshold=0.99)
 
         budget = check_budget(f, new_rule_lines=1, config=config)
-        assert budget.status == "consolidate"
+        assert budget.status == "blocked"
 
         # Consolidation with very high threshold should find nothing.
         rng = np.random.default_rng(42)

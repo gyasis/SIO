@@ -26,7 +26,7 @@ from typing import Any
 # Ordered from most specific to shortest to reduce false positives.
 _REJECTION_PATTERNS: list[re.Pattern[str]] = [
     # Explicit negation openers
-    re.compile(r"(?:^|\s)no[,.]?\s", re.IGNORECASE),
+    re.compile(r"(?:^|\s)no[,.]?(?:\s|$)", re.IGNORECASE),
     re.compile(r"\bthat['']?s\s+wrong\b", re.IGNORECASE),
     re.compile(r"\bthat['']?s\s+not\s+(?:right|correct|what)\b", re.IGNORECASE),
     re.compile(r"\bnot\s+what\s+i\s+(?:wanted|asked|meant)\b", re.IGNORECASE),
