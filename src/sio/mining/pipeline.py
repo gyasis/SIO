@@ -63,6 +63,70 @@ from sio.mining.time_filter import filter_files
 
 logger = logging.getLogger(__name__)
 
+# Error type priority for same-session dedup (higher index = higher priority).
+_ERROR_TYPE_PRIORITY: dict[str, int] = {
+    "tool_failure": 0,
+    "undo": 1,
+    "repeated_attempt": 2,
+    "agent_admission": 3,
+    "user_correction": 4,
+}
+
+
+def _dedup_by_error_type_priority(
+    error_records: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Deduplicate error records by (session_id, user_message), keeping only
+    the highest-priority error_type per group.
+
+    Priority (highest first): user_correction > agent_admission >
+    repeated_attempt > undo > tool_failure.
+
+    Records with no user_message or no session_id are kept unconditionally
+    (they cannot be grouped).
+    """
+    # First pass: find highest priority per (session_id, user_message).
+    best: dict[tuple[str, str], tuple[int, int]] = {}  # key -> (priority, index)
+    ungrouped: list[int] = []
+
+    for idx, rec in enumerate(error_records):
+        sid = rec.get("session_id") or ""
+        umsg = rec.get("user_message") or ""
+        if not sid or not umsg:
+            ungrouped.append(idx)
+            continue
+        key = (sid, umsg)
+        etype = rec.get("error_type") or ""
+        priority = _ERROR_TYPE_PRIORITY.get(etype, -1)
+        prev = best.get(key)
+        if prev is None or priority > prev[0]:
+            best[key] = (priority, idx)
+
+    # Collect winning indices.
+    keep_indices = set(ungrouped)
+    for _priority, idx in best.values():
+        keep_indices.add(idx)
+
+    return [error_records[i] for i in sorted(keep_indices)]
+
+
+def _is_cross_format_duplicate(
+    conn: sqlite3.Connection,
+    user_message: str | None,
+    error_text: str | None,
+) -> bool:
+    """Return True if an error record with the same (user_message, error_text)
+    already exists in the database — indicating a cross-format duplicate from
+    a sidechain or re-exported session file.
+    """
+    if not user_message or not error_text:
+        return False
+    row = conn.execute(
+        "SELECT 1 FROM error_records WHERE user_message = ? AND error_text = ? LIMIT 1",
+        (user_message, error_text),
+    ).fetchone()
+    return row is not None
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -320,7 +384,7 @@ def _process_file(
     file_path: Path,
     source_type_label: str,
     *,
-    exclude_sidechains: bool = False,
+    exclude_sidechains: bool = True,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, int]:
     """Parse a single file and return error records, messages, plus counts.
 
@@ -502,7 +566,7 @@ def run_mine(
     source_type: str = "both",
     project: str | None = None,
     *,
-    exclude_sidechains: bool = False,
+    exclude_sidechains: bool = True,
 ) -> dict[str, Any]:
     """Run the full mining pipeline.
 
@@ -621,7 +685,25 @@ def run_mine(
             error_files += 1
             continue
 
+        # --- Dedup: same-session error type priority -------------------------
+        error_records = _dedup_by_error_type_priority(error_records)
+
         for record in error_records:
+            # --- Dedup: cross-format duplicate check --------------------------
+            if _is_cross_format_duplicate(
+                db_conn,
+                record.get("user_message"),
+                record.get("error_text"),
+            ):
+                logger.debug(
+                    "Skipping cross-format duplicate: user_message=%r, "
+                    "error_text=%r, source_file=%s",
+                    (record.get("user_message") or "")[:60],
+                    (record.get("error_text") or "")[:60],
+                    file_path,
+                )
+                continue
+
             try:
                 row_id = insert_error_record(db_conn, record)
                 inserted_ids.append(row_id)

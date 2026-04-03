@@ -317,9 +317,9 @@ def export(platform, fmt, output):
     help="Source type.",
 )
 @click.option(
-    "--exclude-sidechains/--no-sidechains",
-    default=False,
-    help="Filter out sidechain messages before aggregation.",
+    "--exclude-sidechains/--include-sidechains",
+    default=True,
+    help="Filter out sidechain messages before aggregation (default: on).",
 )
 def mine(since, project, source, exclude_sidechains):
     """Mine recent sessions for errors and failures."""
