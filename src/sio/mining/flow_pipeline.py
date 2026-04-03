@@ -18,10 +18,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from sio.mining.flow_extractor import (
-    compress_rle,
-    compute_ngrams,
+    compressed_to_tool_indices,
     extract_flows_from_session,
-    extract_tool_sequence,
+    indexed_ngrams,
 )
 from sio.mining.jsonl_parser import parse_jsonl
 from sio.mining.time_filter import filter_files
@@ -80,20 +79,39 @@ def run_flow_mine(
 
             # Check which tool indices are near success signals
             success_indices = flow_data["success_indices"]
+            tool_seq = flow_data["tool_sequence"]
+
+            # Build mapping: compressed position -> tool_sequence indices
+            comp_to_tool = compressed_to_tool_indices(tool_seq)
+
+            # Use indexed_ngrams to get (ngram, start_position) pairs
+            ngrams_with_pos = indexed_ngrams(flow_data["compressed"])
 
             # Insert each n-gram as a flow_event
-            for ngram in flow_data["ngrams"]:
+            for ngram, comp_start in ngrams_with_pos:
                 seq_str = " → ".join(ngram)
                 flow_hash = hashlib.sha256(seq_str.encode()).hexdigest()[:16]
 
-                # Determine if this n-gram occurrence was near a success signal
-                was_successful = 1 if success_indices else 0
+                # BUG 1 FIX: Check if this specific ngram's tool indices
+                # overlap with success_indices (message indices near success
+                # markers), not just whether the session had any success.
+                ngram_tool_indices: set[int] = set()
+                for comp_pos in range(comp_start, comp_start + len(ngram)):
+                    if comp_pos < len(comp_to_tool):
+                        for tool_idx in comp_to_tool[comp_pos]:
+                            # Get the message-level index from the tool_seq
+                            ngram_tool_indices.add(tool_seq[tool_idx]["idx"])
 
-                # Get timestamp from first tool in sequence
+                was_successful = (
+                    1 if ngram_tool_indices & success_indices else 0
+                )
+
+                # BUG 2 FIX: Use the timestamp of this ngram's first tool,
+                # not the first tool in the entire session.
                 ts = mined_at
-                tool_seq = flow_data["tool_sequence"]
-                if tool_seq:
-                    ts = tool_seq[0].get("timestamp") or mined_at
+                if comp_start < len(comp_to_tool) and comp_to_tool[comp_start]:
+                    first_tool_idx = comp_to_tool[comp_start][0]
+                    ts = tool_seq[first_tool_idx].get("timestamp") or mined_at
 
                 db_conn.execute(
                     """INSERT INTO flow_events

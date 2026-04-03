@@ -439,13 +439,35 @@ class TestWriteSkillFile:
             basename = os.path.basename(path)
             assert len(basename) <= 60 + 3  # 60 chars + ".md"
 
-    def test_overwrites_existing(self):
-        """Writing to the same slug should overwrite."""
+    def test_identical_content_skips_write(self):
+        """Writing identical content to the same slug should return the same path."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            write_skill_file("version 1", "same-slug", target_dir=tmpdir)
-            path = write_skill_file("version 2", "same-slug", target_dir=tmpdir)
-            with open(path, encoding="utf-8") as f:
+            path1 = write_skill_file("same content", "same-slug", target_dir=tmpdir)
+            path2 = write_skill_file("same content", "same-slug", target_dir=tmpdir)
+            assert path1 == path2
+            # Only one file should exist
+            files = os.listdir(tmpdir)
+            assert len(files) == 1
+
+    def test_different_content_gets_numeric_suffix(self):
+        """Writing different content to the same slug should create a new file."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path1 = write_skill_file("version 1", "same-slug", target_dir=tmpdir)
+            path2 = write_skill_file("version 2", "same-slug", target_dir=tmpdir)
+            assert path1 != path2
+            assert os.path.basename(path2) == "same-slug-2.md"
+            with open(path1, encoding="utf-8") as f:
+                assert f.read() == "version 1"
+            with open(path2, encoding="utf-8") as f:
                 assert f.read() == "version 2"
+
+    def test_multiple_different_content_increments_suffix(self):
+        """Successive different content should increment the suffix."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            write_skill_file("v1", "slug", target_dir=tmpdir)
+            write_skill_file("v2", "slug", target_dir=tmpdir)
+            path3 = write_skill_file("v3", "slug", target_dir=tmpdir)
+            assert os.path.basename(path3) == "slug-3.md"
 
 
 # ---------------------------------------------------------------------------

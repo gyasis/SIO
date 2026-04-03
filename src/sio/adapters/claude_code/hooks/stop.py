@@ -72,11 +72,11 @@ def _lightweight_pattern_detection(conn, session_id: str) -> list[dict]:
     based on frequency. Returns patterns with their metadata.
     """
     rows = conn.execute(
-        "SELECT error_text, COUNT(*) as cnt "
+        "SELECT error_text, tool_name, COUNT(*) as cnt "
         "FROM error_records "
         "WHERE session_id = ? AND error_text IS NOT NULL "
         "AND error_text != '' "
-        "GROUP BY error_text "
+        "GROUP BY error_text, tool_name "
         "ORDER BY cnt DESC "
         "LIMIT 20",
         (session_id,),
@@ -103,6 +103,7 @@ def _lightweight_pattern_detection(conn, session_id: str) -> list[dict]:
 
         patterns.append({
             "label": row["error_text"][:100],
+            "tool_name": row["tool_name"],
             "count": count,
             "confidence": round(confidence, 3),
             "example": row["error_text"],

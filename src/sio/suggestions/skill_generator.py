@@ -505,6 +505,25 @@ def write_skill_file(
     filename = f"{safe_slug}.md"
     filepath = os.path.join(target_dir, filename)
 
+    # If file already exists, compare content before writing.
+    if os.path.isfile(filepath):
+        try:
+            with open(filepath, encoding="utf-8") as f:
+                existing = f.read()
+            if existing == content:
+                # Identical content — skip write.
+                return filepath
+        except OSError:
+            pass  # Can't read existing file; proceed to write.
+
+        # Content differs — find a unique numeric suffix.
+        base = safe_slug
+        counter = 2
+        while os.path.isfile(filepath):
+            filename = f"{base}-{counter}.md"
+            filepath = os.path.join(target_dir, filename)
+            counter += 1
+
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(content)
 

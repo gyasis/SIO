@@ -17,10 +17,7 @@ Public API
 
 from __future__ import annotations
 
-import os
 import re
-from collections import Counter
-from itertools import islice
 
 # Negative keywords that indicate failure even in short messages
 _NEGATIVE_KEYWORDS = re.compile(
@@ -122,6 +119,54 @@ def compute_ngrams(compressed: list[str], n_range: tuple[int, int] = (2, 5)) -> 
     return ngrams
 
 
+def indexed_ngrams(
+    compressed: list[str], n_range: tuple[int, int] = (2, 5)
+) -> list[tuple[tuple[str, ...], int]]:
+    """Generate n-grams with their starting index in the compressed sequence.
+
+    Returns list of (ngram_tuple, start_index) pairs, where start_index
+    is the position of the first element of the ngram in *compressed*.
+    """
+    results: list[tuple[tuple[str, ...], int]] = []
+    for n in range(n_range[0], n_range[1]):
+        for i in range(len(compressed) - n + 1):
+            results.append((tuple(compressed[i : i + n]), i))
+    return results
+
+
+def compressed_to_tool_indices(sequence: list[dict]) -> list[list[int]]:
+    """Map each position in the RLE-compressed sequence back to tool_sequence indices.
+
+    Given the raw tool sequence (list of dicts with 'tool' and 'ext'),
+    returns a list where element ``i`` is the list of tool_sequence indices
+    that were collapsed into compressed position ``i``.
+
+    This mirrors the logic of :func:`compress_rle` exactly.
+    """
+    if not sequence:
+        return []
+
+    mapping: list[list[int]] = []
+    prev_key = None
+    current_indices: list[int] = []
+
+    for idx, item in enumerate(sequence):
+        key = f"{item['tool']}{item['ext']}"
+        if key == prev_key:
+            current_indices.append(idx)
+        else:
+            if prev_key is not None:
+                mapping.append(current_indices)
+            prev_key = key
+            current_indices = [idx]
+
+    # Flush last group
+    if current_indices:
+        mapping.append(current_indices)
+
+    return mapping
+
+
 def is_success_signal(content: str) -> bool:
     """Check if a user message indicates success.
 
@@ -156,7 +201,8 @@ def find_success_markers(parsed_messages: list[dict]) -> set[int]:
             if is_success_signal(content):
                 # Mark all preceding tool calls (up to previous user message) as successful
                 for j in range(i - 1, -1, -1):
-                    if parsed_messages[j].get("role") == "user" and not parsed_messages[j].get("tool_name"):
+                    msg_j = parsed_messages[j]
+                    if msg_j.get("role") == "user" and not msg_j.get("tool_name"):
                         break
                     success_indices.add(j)
     return success_indices

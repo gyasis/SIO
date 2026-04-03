@@ -47,6 +47,13 @@ _SKILL_NAMES = [
     "sio-optimize",
     "sio-health",
     "sio-feedback",
+    "sio-briefing",
+    "sio-velocity",
+    "sio-violations",
+    "sio-discover",
+    "sio-report",
+    "sio-promote-flow",
+    "sio-budget",
 ]
 
 
@@ -163,6 +170,7 @@ def _register_hooks(settings_path: str) -> bool:
         ("PreCompact", "sio.adapters.claude_code.hooks.pre_compact"),
         ("Stop", "sio.adapters.claude_code.hooks.stop"),
         ("UserPromptSubmit", "sio.adapters.claude_code.hooks.user_prompt_submit"),
+        ("SessionStart", "sio.adapters.claude_code.hooks.session_start"),
     ]
 
     for event_name, module_path in _HOOK_DEFS:

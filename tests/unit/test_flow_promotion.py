@@ -98,23 +98,23 @@ class TestPromoteFlowToSkill:
                 days_ago=i * 0.5,
             )
 
-        skills_dir = str(tmp_path / "skills")
+        skills_dir = str(tmp_path / "skills" / "learned")
         os.makedirs(skills_dir, exist_ok=True)
 
-        import sio.clustering.grader as grader_mod
+        import sio.suggestions.skill_generator as sg_mod
 
-        original_expanduser = grader_mod.os.path.expanduser
+        original_expanduser = sg_mod.os.path.expanduser
 
         def _mock_expanduser(path):
-            if "~/.claude/skills" in path:
+            if "~/.claude/skills/learned" in path:
                 return skills_dir
             return original_expanduser(path)
 
-        grader_mod.os.path.expanduser = _mock_expanduser
+        sg_mod.os.path.expanduser = _mock_expanduser
         try:
             result = promote_flow_to_skill(db, "promote001")
         finally:
-            grader_mod.os.path.expanduser = original_expanduser
+            sg_mod.os.path.expanduser = original_expanduser
 
         assert result is not None
         assert os.path.exists(result)
@@ -131,24 +131,24 @@ class TestPromoteFlowToSkill:
             )
 
         # Override the skill output directory
-        skills_dir = str(tmp_path / "skills")
+        skills_dir = str(tmp_path / "skills" / "learned")
         os.makedirs(skills_dir, exist_ok=True)
 
-        # Monkey-patch os.path.expanduser within grader module
-        import sio.clustering.grader as grader_mod
+        # Monkey-patch os.path.expanduser within skill_generator module
+        import sio.suggestions.skill_generator as sg_mod
 
-        original_expanduser = grader_mod.os.path.expanduser
+        original_expanduser = sg_mod.os.path.expanduser
 
         def _mock_expanduser(path):
-            if "~/.claude/skills" in path:
+            if "~/.claude/skills/learned" in path:
                 return skills_dir
             return original_expanduser(path)
 
-        grader_mod.os.path.expanduser = _mock_expanduser
+        sg_mod.os.path.expanduser = _mock_expanduser
         try:
             result = promote_flow_to_skill(db, "md001")
         finally:
-            grader_mod.os.path.expanduser = original_expanduser
+            sg_mod.os.path.expanduser = original_expanduser
 
         assert result is not None
         assert os.path.exists(result)
@@ -171,23 +171,23 @@ class TestPromoteFlowToSkill:
                 was_successful=1 if i < 5 else 0,  # 5/6 successful
             )
 
-        skills_dir = str(tmp_path / "skills")
+        skills_dir = str(tmp_path / "skills" / "learned")
         os.makedirs(skills_dir, exist_ok=True)
 
-        import sio.clustering.grader as grader_mod
+        import sio.suggestions.skill_generator as sg_mod
 
-        original_expanduser = grader_mod.os.path.expanduser
+        original_expanduser = sg_mod.os.path.expanduser
 
         def _mock_expanduser(path):
-            if "~/.claude/skills" in path:
+            if "~/.claude/skills/learned" in path:
                 return skills_dir
             return original_expanduser(path)
 
-        grader_mod.os.path.expanduser = _mock_expanduser
+        sg_mod.os.path.expanduser = _mock_expanduser
         try:
             result = promote_flow_to_skill(db, "agg001")
         finally:
-            grader_mod.os.path.expanduser = original_expanduser
+            sg_mod.os.path.expanduser = original_expanduser
 
         assert result is not None
         content = open(result, encoding="utf-8").read()

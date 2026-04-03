@@ -21,7 +21,6 @@ Grade lifecycle
 from __future__ import annotations
 
 import logging
-import os
 import sqlite3
 from datetime import datetime, timezone
 
@@ -296,28 +295,27 @@ def promote_flow_to_skill(
     ]
 
     # Generate and write the skill file
-    from sio.suggestions.skill_generator import generate_skill_from_flow
+    from sio.suggestions.skill_generator import (
+        generate_skill_from_flow,
+        write_skill_file,
+    )
 
     skill_content = generate_skill_from_flow(
         flow_ngram, normalized_rate, session_examples,
     )
 
-    # Determine output path
-    skills_dir = os.path.expanduser("~/.claude/skills")
-    os.makedirs(skills_dir, exist_ok=True)
-
-    # Sanitize flow name for filename
+    # Build a slug from the flow tool names
     tool_names = [t.strip() for t in sequence.split("\u2192")]
     safe_name = "-".join(
         t.replace("(", "").replace(")", "").replace("+", "")
         .replace(".", "_").replace(" ", "").lower()
         for t in tool_names[:4]
     )
-    skill_filename = f"sio-flow-{safe_name}.md"
-    skill_path = os.path.join(skills_dir, skill_filename)
+    slug = f"sio-flow-{safe_name}"
 
-    with open(skill_path, "w", encoding="utf-8") as f:
-        f.write(skill_content)
+    # Use write_skill_file to write to ~/.claude/skills/learned/ (consistent
+    # with the rest of the pipeline) and to avoid silent overwrites.
+    skill_path = write_skill_file(skill_content, slug)
 
     logger.info(
         "Promoted flow %s (%d events, %.0f%% success) -> %s",

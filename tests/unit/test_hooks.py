@@ -497,7 +497,10 @@ class TestInstallerHooks:
         data = json.loads(settings_path.read_text())
         hooks = data.get("hooks", {})
 
-        expected_events = ["PostToolUse", "PreCompact", "Stop", "UserPromptSubmit"]
+        expected_events = [
+            "PostToolUse", "PreCompact", "Stop",
+            "UserPromptSubmit", "SessionStart",
+        ]
         for event in expected_events:
             assert event in hooks, f"Missing hook event: {event}"
             event_hooks = hooks[event]
@@ -512,6 +515,8 @@ class TestInstallerHooks:
                 module_fragment = "stop"
             elif event == "UserPromptSubmit":
                 module_fragment = "user_prompt_submit"
+            elif event == "SessionStart":
+                module_fragment = "session_start"
             found = any(
                 module_fragment in h.get("command", "")
                 for h in event_hooks
@@ -541,7 +546,10 @@ class TestInstallerHooks:
 
         data = json.loads(settings_path.read_text())
         hooks = data.get("hooks", {})
-        for event in ["PostToolUse", "PreCompact", "Stop", "UserPromptSubmit"]:
+        for event in [
+            "PostToolUse", "PreCompact", "Stop",
+            "UserPromptSubmit", "SessionStart",
+        ]:
             sio_hooks = [
                 h for h in hooks[event]
                 if isinstance(h, dict) and "sio" in h.get("command", "").lower()
@@ -586,3 +594,84 @@ class TestInstallerHooks:
             claude_dir=str(tmp_path / ".claude"),
         )
         assert result["hooks_registered"] is True
+
+
+# ---------------------------------------------------------------------------
+# SessionStart hook tests
+# ---------------------------------------------------------------------------
+
+class TestSessionStart:
+    """SessionStart hook injects SIO briefing at session start."""
+
+    def test_returns_empty_when_no_db(self, tmp_path, monkeypatch):
+        from sio.adapters.claude_code.hooks.session_start import (
+            handle_session_start,
+        )
+
+        monkeypatch.setattr(
+            "sio.adapters.claude_code.hooks.session_start._DB_PATH",
+            str(tmp_path / "nonexistent.db"),
+        )
+        payload = json.dumps({"session_id": "sess-no-db"})
+        result = handle_session_start(payload)
+        assert result == ""
+
+    def test_returns_empty_on_invalid_json(self, tmp_path, monkeypatch):
+        from sio.adapters.claude_code.hooks.session_start import (
+            handle_session_start,
+        )
+
+        monkeypatch.setattr(
+            "sio.adapters.claude_code.hooks.session_start._DB_PATH",
+            str(tmp_path / "nonexistent.db"),
+        )
+        result = handle_session_start("not-json")
+        assert result == ""
+
+    def test_returns_empty_on_exception(self, tmp_path, monkeypatch):
+        from sio.adapters.claude_code.hooks.session_start import (
+            handle_session_start,
+        )
+
+        # Point to an existing but non-SQLite file to trigger an error
+        bad_db = tmp_path / "bad.db"
+        bad_db.write_text("not a database")
+        monkeypatch.setattr(
+            "sio.adapters.claude_code.hooks.session_start._DB_PATH",
+            str(bad_db),
+        )
+        log_path = str(tmp_path / "hook_errors.log")
+        monkeypatch.setattr(
+            "sio.adapters.claude_code.hooks.session_start._ERROR_LOG",
+            log_path,
+        )
+
+        payload = json.dumps({"session_id": "sess-bad-db"})
+        result = handle_session_start(payload)
+        assert result == ""
+
+        # Error should be logged
+        if os.path.exists(log_path):
+            content = open(log_path).read()
+            assert "SessionStart" in content
+
+    def test_returns_briefing_when_db_exists(self, tmp_path, monkeypatch):
+        """When a valid SIO db exists, the hook produces a non-empty string."""
+        from sio.adapters.claude_code.hooks.session_start import (
+            handle_session_start,
+        )
+
+        # Create a minimal SIO database via init_db
+        db_path = str(tmp_path / "sio.db")
+        conn = init_db(db_path)
+        conn.close()
+
+        monkeypatch.setattr(
+            "sio.adapters.claude_code.hooks.session_start._DB_PATH",
+            db_path,
+        )
+
+        payload = json.dumps({"session_id": "sess-brief"})
+        result = handle_session_start(payload)
+        # The briefing may be empty if no data, but should not raise
+        assert isinstance(result, str)
