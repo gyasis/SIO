@@ -164,6 +164,24 @@ def _register_hooks(settings_path: str) -> bool:
 
     hooks = settings.setdefault("hooks", {})
 
+    # Migrate legacy bare hooks to wrapped format.
+    # Bare: {"type": "command", "command": "..."}
+    # Wrapped: {"matcher": "", "hooks": [{"type": "command", "command": "..."}]}
+    for event_name, event_hooks in hooks.items():
+        if not isinstance(event_hooks, list):
+            continue
+        for i, entry in enumerate(event_hooks):
+            if (
+                isinstance(entry, dict)
+                and "type" in entry
+                and "command" in entry
+                and "hooks" not in entry
+            ):
+                event_hooks[i] = {
+                    "matcher": "",
+                    "hooks": [entry],
+                }
+
     # All SIO hook registrations: (event_name, module_path)
     _HOOK_DEFS = [
         ("PostToolUse", "sio.adapters.claude_code.hooks.post_tool_use"),
@@ -174,22 +192,40 @@ def _register_hooks(settings_path: str) -> bool:
     ]
 
     for event_name, module_path in _HOOK_DEFS:
-        sio_hook = {
-            "type": "command",
-            "command": f"{sys.executable} -m {module_path}",
+        sio_hook_entry = {
+            "matcher": "",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": f"{sys.executable} -m {module_path}",
+                }
+            ],
         }
 
         event_hooks = hooks.setdefault(event_name, [])
 
         # Check if SIO hook already registered (match on module path,
-        # not full command, since the python path differs across installs)
-        already_registered = any(
-            module_path in h.get("command", "")
-            for h in event_hooks
-            if isinstance(h, dict)
-        )
+        # not full command, since the python path differs across installs).
+        # Must check both bare dicts (legacy) and wrapped {"hooks": [...]}
+        # entries since older installs may have the bare format.
+        already_registered = False
+        for h in event_hooks:
+            if not isinstance(h, dict):
+                continue
+            # Check bare format (legacy): {"type": "command", "command": "..."}
+            if module_path in h.get("command", ""):
+                already_registered = True
+                break
+            # Check wrapped format: {"matcher": ..., "hooks": [...]}
+            for inner in h.get("hooks", []):
+                if isinstance(inner, dict) and module_path in inner.get("command", ""):
+                    already_registered = True
+                    break
+            if already_registered:
+                break
+
         if not already_registered:
-            event_hooks.append(sio_hook)
+            event_hooks.append(sio_hook_entry)
 
     with open(settings_path, "w") as f:
         json.dump(settings, f, indent=2)
