@@ -197,3 +197,64 @@ def query_flows(
         })
 
     return results
+
+
+def get_promotable_flows(
+    db_conn: sqlite3.Connection,
+    min_sessions: int = 5,
+) -> list[dict]:
+    """Query flows that meet promotion thresholds.
+
+    A flow is promotable when it has been observed across at least
+    *min_sessions* distinct sessions AND its success rate exceeds 70%.
+
+    Parameters
+    ----------
+    db_conn:
+        An open sqlite3.Connection with the SIO schema.
+    min_sessions:
+        Minimum distinct session count required for promotion (default 5).
+
+    Returns
+    -------
+    list[dict]
+        List of flow dicts ready for promotion, each containing:
+        ``flow_hash``, ``sequence``, ``count``, ``success_count``,
+        ``success_rate``, ``avg_duration``, ``session_count``, ``ngram_size``,
+        ``last_seen``.
+    """
+    sql = """
+        SELECT
+            fe.flow_hash,
+            fe.sequence,
+            fe.ngram_size,
+            COUNT(*) as count,
+            SUM(fe.was_successful) as success_count,
+            ROUND(
+                CAST(SUM(fe.was_successful) AS REAL) / COUNT(*) * 100, 1
+            ) as success_rate,
+            ROUND(AVG(fe.duration_seconds), 1) as avg_duration,
+            COUNT(DISTINCT fe.session_id) as session_count,
+            MAX(fe.timestamp) as last_seen
+        FROM flow_events fe
+        GROUP BY fe.flow_hash
+        HAVING COUNT(DISTINCT fe.session_id) >= ?
+           AND (CAST(SUM(fe.was_successful) AS REAL) / COUNT(*)) > 0.7
+        ORDER BY COUNT(*) DESC
+    """
+    rows = db_conn.execute(sql, (min_sessions,)).fetchall()
+
+    return [
+        {
+            "flow_hash": row["flow_hash"],
+            "sequence": row["sequence"],
+            "ngram_size": row["ngram_size"],
+            "count": row["count"],
+            "success_count": row["success_count"],
+            "success_rate": row["success_rate"],
+            "avg_duration": row["avg_duration"],
+            "session_count": row["session_count"],
+            "last_seen": row["last_seen"],
+        }
+        for row in rows
+    ]

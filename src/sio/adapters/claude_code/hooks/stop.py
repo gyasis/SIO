@@ -30,11 +30,21 @@ def _log_error(msg: str) -> None:
 
 
 def _save_pattern_as_skill(pattern: dict) -> str | None:
-    """Save a high-confidence pattern as a markdown skill file.
+    """Save a high-confidence pattern as a structured Claude Code skill file.
+
+    Uses the skill_generator module to produce a complete skill with
+    trigger conditions, ordered steps, guardrails, and provenance.
 
     Returns the file path on success, None on failure.
     """
-    os.makedirs(_SKILLS_DIR, exist_ok=True)
+    try:
+        from sio.suggestions.skill_generator import (
+            generate_skill_from_pattern,
+            write_skill_file,
+        )
+    except ImportError:
+        logger.warning("skill_generator not available, skipping skill save")
+        return None
 
     label = pattern.get("label", "unknown-pattern")
     safe_label = (
@@ -43,27 +53,16 @@ def _save_pattern_as_skill(pattern: dict) -> str | None:
         .replace("/", "-")
         .replace(":", "-")[:60]
     )
-    filename = f"pattern-{safe_label}.md"
-    filepath = os.path.join(_SKILLS_DIR, filename)
+    slug = f"pattern-{safe_label}"
 
-    confidence = pattern.get("confidence", 0.0)
-    count = pattern.get("count", 0)
-    example = pattern.get("example", "")
-    sessions = pattern.get("session_count", 0)
-
-    content = (
-        f"# Learned Pattern: {label}\n\n"
-        f"**Confidence**: {confidence:.2f}\n"
-        f"**Occurrences**: {count}\n"
-        f"**Sessions**: {sessions}\n"
-        f"**Auto-generated**: {datetime.now(timezone.utc).isoformat()}\n\n"
-        f"## Pattern\n\n{example}\n"
+    # Generate a full skill file from the pattern.
+    # No positive examples or flow data available at stop-hook time,
+    # so pass empty lists -- the generator handles this gracefully.
+    content = generate_skill_from_pattern(
+        pattern, positive_examples=[], flow_sequence=None
     )
 
-    with open(filepath, "w") as f:
-        f.write(content)
-
-    return filepath
+    return write_skill_file(content, slug, target_dir=_SKILLS_DIR)
 
 
 def _lightweight_pattern_detection(conn, session_id: str) -> list[dict]:

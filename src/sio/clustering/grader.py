@@ -21,6 +21,7 @@ Grade lifecycle
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 from datetime import datetime, timezone
 
@@ -223,3 +224,107 @@ def auto_generate_suggestions(
 
     db.commit()
     return created
+
+
+def promote_flow_to_skill(
+    db: sqlite3.Connection,
+    flow_hash: str,
+    config: SIOConfig | None = None,
+) -> str | None:
+    """Promote a flow pattern to a skill file.
+
+    Queries ``flow_events`` for the given *flow_hash*, aggregates session
+    data and tool sequences, generates a skill Markdown file via the skill
+    generator, and writes it to ``~/.claude/skills/``.
+
+    Parameters
+    ----------
+    db:
+        An open sqlite3.Connection with the SIO schema.
+    flow_hash:
+        The flow hash identifying the pattern to promote.
+    config:
+        Optional SIOConfig (currently unused; reserved for future tuning).
+
+    Returns
+    -------
+    str | None
+        Absolute path to the generated skill file, or ``None`` if the flow
+        hash was not found or had insufficient data to generate a skill.
+    """
+    # Query all flow_events for this flow_hash
+    rows = db.execute(
+        "SELECT sequence, was_successful, duration_seconds, session_id, "
+        "timestamp, source_file "
+        "FROM flow_events WHERE flow_hash = ? "
+        "ORDER BY timestamp",
+        (flow_hash,),
+    ).fetchall()
+
+    if not rows:
+        logger.warning("No flow events found for flow_hash=%s", flow_hash)
+        return None
+
+    # Aggregate flow data
+    row_dicts = [dict(r) for r in rows]
+    sequence = row_dicts[0]["sequence"]
+    total_count = len(row_dicts)
+    success_count = sum(1 for r in row_dicts if r["was_successful"])
+    success_rate = (
+        (success_count / total_count * 100) if total_count > 0 else 0.0
+    )
+
+    if total_count < 2:
+        logger.warning(
+            "Insufficient data for flow_hash=%s (only %d events)",
+            flow_hash,
+            total_count,
+        )
+        return None
+
+    # Build the flow n-gram and session examples for the skill generator
+    flow_ngram = tuple(t.strip() for t in sequence.split("\u2192"))
+    normalized_rate = success_rate / 100.0 if success_rate > 1.0 else success_rate
+
+    # Build session example dicts from the raw events
+    session_examples = [
+        {
+            "user_goal": f"Flow observed in session {r['session_id']}",
+            "duration_seconds": r["duration_seconds"] or 0.0,
+        }
+        for r in row_dicts[:10]
+    ]
+
+    # Generate and write the skill file
+    from sio.suggestions.skill_generator import generate_skill_from_flow
+
+    skill_content = generate_skill_from_flow(
+        flow_ngram, normalized_rate, session_examples,
+    )
+
+    # Determine output path
+    skills_dir = os.path.expanduser("~/.claude/skills")
+    os.makedirs(skills_dir, exist_ok=True)
+
+    # Sanitize flow name for filename
+    tool_names = [t.strip() for t in sequence.split("\u2192")]
+    safe_name = "-".join(
+        t.replace("(", "").replace(")", "").replace("+", "")
+        .replace(".", "_").replace(" ", "").lower()
+        for t in tool_names[:4]
+    )
+    skill_filename = f"sio-flow-{safe_name}.md"
+    skill_path = os.path.join(skills_dir, skill_filename)
+
+    with open(skill_path, "w", encoding="utf-8") as f:
+        f.write(skill_content)
+
+    logger.info(
+        "Promoted flow %s (%d events, %.0f%% success) -> %s",
+        flow_hash,
+        total_count,
+        success_rate,
+        skill_path,
+    )
+
+    return skill_path

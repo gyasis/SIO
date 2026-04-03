@@ -1968,6 +1968,34 @@ def sio_status():
 
 
 # ---------------------------------------------------------------------------
+# Session briefing command
+# ---------------------------------------------------------------------------
+
+
+@cli.command("briefing")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+def briefing(as_json):
+    """Show a brief session-start briefing of actionable SIO insights."""
+    from sio.core.config import load_config
+    from sio.suggestions.consultant import build_session_briefing
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No SIO database found. Run 'sio mine' first.")
+        return
+
+    config = load_config()
+
+    with _db_conn(db_path) as conn:
+        text = build_session_briefing(conn, config=config)
+
+    if as_json:
+        click.echo(_json.dumps({"briefing": text}))
+    else:
+        click.echo(text)
+
+
+# ---------------------------------------------------------------------------
 # Ground Truth commands (T045 / T046)
 # ---------------------------------------------------------------------------
 
@@ -2625,7 +2653,11 @@ def collect_recall(query, session, project, runbook, label):
     default="table",
     help="Output format (default: table).",
 )
-def velocity(error_type, window, fmt):
+@click.option(
+    "--skills", is_flag=True, default=False,
+    help="Show per-skill effectiveness metrics.",
+)
+def velocity(error_type, window, fmt, skills):
     """Show learning velocity trends — how error rates change after rules.
 
     Computes error frequency per type over a rolling window, measures
@@ -2775,6 +2807,94 @@ def velocity(error_type, window, fmt):
                 f"{snap['error_count_in_window']:>6} "
                 f"{rule_str:>14}"
             )
+
+    # --- Skill effectiveness section (--skills flag) ---
+    if skills:
+        from sio.core.metrics.velocity import get_skill_effectiveness
+
+        with _db_conn(db_path) as conn:
+            skill_metrics = get_skill_effectiveness(conn)
+
+        if not skill_metrics:
+            click.echo(
+                "\nNo skill effectiveness data. "
+                "Promote flows to skills and track velocity first."
+            )
+        else:
+            if fmt == "json":
+                click.echo(_json.dumps(skill_metrics, indent=2, default=str))
+            else:
+                try:
+                    from rich.console import Console
+                    from rich.table import Table
+
+                    console = Console()
+                    sk_table = Table(
+                        title="Skill Effectiveness",
+                        title_style="bold cyan",
+                    )
+                    sk_table.add_column("Skill", style="cyan", max_width=40)
+                    sk_table.add_column("Error Type")
+                    sk_table.add_column("Pre Rate", justify="right")
+                    sk_table.add_column("Post Rate", justify="right")
+                    sk_table.add_column("Improvement", justify="right")
+                    sk_table.add_column("Snapshots", justify="right")
+
+                    for sm in skill_metrics:
+                        path = sm["skill_path"] or "N/A"
+                        # Show just the filename
+                        short_path = path.split("/")[-1] if "/" in path else path
+                        error_type_str = sm["target_error_type"] or "unknown"
+                        pre = (
+                            f"{sm['pre_rate']:.3f}"
+                            if sm["pre_rate"] is not None
+                            else "N/A"
+                        )
+                        post = (
+                            f"{sm['post_rate']:.3f}"
+                            if sm["post_rate"] is not None
+                            else "N/A"
+                        )
+                        imp = sm["improvement_pct"]
+                        if imp is not None:
+                            if imp > 0:
+                                imp_str = f"[green]{imp:+.1f}%[/green]"
+                            elif imp < 0:
+                                imp_str = f"[red]{imp:+.1f}%[/red]"
+                            else:
+                                imp_str = "0.0%"
+                        else:
+                            imp_str = "N/A"
+
+                        sk_table.add_row(
+                            short_path,
+                            error_type_str,
+                            pre,
+                            post,
+                            imp_str,
+                            str(sm["sessions_tracked"]),
+                        )
+
+                    console.print()
+                    console.print(sk_table)
+
+                except ImportError:
+                    click.echo("\nSkill Effectiveness:")
+                    click.echo(
+                        f"{'Skill':<40} {'Error':>15} {'Pre':>6} "
+                        f"{'Post':>6} {'Impr':>8} {'Snaps':>6}"
+                    )
+                    click.echo("-" * 85)
+                    for sm in skill_metrics:
+                        path = (sm["skill_path"] or "N/A").split("/")[-1]
+                        click.echo(
+                            f"{path:<40} "
+                            f"{(sm['target_error_type'] or 'N/A'):>15} "
+                            f"{sm.get('pre_rate', 'N/A'):>6} "
+                            f"{sm.get('post_rate', 'N/A'):>6} "
+                            f"{sm.get('improvement_pct', 'N/A'):>8} "
+                            f"{sm['sessions_tracked']:>6}"
+                        )
 
 
 # ---------------------------------------------------------------------------
@@ -3494,6 +3614,154 @@ def _report_terminal(db_path: str, days: int) -> None:
         click.echo(f"  Cache:       {metrics[4] * 100:.1f}%")
         click.echo(f"  Patterns:    {pattern_count}")
         click.echo(f"  Suggestions: {suggestion_count}")
+
+
+# ---------------------------------------------------------------------------
+# Flow-to-skill promotion (Phase 3)
+# ---------------------------------------------------------------------------
+
+
+@cli.command("promote-flow")
+@click.argument("flow_hash")
+def promote_flow(flow_hash):
+    """Promote a flow pattern to a Claude Code skill file.
+
+    Takes a flow hash (from `sio flows` output) and generates a skill
+    Markdown file in ~/.claude/skills/ based on the observed tool sequence.
+
+    Examples:
+        sio promote-flow abc123def456
+    """
+    from sio.clustering.grader import promote_flow_to_skill
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found. Run 'sio mine' first.")
+        raise SystemExit(1)
+
+    with _db_conn(db_path) as conn:
+        result = promote_flow_to_skill(conn, flow_hash)
+
+    if result is None:
+        click.echo(
+            f"Could not promote flow '{flow_hash}'. "
+            "Flow not found or insufficient data."
+        )
+        raise SystemExit(1)
+
+    click.echo(f"Skill generated: {result}")
+
+
+# ---------------------------------------------------------------------------
+# Skill candidate discovery (Phase 5)
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.option(
+    "--repo", default=".",
+    help="Repository path for repo-specific pattern detection.",
+)
+@click.option(
+    "--format", "fmt",
+    type=click.Choice(["table", "json"]),
+    default="table",
+    help="Output format (default: table).",
+)
+def discover(repo, fmt):
+    """Discover skill candidates from mined patterns and flows.
+
+    Cross-references error patterns with positive flow events to find
+    candidates worth promoting to Claude Code skills.
+
+    Candidate types:
+        tool-specific     -- Concentrated on a single tool (e.g. "Edit safety")
+        workflow-sequence  -- Recurring multi-tool flows (e.g. "Read -> Edit -> Test")
+        repo-specific     -- Patterns unique to a specific project
+
+    Examples:
+        sio discover
+        sio discover --repo /home/user/myproject
+        sio discover --format json
+    """
+    from sio.suggestions.discoverer import discover_skill_candidates
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found. Run 'sio mine' first.")
+        return
+
+    with _db_conn(db_path) as conn:
+        candidates = discover_skill_candidates(conn, repo_path=repo)
+
+    if not candidates:
+        click.echo("No skill candidates found. Mine more sessions or lower thresholds.")
+        return
+
+    if fmt == "json":
+        click.echo(_json.dumps(candidates, indent=2, default=str))
+        return
+
+    try:
+        from rich.console import Console
+        from rich.table import Table
+
+        console = Console()
+
+        table = Table(
+            title="Skill Candidates",
+            title_style="bold cyan",
+        )
+        table.add_column("#", style="dim", width=3)
+        table.add_column("Description", style="cyan", max_width=55)
+        table.add_column("Type", justify="center")
+        table.add_column("Errors", justify="right")
+        table.add_column("Sessions", justify="right")
+        table.add_column("Confidence", justify="right")
+        table.add_column("Flows", justify="right")
+
+        for i, c in enumerate(candidates, 1):
+            conf = c["confidence"]
+            if conf >= 0.7:
+                conf_str = f"[green]{conf:.2f}[/green]"
+            elif conf >= 0.4:
+                conf_str = f"[yellow]{conf:.2f}[/yellow]"
+            else:
+                conf_str = f"[dim]{conf:.2f}[/dim]"
+
+            type_str = c["suggested_skill_type"]
+            if type_str == "workflow-sequence":
+                type_str = f"[blue]{type_str}[/blue]"
+            elif type_str == "repo-specific":
+                type_str = f"[magenta]{type_str}[/magenta]"
+
+            table.add_row(
+                str(i),
+                c["description"][:55],
+                type_str,
+                str(c["error_count"]),
+                str(c["session_count"]),
+                conf_str,
+                str(len(c["flow_hashes"])),
+            )
+
+        console.print()
+        console.print(table)
+
+    except ImportError:
+        click.echo("\nSkill Candidates:\n")
+        click.echo(
+            f"{'#':>3}  {'Description':<55} {'Type':<20} "
+            f"{'Errors':>6} {'Sess':>5} {'Conf':>6}"
+        )
+        click.echo("-" * 100)
+        for i, c in enumerate(candidates, 1):
+            click.echo(
+                f"{i:>3}  {c['description'][:55]:<55} "
+                f"{c['suggested_skill_type']:<20} "
+                f"{c['error_count']:>6} {c['session_count']:>5} "
+                f"{c['confidence']:>6.2f}"
+            )
 
 
 if __name__ == "__main__":

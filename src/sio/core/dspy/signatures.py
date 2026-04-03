@@ -116,3 +116,38 @@ class GroundTruthCandidate(dspy.Signature):
     quality_assessment: str = dspy.OutputField(
         desc="Self-assessment of this candidate's quality and completeness"
     )
+
+
+class SkillGeneratorSignature(dspy.Signature):
+    """Generate a structured Claude Code skill file from error pattern analysis.
+
+    Given an error pattern, examples of what went wrong and what worked,
+    and the successful tool sequence, produce a skill with trigger conditions,
+    ordered steps, and guardrails that prevent recurrence.
+    """
+
+    pattern_description: str = dspy.InputField(
+        desc="Description of the recurring error pattern"
+    )
+    error_examples: str = dspy.InputField(
+        desc="JSON array of error examples with context"
+    )
+    positive_examples: str = dspy.InputField(
+        desc="JSON array of positive signal examples showing what worked"
+    )
+    flow_sequence: str = dspy.InputField(
+        desc=(
+            "Comma-separated tool sequence that succeeds"
+            " (e.g., 'Read,Grep,Edit,Bash')"
+        )
+    )
+
+    trigger_conditions: str = dspy.OutputField(
+        desc="When this skill should activate (e.g., 'When editing Python files')"
+    )
+    ordered_steps: str = dspy.OutputField(
+        desc="Numbered markdown steps the agent should follow"
+    )
+    guardrails: str = dspy.OutputField(
+        desc="NEVER/ALWAYS rules as markdown bullet points"
+    )

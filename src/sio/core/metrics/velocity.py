@@ -243,3 +243,158 @@ def get_velocity_trends(
         ).fetchall()
 
     return [_row_to_dict(r) for r in rows]
+
+
+def get_skill_effectiveness(
+    db: sqlite3.Connection,
+) -> list[dict]:
+    """Measure effectiveness of suggestions that have been promoted to skills.
+
+    Joins suggestions (where ``skill_file_path IS NOT NULL``) with
+    velocity_snapshots to compute per-skill improvement metrics.
+
+    For each skill-linked suggestion, finds the error_type from the linked
+    pattern, then compares pre-rule and post-rule error rates from the
+    velocity snapshot history.
+
+    Parameters
+    ----------
+    db:
+        Open sqlite3.Connection with SIO schema.
+
+    Returns
+    -------
+    list[dict]
+        Per-skill effectiveness records, each containing:
+        ``skill_path``, ``target_error_type``, ``pre_rate``, ``post_rate``,
+        ``improvement_pct``, ``sessions_tracked``.
+    """
+    # Find all suggestions that have a skill file path and have been applied
+    skill_rows = db.execute(
+        """
+        SELECT
+            s.id as suggestion_id,
+            s.skill_file_path,
+            s.description,
+            p.tool_name,
+            er_types.error_type
+        FROM suggestions s
+        LEFT JOIN patterns p ON p.id = s.pattern_id
+        LEFT JOIN (
+            SELECT pe.pattern_id,
+                   er.error_type,
+                   COUNT(*) as cnt
+            FROM pattern_errors pe
+            JOIN error_records er ON er.id = pe.error_id
+            GROUP BY pe.pattern_id, er.error_type
+            ORDER BY cnt DESC
+        ) er_types ON er_types.pattern_id = s.pattern_id
+        WHERE s.skill_file_path IS NOT NULL
+          AND s.skill_file_path != ''
+        GROUP BY s.id
+        """
+    ).fetchall()
+
+    results: list[dict] = []
+
+    for row in skill_rows:
+        rd = dict(row)
+        skill_path = rd["skill_file_path"]
+        suggestion_id = rd["suggestion_id"]
+        error_type = rd.get("error_type")
+
+        if not error_type:
+            # Try to infer error_type from suggestion description
+            desc = rd.get("description") or ""
+            # Use a simple heuristic: look for common error type names
+            for candidate in (
+                "tool_failure", "user_correction", "repeated_attempt",
+                "undo", "agent_admission",
+            ):
+                if candidate.replace("_", " ") in desc.lower() or candidate in desc.lower():
+                    error_type = candidate
+                    break
+
+        if not error_type:
+            # Cannot measure effectiveness without an error type
+            results.append({
+                "skill_path": skill_path,
+                "target_error_type": None,
+                "pre_rate": None,
+                "post_rate": None,
+                "improvement_pct": None,
+                "sessions_tracked": 0,
+            })
+            continue
+
+        # Find velocity snapshots for this error type, linked to this suggestion
+        snapshots = db.execute(
+            """
+            SELECT error_rate, error_count_in_window, rule_applied,
+                   rule_suggestion_id, created_at
+            FROM velocity_snapshots
+            WHERE error_type = ?
+            ORDER BY created_at
+            """,
+            (error_type,),
+        ).fetchall()
+
+        if not snapshots:
+            results.append({
+                "skill_path": skill_path,
+                "target_error_type": error_type,
+                "pre_rate": None,
+                "post_rate": None,
+                "improvement_pct": None,
+                "sessions_tracked": 0,
+            })
+            continue
+
+        snap_dicts = [dict(s) for s in snapshots]
+
+        # Split into pre-rule and post-rule snapshots
+        # Find the first snapshot where rule_suggestion_id matches
+        rule_idx = None
+        for i, s in enumerate(snap_dicts):
+            if s["rule_suggestion_id"] == suggestion_id and s["rule_applied"]:
+                rule_idx = i
+                break
+
+        if rule_idx is not None and rule_idx > 0:
+            # Pre-rule: average rate of snapshots before the rule
+            pre_snapshots = snap_dicts[:rule_idx]
+            pre_rate = sum(s["error_rate"] for s in pre_snapshots) / len(pre_snapshots)
+
+            # Post-rule: average rate of snapshots after the rule
+            post_snapshots = snap_dicts[rule_idx:]
+            post_rate = sum(s["error_rate"] for s in post_snapshots) / len(post_snapshots)
+
+            # Improvement percentage
+            if pre_rate > 0:
+                improvement_pct = ((pre_rate - post_rate) / pre_rate) * 100
+            else:
+                improvement_pct = 0.0
+
+            sessions_tracked = len(snap_dicts)
+        else:
+            # No clear pre/post split; use first and last snapshots
+            pre_rate = snap_dicts[0]["error_rate"]
+            post_rate = snap_dicts[-1]["error_rate"]
+
+            if pre_rate > 0 and len(snap_dicts) > 1:
+                improvement_pct = ((pre_rate - post_rate) / pre_rate) * 100
+            else:
+                improvement_pct = 0.0
+
+            sessions_tracked = len(snap_dicts)
+
+        results.append({
+            "skill_path": skill_path,
+            "target_error_type": error_type,
+            "pre_rate": round(pre_rate, 4),
+            "post_rate": round(post_rate, 4),
+            "improvement_pct": round(improvement_pct, 1),
+            "sessions_tracked": sessions_tracked,
+        })
+
+    return results

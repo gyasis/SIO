@@ -473,6 +473,10 @@ def init_db(db_path: str) -> sqlite3.Connection:
         conn.execute("ALTER TABLE suggestions ADD COLUMN reasoning_trace TEXT")
     except sqlite3.OperationalError:
         pass  # Column already exists
+    try:
+        conn.execute("ALTER TABLE suggestions ADD COLUMN skill_file_path TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
     # T105: Add quality_assessment column to ground_truth
     try:
         conn.execute("ALTER TABLE ground_truth ADD COLUMN quality_assessment TEXT")
