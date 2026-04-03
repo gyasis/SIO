@@ -202,10 +202,15 @@ src/sio/
 │
 ├── mining/                       # Stage 1: Session transcript parsing
 │   ├── specstory_parser.py       #   SpecStory markdown → structured records
-│   ├── jsonl_parser.py           #   Claude JSONL transcripts → structured records
-│   ├── error_extractor.py        #   Classify errors into 4 types
+│   ├── jsonl_parser.py           #   Claude JSONL transcripts → structured records (v3: +tokens, cost, cache, model)
+│   ├── error_extractor.py        #   Classify errors into 5 types
+│   ├── positive_extractor.py     #   v3: Detect confirmations, gratitude, implicit approval, session success
+│   ├── approval_detector.py      #   v3: Tool approval/rejection rates per tool type
+│   ├── sentiment_scorer.py       #   v3: Per-message sentiment (-1 to +1) + frustration escalation
+│   ├── violation_detector.py     #   v3: Detect CLAUDE.md rule violations in mined errors
+│   ├── facet_extractor.py        #   v3: Qualitative session facets (mastery, satisfaction, complexity)
 │   ├── time_filter.py            #   Flexible date/time filtering (dateutil)
-│   ├── pipeline.py               #   Orchestrates mine → store
+│   ├── pipeline.py               #   Orchestrates mine → store (v3: +dedup, metrics, positive signals)
 │   ├── flow_extractor.py         #   Tool sequence extraction, RLE compression, success heuristics
 │   ├── flow_pipeline.py          #   Flow mining pipeline + aggregation queries
 │   ├── session_distiller.py      #   Session → playbook distillation (winning path extraction)
@@ -213,7 +218,8 @@ src/sio/
 │
 ├── clustering/                   # Stage 2: Pattern discovery
 │   ├── pattern_clusterer.py      #   fastembed embeddings + greedy cosine clustering
-│   └── ranker.py                 #   Frequency × recency × spread scoring
+│   ├── ranker.py                 #   Frequency × recency × spread scoring
+│   └── grader.py                 #   v3: Pattern lifecycle grading (emerging → strong → established)
 │
 ├── datasets/                     # Stage 3: Training data
 │   ├── builder.py                #   Build pos/neg datasets per pattern
@@ -223,7 +229,8 @@ src/sio/
 ├── suggestions/                  # Stage 4: Improvement proposals
 │   ├── generator.py              #   Template-based suggestion generation
 │   ├── dspy_generator.py         #   DSPy-powered suggestion generation
-│   ├── confidence.py             #   Score suggestion quality
+│   ├── confidence.py             #   Score suggestion quality (v3: +temporal decay)
+│   ├── refiner.py                #   Second-pass refinement for specificity
 │   └── home_file.py              #   Write ~/.sio/suggestions.md summary
 │
 ├── review/                       # Stage 5: Human-in-the-loop
@@ -231,7 +238,9 @@ src/sio/
 │   └── tagger.py                 #   AI + human tagging
 │
 ├── applier/                      # Stage 6: Change application
-│   ├── writer.py                 #   Apply changes to config files (path-validated)
+│   ├── writer.py                 #   Apply changes to config files (v3: +delta merge, budget check)
+│   ├── budget.py                 #   v3: Instruction budget enforcement + auto-consolidation
+│   ├── deduplicator.py           #   v3: Semantic rule deduplication across files
 │   ├── rollback.py               #   Revert applied changes (with safety checks)
 │   └── changelog.py              #   Log all changes
 │
@@ -250,7 +259,14 @@ src/sio/
 │   ├── config.py                 #   TOML configuration loader
 │   ├── embeddings/               #   fastembed local + API backends with caching
 │   ├── dspy/                     #   DSPy modules, signatures, optimizer, LM factory
+│   ├── metrics/                  #   v3: Learning velocity tracking
+│   │   └── velocity.py           #     Rolling-window error rate, decay rate, adaptation speed
 │   ├── arena/                    #   Drift detection, regression testing, collision checks
+│   │   ├── assertions.py         #     v3: Binary pass/fail gates for rule validation
+│   │   ├── anomaly.py            #     v3: MAD-based anomalous session detection
+│   │   ├── txlog.py              #     v3: Append-only transaction log for autoresearch
+│   │   ├── experiment.py         #     v3: Git worktree-based rule experiments
+│   │   └── autoresearch.py       #     v3: Autonomous mine→grade→experiment→validate loop
 │   ├── telemetry/                #   PostToolUse hook capture, secret scrubbing
 │   ├── feedback/                 #   Batch review, labeling, pattern flagging
 │   └── health/                   #   Per-skill health aggregation
@@ -261,10 +277,13 @@ src/sio/
 ├── training/                    # v2.1: DSPy training pipeline
 │   └── recall_trainer.py        #   DSPy signatures, training loop, Azure OpenAI support
 │
+├── reports/                      # v3: Visual reporting
+│   └── html_report.py            #   Standalone HTML report with Chart.js
+│
 └── adapters/
     └── claude_code/              # Claude Code integration
-        ├── installer.py          #   One-command hook + skill setup
-        ├── hooks/                #   PostToolUse hook (captures tool invocations)
+        ├── installer.py          #   One-command hook + skill setup (v3: 4 hooks)
+        ├── hooks/                #   v3: PostToolUse, PreCompact, Stop, UserPromptSubmit
         └── skills/               #   10 bundled slash commands
             ├── sio/              #     Main entry point
             ├── sio-scan/         #     Mine recent sessions
@@ -277,6 +296,78 @@ src/sio/
             ├── sio-recall/       #     Topic-filtered recall
             └── sio-export/       #     Export training data
 ```
+
+## Design Philosophy: SIO Produces, Agent Harness Consumes
+
+SIO is the **data and intelligence layer** — it does not enforce behavior at runtime. Instead, it generates artifacts (rules, skills, metrics) that the agent harness (Claude Code) consumes:
+
+```
+          SIO (Analysis Engine)                    Agent Harness (Claude Code)
+┌─────────────────────────────────┐      ┌──────────────────────────────────┐
+│ Mine sessions for errors +      │      │ Reads CLAUDE.md rules            │
+│   positive signals              │      │ Loads ~/.claude/skills/          │
+│ Cluster patterns by embedding   │ ───> │ Fires hooks (PostToolUse, etc.)  │
+│ Grade lifecycle (emerging →     │      │ Agent follows learned rules      │
+│   strong → established)         │      │ Fewer errors next session        │
+│ DSPy-optimize suggestions       │      │                                  │
+│ Track velocity (did it work?)   │ <─── │ Session transcripts (JSONL/MD)   │
+│ Auto-experiment with rollback   │      │                                  │
+└─────────────────────────────────┘      └──────────────────────────────────┘
+```
+
+**SIO teaches; the agent harness learns.** SIO never blocks or intercepts the agent at runtime. It writes better instructions, and the agent follows them next session. Velocity tracking closes the loop by measuring whether the rules actually reduced errors.
+
+This separation means SIO works with any agent harness that reads configuration files — Claude Code today, Cursor/Gemini CLI/others tomorrow.
+
+---
+
+## Competitive Enhancement (v3.0)
+
+v3.0 imports the best features from 10+ self-improving agent tools (claude-reflect, GuideMode, AutoResearch Loop, /insights, Claude Diary, and more):
+
+| Feature | What It Does | CLI Command |
+|---------|-------------|-------------|
+| **Enhanced Extraction** | Extracts tokens, costs, cache efficiency, sub-agent data from JSONL (>90% field coverage, up from ~35%) | `sio mine` |
+| **Positive Signals** | Captures confirmations, gratitude, implicit approvals — not just errors | `sio mine` |
+| **Sentiment Scoring** | Per-message sentiment (-1 to +1) with frustration escalation detection | `sio mine` |
+| **Learning Velocity** | Measures how fast error rates decrease after rules are applied | `sio velocity` |
+| **Confidence Decay** | Patterns not seen in 14+ days lose confidence (floor 0.3) | automatic |
+| **Pattern Grading** | Lifecycle: emerging → strong → established → declining | automatic |
+| **Instruction Budget** | Line caps on CLAUDE.md/rules files with auto-consolidation | `sio budget` |
+| **Rule Deduplication** | Semantic similarity detection (>85%) with merge proposals | `sio dedupe` |
+| **Delta Writing** | Merge similar rules in-place instead of always appending | `sio apply` |
+| **Violation Detection** | Detects when the agent ignores rules already in CLAUDE.md | `sio violations` |
+| **Lifecycle Hooks** | PreCompact, Stop, UserPromptSubmit capture data in real-time | `sio install` |
+| **Binary Assertions** | Pass/fail gates: error_rate_decreased, no_regressions, etc. | arena |
+| **Git Experiments** | Test rules on isolated worktree branches before promoting | `sio apply --experiment` |
+| **Anomaly Detection** | MAD-based flagging of unusual sessions (>3 deviations) | arena |
+| **AutoResearch Loop** | Autonomous mine→cluster→grade→generate→experiment→validate cycle | `sio autoresearch start` |
+| **HTML Report** | Standalone visual report with charts, patterns, copy-ready suggestions | `sio report --html` |
+
+### New CLI Commands (v3.0)
+
+| Command | Description |
+|---------|-------------|
+| `sio velocity` | Show learning velocity trends (error rate changes after rules applied) |
+| `sio budget` | Show per-file instruction budget usage (lines / cap / status) |
+| `sio dedupe` | Find and consolidate semantically duplicate rules |
+| `sio violations` | Show CLAUDE.md rule violations (agent ignored its own rules) |
+| `sio autoresearch start` | Start autonomous optimization loop (human gate on promotion) |
+| `sio autoresearch stop` | Stop the autonomous loop |
+| `sio autoresearch status` | Show cycle count, active experiments, promotions |
+| `sio report --html` | Generate standalone HTML report with charts and copy-ready suggestions |
+
+### New Database Tables (v3.0)
+
+| Table | Purpose |
+|-------|---------|
+| `processed_sessions` | Dedup tracking — prevents re-mining same session file |
+| `session_metrics` | Per-session aggregates: tokens, cost, cache, errors, positive signals |
+| `positive_records` | Detected positive user signals (confirmation, gratitude, approval) |
+| `velocity_snapshots` | Rolling-window error rate measurements for velocity tracking |
+| `autoresearch_txlog` | Append-only transaction log for autonomous loop actions |
+
+---
 
 ## Error Types
 
@@ -338,7 +429,7 @@ All data is stored locally in SQLite (WAL mode, FK enforced):
 └── suggestions.md            # Human-readable suggestion summary
 ```
 
-**Key tables**: `error_records`, `patterns`, `pattern_errors`, `datasets`, `suggestions`, `applied_changes`, `ground_truth`, `optimized_modules`, `behavior_invocations`, `flow_events`, `recall_examples`
+**Key tables**: `error_records`, `patterns`, `pattern_errors`, `datasets`, `suggestions`, `applied_changes`, `ground_truth`, `optimized_modules`, `behavior_invocations`, `flow_events`, `recall_examples`, `processed_sessions`, `session_metrics`, `positive_records`, `velocity_snapshots`, `autoresearch_txlog`
 
 ## Two-Tier Cost Model (v2.1)
 
@@ -382,7 +473,7 @@ bash scripts/install-skills.sh   # Install 10 Claude Code slash commands
 ### Tests
 
 ```bash
-# Run the full suite (1040 tests)
+# Run the full suite (1360+ tests)
 pytest
 
 # Run with coverage
