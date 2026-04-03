@@ -564,6 +564,7 @@ def generate_dspy_suggestion(
 
     return {
         "pattern_id": int(pattern["id"]),
+        "pattern_str_id": pattern.get("pattern_id", ""),
         "dataset_id": int(dataset["id"]),
         "description": description,
         "confidence": float(confidence),

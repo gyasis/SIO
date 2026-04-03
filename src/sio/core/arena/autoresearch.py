@@ -229,18 +229,20 @@ class AutoResearchLoop:
 
             # Take only the top pattern (max 1 rule per cycle)
             top = strong[0]
-            pattern_id = top.get("id") or top.get("pattern_id")
 
-            # Build datasets dict for this pattern (same shape as CLI)
+            # Build datasets dict keyed by string slug (what generate_suggestions expects)
+            pattern_str_id = top.get("pattern_id", "")
             datasets: dict = {}
-            if pattern_id is not None:
+            # Query by integer FK (patterns.id), key by string slug
+            int_id = top.get("id")
+            if int_id is not None:
                 ds_rows = self._db.execute(
                     "SELECT * FROM datasets WHERE pattern_id = ?",
-                    (pattern_id,),
+                    (int_id,),
                 ).fetchall()
                 for row in ds_rows:
                     ds = dict(row)
-                    datasets[pattern_id] = ds
+                    datasets[pattern_str_id] = ds
 
             suggestions = generate_suggestions([top], datasets, self._db)
             if not suggestions:

@@ -224,6 +224,19 @@ def apply_change(
     )
     consolidation_triggered = False
 
+    if budget_result.status == "blocked" and not force:
+        # Already at or over capacity — no room even after consolidation
+        return {
+            "success": False,
+            "reason": (
+                f"BLOCKED: Cannot apply -- instruction file at capacity. "
+                f"{budget_result.message}. "
+                f"Run 'sio dedupe' to find consolidation opportunities."
+            ),
+            "budget_message": budget_result.message,
+            "consolidation_triggered": False,
+        }
+
     if budget_result.status == "consolidate" and not force:
         # Attempt automatic consolidation to free space
         merged = trigger_consolidation(target_path, config)
@@ -234,7 +247,7 @@ def apply_change(
                 target_path, new_rule_lines, config,
             )
 
-        if budget_result.status == "consolidate":
+        if budget_result.status in ("consolidate", "blocked"):
             # Still over budget after consolidation attempt
             return {
                 "success": False,

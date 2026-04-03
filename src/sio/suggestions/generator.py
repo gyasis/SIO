@@ -823,6 +823,7 @@ def generate_suggestions(
 
         suggestion_dict: dict[str, Any] = {
             "pattern_id": int(pattern["id"]),
+            "pattern_str_id": pattern_str_id,
             "dataset_id": int(dataset["id"]),
             "description": description,
             "confidence": float(confidence),
@@ -859,23 +860,26 @@ def _refine_all_suggestions(
 
     refined_count = 0
     for suggestion in suggestions:
+        # Skip refinement for DSPy-generated suggestions — they already
+        # have LLM-quality proposed_change text.
+        if suggestion.get("_using_dspy"):
+            continue
+
         # Get the original proposed change
         original = suggestion.get("proposed_change", "")
         if not original:
             continue
 
-        # Extract error samples from the dataset
-        pattern_id = suggestion.get("pattern_id")
-        # Find dataset by looking through all datasets for matching pattern
+        # Look up the CORRECT dataset for this suggestion's pattern
+        pattern_str_id = suggestion.get("pattern_str_id", "")
+        ds = datasets.get(pattern_str_id)
         error_samples: list[str] = []
-        for ds in datasets.values():
+        if ds is not None:
             ds_examples = _load_dataset_examples(ds)
             for ex in ds_examples:
                 error_text = ex.get("error_text", "")
                 if error_text:
                     error_samples.append(error_text)
-            if error_samples:
-                break  # Use first dataset with examples
 
         if not error_samples:
             continue
