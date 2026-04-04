@@ -240,6 +240,13 @@ def export_parquet(records: list[dict], output_path: str | Path) -> int:
     try:
         import pandas as pd
     except ImportError:
+        import click
+
+        click.echo(
+            "[WARNING] pandas not installed — writing JSONL instead of Parquet. "
+            "Install with: pip install 'sio[parquet]' or pip install pandas",
+            err=True,
+        )
         logger.warning("pandas not installed, falling back to JSONL export")
         jsonl_path = str(output_path).replace(".parquet", ".jsonl")
         return export_jsonl(records, jsonl_path)

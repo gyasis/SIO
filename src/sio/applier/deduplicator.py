@@ -202,3 +202,41 @@ def propose_merge(pair: DuplicatePair) -> str:
     if extra_lines:
         return base + "\n" + "\n".join(extra_lines)
     return base
+
+
+def apply_merge(pair: DuplicatePair, merged: str) -> None:
+    """Apply a proposed merge by replacing file_a's block and removing file_b's block.
+
+    - In file_a: replaces ``pair.text_a`` with *merged*.
+    - In file_b: removes ``pair.text_b`` (and surrounding blank lines).
+    - If file_a == file_b, the longer block is replaced with *merged* and the
+      shorter is removed in a single pass.
+    """
+    path_a = Path(pair.file_a)
+    path_b = Path(pair.file_b)
+
+    if pair.file_a == pair.file_b:
+        content = path_a.read_text(encoding="utf-8")
+        # Replace the longer (kept) block with merged, remove the other.
+        if len(pair.text_a) >= len(pair.text_b):
+            content = content.replace(pair.text_a, merged, 1)
+            content = content.replace(pair.text_b, "", 1)
+        else:
+            content = content.replace(pair.text_b, merged, 1)
+            content = content.replace(pair.text_a, "", 1)
+        # Collapse runs of 3+ blank lines to 2.
+        while "\n\n\n" in content:
+            content = content.replace("\n\n\n", "\n\n")
+        path_a.write_text(content, encoding="utf-8")
+    else:
+        # Replace in file_a
+        content_a = path_a.read_text(encoding="utf-8")
+        content_a = content_a.replace(pair.text_a, merged, 1)
+        path_a.write_text(content_a, encoding="utf-8")
+
+        # Remove from file_b
+        content_b = path_b.read_text(encoding="utf-8")
+        content_b = content_b.replace(pair.text_b, "", 1)
+        while "\n\n\n" in content_b:
+            content_b = content_b.replace("\n\n\n", "\n\n")
+        path_b.write_text(content_b, encoding="utf-8")

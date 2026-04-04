@@ -517,11 +517,21 @@ class TestInstallerHooks:
                 module_fragment = "user_prompt_submit"
             elif event == "SessionStart":
                 module_fragment = "session_start"
-            found = any(
-                module_fragment in h.get("command", "")
-                for h in event_hooks
-                if isinstance(h, dict)
-            )
+            found = False
+            for h in event_hooks:
+                if not isinstance(h, dict):
+                    continue
+                # Check bare format: {"type": "command", "command": "..."}
+                if module_fragment in h.get("command", ""):
+                    found = True
+                    break
+                # Check wrapped format: {"hooks": [{"command": "..."}]}
+                for inner in h.get("hooks", []):
+                    if isinstance(inner, dict) and module_fragment in inner.get("command", ""):
+                        found = True
+                        break
+                if found:
+                    break
             assert found, (
                 f"No SIO hook with '{module_fragment}' in {event} commands"
             )
@@ -550,10 +560,19 @@ class TestInstallerHooks:
             "PostToolUse", "PreCompact", "Stop",
             "UserPromptSubmit", "SessionStart",
         ]:
-            sio_hooks = [
-                h for h in hooks[event]
-                if isinstance(h, dict) and "sio" in h.get("command", "").lower()
-            ]
+            sio_hooks = []
+            for h in hooks[event]:
+                if not isinstance(h, dict):
+                    continue
+                # Bare format
+                if "sio" in h.get("command", "").lower():
+                    sio_hooks.append(h)
+                    continue
+                # Wrapped format
+                for inner in h.get("hooks", []):
+                    if isinstance(inner, dict) and "sio" in inner.get("command", "").lower():
+                        sio_hooks.append(h)
+                        break
             assert len(sio_hooks) == 1, (
                 f"Duplicate SIO hooks for {event}: {sio_hooks}"
             )
@@ -580,10 +599,17 @@ class TestInstallerHooks:
 
         data = json.loads(settings_path.read_text())
         post_hooks = data["hooks"]["PostToolUse"]
-        custom = [
-            h for h in post_hooks
-            if h.get("command") == "my-custom-hook"
-        ]
+        # The installer migrates bare hooks to wrapped format, so check both.
+        custom = []
+        for h in post_hooks:
+            if not isinstance(h, dict):
+                continue
+            if h.get("command") == "my-custom-hook":
+                custom.append(h)
+            for inner in h.get("hooks", []):
+                if isinstance(inner, dict) and inner.get("command") == "my-custom-hook":
+                    custom.append(h)
+                    break
         assert len(custom) == 1, "Existing custom hook was removed"
 
     def test_installer_returns_hooks_registered(self, tmp_path):

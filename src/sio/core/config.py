@@ -4,12 +4,8 @@ from __future__ import annotations
 
 import logging
 import os
+import tomllib
 from dataclasses import dataclass
-
-try:
-    import tomllib
-except ImportError:
-    import tomli as tomllib  # type: ignore[no-redef]
 
 logger = logging.getLogger(__name__)
 

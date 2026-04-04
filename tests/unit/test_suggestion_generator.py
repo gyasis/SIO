@@ -42,7 +42,15 @@ _REQUIRED_SUGGESTION_KEYS: frozenset[str] = frozenset(
 )
 
 _VALID_CHANGE_TYPES: frozenset[str] = frozenset(
-    {"claude_md_rule", "skill_md_update", "hook_config"}
+    {
+        "claude_md_rule",
+        "skill_update",
+        "hook_config",
+        "mcp_config",
+        "settings_config",
+        "agent_profile",
+        "project_config",
+    }
 )
 
 _NOW = "2026-02-25T10:00:00+00:00"
@@ -465,7 +473,15 @@ class TestTargetFileAssigned:
     """target_file must be a non-empty string pointing to a recognised config file."""
 
     _KNOWN_TARGET_FILES = frozenset(
-        {"CLAUDE.md", "SKILL.md", "hook_config.json", ".claude/hooks"}
+        {
+            "CLAUDE.md",
+            "SKILL.md",
+            ".claude/skills/",
+            ".claude/hooks/",
+            ".claude.json",
+            ".claude/settings.json",
+            ".claude/agents/",
+        }
     )
 
     def test_target_file_is_non_empty_string(self, v2_db: sqlite3.Connection) -> None:

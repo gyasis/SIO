@@ -3,6 +3,7 @@
 import json as _json
 import os
 from contextlib import contextmanager
+from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as pkg_version
 
 import click
@@ -35,8 +36,14 @@ def _get_sio_db_conn():
     return init_db(db_path)
 
 
+try:
+    _sio_version = pkg_version("sio")
+except PackageNotFoundError:
+    _sio_version = "0.0.0-dev"
+
+
 @click.group()
-@click.version_option(version=pkg_version("sio"))
+@click.version_option(version=_sio_version)
 def cli():
     """SIO: Self-Improving Organism for AI coding CLIs."""
     pass
@@ -558,7 +565,11 @@ def distill(session_path, latest, output, project):
             click.echo("No projects directory found at ~/.claude/projects/")
             return
 
-        jsonl_files = sorted(projects_dir.rglob("*.jsonl"), key=lambda f: f.stat().st_mtime, reverse=True)
+        jsonl_files = sorted(
+            projects_dir.rglob("*.jsonl"),
+            key=lambda f: f.stat().st_mtime,
+            reverse=True,
+        )
 
         if project:
             jsonl_files = [f for f in jsonl_files if project.lower() in str(f).lower()]
@@ -703,7 +714,10 @@ def recall(query, session, project, polish, output):
         click.echo("--- END PROMPT ---\n")
         # For CLI, we output the prompt. The /sio-recall skill will call Gemini directly.
         runbook = format_recall_output(filtered, struggles)
-        runbook += f"\n\n---\n*Gemini polish prompt saved. Use /sio-recall skill for auto-polish.*\n"
+        runbook += (
+            "\n\n---\n*Gemini polish prompt saved."
+            " Use /sio-recall skill for auto-polish.*\n"
+        )
     else:
         runbook = format_recall_output(filtered, struggles)
 
@@ -1922,6 +1936,20 @@ def schedule_install():
     else:
         click.echo("Schedule installation failed.", err=True)
         raise SystemExit(1)
+
+
+@schedule.command("run")
+@click.option("--mode", default="daily", type=click.Choice(["daily", "weekly"]),
+              help="Analysis mode: daily (24h) or weekly (7d).")
+def schedule_run(mode):
+    """Run passive analysis pipeline (invoked by cron)."""
+    from sio.scheduler.runner import run_analysis
+
+    result = run_analysis(mode=mode)
+    click.echo(f"Mode: {result['mode']}")
+    click.echo(f"Errors found: {result['errors_found']}")
+    click.echo(f"Patterns found: {result['patterns_found']}")
+    click.echo(f"Suggestions generated: {result['suggestions_generated']}")
 
 
 @schedule.command("status")
@@ -3327,6 +3355,9 @@ def dedupe(threshold, dry_run, auto_apply):
             continue
 
         if auto_apply:
+            from sio.applier.deduplicator import apply_merge
+
+            apply_merge(pair, merged)
             console.print("  [green]Auto-applied.[/green]")
             applied_count += 1
             console.print()
@@ -3338,6 +3369,9 @@ def dedupe(threshold, dry_run, auto_apply):
             default="n",
         )
         if choice == "y":
+            from sio.applier.deduplicator import apply_merge
+
+            apply_merge(pair, merged)
             applied_count += 1
             console.print("  [green]Applied.[/green]")
         else:

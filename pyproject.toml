@@ -21,7 +21,8 @@ dependencies = [
 [project.optional-dependencies]
 torch = ["torch>=2.0"]
 openai = ["openai>=1.0"]
-all = ["sio[torch,openai]"]
+parquet = ["pandas>=2.0"]
+all = ["sio[torch,openai,parquet]"]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",

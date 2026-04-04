@@ -54,6 +54,7 @@ _SKILL_NAMES = [
     "sio-report",
     "sio-promote-flow",
     "sio-budget",
+    "sio-consultant",
 ]
 
 

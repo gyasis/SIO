@@ -383,7 +383,7 @@ class TestSurfaceTargetMap:
     def test_mcp_config_maps_to_mcp_json(self):
         from sio.suggestions.dspy_generator import _SURFACE_TARGET_MAP
 
-        assert _SURFACE_TARGET_MAP["mcp_config"] == ".claude/mcp.json"
+        assert _SURFACE_TARGET_MAP["mcp_config"] == ".claude.json"
 
     def test_agent_profile_maps_to_agents_dir(self):
         from sio.suggestions.dspy_generator import _SURFACE_TARGET_MAP

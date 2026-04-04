@@ -109,7 +109,17 @@ def install_schedule() -> dict[str, Any]:
         ``daily_enabled`` (bool) — True when the daily entry was written.
         ``weekly_enabled`` (bool) — True when the weekly entry was written.
         ``entries``       (list[str]) — the cron lines that were written.
+
+    Raises
+    ------
+    RuntimeError
+        If the platform does not support crontab (e.g. Windows).
     """
+    if sys.platform == "win32":
+        raise RuntimeError(
+            "Cron scheduling is not supported on Windows. "
+            "Use Task Scheduler (schtasks) instead."
+        )
     current = _read_crontab()
     # Remove any pre-existing SIO lines to prevent duplicates.
     base = _strip_sio_lines(current)
