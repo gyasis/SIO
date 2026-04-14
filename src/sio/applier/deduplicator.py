@@ -120,6 +120,21 @@ def find_duplicates(
     list[DuplicatePair]
         Pairs of duplicate blocks sorted by similarity descending.
     """
+    # Dedupe file_paths by their resolved real location so multiple
+    # symlinks pointing at the same target file are processed once.
+    _seen_real: set[str] = set()
+    _unique_paths: list[str | Path] = []
+    for fp in file_paths:
+        try:
+            real = str(Path(fp).resolve())
+        except OSError:
+            real = str(fp)
+        if real in _seen_real:
+            continue
+        _seen_real.add(real)
+        _unique_paths.append(fp)
+    file_paths = _unique_paths
+
     # Collect all blocks across all files.
     all_blocks: list[dict] = []  # {text, start_line, file_path}
 

@@ -3167,6 +3167,20 @@ def budget(file_path):
                 if md_file not in files_to_check:
                     files_to_check.append(md_file)
 
+    # Dedupe by resolved realpath — symlinks to the same target count once.
+    _seen_real: set[Path] = set()
+    _unique: list[Path] = []
+    for fp in files_to_check:
+        try:
+            real = fp.resolve()
+        except OSError:
+            real = fp
+        if real in _seen_real:
+            continue
+        _seen_real.add(real)
+        _unique.append(fp)
+    files_to_check = _unique
+
     if not files_to_check:
         click.echo("No instruction files found to check.")
         return
