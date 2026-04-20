@@ -603,6 +603,9 @@ def fake_fastembed(monkeypatch: pytest.MonkeyPatch) -> None:
     Patches ``sio.core.clustering.embedder.embed_texts`` (when the module
     exists) and a fallback ``sio.core.embedder.embed_texts`` path, so any
     code that imports either will receive ``np.ones((N, 384), float32)``.
+
+    Also patches ``sio.core.applier.merger._compute_similarity`` to return 1.0
+    (identical vectors), so merge-consent tests get a deterministic cosine=1.0.
     """
 
     def _fake_embed(texts: list[str]) -> "np.ndarray":
@@ -618,6 +621,14 @@ def fake_fastembed(monkeypatch: pytest.MonkeyPatch) -> None:
             monkeypatch.setattr(mod, "embed_texts", _fake_embed)
         except (ImportError, AttributeError):
             pass  # Module not yet created; silently skip.
+
+    # Patch merger similarity so tests get cosine=1.0 (all-ones → identical)
+    try:
+        import importlib
+        merger_mod = importlib.import_module("sio.core.applier.merger")
+        monkeypatch.setattr(merger_mod, "_compute_similarity", lambda a, b: 1.0)
+    except (ImportError, AttributeError):
+        pass  # merger module not yet implemented; silently skip.
 
 
 @pytest.fixture
