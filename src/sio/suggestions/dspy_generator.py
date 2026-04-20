@@ -6,6 +6,8 @@ unavailable or the LLM call fails.
 
 Public API
 ----------
+    SuggestionGenerator               -- dspy.Module subclass (T066, US9)
+    generate_suggestion(...)          -- thin legacy wrapper around SuggestionGenerator
     generate_dspy_suggestion(pattern, dataset, config, verbose=False) -> dict
     _select_mode(pattern, confidence, target_surface) -> "auto" | "hitl"
     generate_auto_suggestion(pattern, dataset, config) -> dict | None
@@ -23,6 +25,11 @@ import sqlite3
 from collections import Counter
 from pathlib import Path
 from typing import Any, Callable
+
+import dspy
+
+from sio.core.dspy.assertions import assert_no_phi, assert_rule_format
+from sio.core.dspy.signatures import PatternToRule
 
 logger = logging.getLogger(__name__)
 
@@ -871,3 +878,91 @@ def build_dataset_analysis_summary(
         "top_error_messages": error_messages,
         "surface_prediction": surface_prediction,
     }
+
+
+# ---------------------------------------------------------------------------
+# T066 [US9]: SuggestionGenerator — dspy.Module (contracts/dspy-module-api.md §3)
+# ---------------------------------------------------------------------------
+
+
+class SuggestionGenerator(dspy.Module):
+    """DSPy module that turns a clustered error pattern into a candidate rule.
+
+    Optimizable via GEPA / MIPROv2 / BootstrapFewShot (FR-037).
+
+    Attributes
+    ----------
+    DEFAULT_METRIC:
+        The metric key used by the optimizer registry to evaluate this module.
+    generate:
+        ``dspy.ChainOfThought(PatternToRule)`` — the core predictor.
+    """
+
+    DEFAULT_METRIC: str = "llm_judge_recall"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.generate = dspy.ChainOfThought(PatternToRule)
+
+    def forward(
+        self,
+        pattern_description: str,
+        example_errors: list[str],
+        project_context: str,
+    ) -> dspy.Prediction:
+        """Generate a rule candidate for the given error pattern.
+
+        Parameters
+        ----------
+        pattern_description:
+            Human-readable name / summary of the clustered error pattern.
+        example_errors:
+            3–5 representative error messages from the cluster.
+        project_context:
+            Short description of the project or platform context.
+
+        Returns
+        -------
+        dspy.Prediction
+            Prediction with ``rule_title``, ``rule_body``, ``rule_rationale``.
+        """
+        pred = self.generate(
+            pattern_description=pattern_description,
+            example_errors=example_errors,
+            project_context=project_context,
+        )
+        assert_rule_format(pred)
+        assert_no_phi(pred)
+        return pred
+
+
+def generate_suggestion(
+    pattern_description: str,
+    example_errors: list[str],
+    project_context: str,
+) -> dspy.Prediction:
+    """Thin module-level wrapper around SuggestionGenerator for legacy call sites.
+
+    Instantiates a fresh (unoptimized) SuggestionGenerator and calls
+    ``forward`` with the provided arguments.
+
+    Parameters
+    ----------
+    pattern_description:
+        Human-readable cluster name.
+    example_errors:
+        3–5 representative error messages.
+    project_context:
+        Short project or platform description.
+
+    Returns
+    -------
+    dspy.Prediction
+        With ``rule_title``, ``rule_body``, ``rule_rationale`` fields.
+    """
+    module = SuggestionGenerator()
+    return module.forward(
+        pattern_description=pattern_description,
+        example_errors=example_errors,
+        project_context=project_context,
+    )

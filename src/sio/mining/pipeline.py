@@ -39,6 +39,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re as _re
 import sqlite3
 from collections import Counter
 from datetime import datetime, timezone
@@ -263,6 +264,165 @@ def _mark_processed(
         (str(file_path), file_hash, message_count, tool_call_count, now),
     )
     conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# T083 [US5]: Byte-offset resume helpers (FR-010, R-6)
+# ---------------------------------------------------------------------------
+
+
+def _get_session_state(
+    conn: sqlite3.Connection,
+    path: str,
+) -> dict:
+    """Return byte-offset state for a file from processed_sessions.
+
+    Parameters
+    ----------
+    conn:
+        Open SQLite connection.
+    path:
+        Absolute file path string.
+
+    Returns
+    -------
+    dict
+        Keys: ``last_offset`` (int), ``last_mtime`` (float | None),
+        ``is_subagent`` (int), ``parent_session_id`` (str | None).
+        All default to 0 / None if no row found.
+    """
+    row = conn.execute(
+        "SELECT last_offset, last_mtime, is_subagent, parent_session_id "
+        "FROM processed_sessions WHERE file_path = ?",
+        (path,),
+    ).fetchone()
+    if row is None:
+        return {
+            "last_offset": 0,
+            "last_mtime": None,
+            "is_subagent": 0,
+            "parent_session_id": None,
+        }
+    return {
+        "last_offset": row[0] if row[0] is not None else 0,
+        "last_mtime": row[1],
+        "is_subagent": row[2] if row[2] is not None else 0,
+        "parent_session_id": row[3],
+    }
+
+
+def _update_session_state(
+    conn: sqlite3.Connection,
+    path: str,
+    new_offset: int,
+    mtime: float,
+) -> None:
+    """Upsert byte-offset state for a file in processed_sessions.
+
+    Parameters
+    ----------
+    conn:
+        Open SQLite connection.
+    path:
+        Absolute file path string.
+    new_offset:
+        New byte offset (= current file size after successful mine).
+    mtime:
+        Current file mtime from ``os.path.getmtime``.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """
+        INSERT INTO processed_sessions (file_path, file_hash, last_offset, last_mtime, mined_at)
+        VALUES (?, '', ?, ?, ?)
+        ON CONFLICT(file_path) DO UPDATE SET
+            last_offset = excluded.last_offset,
+            last_mtime  = excluded.last_mtime,
+            mined_at    = excluded.mined_at
+        """,
+        (path, new_offset, mtime, now),
+    )
+    conn.commit()
+
+
+def _should_reset_offset(
+    last_offset: int,
+    last_mtime: float | None,
+    current_size: int,
+    current_mtime: float,
+) -> bool:
+    """Return True if the file appears to have been truncated or rotated.
+
+    Truncation is detected by either:
+    - current_size < last_offset (file is smaller than our saved position), OR
+    - current_mtime < last_mtime - 1 (file was replaced with an older copy).
+
+    Parameters
+    ----------
+    last_offset:
+        Saved byte offset from previous mine.
+    last_mtime:
+        Saved mtime from previous mine, or None if never mined.
+    current_size:
+        Current file size in bytes.
+    current_mtime:
+        Current file mtime.
+
+    Returns
+    -------
+    bool
+        True if offset should be reset to 0.
+    """
+    if current_size < last_offset:
+        return True
+    if last_mtime is not None and current_mtime < last_mtime - 1:
+        return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# T084 [US5]: Subagent detection helper (FR-011, R-13)
+# Impl stub — full integration wired in Wave 10 (T085).
+# ---------------------------------------------------------------------------
+
+_SUBAGENT_NESTED_RE = _re.compile(
+    r"[/\\]subagents[/\\](?P<parent>[^/\\]+)[/\\][^/\\]+\.jsonl$",
+    _re.IGNORECASE,
+)
+_SUBAGENT_DUNDER_RE = _re.compile(
+    r"[/\\](?P<parent>[^/\\]+?)__subagent_[^/\\]+\.jsonl$",
+    _re.IGNORECASE,
+)
+
+
+def _detect_subagent_info(path: Path) -> dict:
+    """Detect whether a JSONL path represents a subagent session.
+
+    Checks two naming conventions:
+    - ``subagents/<parent>/<subagent_id>.jsonl``
+    - ``<parent>__subagent_<subagent_id>.jsonl``
+
+    Parameters
+    ----------
+    path:
+        JSONL file path (absolute or relative).
+
+    Returns
+    -------
+    dict
+        ``is_subagent`` (0 or 1) and ``parent_session_id`` (str | None).
+    """
+    path_str = str(path)
+
+    m = _SUBAGENT_NESTED_RE.search(path_str)
+    if m:
+        return {"is_subagent": 1, "parent_session_id": m.group("parent")}
+
+    m = _SUBAGENT_DUNDER_RE.search(path_str)
+    if m:
+        return {"is_subagent": 1, "parent_session_id": m.group("parent")}
+
+    return {"is_subagent": 0, "parent_session_id": None}
 
 
 def _collect_files(

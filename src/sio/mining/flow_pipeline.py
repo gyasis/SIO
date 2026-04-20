@@ -67,6 +67,30 @@ def run_flow_mine(
 
     for file_path in files:
         try:
+            # T087 [US5] — FR-008: Honor processed_sessions for dedup
+            from sio.mining.pipeline import (  # noqa: PLC0415
+                _get_session_state,
+                _update_session_state,
+            )
+            file_str = str(file_path)
+            try:
+                current_size = file_path.stat().st_size
+                current_mtime = file_path.stat().st_mtime
+            except OSError:
+                logger.warning("Flow mine: file not accessible %s", file_str)
+                continue
+
+            session_state = _get_session_state(db_conn, file_str)
+
+            # Skip if file is unchanged (same size and mtime has not progressed)
+            if (
+                session_state["last_offset"] >= current_size
+                and session_state["last_mtime"] is not None
+                and abs(session_state["last_mtime"] - current_mtime) < 1.0
+            ):
+                logger.debug("Flow mine: skipping unchanged file %s", file_str)
+                continue
+
             parsed = parse_jsonl(file_path)
             if not parsed:
                 continue
@@ -113,12 +137,14 @@ def run_flow_mine(
                     first_tool_idx = comp_to_tool[comp_start][0]
                     ts = tool_seq[first_tool_idx].get("timestamp") or mined_at
 
+                # T087 [US5] FR-008: INSERT OR IGNORE — dedup via
+                # UNIQUE(file_path, session_id, flow_hash)
                 db_conn.execute(
-                    """INSERT INTO flow_events
+                    """INSERT OR IGNORE INTO flow_events
                        (session_id, flow_hash, sequence, ngram_size,
                         was_successful, duration_seconds, source_file,
-                        timestamp, mined_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        file_path, timestamp, mined_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         session_id,
                         flow_hash,
@@ -127,11 +153,15 @@ def run_flow_mine(
                         was_successful,
                         flow_data["duration_seconds"] / max(len(flow_data["ngrams"]), 1),
                         str(file_path),
+                        str(file_path),  # file_path column for dedup constraint
                         ts,
                         mined_at,
                     ),
                 )
                 total_flow_events += 1
+
+            # T087 [US5]: Update processed_sessions after successful file mine
+            _update_session_state(db_conn, file_str, current_size, current_mtime)
 
         except Exception as e:
             logger.warning("Flow extraction failed for %s: %s", file_path, e)

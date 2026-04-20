@@ -43,6 +43,7 @@ def _extract_extension(tool_input: str | None) -> str:
         if ext in (
             "py", "js", "ts", "tsx", "jsx", "sql", "md", "yaml", "yml",
             "json", "toml", "sh", "css", "html", "txt", "csv", "parquet",
+            "rs", "go", "java", "cpp", "ipynb",  # FR-026 / audit L1
         ):
             return f".{ext}"
     return ""
@@ -113,7 +114,7 @@ def compute_ngrams(compressed: list[str], n_range: tuple[int, int] = (2, 5)) -> 
     Returns list of tuples, each tuple is an n-gram.
     """
     ngrams = []
-    for n in range(n_range[0], n_range[1]):
+    for n in range(n_range[0], n_range[1] + 1):  # FR-022 / audit M5: upper bound inclusive
         for i in range(len(compressed) - n + 1):
             ngrams.append(tuple(compressed[i : i + n]))
     return ngrams
@@ -128,7 +129,7 @@ def indexed_ngrams(
     is the position of the first element of the ngram in *compressed*.
     """
     results: list[tuple[tuple[str, ...], int]] = []
-    for n in range(n_range[0], n_range[1]):
+    for n in range(n_range[0], n_range[1] + 1):  # FR-022 / audit M5: upper bound inclusive
         for i in range(len(compressed) - n + 1):
             results.append((tuple(compressed[i : i + n]), i))
     return results
@@ -170,20 +171,18 @@ def compressed_to_tool_indices(sequence: list[dict]) -> list[list[int]]:
 def is_success_signal(content: str) -> bool:
     """Check if a user message indicates success.
 
-    Success = short message (<8 words) with no negative keywords,
-    OR contains positive keywords regardless of length.
+    FR-021 / audit L3: Require an EXPLICIT positive marker to declare success.
+    Absence of negative keywords is NOT sufficient — default to was_successful=0
+    to avoid false-positive success attribution.
+
+    Success = contains positive keywords (regardless of length).
+    Messages that are merely short with no negatives do NOT count as success.
     """
     if not content or not content.strip():
         return False
 
-    words = content.strip().split()
-
-    # Positive keywords always count
+    # Only explicit positive keywords count as success signals
     if _POSITIVE_KEYWORDS.search(content):
-        return True
-
-    # Short message without negatives
-    if len(words) < 8 and not _NEGATIVE_KEYWORDS.search(content):
         return True
 
     return False
