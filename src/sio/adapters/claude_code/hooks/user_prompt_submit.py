@@ -186,14 +186,35 @@ def handle_user_prompt_submit(
     Returns:
         JSON string with {"action": "allow"}.
     """
+    _session_id: str | None = None
+    try:
+        _session_id = json.loads(stdin_json).get("session_id")
+    except Exception:
+        pass
+
     try:
         _do_analyze(stdin_json, state_path=state_path)
+        try:
+            from sio.adapters.claude_code.hooks._heartbeat import record_success  # noqa: PLC0415
+            record_success("user_prompt_submit", session_id=_session_id)
+        except Exception:
+            pass
     except Exception as first_err:
         # Retry once
         try:
             _do_analyze(stdin_json, state_path=state_path)
+            try:
+                from sio.adapters.claude_code.hooks._heartbeat import record_success  # noqa: PLC0415
+                record_success("user_prompt_submit", session_id=_session_id)
+            except Exception:
+                pass
         except Exception as second_err:
             _log_error(f"retry failed: {first_err!r} -> {second_err!r}")
+            try:
+                from sio.adapters.claude_code.hooks._heartbeat import record_failure  # noqa: PLC0415
+                record_failure("user_prompt_submit", second_err)
+            except Exception:
+                pass
 
     return _ALLOW
 

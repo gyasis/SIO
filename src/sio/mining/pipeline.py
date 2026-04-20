@@ -254,14 +254,18 @@ def _mark_processed(
     file_hash: str,
     message_count: int,
     tool_call_count: int,
+    is_subagent: int = 0,
+    parent_session_id: str | None = None,
 ) -> None:
     """Insert a row into processed_sessions after successful mining."""
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         "INSERT OR IGNORE INTO processed_sessions "
-        "(file_path, file_hash, message_count, tool_call_count, skipped, mined_at) "
-        "VALUES (?, ?, ?, ?, 0, ?)",
-        (str(file_path), file_hash, message_count, tool_call_count, now),
+        "(file_path, file_hash, message_count, tool_call_count, skipped, mined_at, "
+        "is_subagent, parent_session_id) "
+        "VALUES (?, ?, ?, ?, 0, ?, ?, ?)",
+        (str(file_path), file_hash, message_count, tool_call_count, now,
+         is_subagent, parent_session_id),
     )
     conn.commit()
 
@@ -830,6 +834,11 @@ def run_mine(
         # Determine the source type label for this specific file.
         source_label = "specstory" if file_path.suffix == ".md" else "jsonl"
 
+        # --- T085 [US5]: Detect subagent linkage per file ------------------
+        subagent_info = _detect_subagent_info(file_path)
+        file_is_subagent: int = subagent_info["is_subagent"]
+        file_parent_session_id: str | None = subagent_info["parent_session_id"]
+
         try:
             error_records, parsed_messages, message_count, tool_call_count = (
                 _process_file(
@@ -847,6 +856,11 @@ def run_mine(
 
         # --- Dedup: same-session error type priority -------------------------
         error_records = _dedup_by_error_type_priority(error_records)
+
+        # Propagate subagent metadata into each error record dict
+        for rec in error_records:
+            rec.setdefault("is_subagent", file_is_subagent)
+            rec.setdefault("parent_session_id", file_parent_session_id)
 
         for record in error_records:
             # --- Dedup: cross-format duplicate check --------------------------
@@ -965,6 +979,8 @@ def run_mine(
         try:
             _mark_processed(
                 db_conn, file_path, fhash, message_count, tool_call_count,
+                is_subagent=file_is_subagent,
+                parent_session_id=file_parent_session_id,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning(

@@ -2139,31 +2139,291 @@ def schedule_status():
 
 
 @cli.command("status")
-def sio_status():
-    """Show overall SIO v2 status."""
-    db_path = os.path.expanduser("~/.sio/sio.db")
-    if not os.path.exists(db_path):
-        click.echo("No SIO database found. Run 'sio mine' to start.")
-        return
+@click.option("--plain", is_flag=True, help="Plain text output (no Rich tables).")
+def sio_status(plain: bool = False):
+    """Show 5-section SIO pipeline health status.
 
-    with _db_conn(db_path) as conn:
-        errors = conn.execute("SELECT COUNT(*) FROM error_records").fetchone()[0]
-        patterns = conn.execute("SELECT COUNT(*) FROM patterns").fetchone()[0]
-        datasets = conn.execute("SELECT COUNT(*) FROM datasets").fetchone()[0]
-        pending = conn.execute(
-            "SELECT COUNT(*) FROM suggestions WHERE status = 'pending'"
-        ).fetchone()[0]
-        applied = conn.execute(
-            "SELECT COUNT(*) FROM applied_changes WHERE rolled_back_at IS NULL"
-        ).fetchone()[0]
+    Sections: Hooks, Mining, Training, Audit, Database.
+    Exit 0 if all healthy/warn; exit 1 if any error.
+    Latency target: < 2s (SC-009).
+    """
+    import sys  # noqa: PLC0415
+    import time  # noqa: PLC0415
 
-    click.echo("SIO v2 Status")
-    click.echo("-" * 30)
-    click.echo(f"Errors mined:      {errors}")
-    click.echo(f"Patterns found:    {patterns}")
-    click.echo(f"Datasets built:    {datasets}")
-    click.echo(f"Pending reviews:   {pending}")
-    click.echo(f"Applied changes:   {applied}")
+    start = time.monotonic()
+
+    try:
+        from rich.console import Console  # noqa: PLC0415
+        from rich.table import Table  # noqa: PLC0415
+        _rich_available = True
+    except ImportError:
+        _rich_available = False
+
+    db_path_str = os.path.expanduser("~/.sio/sio.db")
+    db_exists = os.path.exists(db_path_str)
+
+    any_error = False
+
+    # -------------------------------------------------------------------
+    # § 1: HOOKS — from hook_health.json via sio.cli.status.hook_health_rows()
+    # -------------------------------------------------------------------
+    from sio.cli.status import hook_health_rows  # noqa: PLC0415
+    hook_rows = hook_health_rows()
+
+    _STATE_ICONS = {
+        "healthy": "[green]✓ healthy[/green]",
+        "warn": "[yellow]⚠ warn[/yellow]",
+        "error": "[red]✗ error[/red]",
+        "never-seen": "[dim]○ never-seen[/dim]",
+    }
+
+    for _, state, _ in hook_rows:
+        if state == "error":
+            any_error = True
+
+    # -------------------------------------------------------------------
+    # § 2-5: DB sections (lazy queries only)
+    # -------------------------------------------------------------------
+    mining_data: dict = {}
+    training_data: dict = {}
+    audit_data: dict = {}
+    db_data: dict = {}
+    sync_drift_data: dict = {}
+    schema_err = False
+
+    if db_exists:
+        try:
+            from sio.core.db.schema import init_db  # noqa: PLC0415
+            conn = init_db(db_path_str)
+            try:
+                # § 2: Mining
+                try:
+                    mining_data["error_records"] = conn.execute(
+                        "SELECT COUNT(*) FROM error_records"
+                    ).fetchone()[0]
+                except Exception:
+                    mining_data["error_records"] = "n/a"
+                try:
+                    mining_data["flow_events"] = conn.execute(
+                        "SELECT COUNT(*) FROM flow_events"
+                    ).fetchone()[0]
+                except Exception:
+                    mining_data["flow_events"] = "n/a"
+                try:
+                    mining_data["last_mined_at"] = conn.execute(
+                        "SELECT MAX(mined_at) FROM processed_sessions"
+                    ).fetchone()[0] or "never"
+                except Exception:
+                    mining_data["last_mined_at"] = "n/a"
+
+                # § 3: Training
+                try:
+                    mining_data["behavior_invocations"] = conn.execute(
+                        "SELECT COUNT(*) FROM behavior_invocations"
+                    ).fetchone()[0]
+                except Exception:
+                    mining_data["behavior_invocations"] = "n/a"
+                try:
+                    training_data["gold_standards"] = conn.execute(
+                        "SELECT COUNT(*) FROM ground_truth"
+                    ).fetchone()[0]
+                except Exception:
+                    training_data["gold_standards"] = "n/a"
+                try:
+                    training_data["optimized_modules"] = conn.execute(
+                        "SELECT COUNT(*) FROM optimized_modules"
+                    ).fetchone()[0]
+                except Exception:
+                    training_data["optimized_modules"] = "n/a"
+                try:
+                    training_data["active_module"] = conn.execute(
+                        "SELECT module_name FROM optimized_modules WHERE is_active = 1 LIMIT 1"
+                    ).fetchone()
+                    training_data["active_module"] = (
+                        training_data["active_module"][0]
+                        if training_data["active_module"]
+                        else "none"
+                    )
+                except Exception:
+                    training_data["active_module"] = "n/a"
+                try:
+                    training_data["optimization_runs"] = conn.execute(
+                        "SELECT COUNT(*) FROM optimization_runs"
+                    ).fetchone()[0]
+                except Exception:
+                    training_data["optimization_runs"] = "n/a"
+
+                # § 4: Audit
+                try:
+                    audit_data["applied_active"] = conn.execute(
+                        "SELECT COUNT(*) FROM applied_changes WHERE rolled_back_at IS NULL"
+                    ).fetchone()[0]
+                except Exception:
+                    audit_data["applied_active"] = "n/a"
+                try:
+                    audit_data["autoresearch_24h"] = conn.execute(
+                        "SELECT COUNT(*) FROM autoresearch_txlog "
+                        "WHERE fired_at >= datetime('now', '-24 hours')"
+                    ).fetchone()[0]
+                except Exception:
+                    audit_data["autoresearch_24h"] = "n/a"
+                try:
+                    audit_data["autoresearch_last"] = conn.execute(
+                        "SELECT MAX(fired_at) FROM autoresearch_txlog"
+                    ).fetchone()[0] or "never"
+                except Exception:
+                    audit_data["autoresearch_last"] = "n/a"
+
+                # § 5: Database
+                try:
+                    schema_row = conn.execute(
+                        "SELECT version, status FROM schema_version ORDER BY applied_at DESC LIMIT 1"
+                    ).fetchone()
+                    db_data["schema_version"] = schema_row[0] if schema_row else "unknown"
+                    db_data["schema_status"] = schema_row[1] if schema_row else "unknown"
+                    if db_data["schema_status"] in ("applying", "error"):
+                        any_error = True
+                        schema_err = True
+                except Exception:
+                    db_data["schema_version"] = "n/a"
+                    db_data["schema_status"] = "n/a"
+
+            finally:
+                conn.close()
+        except Exception as exc:
+            any_error = True
+            db_data["_error"] = str(exc)
+
+        # § 5: DB file size
+        try:
+            db_data["size_mb"] = os.path.getsize(db_path_str) / (1024 * 1024)
+        except Exception:
+            db_data["size_mb"] = 0.0
+
+        # § 3 sync-drift (T096)
+        try:
+            from sio.core.db.sync import compute_sync_drift  # noqa: PLC0415
+            sync_drift_data = compute_sync_drift()
+            for platform, drift in sync_drift_data.items():
+                if drift.get("drift_pct", 0.0) >= 0.05:
+                    any_error = True
+        except Exception:
+            sync_drift_data = {}
+
+    # -------------------------------------------------------------------
+    # Render output
+    # -------------------------------------------------------------------
+    if _rich_available and not plain:
+        console = Console()
+
+        # — Section 1: Hooks —
+        hooks_table = Table(title="Hooks", show_header=True, header_style="bold")
+        hooks_table.add_column("Hook", style="cyan", min_width=20)
+        hooks_table.add_column("State", min_width=14)
+        hooks_table.add_column("Detail")
+        for hook_name, state, detail in hook_rows:
+            icon = _STATE_ICONS.get(state, state)
+            hooks_table.add_row(hook_name, icon, detail)
+        console.print(hooks_table)
+
+        # — Section 2: Mining —
+        mine_table = Table(title="Mining", show_header=True, header_style="bold")
+        mine_table.add_column("Metric", style="cyan")
+        mine_table.add_column("Value")
+        mine_table.add_row("error_records", str(mining_data.get("error_records", "n/a")))
+        mine_table.add_row("flow_events", str(mining_data.get("flow_events", "n/a")))
+        mine_table.add_row("last_mined_at", str(mining_data.get("last_mined_at", "n/a")))
+        console.print(mine_table)
+
+        # — Section 3: Training (incl. sync-drift T096) —
+        train_table = Table(title="Training", show_header=True, header_style="bold")
+        train_table.add_column("Metric", style="cyan")
+        train_table.add_column("Value")
+        # Sync-drift row
+        for platform, drift in sync_drift_data.items():
+            canonical = drift.get("canonical_count", 0)
+            per_plat = drift.get("per_platform_count", 0)
+            pct = drift.get("drift_pct", 0.0)
+            if pct >= 0.05:
+                drift_icon = "[red]✗[/red]"
+            elif pct >= 0.01:
+                drift_icon = "[yellow]⚠[/yellow]"
+            else:
+                drift_icon = "[green]✓ in sync[/green]"
+            train_table.add_row(
+                f"behavior_invocations ({platform})",
+                f"{canonical}  ↔  per-platform: {per_plat}  {drift_icon}",
+            )
+        if not sync_drift_data:
+            train_table.add_row(
+                "behavior_invocations (sio.db)",
+                str(mining_data.get("behavior_invocations", "n/a")),
+            )
+        train_table.add_row("gold_standards", str(training_data.get("gold_standards", "n/a")))
+        train_table.add_row("optimized_modules", str(training_data.get("optimized_modules", "n/a")))
+        train_table.add_row("active_module", str(training_data.get("active_module", "n/a")))
+        train_table.add_row("optimization_runs", str(training_data.get("optimization_runs", "n/a")))
+        console.print(train_table)
+
+        # — Section 4: Audit —
+        audit_table = Table(title="Audit", show_header=True, header_style="bold")
+        audit_table.add_column("Metric", style="cyan")
+        audit_table.add_column("Value")
+        audit_table.add_row("applied_changes (active)", str(audit_data.get("applied_active", "n/a")))
+        audit_table.add_row("autoresearch_txlog (24h)", str(audit_data.get("autoresearch_24h", "n/a")))
+        audit_table.add_row("autoresearch last fired", str(audit_data.get("autoresearch_last", "n/a")))
+        console.print(audit_table)
+
+        # — Section 5: Database —
+        db_table = Table(title="Database", show_header=True, header_style="bold")
+        db_table.add_column("Metric", style="cyan")
+        db_table.add_column("Value")
+        db_table.add_row("path", db_path_str)
+        db_table.add_row("size_mb", f"{db_data.get('size_mb', 0.0):.1f} MB")
+        schema_v = db_data.get("schema_version", "n/a")
+        schema_s = db_data.get("schema_status", "n/a")
+        schema_display = (
+            f"[red]{schema_v} ({schema_s})[/red]" if schema_err
+            else f"{schema_v} ({schema_s})"
+        )
+        db_table.add_row("schema_version", schema_display)
+        db_table.add_row("exists", "[green]yes[/green]" if db_exists else "[red]no[/red]")
+        console.print(db_table)
+
+        elapsed = time.monotonic() - start
+        status_color = "red" if any_error else "green"
+        console.print(
+            f"[{status_color}]Status: {'ERROR' if any_error else 'OK'}[/{status_color}]"
+            f"  ({elapsed * 1000:.0f}ms)"
+        )
+    else:
+        # Plain text fallback
+        click.echo("=== Hooks ===")
+        for hook_name, state, detail in hook_rows:
+            click.echo(f"  {hook_name}: {state} — {detail}")
+        click.echo("\n=== Mining ===")
+        for k, v in mining_data.items():
+            click.echo(f"  {k}: {v}")
+        click.echo("\n=== Training ===")
+        for platform, drift in sync_drift_data.items():
+            click.echo(
+                f"  behavior_invocations (sio.db) {drift.get('canonical_count', 0)} "
+                f"<-> {platform}: {drift.get('per_platform_count', 0)} "
+                f"({drift.get('drift_pct', 0.0)*100:.1f}% drift)"
+            )
+        for k, v in training_data.items():
+            click.echo(f"  {k}: {v}")
+        click.echo("\n=== Audit ===")
+        for k, v in audit_data.items():
+            click.echo(f"  {k}: {v}")
+        click.echo("\n=== Database ===")
+        click.echo(f"  path: {db_path_str}")
+        click.echo(f"  size_mb: {db_data.get('size_mb', 0.0):.1f}")
+        click.echo(f"  schema_version: {db_data.get('schema_version', 'n/a')}")
+        elapsed = time.monotonic() - start
+        click.echo(f"\nStatus: {'ERROR' if any_error else 'OK'}  ({elapsed * 1000:.0f}ms)")
+
+    sys.exit(1 if any_error else 0)
 
 
 # ---------------------------------------------------------------------------

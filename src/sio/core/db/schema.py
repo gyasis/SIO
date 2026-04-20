@@ -99,7 +99,9 @@ CREATE TABLE IF NOT EXISTS error_records (
     error_type TEXT,
     tool_input TEXT,
     tool_output TEXT,
-    mined_at TEXT NOT NULL
+    mined_at TEXT NOT NULL,
+    is_subagent INTEGER NOT NULL DEFAULT 0,
+    parent_session_id TEXT
 )
 """
 

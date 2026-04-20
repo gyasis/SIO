@@ -34,8 +34,12 @@ def handle_post_tool_use(stdin_json: str, *, conn=None) -> str:
         return json.dumps({"action": "allow"})
 
     try:
-        from sio.core.db.schema import init_db
-        from sio.core.telemetry.logger import log_invocation
+        from sio.adapters.claude_code.hooks._heartbeat import (  # noqa: PLC0415
+            record_failure,
+            record_success,
+        )
+        from sio.core.db.schema import init_db  # noqa: PLC0415
+        from sio.core.telemetry.logger import log_invocation  # noqa: PLC0415
 
         own_conn = conn is None
         if own_conn:
@@ -66,8 +70,15 @@ def handle_post_tool_use(stdin_json: str, *, conn=None) -> str:
 
         if own_conn:
             conn.close()
-    except Exception:
+
+        record_success("post_tool_use", session_id=session_id)
+    except Exception as exc:
         logger.exception("PostToolUse hook error — continuing silently")
+        try:
+            from sio.adapters.claude_code.hooks._heartbeat import record_failure  # noqa: PLC0415
+            record_failure("post_tool_use", exc)
+        except Exception:
+            pass
 
     return json.dumps({"action": "allow"})
 

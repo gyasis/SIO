@@ -200,7 +200,15 @@ _ERROR_RECORD_COLS = [
     "session_id", "timestamp", "source_type", "source_file", "tool_name",
     "error_text", "user_message", "context_before", "context_after",
     "error_type", "tool_input", "tool_output", "mined_at",
+    "is_subagent", "parent_session_id",
 ]
+
+# Default values for cols that have NOT NULL constraints and may be absent in
+# older callers / test fixtures that pre-date Wave 10.
+_ERROR_RECORD_DEFAULTS: dict[str, object] = {
+    "is_subagent": 0,
+    "parent_session_id": None,
+}
 
 
 def insert_error_record(
@@ -210,7 +218,7 @@ def insert_error_record(
     cols = _ERROR_RECORD_COLS
     placeholders = ", ".join(["?"] * len(cols))
     col_names = ", ".join(cols)
-    values = [record.get(c) for c in cols]
+    values = [record.get(c, _ERROR_RECORD_DEFAULTS.get(c)) for c in cols]
     cur = conn.execute(
         f"INSERT INTO error_records ({col_names}) VALUES ({placeholders})",
         values,

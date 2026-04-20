@@ -225,14 +225,36 @@ def handle_stop(stdin_json: str, *, conn=None) -> str:
         JSON string — no output required for Stop hook, but we
         return empty string for consistency. Exit code is always 0.
     """
+    _session_id: str | None = None
+    try:
+        import json as _json  # noqa: PLC0415
+        _session_id = _json.loads(stdin_json).get("session_id")
+    except Exception:
+        pass
+
     try:
         _do_finalize(stdin_json, conn=conn)
+        try:
+            from sio.adapters.claude_code.hooks._heartbeat import record_success  # noqa: PLC0415
+            record_success("stop", session_id=_session_id)
+        except Exception:
+            pass
     except Exception as first_err:
         # Retry once
         try:
             _do_finalize(stdin_json, conn=conn)
+            try:
+                from sio.adapters.claude_code.hooks._heartbeat import record_success  # noqa: PLC0415
+                record_success("stop", session_id=_session_id)
+            except Exception:
+                pass
         except Exception as second_err:
             _log_error(f"retry failed: {first_err!r} -> {second_err!r}")
+            try:
+                from sio.adapters.claude_code.hooks._heartbeat import record_failure  # noqa: PLC0415
+                record_failure("stop", second_err)
+            except Exception:
+                pass
 
     return _ALLOW
 
