@@ -1,5 +1,14 @@
-"""LM backend factory — creates dspy.LM from config or env var detection."""
+"""LM backend factory — single-source dspy.LM construction (FR-041, SC-022).
 
+All dspy.LM(...) construction happens here. No other file in src/sio/ may
+construct dspy.LM directly; the grep test in test_lm_factory.py enforces this.
+
+Environment overrides:
+  SIO_TASK_LM       — model string for get_task_lm()  (default: openai/gpt-4o-mini)
+  SIO_REFLECTION_LM — model string for get_reflection_lm() (default: openai/gpt-5)
+  SIO_FORCE_ADAPTER — "json" | "chat"  (override provider detection)
+  SIO_FORCE_NATIVE_FC — "0" | "1"     (override native function-calling flag)
+"""
 from __future__ import annotations
 
 import logging
@@ -12,6 +21,59 @@ from sio.core.config import SIOConfig
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# New contract functions (FR-041, contracts/dspy-module-api.md §1)
+# ---------------------------------------------------------------------------
+
+def get_task_lm() -> dspy.LM:
+    """LM used for normal module forward passes. Cheap, fast, cached."""
+    model = os.environ.get("SIO_TASK_LM", "openai/gpt-4o-mini")
+    return dspy.LM(model, cache=True, temperature=0.0, max_tokens=4096)
+
+
+def get_reflection_lm() -> dspy.LM:
+    """Strong LM used by GEPA to critique prompt candidates. Expensive, uncached."""
+    model = os.environ.get("SIO_REFLECTION_LM", "openai/gpt-5")
+    return dspy.LM(model, cache=False, temperature=1.0, max_tokens=32000)
+
+
+def get_adapter(lm: dspy.LM) -> dspy.Adapter:
+    """Provider-aware adapter selection (FR-040, R-12).
+
+    Honors SIO_FORCE_ADAPTER (json|chat) and SIO_FORCE_NATIVE_FC (0|1) env overrides.
+    Falls back to provider detection:
+      openai / anthropic / azure  -> ChatAdapter(use_native_function_calling=True)
+      ollama                      -> JSONAdapter(use_native_function_calling=False)
+      unknown                     -> ChatAdapter(use_native_function_calling=False)
+    """
+    forced = os.environ.get("SIO_FORCE_ADAPTER")
+    native_env = os.environ.get("SIO_FORCE_NATIVE_FC")
+
+    if forced == "json":
+        native = native_env != "0" if native_env is not None else True
+        return dspy.JSONAdapter(use_native_function_calling=native)
+    if forced == "chat":
+        native = native_env != "0" if native_env is not None else True
+        return dspy.ChatAdapter(use_native_function_calling=native)
+
+    provider = lm.model.split("/", 1)[0]
+    if provider in ("openai", "anthropic", "azure"):
+        return dspy.ChatAdapter(use_native_function_calling=True)
+    if provider == "ollama":
+        return dspy.JSONAdapter(use_native_function_calling=False)
+    return dspy.ChatAdapter(use_native_function_calling=False)
+
+
+def configure_default() -> None:
+    """Call at process start. Binds task LM + provider adapter to dspy globally."""
+    lm = get_task_lm()
+    dspy.configure(lm=lm, adapter=get_adapter(lm))
+
+
+# ---------------------------------------------------------------------------
+# Legacy factory functions (preserved for backward compatibility)
+# ---------------------------------------------------------------------------
+
 def create_lm(config: SIOConfig) -> dspy.LM | None:
     """Create a dspy.LM from config or auto-detected env vars.
 
@@ -21,14 +83,7 @@ def create_lm(config: SIOConfig) -> dspy.LM | None:
     3. ANTHROPIC_API_KEY env var -> anthropic/claude-sonnet-4-20250514
     4. OPENAI_API_KEY env var -> openai/gpt-4o
     5. None (no LLM available)
-
-    Args:
-        config: SIOConfig instance with optional LLM settings.
-
-    Returns:
-        Configured dspy.LM or None if no LLM is available.
     """
-    # Priority 1: Explicit config
     if config.llm_model:
         kwargs: dict = {
             "model": config.llm_model,
@@ -46,7 +101,6 @@ def create_lm(config: SIOConfig) -> dspy.LM | None:
                 kwargs["api_base"] = api_base
         return dspy.LM(**kwargs)
 
-    # Priority 2: Azure OpenAI
     azure_key = os.environ.get("AZURE_OPENAI_API_KEY")
     if azure_key:
         kwargs = {
@@ -61,7 +115,6 @@ def create_lm(config: SIOConfig) -> dspy.LM | None:
             kwargs["api_base"] = azure_base
         return dspy.LM(**kwargs)
 
-    # Priority 3: Anthropic
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
     if anthropic_key:
         return dspy.LM(
@@ -71,7 +124,6 @@ def create_lm(config: SIOConfig) -> dspy.LM | None:
             max_tokens=config.llm_max_tokens,
         )
 
-    # Priority 4: OpenAI
     openai_key = os.environ.get("OPENAI_API_KEY")
     if openai_key:
         return dspy.LM(
@@ -81,7 +133,6 @@ def create_lm(config: SIOConfig) -> dspy.LM | None:
             max_tokens=config.llm_max_tokens,
         )
 
-    # Priority 5: No LLM available
     logger.info(
         "No LLM backend available. To configure, either: "
         "(1) set llm.model in ~/.sio/config.toml, "
@@ -96,12 +147,6 @@ def create_sub_lm(config: SIOConfig) -> dspy.LM | None:
     """Create a cheap sub-LM for metric evaluation and RLM.
 
     Uses config.llm_sub_model if set, otherwise falls back to the main LM.
-
-    Args:
-        config: SIOConfig instance with optional sub-LM settings.
-
-    Returns:
-        Configured dspy.LM for sub-tasks, or None if no LLM is available.
     """
     if config.llm_sub_model:
         kwargs: dict = {
@@ -109,7 +154,6 @@ def create_sub_lm(config: SIOConfig) -> dspy.LM | None:
             "temperature": config.llm_temperature,
             "max_tokens": config.llm_max_tokens,
         }
-        # Sub-LM inherits API credentials from the main config
         if config.llm_api_key_env:
             api_key = os.environ.get(config.llm_api_key_env)
             if api_key:
@@ -120,5 +164,4 @@ def create_sub_lm(config: SIOConfig) -> dspy.LM | None:
                 kwargs["api_base"] = api_base
         return dspy.LM(**kwargs)
 
-    # Fall back to main LM
     return create_lm(config)

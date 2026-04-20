@@ -199,32 +199,23 @@ def train_recall_module(
             "error": "DSPy not installed. Run: pip install dspy-ai",
         }
 
-    # Configure LLM — prefer Azure deployment
-    if model is None:
-        model = os.environ.get("DSPY_MODEL", None)
-        if model is None:
-            # Auto-detect Azure
-            azure_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
-            azure_key = os.environ.get("AZURE_OPENAI_API_KEY")
-            if azure_endpoint and azure_key:
-                model = "azure/gpt-5-mini"
-            else:
-                model = "gpt-4o-mini"
-
+    # Configure LLM via the factory (SC-022: factory is the single construction point)
     try:
-        lm_kwargs = {}
-        if model.startswith("azure/"):
-            lm_kwargs["api_base"] = os.environ.get("AZURE_OPENAI_ENDPOINT", "")
-            lm_kwargs["api_key"] = os.environ.get("AZURE_OPENAI_API_KEY", "")
-            lm_kwargs["api_version"] = "2024-10-21"
-        lm = dspy.LM(model, **lm_kwargs)
+        from sio.core.dspy.lm_factory import get_task_lm  # noqa: PLC0415
+
+        # If a specific model override was requested, honour it via env var
+        # rather than constructing dspy.LM directly.
+        if model is not None:
+            import os as _os  # noqa: PLC0415
+            _os.environ.setdefault("SIO_TASK_LM", model)
+        lm = get_task_lm()
         dspy.configure(lm=lm)
     except Exception as e:
         return {
             "module": None,
             "metrics": {},
             "output_path": "",
-            "error": f"Failed to configure DSPy LM ({model}): {e}",
+            "error": f"Failed to configure DSPy LM: {e}",
         }
 
     # Build signatures

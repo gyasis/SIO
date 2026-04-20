@@ -43,7 +43,7 @@
 - [x] T012 [P] Write failing tests in `tests/unit/db/test_schema_version.py` covering: seed on first connect, `'applying'` detection refuses to start, `sio db repair` marks `'failed'` (FR-017, R-10).
 - [x] T013 Add `schema_version` table DDL + startup check to `src/sio/core/db/schema.py`; implement `sio db migrate` and `sio db repair` CLI in `src/sio/cli/main.py`.
 - [x] T014 [P] Write failing tests in `tests/unit/db/test_migration_004.py` that run `scripts/migrate_004.py` against a clone of a seeded DB, assert all `ALTER TABLE` + `CREATE INDEX` statements are additive and idempotent (per data-model.md §5).
-- [ ] T015 Write `scripts/migrate_004.py` applying every delta in data-model.md §2 (§2.1 – §2.10), including all hot-read indexes (FR-015); ensure wrapping in one `schema_version` transaction row `(2, now(), 'applying', ...)` → `'applied'`.
+- [x] T015 Write `scripts/migrate_004.py` applying every delta in data-model.md §2 (§2.1 – §2.10), including all hot-read indexes (FR-015); ensure wrapping in one `schema_version` transaction row `(2, now(), 'applying', ...)` → `'applied'`.
 
 ### Atomic write + path allowlist (TDD pairs)
 
@@ -59,16 +59,16 @@
 ### DSPy foundations (TDD pairs — unblock US1 and US9)
 
 - [x] T021 [P] Write failing tests in `tests/unit/dspy/test_lm_factory.py` covering: `get_task_lm()` returns `dspy.LM` with `cache=True`, `get_reflection_lm()` with `cache=False`, env-var overrides, `get_adapter()` provider-aware, grep-of-`src/` finds zero direct `dspy.LM(` outside the factory (FR-041, SC-022).
-- [ ] T022 Implement `src/sio/core/dspy/lm_factory.py::{get_task_lm, get_reflection_lm, get_adapter, configure_default}` per `contracts/dspy-module-api.md` §1; pass T021.
-- [ ] T023 [P] Write failing tests in `tests/unit/dspy/test_signatures.py` asserting `PatternToRule` and `RuleRecallScore` have class docstrings, typed `InputField`/`OutputField`, and pass `dspy.Predict` instantiation smoke test (FR-035).
+- [x] T022 Implement `src/sio/core/dspy/lm_factory.py::{get_task_lm, get_reflection_lm, get_adapter, configure_default}` per `contracts/dspy-module-api.md` §1; pass T021.
+- [x] T023 [P] Write failing tests in `tests/unit/dspy/test_signatures.py` asserting `PatternToRule` and `RuleRecallScore` have class docstrings, typed `InputField`/`OutputField`, and pass `dspy.Predict` instantiation smoke test (FR-035).
 - [ ] T024 Implement `src/sio/core/dspy/signatures.py::{PatternToRule, RuleRecallScore}` per `contracts/dspy-module-api.md` §2.
-- [ ] T025 [P] Write failing tests in `tests/unit/dspy/test_metric_registry.py` asserting the three registered metrics (`exact_match`, `embedding_similarity`, `llm_judge_recall`) each conform to `(gold, pred, trace=None) -> bool | float` (FR-018).
+- [x] T025 [P] Write failing tests in `tests/unit/dspy/test_metric_registry.py` asserting the three registered metrics (`exact_match`, `embedding_similarity`, `llm_judge_recall`) each conform to `(gold, pred, trace=None) -> bool | float` (FR-018).
 - [ ] T026 Implement `src/sio/core/dspy/metrics.py` with `METRIC_REGISTRY`, `@register`, and the three metric functions per `contracts/dspy-module-api.md` §5.
-- [ ] T027 [P] Write failing tests in `tests/unit/dspy/test_assertions.py` asserting `assert_rule_format` and `assert_no_phi` use `dspy.Assert`, produce actionable messages, and trigger backtrack in a mocked predictor (FR-038, R-11).
+- [x] T027 [P] Write failing tests in `tests/unit/dspy/test_assertions.py` asserting `assert_rule_format` and `assert_no_phi` use `dspy.Assert`, produce actionable messages, and trigger backtrack in a mocked predictor (FR-038, R-11).
 - [ ] T028 Implement `src/sio/core/dspy/assertions.py` per `contracts/dspy-module-api.md` §6.
-- [ ] T029 [P] Write failing tests in `tests/unit/dspy/test_datasets.py` asserting every returned `dspy.Example` has `.with_inputs(...)` declared and `get_input_keys()` is non-empty (FR-036, SC-020).
+- [x] T029 [P] Write failing tests in `tests/unit/dspy/test_datasets.py` asserting every returned `dspy.Example` has `.with_inputs(...)` declared and `get_input_keys()` is non-empty (FR-036, SC-020).
 - [ ] T030 Implement `src/sio/core/dspy/datasets.py::build_trainset_for(module_name, limit, offset)` per `contracts/dspy-module-api.md` §4.
-- [ ] T031 [P] Write failing tests in `tests/unit/dspy/test_save_load.py` asserting `program.save(path)` + fresh `program.load(path)` produces identical output on a fixed input (FR-039).
+- [x] T031 [P] Write failing tests in `tests/unit/dspy/test_save_load.py` asserting `program.save(path)` + fresh `program.load(path)` produces identical output on a fixed input (FR-039).
 - [ ] T032 Implement `src/sio/core/dspy/persistence.py::{save_compiled, load_compiled, MODULE_REGISTRY}` per `contracts/dspy-module-api.md` §7.
 
 **Checkpoint**: Foundation ready — user story implementation can now begin in parallel.
@@ -81,9 +81,9 @@
 
 **Independent Test**: After one real hook firing and one `sio optimize` run, (a) `SELECT COUNT(*) FROM sio.db.behavior_invocations` ≥ 38,092; (b) `gold_standards` count > 0; (c) `optimized_modules` has a new row with `active=1` (SC-001, SC-004).
 
-- [ ] T033 [P] [US1] Write failing tests in `tests/unit/db/test_sync.py` covering: full sync copies all rows, second call copies zero, `INSERT OR IGNORE` identity `(platform, session_id, timestamp, tool_name)` is deduped (R-1, FR-002).
-- [ ] T034 [P] [US1] Write failing tests in `tests/unit/db/test_sync_drift.py` covering drift-percentage computation with seeded divergence (supports `sio status` SC-009).
-- [ ] T035 [US1] Implement `src/sio/core/db/sync.py::sync_behavior_invocations(since_timestamp=None)` per `contracts/storage-sync.md` §4; pass T033 and T034.
+- [x] T033 [P] [US1] Write failing tests in `tests/unit/db/test_sync.py` covering: full sync copies all rows, second call copies zero, `INSERT OR IGNORE` identity `(platform, session_id, timestamp, tool_name)` is deduped (R-1, FR-002).
+- [x] T034 [P] [US1] Write failing tests in `tests/unit/db/test_sync_drift.py` covering drift-percentage computation with seeded divergence (supports `sio status` SC-009).
+- [x] T035 [US1] Implement `src/sio/core/db/sync.py::sync_behavior_invocations(since_timestamp=None)` per `contracts/storage-sync.md` §4; pass T033 and T034.
 - [ ] T036 [US1] Write `scripts/migrate_split_brain.py` calling `sync_behavior_invocations(None)` with friendly logging; one-time backfill of ≥ 38,091 legacy rows (FR-002).
 - [ ] T037 [P] [US1] Write failing tests in `tests/integration/test_installer_idempotent.py` running `sio install` twice, asserting per-platform DB untouched and `sio.db` row counts identical (FR-007, L6, SC-014).
 - [ ] T038 [US1] Update `src/sio/adapters/claude_code/installer.py` to: point at `~/.sio/sio.db` for schema, preserve `~/.sio/claude-code/behavior_invocations.db`, call `migrate_split_brain.py`, refuse to recreate legacy DB; pass T037.
