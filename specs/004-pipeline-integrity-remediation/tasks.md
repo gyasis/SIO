@@ -31,7 +31,7 @@
 
 ### Core primitives (TDD pairs)
 
-- [ ] T006 [P] Write failing tests in `tests/unit/util/test_time.py` covering `to_utc_iso()` for `Z` suffix, numeric offset, naive-local (TZ=America/New_York), and `utc_now_iso()` monotonicity (FR-030, R-7).
+- [ ] T006 [P] Write failing tests in `tests/unit/util/test_time.py` covering `to_utc_iso()` for `Z` suffix, numeric offset, naive-local (TZ=America/New_York), and `utc_now_iso()` monotonicity (FR-030, R-7, SC-008).
 - [ ] T007 Implement `src/sio/core/util/time.py` with `to_utc_iso(s) -> str` and `utc_now_iso() -> str`; pass T006 tests.
 - [ ] T008 [P] Write failing tests in `tests/unit/db/test_connect.py` asserting PRAGMAs (`journal_mode=WAL`, `busy_timeout=30000`, `synchronous=NORMAL`, `foreign_keys=ON`) applied by the factory.
 - [ ] T009 Implement `src/sio/core/db/connect.py::open_db(path, read_only=False)` (R-8); pass T008.
@@ -43,7 +43,7 @@
 - [ ] T012 [P] Write failing tests in `tests/unit/db/test_schema_version.py` covering: seed on first connect, `'applying'` detection refuses to start, `sio db repair` marks `'failed'` (FR-017, R-10).
 - [ ] T013 Add `schema_version` table DDL + startup check to `src/sio/core/db/schema.py`; implement `sio db migrate` and `sio db repair` CLI in `src/sio/cli/main.py`.
 - [ ] T014 [P] Write failing tests in `tests/unit/db/test_migration_004.py` that run `scripts/migrate_004.py` against a clone of a seeded DB, assert all `ALTER TABLE` + `CREATE INDEX` statements are additive and idempotent (per data-model.md §5).
-- [ ] T015 Write `scripts/migrate_004.py` applying every delta in data-model.md §2 (§2.1 – §2.10); ensure wrapping in one `schema_version` transaction row `(2, now(), 'applying', ...)` → `'applied'`.
+- [ ] T015 Write `scripts/migrate_004.py` applying every delta in data-model.md §2 (§2.1 – §2.10), including all hot-read indexes (FR-015); ensure wrapping in one `schema_version` transaction row `(2, now(), 'applying', ...)` → `'applied'`.
 
 ### Atomic write + path allowlist (TDD pairs)
 
@@ -90,9 +90,9 @@
 - [ ] T039 [P] [US1] Write failing tests in `tests/unit/arena/test_promote_to_gold.py` covering auto-promotion when `user_satisfied=1 AND correct_outcome=1`, no promotion otherwise (FR-005).
 - [ ] T040 [US1] Implement `promote_to_gold(invocation_id)` in `src/sio/core/arena/gold_standards.py`; wire call into `src/sio/adapters/claude_code/hooks/stop.py` (heartbeat-wrapped).
 - [ ] T041 [US1] Update `src/sio/core/arena/gold_standards.py` read paths to query `~/.sio/sio.db` via the connect factory (currently reads the wrong path per audit C1).
-- [ ] T042 [US1] Implement `src/sio/core/dspy/optimizer.py::run_optimize(module_name, optimizer_name, ...)` skeleton per `contracts/optimizer-selection.md` §3 — GEPA branch only at this step; pass tests registered in T065.
-- [ ] T043 [US1] Wire `sio optimize --module <name> --optimizer gepa|mipro|bootstrap` CLI in `src/sio/cli/main.py` per `contracts/cli-commands.md` § `sio optimize`.
 - [ ] T044 [P] [US1] Write failing integration test `tests/integration/test_closed_loop.py`: seed synthetic invocation → sync → promote → run GEPA on tiny fixture trainset → assert `optimized_modules` row with `active=1` and loadable artifact path (SC-001, SC-004).
+- [ ] T042 [US1] Implement `src/sio/core/dspy/optimizer.py::run_optimize(module_name, optimizer_name, ...)` skeleton per `contracts/optimizer-selection.md` §3 — GEPA branch only at this step; passes T044 (integration) and T065 (unit, Phase 6).
+- [ ] T043 [US1] Wire `sio optimize --module <name> --optimizer gepa|mipro|bootstrap` CLI in `src/sio/cli/main.py` per `contracts/cli-commands.md` § `sio optimize`.
 
 **Checkpoint**: US1 MVP — closed loop flows end-to-end with GEPA.
 
@@ -140,18 +140,23 @@
 
 **Independent Test**: `sio optimize --module suggestion_generator --optimizer {gepa|mipro|bootstrap}` produces a loadable artifact; grep of `src/` returns zero direct `dspy.LM(` calls (SC-017, SC-020, SC-021, SC-022).
 
+**Wave A — failing tests first (all parallelizable):**
+
 - [ ] T059 [P] [US9] Write failing unit test `tests/unit/dspy/test_suggestion_generator.py` covering: class-based signature, `forward()` returns a Prediction with required fields, `dspy.Assert` triggers backtrack on malformed output (FR-035, FR-038).
-- [ ] T060 [US9] Rewrite `src/sio/suggestions/dspy_generator.py` as `SuggestionGenerator(dspy.Module)` using `PatternToRule` signature, `dspy.ChainOfThought`, and `assert_rule_format` + `assert_no_phi` per `contracts/dspy-module-api.md` §3.
 - [ ] T061 [P] [US9] Write failing unit test `tests/unit/dspy/test_recall_evaluator.py` covering: class-based signature, forward returns a `score: float ∈ [0,1]`, metric function matches registry contract.
-- [ ] T062 [US9] Rewrite `src/sio/training/recall_trainer.py` as `RecallEvaluator(dspy.Module)` using `RuleRecallScore`; replace the trivial string-equality metric with `METRIC_REGISTRY["embedding_similarity"]` default (FR-018).
 - [ ] T063 [P] [US9] Write failing unit test `tests/unit/dspy/test_optimizer_registry.py` asserting `OPTIMIZER_REGISTRY` has all three entries and CLI flag mapping is correct.
-- [ ] T064 [US9] Implement all three branches in `src/sio/core/dspy/optimizer.py::run_optimize` per `contracts/optimizer-selection.md` §3 (gepa, mipro, bootstrap); wire `dspy.Evaluate` scoring on held-out eval set; call `save_compiled(compiled, artifact_path)`.
 - [ ] T065 [P] [US9] Write failing integration test `tests/integration/test_dspy_idiomatic.py` running `sio optimize --module suggestion_generator --optimizer <X>` for each of `{gepa, mipro, bootstrap}` on tiny fixture trainset; assert each produces a loadable artifact and a `dspy.Example`-only trainset (SC-017, SC-020).
 - [ ] T066 [P] [US9] Write failing integration test `tests/integration/test_gepa_vs_baseline.py` asserting GEPA-optimized score > baseline score on devset (SC-018).
-- [ ] T067 [US9] Implement `record_optimization_run(...)` + `mark_prior_inactive(module_name)` in `src/sio/core/db/queries.py`; write row with `optimizer_name`, `metric_name`, `trainset_size`, `valset_size`, `score`, `task_lm`, `reflection_lm`, `artifact_path` (data-model.md §2.9).
 - [ ] T068 [P] [US9] Write failing unit test `tests/unit/dspy/test_adapter_selection.py` covering `get_adapter(lm)` returns `ChatAdapter(use_native_function_calling=True)` for `openai/*` / `anthropic/*`, `JSONAdapter` for `ollama/*`, and honors `SIO_FORCE_ADAPTER` env (FR-040, SC-021).
-- [ ] T069 [US9] Pass T068 in `src/sio/core/dspy/lm_factory.py::get_adapter` (already implemented in T022; this task verifies coverage).
 - [ ] T070 [P] [US9] Write failing unit test `tests/unit/dspy/test_single_lm_factory.py` that greps `src/` for forbidden `dspy.LM(` patterns outside `src/sio/core/dspy/lm_factory.py` and test files (FR-041, SC-022).
+
+**Wave B — implementations (run after Wave A is committed):**
+
+- [ ] T060 [US9] Rewrite `src/sio/suggestions/dspy_generator.py` as `SuggestionGenerator(dspy.Module)` using `PatternToRule` signature, `dspy.ChainOfThought`, and `assert_rule_format` + `assert_no_phi` per `contracts/dspy-module-api.md` §3 (FR-035, SC-016); pass T059.
+- [ ] T062 [US9] Rewrite `src/sio/training/recall_trainer.py` as `RecallEvaluator(dspy.Module)` using `RuleRecallScore`; replace the trivial string-equality metric with `METRIC_REGISTRY["embedding_similarity"]` default (FR-018, FR-035, SC-016); pass T061.
+- [ ] T064 [US9] Implement all three branches in `src/sio/core/dspy/optimizer.py::run_optimize` per `contracts/optimizer-selection.md` §3 (gepa, mipro, bootstrap); wire `dspy.Evaluate` scoring on held-out eval set; call `save_compiled(compiled, artifact_path)`; pass T063, T065, T066.
+- [ ] T067 [US9] Implement `record_optimization_run(...)` + `mark_prior_inactive(module_name)` in `src/sio/core/db/queries.py`; write row with `optimizer_name`, `metric_name`, `trainset_size`, `valset_size`, `score`, `task_lm`, `reflection_lm`, `artifact_path` (data-model.md §2.9).
+- [ ] T069 [US9] Verify `src/sio/core/dspy/lm_factory.py::get_adapter` passes T068 (factory was implemented in T022; this task confirms full adapter coverage).
 - [ ] T071 [US9] Sweep `src/` and refactor any direct `dspy.LM(...)` calls found by T070 to use the factory; pass T070.
 - [ ] T072 [US9] Instrument `SuggestionGenerator` with assertion backtrack counting; emit count per invocation into `suggestions.instrumentation_json` (FR-029, SC-019).
 - [ ] T073 [US9] Update `pyproject.toml` / `CLAUDE.md` stating `dspy-ai>=3.1.3` floor + DSPy-first adoption note.
@@ -224,7 +229,8 @@
 
 - [ ] T097 [P] [US7] Write failing unit test `tests/unit/clustering/test_deterministic_slugs.py` covering reorder invariance and one-error-added stability via Jaccard remap (FR-014, R-5).
 - [ ] T098 [US7] Rewrite `src/sio/core/clustering/pattern_clusterer.py` slug algorithm: centroid-hash `<toptype>_<10hex>` (R-5); persist `patterns.pattern_id` in migration-aware way.
-- [ ] T099 [US7] Write `scripts/remap_ground_truth_slugs.py`: Jaccard-overlap remap from old to new slugs; populate `ground_truth.remapped_from_pattern_id` audit column.
+- [ ] T099a [P] [US7] Write failing unit test `tests/unit/clustering/test_slug_remap.py` covering: Jaccard overlap ≥ 0.5 between old and new pattern member sets → remap accepted and `ground_truth.remapped_from_pattern_id` populated; < 0.5 → rejected (no FK change); identical sets → remap idempotent (FR-014, R-5).
+- [ ] T099 [US7] Write `scripts/remap_ground_truth_slugs.py`: Jaccard-overlap remap from old to new slugs; populate `ground_truth.remapped_from_pattern_id` audit column; pass T099a.
 - [ ] T100 [P] [US7] Write failing unit test `tests/unit/clustering/test_centroid_reuse.py` covering BLOB format `(dim, model_hash, vector)`, hit skips recompute, model-upgrade invalidates (FR-032, R-9, SC-011).
 - [ ] T101 [US7] Implement centroid BLOB pack/unpack in `src/sio/core/clustering/pattern_clusterer.py`; reuse when `centroid_model_version` matches current fastembed version; recompute otherwise.
 - [ ] T102 [P] [US7] Write failing unit test `tests/unit/clustering/test_declining_grade.py` asserting a pattern with stale latest-error transitions to `'declining'` (FR-023, M4).
@@ -260,7 +266,7 @@
 - [ ] T110 [P] [US10] Run `adversarial-bug-hunter` agent #1 (targeted scan of Phase 1/2/3 touched files) against HEAD; save report to `specs/004-pipeline-integrity-remediation/research/audit_hunter1.md`.
 - [ ] T111 [P] [US10] Run `adversarial-bug-hunter` agent #2 (general codebase scan) against HEAD; save report to `specs/004-pipeline-integrity-remediation/research/audit_hunter2.md`.
 - [ ] T112 [US10] Consolidate findings; assert zero CRITICAL / HIGH. Any new MEDIUM / LOW → open follow-up PRD; do NOT block this feature.
-- [ ] T113 [US10] Update `PRD-pipeline-integrity-remediation.md` changelog section with file:line citation for each of the 34 original findings (FR-033).
+- [ ] T113 [US10] Update `PRD-pipeline-integrity-remediation.md` changelog section with file:line citation for each of the 34 original findings; confirm zero "deferred" markers remain anywhere in the PRD (FR-033, SC-015).
 
 **Checkpoint**: US10 done — re-audit clean; every finding closed.
 
@@ -377,5 +383,5 @@ Stable slugs, suggestion quality tuning, adversarial re-audit, release polish (T
 - [x] MVP scope (Increment 1) explicitly defined
 - [x] File paths absolute-relative to repo root (`src/sio/...`, `tests/...`, `scripts/...`)
 
-**Total tasks**: 119
-**Per-story count**: Setup 5 · Foundational 27 · US1 12 · US2 8 · US3 6 · US9 15 · US4 6 · US5 12 · US6 5 · US7 9 · US8 4 · US10 4 · Polish 6
+**Total tasks**: 120
+**Per-story count**: Setup 5 · Foundational 27 · US1 12 · US2 8 · US3 6 · US9 15 · US4 6 · US5 12 · US6 5 · US7 10 · US8 4 · US10 4 · Polish 6
