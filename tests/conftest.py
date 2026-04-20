@@ -1,10 +1,14 @@
 """Shared pytest fixtures for SIO test suite."""
 
 import json
+import shutil
+import sqlite3
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
+import numpy as np
 import pytest
 
 
@@ -509,3 +513,125 @@ def sample_error_records():
         return records
 
     return _make
+
+
+# ---------------------------------------------------------------------------
+# T005: 004-pipeline-integrity-remediation fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def tmp_sio_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Clone of ~/.sio/sio.db sandboxed in tmp_path with heavy rows trimmed.
+
+    Copies the live DB if it exists, deletes rows beyond rowid 1000 in the
+    two heaviest tables, and sets SIO_DB_PATH so the app under test uses the
+    clone instead of the real store.
+
+    Skips (not fails) the test when no live DB is present so CI stays green.
+    """
+    src = Path.home() / ".sio" / "sio.db"
+    if not src.exists():
+        pytest.skip("no live ~/.sio/sio.db to clone from")
+    dst = tmp_path / "sio.db"
+    shutil.copy2(src, dst)
+    con = sqlite3.connect(str(dst))
+    try:
+        con.execute("DELETE FROM error_records WHERE rowid > 1000")
+        con.execute("DELETE FROM flow_events WHERE rowid > 1000")
+        con.commit()
+    except sqlite3.OperationalError:
+        # Tables may not exist in older schemas — not a blocker.
+        con.rollback()
+    finally:
+        con.close()
+    monkeypatch.setenv("SIO_DB_PATH", str(dst))
+    return dst
+
+
+@pytest.fixture
+def tmp_platform_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Empty per-platform behavior_invocations.db under tmp_path.
+
+    Creates the directory structure mirroring ~/.sio/claude-code/ and
+    initialises the DB with the platform schema (if the helper exists) or
+    an empty WAL-mode DB.  Sets SIO_PLATFORM_DB_PATH for the app under test.
+    """
+    path = tmp_path / "claude-code" / "behavior_invocations.db"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        from sio.core.db.schema import create_platform_schema
+        create_platform_schema(path)
+    except (ImportError, AttributeError):
+        # create_platform_schema not yet implemented; just create an empty WAL DB.
+        con = sqlite3.connect(str(path))
+        con.execute("PRAGMA journal_mode=WAL")
+        con.commit()
+        con.close()
+    monkeypatch.setenv("SIO_PLATFORM_DB_PATH", str(path))
+    return path
+
+
+@pytest.fixture
+def mock_lm(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Patch dspy.LM.__call__ to return deterministic mocked responses.
+
+    Returns the responses dict; callers can pre-populate it keyed on the
+    first 80 characters of the prompt to control what the mock returns.
+
+    Example::
+
+        def test_something(mock_lm):
+            mock_lm["Generate a rule"] = "mocked rule text"
+    """
+    import dspy
+
+    responses: dict[str, Any] = {}
+
+    def _fake_call(self: Any, prompt: str, **kwargs: Any) -> list[Any]:
+        key = prompt[:80] if isinstance(prompt, str) else str(prompt)[:80]
+        return [responses.get(key, "mocked")]
+
+    monkeypatch.setattr(dspy.LM, "__call__", _fake_call)
+    return responses
+
+
+@pytest.fixture
+def fake_fastembed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Replace the SIO embedder with a deterministic stub returning ones.
+
+    Patches ``sio.core.clustering.embedder.embed_texts`` (when the module
+    exists) and a fallback ``sio.core.embedder.embed_texts`` path, so any
+    code that imports either will receive ``np.ones((N, 384), float32)``.
+    """
+
+    def _fake_embed(texts: list[str]) -> "np.ndarray":
+        return np.ones((len(texts), 384), dtype=np.float32)
+
+    for module_path in (
+        "sio.core.clustering.embedder",
+        "sio.core.embedder",
+    ):
+        try:
+            import importlib
+            mod = importlib.import_module(module_path)
+            monkeypatch.setattr(mod, "embed_texts", _fake_embed)
+        except (ImportError, AttributeError):
+            pass  # Module not yet created; silently skip.
+
+
+@pytest.fixture
+def freeze_utc_now(monkeypatch: pytest.MonkeyPatch) -> str:
+    """Patch sio.core.util.time.utc_now_iso to return a fixed timestamp.
+
+    Returns the frozen ISO-8601 string so tests can assert against it.
+    """
+    FROZEN = "2026-04-20T12:00:00+00:00"
+
+    try:
+        import sio.core.util.time as _time_mod
+        monkeypatch.setattr(_time_mod, "utc_now_iso", lambda: FROZEN)
+    except ImportError:
+        pass  # Module not yet implemented; fixture is a no-op in that case.
+
+    return FROZEN

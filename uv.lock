@@ -2712,6 +2712,11 @@ openai = [
 parquet = [
     { name = "pandas" },
 ]
+test = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+]
 torch = [
     { name = "torch" },
 ]
@@ -2724,15 +2729,18 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.24" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.0" },
     { name = "pandas", marker = "extra == 'parquet'", specifier = ">=2.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=8" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0" },
+    { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=4.0" },
     { name = "python-dateutil", specifier = ">=2.8" },
     { name = "rich", specifier = ">=13.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
+    { name = "ruff", marker = "extra == 'test'", specifier = ">=0.4" },
     { name = "sio", extras = ["torch", "openai", "parquet"], marker = "extra == 'all'" },
     { name = "torch", marker = "extra == 'torch'", specifier = ">=2.0" },
 ]
-provides-extras = ["torch", "openai", "parquet", "all", "dev"]
+provides-extras = ["torch", "openai", "parquet", "all", "test", "dev"]
 
 [[package]]
 name = "six"

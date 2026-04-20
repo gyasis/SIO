@@ -15,11 +15,11 @@
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-- [ ] T001 Verify toolchain: `python --version` ≥ 3.11, `uv --version`, `sqlite3 --version` ≥ 3.35 (for WAL + `ATTACH`). Document versions in `specs/004-pipeline-integrity-remediation/ENV_SETUP.md`.
-- [ ] T002 Create missing directory skeleton with `__init__.py` files: `src/sio/core/dspy/`, `src/sio/core/util/`, `src/sio/core/db/` (if missing), `src/sio/autoresearch/`, `scripts/` (if missing), and test dirs `tests/unit/{dspy,db,clustering,applier,mining,hooks,util,constants}/`, `tests/integration/`.
-- [ ] T003 [P] Add / pin deps in `pyproject.toml`: `dspy-ai>=3.1.3`, `fastembed>=0.2`, `numpy>=1.24`, `click>=8.1`, `rich>=13.0`, test extras `pytest>=8`, `pytest-cov`, `ruff>=0.4`. Run `uv sync --all-extras`.
+- [x] T001 Verify toolchain: `python --version` ≥ 3.11, `uv --version`, `sqlite3 --version` ≥ 3.35 (for WAL + `ATTACH`). Document versions in `specs/004-pipeline-integrity-remediation/ENV_SETUP.md`.
+- [x] T002 Create missing directory skeleton with `__init__.py` files: `src/sio/core/dspy/`, `src/sio/core/util/`, `src/sio/core/db/` (if missing), `src/sio/autoresearch/`, `scripts/` (if missing), and test dirs `tests/unit/{dspy,db,clustering,applier,mining,hooks,util,constants}/`, `tests/integration/`.
+- [x] T003 [P] Add / pin deps in `pyproject.toml`: `dspy-ai>=3.1.3`, `fastembed>=0.2`, `numpy>=1.24`, `click>=8.1`, `rich>=13.0`, test extras `pytest>=8`, `pytest-cov`, `ruff>=0.4`. Run `uv sync --all-extras`.
 - [ ] T004 [P] Configure `ruff.toml` to cover new paths and align with 99-char line limit; confirm `pytest.ini` / `pyproject.toml` `[tool.pytest.ini_options]` discovers `tests/unit` and `tests/integration`.
-- [ ] T005 Create shared test fixtures in `tests/conftest.py`: `tmp_sio_db`, `tmp_platform_db`, `mock_lm`, `fake_fastembed`, `freeze_utc_now` per `specs/004-pipeline-integrity-remediation/quickstart.md` §4.
+- [x] T005 Create shared test fixtures in `tests/conftest.py`: `tmp_sio_db`, `tmp_platform_db`, `mock_lm`, `fake_fastembed`, `freeze_utc_now` per `specs/004-pipeline-integrity-remediation/quickstart.md` §4.
 
 **Checkpoint**: Environment ready; test harness loadable.
 
@@ -31,16 +31,16 @@
 
 ### Core primitives (TDD pairs)
 
-- [ ] T006 [P] Write failing tests in `tests/unit/util/test_time.py` covering `to_utc_iso()` for `Z` suffix, numeric offset, naive-local (TZ=America/New_York), and `utc_now_iso()` monotonicity (FR-030, R-7, SC-008).
-- [ ] T007 Implement `src/sio/core/util/time.py` with `to_utc_iso(s) -> str` and `utc_now_iso() -> str`; pass T006 tests.
-- [ ] T008 [P] Write failing tests in `tests/unit/db/test_connect.py` asserting PRAGMAs (`journal_mode=WAL`, `busy_timeout=30000`, `synchronous=NORMAL`, `foreign_keys=ON`) applied by the factory.
-- [ ] T009 Implement `src/sio/core/db/connect.py::open_db(path, read_only=False)` (R-8); pass T008.
-- [ ] T010 [P] Write failing test in `tests/unit/constants/test_default_platform.py` asserting `DEFAULT_PLATFORM == "claude-code"` and grep-of-`src/` finds zero string-literal `"claude-code"` outside `src/sio/core/constants.py` and test files (FR-031, SC-022 parity).
+- [x] T006 [P] Write failing tests in `tests/unit/util/test_time.py` covering `to_utc_iso()` for `Z` suffix, numeric offset, naive-local (TZ=America/New_York), and `utc_now_iso()` monotonicity (FR-030, R-7, SC-008).
+- [x] T007 Implement `src/sio/core/util/time.py` with `to_utc_iso(s) -> str` and `utc_now_iso() -> str`; pass T006 tests.
+- [x] T008 [P] Write failing tests in `tests/unit/db/test_connect.py` asserting PRAGMAs (`journal_mode=WAL`, `busy_timeout=30000`, `synchronous=NORMAL`, `foreign_keys=ON`) applied by the factory.
+- [x] T009 Implement `src/sio/core/db/connect.py::open_db(path, read_only=False)` (R-8); pass T008.
+- [x] T010 [P] Write failing test in `tests/unit/constants/test_default_platform.py` asserting `DEFAULT_PLATFORM == "claude-code"` and grep-of-`src/` finds zero string-literal `"claude-code"` outside `src/sio/core/constants.py` and test files (FR-031, SC-022 parity).
 - [ ] T011 Implement `src/sio/core/constants.py` exporting `DEFAULT_PLATFORM` and refactor every existing `"claude-code"` literal in `src/` to import it.
 
 ### Schema and migration (TDD pairs)
 
-- [ ] T012 [P] Write failing tests in `tests/unit/db/test_schema_version.py` covering: seed on first connect, `'applying'` detection refuses to start, `sio db repair` marks `'failed'` (FR-017, R-10).
+- [x] T012 [P] Write failing tests in `tests/unit/db/test_schema_version.py` covering: seed on first connect, `'applying'` detection refuses to start, `sio db repair` marks `'failed'` (FR-017, R-10).
 - [ ] T013 Add `schema_version` table DDL + startup check to `src/sio/core/db/schema.py`; implement `sio db migrate` and `sio db repair` CLI in `src/sio/cli/main.py`.
 - [ ] T014 [P] Write failing tests in `tests/unit/db/test_migration_004.py` that run `scripts/migrate_004.py` against a clone of a seeded DB, assert all `ALTER TABLE` + `CREATE INDEX` statements are additive and idempotent (per data-model.md §5).
 - [ ] T015 Write `scripts/migrate_004.py` applying every delta in data-model.md §2 (§2.1 – §2.10), including all hot-read indexes (FR-015); ensure wrapping in one `schema_version` transaction row `(2, now(), 'applying', ...)` → `'applied'`.

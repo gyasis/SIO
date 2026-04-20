@@ -23,8 +23,13 @@ torch = ["torch>=2.0"]
 openai = ["openai>=1.0"]
 parquet = ["pandas>=2.0"]
 all = ["sio[torch,openai,parquet]"]
+test = [
+    "pytest>=8",
+    "pytest-cov>=4.0",
+    "ruff>=0.4",
+]
 dev = [
-    "pytest>=7.0",
+    "pytest>=8",
     "pytest-cov>=4.0",
     "ruff>=0.4",
 ]
