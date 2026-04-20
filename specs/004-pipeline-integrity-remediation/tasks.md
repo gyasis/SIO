@@ -156,8 +156,8 @@
 - [x] T067 [US9] Rewrite `src/sio/training/recall_trainer.py` as `RecallEvaluator(dspy.Module)` using `RuleRecallScore`; replace the trivial string-equality metric with `METRIC_REGISTRY["embedding_similarity"]` default (FR-018, FR-035, SC-016); pass T060.
 - [x] T068 [US9] Implement all three branches in `src/sio/core/dspy/optimizer.py::run_optimize` per `contracts/optimizer-selection.md` §3 (gepa, mipro, bootstrap); wire `dspy.Evaluate` scoring on held-out eval set; call `save_compiled(compiled, artifact_path)`; pass T061, T062, T063.
 - [x] T069 [US9] Implement `record_optimization_run(...)` + `mark_prior_inactive(module_name)` in `src/sio/core/db/queries.py`; write row with `optimizer_name`, `metric_name`, `trainset_size`, `valset_size`, `score`, `task_lm`, `reflection_lm`, `artifact_path` (data-model.md §2.9).
-- [ ] T070 [US9] Verify `src/sio/core/dspy/lm_factory.py::get_adapter` passes T064 (factory was implemented in T022; this task confirms full adapter coverage).
-- [ ] T071 [US9] Sweep `src/` and refactor any direct `dspy.LM(...)` calls found by T065 to use the factory; pass T065.
+- [x] T070 [US9] Verify `src/sio/core/dspy/lm_factory.py::get_adapter` passes T064 (factory was implemented in T022; this task confirms full adapter coverage).
+- [x] T071 [US9] Sweep `src/` and refactor any direct `dspy.LM(...)` calls found by T065 to use the factory; pass T065.
 - [x] T072 [US9] Instrument `SuggestionGenerator` with assertion backtrack counting; emit count per invocation into `suggestions.instrumentation_json` (FR-029, SC-019).
 - [x] T073 [US9] Update `pyproject.toml` / `CLAUDE.md` stating `dspy-ai>=3.1.3` floor + DSPy-first adoption note.
 
@@ -172,11 +172,11 @@
 **Independent Test**: After 24 h of schedule activation, `autoresearch_txlog` has ≥ 5 rows; at least one row has `outcome='pending_approval'` for an unvalidated candidate (SC-005).
 
 - [x] T074 [P] [US4] Write failing integration test `tests/integration/test_autoresearch_cadence.py`: seed candidates with mixed `arena_passed`, run `sio autoresearch --run-once` 5×, assert one row per firing with correct outcome categorization.
-- [ ] T075 [US4] Implement `src/sio/autoresearch/scheduler.py::run_once()` — selects candidates, evaluates metric, writes `autoresearch_txlog` row per firing (FR-006).
-- [ ] T076 [US4] Implement approval gate: auto-apply only when `arena_passed=1 AND (operator_approved OR --auto-approve-above <threshold>)`; else mark `outcome='pending_approval'`.
-- [ ] T077 [US4] Implement `sio autoresearch --run-once` and `sio autoresearch --install-schedule {cron|systemd}` CLI in `src/sio/cli/main.py`.
-- [ ] T078 [US4] Write `scripts/autoresearch_cron.py` thin wrapper invoking `sio autoresearch --run-once`.
-- [ ] T079 [US4] Write `scripts/install_autoresearch_systemd.sh` fallback installer emitting a user systemd unit per R-3.
+- [x] T075 [US4] Implement `src/sio/autoresearch/scheduler.py::run_once()` — selects candidates, evaluates metric, writes `autoresearch_txlog` row per firing (FR-006).
+- [x] T076 [US4] Implement approval gate: auto-apply only when `arena_passed=1 AND (operator_approved OR --auto-approve-above <threshold>)`; else mark `outcome='pending_approval'`.
+- [x] T077 [US4] Implement `sio autoresearch --run-once` and `sio autoresearch --install-schedule {cron|systemd}` CLI in `src/sio/cli/main.py`.
+- [x] T078 [US4] Write `scripts/autoresearch_cron.py` thin wrapper invoking `sio autoresearch --run-once`.
+- [x] T079 [US4] Write `scripts/install_autoresearch_systemd.sh` fallback installer emitting a user systemd unit per R-3.
 
 **Checkpoint**: US4 done — autoresearch accumulates history without human intervention.
 
@@ -188,8 +188,8 @@
 
 **Independent Test**: Full mine twice → same counts; 100 MB file mines with RSS < 500 MB; subagent rows have `parent_session_id` non-null and are excluded from top-level aggregates by default (SC-006, SC-007).
 
-- [ ] T080 [P] [US5] Write failing unit test `tests/unit/mining/test_streaming_parse.py` asserting `jsonl_parser.iter_events(path)` streams (use memory-tracking) and parses 10k-line fixture without `read_text()` call (FR-009).
-- [ ] T081 [US5] Refactor `src/sio/mining/jsonl_parser.py` to stream via `for line in open(path, 'rb')` (replaces `file_path.read_text()` at line 417).
+- [x] T080 [P] [US5] Write failing unit test `tests/unit/mining/test_streaming_parse.py` asserting `jsonl_parser.iter_events(path)` streams (use memory-tracking) and parses 10k-line fixture without `read_text()` call (FR-009).
+- [x] T081 [US5] Refactor `src/sio/mining/jsonl_parser.py` to stream via `for line in open(path, 'rb')` (replaces `file_path.read_text()` at line 417).
 - [ ] T082 [P] [US5] Write failing unit test `tests/unit/mining/test_byte_offset.py` covering: append-and-remine reads only new bytes, truncation-rotation resets offset via mtime check (FR-010, R-6).
 - [ ] T083 [US5] Add `last_offset`, `last_mtime` reads/writes in `src/sio/mining/pipeline.py` wrapping ingest loop; update `processed_sessions` in same transaction.
 - [ ] T084 [P] [US5] Write failing unit test `tests/unit/mining/test_subagent_link.py` covering both path patterns (`subagents/<parent>/<child>.jsonl` and `<parent>__subagent_<child>.jsonl`) → sets `is_subagent=1, parent_session_id=<parent>` (FR-011, R-13).

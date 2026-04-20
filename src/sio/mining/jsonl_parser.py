@@ -42,8 +42,10 @@ Each returned dict has the following keys:
 from __future__ import annotations
 
 import json
+import logging
+import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Generator
 
 # ---------------------------------------------------------------------------
 # Internal: tool_result tracking
@@ -384,12 +386,98 @@ def _dispatch(
     return []
 
 
+_log = logging.getLogger(__name__)
+
+GB = 1024 * 1024 * 1024
+
+
+def iter_events(
+    path: Path,
+    start_offset: int = 0,
+) -> Generator[tuple[dict, int], None, None]:
+    """Stream events from a JSONL transcript file, yielding ``(event_dict, byte_offset)``
+    tuples.
+
+    This is the Principle-X compliant streaming parser (FR-009, R-6).
+    It NEVER reads the whole file into memory — it opens the file in binary mode
+    and iterates line-by-line.
+
+    Args:
+        path: Path to the ``.jsonl`` file.
+        start_offset: Byte offset at which to start reading (for resume).
+            Bytes before this offset are skipped.  Defaults to 0.
+
+    Yields:
+        ``(event_dict, end_byte_offset)`` — the parsed event dict and the
+        byte offset immediately after the line that produced it.  Callers
+        can store ``end_byte_offset`` and pass it back as ``start_offset``
+        on the next call to resume from where they left off.
+
+    Notes:
+        - Malformed JSON lines are silently skipped (logged at DEBUG level).
+        - Files > 1 GB emit a WARNING but are not skipped.
+        - The ``tool_use_map`` is maintained across lines within a single call
+          so that ``tool_result`` lines can back-fill the matching ``tool_use``
+          record's output field.
+    """
+    try:
+        file_size = os.path.getsize(path)
+    except OSError:
+        return
+
+    if file_size > GB:
+        _log.warning(
+            "JSONL file exceeds 1 GB (%d bytes): %s — proceeding with streaming",
+            file_size,
+            path,
+        )
+
+    tool_use_map: _ToolUseMap = {}
+
+    try:
+        fh = open(path, "rb")  # noqa: WPS515 — explicit open for streaming control
+    except (OSError, IOError) as exc:
+        _log.debug("Cannot open %s: %s", path, exc)
+        return
+
+    with fh:
+        # Seek to start_offset, but be careful not to split a multi-byte character.
+        # Since we're in binary mode, we seek to the given byte offset and then
+        # discard the (likely partial) first line.
+        if start_offset > 0:
+            fh.seek(start_offset)
+            # Discard the partial line at the seek point (it may be mid-line)
+            fh.readline()
+
+        for raw_line in fh:
+            end_offset = fh.tell()
+            stripped = raw_line.strip()
+            if not stripped:
+                continue
+
+            try:
+                raw = json.loads(stripped)
+            except (json.JSONDecodeError, ValueError):
+                _log.debug("Skipping malformed JSONL line at offset %d in %s", end_offset, path)
+                continue
+
+            if not isinstance(raw, dict):
+                continue
+
+            new_records = _dispatch(raw, tool_use_map)
+            for record in new_records:
+                yield record, end_offset
+
+
 def parse_jsonl(file_path: Path) -> list[dict]:
     """Parse a Claude Code JSONL transcript file into a list of normalised dicts.
 
     Handles both the real Claude Code wire format and the legacy test-fixture
     format.  Corrupt, empty, or non-object lines are silently skipped.
     The function never raises regardless of file contents.
+
+    Internally delegates to :func:`iter_events` for streaming compliance
+    (FR-009, R-6, Principle X) — does not call ``read_text()``.
 
     Args:
         file_path: Path to the ``.jsonl`` file to parse.
@@ -410,25 +498,4 @@ def parse_jsonl(file_path: Path) -> list[dict]:
         >>> records[0]["timestamp"]
         '2026-02-25T10:00:00Z'
     """
-    records: list[dict] = []
-    tool_use_map: _ToolUseMap = {}
-
-    try:
-        text = file_path.read_text(encoding="utf-8")
-    except (OSError, IOError):
-        return records
-
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-
-        try:
-            raw = json.loads(stripped)
-        except (json.JSONDecodeError, ValueError):
-            continue
-
-        new_records = _dispatch(raw, tool_use_map)
-        records.extend(new_records)
-
-    return records
+    return [event for event, _offset in iter_events(file_path)]

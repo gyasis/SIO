@@ -4219,5 +4219,66 @@ def db_repair(db_path, yes):
     click.echo(f"Marked {len(rows)} migration(s) as 'failed'. SIO can now start.")
 
 
+# ---------------------------------------------------------------------------
+# autoresearch commands (T077 — US4)
+# ---------------------------------------------------------------------------
+
+
+@cli.group()
+def autoresearch():
+    """Autoresearch pipeline — automated suggestion evaluation and scheduling."""
+
+
+@autoresearch.command("run-once")
+@click.option(
+    "--auto-approve-above",
+    default=None,
+    type=float,
+    help=(
+        "When set, suggestions with arena_passed=1 and metric_score >= this "
+        "threshold are automatically promoted. Default: None (pending approval)."
+    ),
+)
+@click.option("--db-path", default=None, help="Path to sio.db (overrides SIO_DB_PATH).")
+def autoresearch_run_once_cmd(auto_approve_above, db_path):
+    """Evaluate active suggestions once and record outcomes in autoresearch_txlog."""
+    import json
+
+    from sio.autoresearch.scheduler import autoresearch_run_once
+
+    conn = _db_conn(db_path) if db_path else _get_sio_db_conn()
+    try:
+        result = autoresearch_run_once(conn, auto_approve_above=auto_approve_above)
+    finally:
+        conn.close()
+
+    click.echo(json.dumps(result, indent=2))
+
+
+@autoresearch.command("install-schedule")
+@click.argument("method", type=click.Choice(["cron", "systemd"]), default="systemd")
+def autoresearch_install_schedule(method):
+    """Install the autoresearch recurring schedule (cron or systemd timer)."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    scripts_dir = Path(__file__).resolve().parents[3] / "scripts"
+
+    if method == "systemd":
+        script = scripts_dir / "install_autoresearch_systemd.sh"
+        if not script.exists():
+            click.echo(f"Systemd install script not found: {script}", err=True)
+            sys.exit(1)
+        result = subprocess.run(["bash", str(script)], check=False)
+        sys.exit(result.returncode)
+    else:
+        click.echo(
+            "Cron install: add the following entry to your crontab (crontab -e):\n"
+            "  0 4 * * * python -m scripts.autoresearch_cron\n"
+            "Or run: bash scripts/install_autoresearch_systemd.sh for systemd.",
+        )
+
+
 if __name__ == "__main__":
     cli()
