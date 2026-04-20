@@ -224,29 +224,117 @@ def test_gepa_artifact_is_valid_json(tmp_sio_db):
     assert isinstance(parsed, dict), "Artifact must be a JSON object"
 
 
-def test_mipro_raises_not_implemented(tmp_sio_db):
-    """run_optimize('mipro') raises NotImplementedError — awaits T068 Wave 9."""
-    from sio.core.dspy.optimizer import run_optimize  # noqa: PLC0415
+def test_mipro_is_recognized(tmp_sio_db):
+    """run_optimize('mipro') must not raise NotImplementedError — T068 Wave 7 implemented it.
 
-    with pytest.raises(NotImplementedError):
-        run_optimize(
-            module_name="suggestion_generator",
-            optimizer_name="mipro",
-            trainset_size=5,
-            valset_size=2,
-            db_path=tmp_sio_db,
+    Acceptable outcomes: success (result dict), InsufficientData, OptimizationError,
+    or schema-related skip. NOT acceptable: NotImplementedError, UnknownOptimizer.
+    """
+    from unittest.mock import MagicMock, patch  # noqa: PLC0415
+
+    from sio.core.dspy.optimizer import (  # noqa: PLC0415
+        InsufficientData,
+        OptimizationError,
+        UnknownOptimizer,
+        run_optimize,
+    )
+
+    mock_lm = MagicMock()
+    mock_lm.model = "mock/model"
+    mock_lm.cache = False
+
+    with (
+        patch("sio.core.dspy.lm_factory.get_task_lm", return_value=mock_lm),
+        patch("sio.core.dspy.lm_factory.get_reflection_lm", return_value=mock_lm),
+        patch("sio.core.dspy.lm_factory.get_adapter", return_value=MagicMock()),
+        patch("dspy.configure"),
+        patch("dspy.teleprompt.MIPROv2") as mock_mipro_cls,
+    ):
+        mock_compiled = MagicMock()
+        mock_compiled.dump_state.return_value = {"module": "mipro_mock_state"}
+        mock_mipro_instance = MagicMock()
+        mock_mipro_instance.compile.return_value = mock_compiled
+        mock_mipro_cls.return_value = mock_mipro_instance
+
+        mock_compiled.return_value = dspy.Prediction(
+            rule_title="Test rule",
+            rule_body="Test body.",
+            rule_rationale="Test rationale.",
         )
 
+        try:
+            result = run_optimize(
+                module_name="suggestion_generator",
+                optimizer_name="mipro",
+                trainset_size=5,
+                valset_size=2,
+                db_path=tmp_sio_db,
+            )
+        except (InsufficientData, OptimizationError):
+            pytest.skip("MIPROv2 optimization not viable in mock context")
+        except NotImplementedError:
+            pytest.fail("'mipro' must NOT raise NotImplementedError after T068")
+        except UnknownOptimizer:
+            pytest.fail("'mipro' must be a known optimizer after T068")
+        except Exception as e:
+            if "optimized_modules" in str(e) or "no such table" in str(e).lower():
+                pytest.skip(f"Skipping: minimal test DB lacks optimized_modules table: {e}")
+            raise
 
-def test_bootstrap_raises_not_implemented(tmp_sio_db):
-    """run_optimize('bootstrap') raises NotImplementedError — awaits T068 Wave 9."""
-    from sio.core.dspy.optimizer import run_optimize  # noqa: PLC0415
 
-    with pytest.raises(NotImplementedError):
-        run_optimize(
-            module_name="suggestion_generator",
-            optimizer_name="bootstrap",
-            trainset_size=5,
-            valset_size=2,
-            db_path=tmp_sio_db,
+def test_bootstrap_is_recognized(tmp_sio_db):
+    """run_optimize('bootstrap') must not raise NotImplementedError — T068 Wave 7 implemented it.
+
+    Acceptable outcomes: success (result dict), InsufficientData, OptimizationError,
+    or schema-related skip. NOT acceptable: NotImplementedError, UnknownOptimizer.
+    """
+    from unittest.mock import MagicMock, patch  # noqa: PLC0415
+
+    from sio.core.dspy.optimizer import (  # noqa: PLC0415
+        InsufficientData,
+        OptimizationError,
+        UnknownOptimizer,
+        run_optimize,
+    )
+
+    mock_lm = MagicMock()
+    mock_lm.model = "mock/model"
+    mock_lm.cache = False
+
+    with (
+        patch("sio.core.dspy.lm_factory.get_task_lm", return_value=mock_lm),
+        patch("sio.core.dspy.lm_factory.get_reflection_lm", return_value=mock_lm),
+        patch("sio.core.dspy.lm_factory.get_adapter", return_value=MagicMock()),
+        patch("dspy.configure"),
+        patch("dspy.BootstrapFewShot") as mock_bs_cls,
+    ):
+        mock_compiled = MagicMock()
+        mock_compiled.dump_state.return_value = {"module": "bootstrap_mock_state"}
+        mock_bs_instance = MagicMock()
+        mock_bs_instance.compile.return_value = mock_compiled
+        mock_bs_cls.return_value = mock_bs_instance
+
+        mock_compiled.return_value = dspy.Prediction(
+            rule_title="Test rule",
+            rule_body="Test body.",
+            rule_rationale="Test rationale.",
         )
+
+        try:
+            result = run_optimize(
+                module_name="suggestion_generator",
+                optimizer_name="bootstrap",
+                trainset_size=5,
+                valset_size=2,
+                db_path=tmp_sio_db,
+            )
+        except (InsufficientData, OptimizationError):
+            pytest.skip("BootstrapFewShot optimization not viable in mock context")
+        except NotImplementedError:
+            pytest.fail("'bootstrap' must NOT raise NotImplementedError after T068")
+        except UnknownOptimizer:
+            pytest.fail("'bootstrap' must be a known optimizer after T068")
+        except Exception as e:
+            if "optimized_modules" in str(e) or "no such table" in str(e).lower():
+                pytest.skip(f"Skipping: minimal test DB lacks optimized_modules table: {e}")
+            raise

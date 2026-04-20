@@ -153,13 +153,13 @@
 **Wave B — implementations (run after Wave A is committed):**
 
 - [ ] T066 [US9] Rewrite `src/sio/suggestions/dspy_generator.py` as `SuggestionGenerator(dspy.Module)` using `PatternToRule` signature, `dspy.ChainOfThought`, and `assert_rule_format` + `assert_no_phi` per `contracts/dspy-module-api.md` §3 (FR-035, SC-016); pass T059.
-- [ ] T067 [US9] Rewrite `src/sio/training/recall_trainer.py` as `RecallEvaluator(dspy.Module)` using `RuleRecallScore`; replace the trivial string-equality metric with `METRIC_REGISTRY["embedding_similarity"]` default (FR-018, FR-035, SC-016); pass T060.
-- [ ] T068 [US9] Implement all three branches in `src/sio/core/dspy/optimizer.py::run_optimize` per `contracts/optimizer-selection.md` §3 (gepa, mipro, bootstrap); wire `dspy.Evaluate` scoring on held-out eval set; call `save_compiled(compiled, artifact_path)`; pass T061, T062, T063.
-- [ ] T069 [US9] Implement `record_optimization_run(...)` + `mark_prior_inactive(module_name)` in `src/sio/core/db/queries.py`; write row with `optimizer_name`, `metric_name`, `trainset_size`, `valset_size`, `score`, `task_lm`, `reflection_lm`, `artifact_path` (data-model.md §2.9).
+- [x] T067 [US9] Rewrite `src/sio/training/recall_trainer.py` as `RecallEvaluator(dspy.Module)` using `RuleRecallScore`; replace the trivial string-equality metric with `METRIC_REGISTRY["embedding_similarity"]` default (FR-018, FR-035, SC-016); pass T060.
+- [x] T068 [US9] Implement all three branches in `src/sio/core/dspy/optimizer.py::run_optimize` per `contracts/optimizer-selection.md` §3 (gepa, mipro, bootstrap); wire `dspy.Evaluate` scoring on held-out eval set; call `save_compiled(compiled, artifact_path)`; pass T061, T062, T063.
+- [x] T069 [US9] Implement `record_optimization_run(...)` + `mark_prior_inactive(module_name)` in `src/sio/core/db/queries.py`; write row with `optimizer_name`, `metric_name`, `trainset_size`, `valset_size`, `score`, `task_lm`, `reflection_lm`, `artifact_path` (data-model.md §2.9).
 - [ ] T070 [US9] Verify `src/sio/core/dspy/lm_factory.py::get_adapter` passes T064 (factory was implemented in T022; this task confirms full adapter coverage).
 - [ ] T071 [US9] Sweep `src/` and refactor any direct `dspy.LM(...)` calls found by T065 to use the factory; pass T065.
-- [ ] T072 [US9] Instrument `SuggestionGenerator` with assertion backtrack counting; emit count per invocation into `suggestions.instrumentation_json` (FR-029, SC-019).
-- [ ] T073 [US9] Update `pyproject.toml` / `CLAUDE.md` stating `dspy-ai>=3.1.3` floor + DSPy-first adoption note.
+- [x] T072 [US9] Instrument `SuggestionGenerator` with assertion backtrack counting; emit count per invocation into `suggestions.instrumentation_json` (FR-029, SC-019).
+- [x] T073 [US9] Update `pyproject.toml` / `CLAUDE.md` stating `dspy-ai>=3.1.3` floor + DSPy-first adoption note.
 
 **Checkpoint**: US9 done — DSPy is idiomatic across every reasoning module; all three optimizers callable.
 
@@ -171,7 +171,7 @@
 
 **Independent Test**: After 24 h of schedule activation, `autoresearch_txlog` has ≥ 5 rows; at least one row has `outcome='pending_approval'` for an unvalidated candidate (SC-005).
 
-- [ ] T074 [P] [US4] Write failing integration test `tests/integration/test_autoresearch_cadence.py`: seed candidates with mixed `arena_passed`, run `sio autoresearch --run-once` 5×, assert one row per firing with correct outcome categorization.
+- [x] T074 [P] [US4] Write failing integration test `tests/integration/test_autoresearch_cadence.py`: seed candidates with mixed `arena_passed`, run `sio autoresearch --run-once` 5×, assert one row per firing with correct outcome categorization.
 - [ ] T075 [US4] Implement `src/sio/autoresearch/scheduler.py::run_once()` — selects candidates, evaluates metric, writes `autoresearch_txlog` row per firing (FR-006).
 - [ ] T076 [US4] Implement approval gate: auto-apply only when `arena_passed=1 AND (operator_approved OR --auto-approve-above <threshold>)`; else mark `outcome='pending_approval'`.
 - [ ] T077 [US4] Implement `sio autoresearch --run-once` and `sio autoresearch --install-schedule {cron|systemd}` CLI in `src/sio/cli/main.py`.

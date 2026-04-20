@@ -13,6 +13,8 @@ Public API
     train_recall_module(examples, optimizer="bootstrap", model="gpt-4o-mini") -> module
     save_trained_module(module, db_conn, metrics) -> str
     infer_recall(query, session_steps, module) -> str
+    RecallEvaluator: dspy.Module subclass using RuleRecallScore signature
+    evaluate_recall(gold, candidate) -> dspy.Prediction (back-compat wrapper)
 """
 
 from __future__ import annotations
@@ -23,9 +25,70 @@ import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+
+import dspy
+
+from sio.core.dspy.signatures import RuleRecallScore
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# T067: RecallEvaluator — idiomatic dspy.Module for rule recall scoring
+# ---------------------------------------------------------------------------
+
+
+class RecallEvaluator(dspy.Module):
+    """Evaluate how well a candidate rule captures the preventive intent of a gold rule.
+
+    Uses the RuleRecallScore signature with ChainOfThought reasoning.
+
+    Class attributes:
+        DEFAULT_METRIC: The METRIC_REGISTRY key used by optimizer module-selection.
+    """
+
+    DEFAULT_METRIC = "embedding_similarity"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.evaluate = dspy.ChainOfThought(RuleRecallScore)
+
+    def forward(self, gold_rule: str, candidate_rule: str) -> dspy.Prediction:
+        """Score how well candidate_rule captures the intent of gold_rule.
+
+        Args:
+            gold_rule: The reference (gold standard) rule text.
+            candidate_rule: The candidate rule to evaluate.
+
+        Returns:
+            dspy.Prediction with:
+                score (float): Recall score in [0, 1].
+                reasoning (str): Brief justification for the score.
+        """
+        result = self.evaluate(gold_rule=gold_rule, candidate_rule=candidate_rule)
+        # Clamp score to [0, 1] defensively
+        try:
+            clamped = max(0.0, min(1.0, float(result.score)))
+            return dspy.Prediction(
+                score=clamped,
+                reasoning=result.reasoning,
+            )
+        except (TypeError, ValueError):
+            return result
+
+
+def evaluate_recall(gold: str, candidate: str) -> dspy.Prediction:
+    """Back-compat wrapper: instantiate RecallEvaluator and call forward().
+
+    Args:
+        gold: Gold-standard rule text.
+        candidate: Candidate rule text to evaluate.
+
+    Returns:
+        dspy.Prediction with score (float) and reasoning (str).
+    """
+    evaluator = RecallEvaluator()
+    return evaluator.forward(gold_rule=gold, candidate_rule=candidate)
 
 
 # ---------------------------------------------------------------------------
@@ -307,8 +370,12 @@ def train_recall_module(
             optimized = tp.compile(predictor, trainset=trainset)
 
         # Evaluate before/after
-        before_score = sum(recall_metric(ex, predictor(**ex.inputs())) for ex in valset) / len(valset)
-        after_score = sum(recall_metric(ex, optimized(**ex.inputs())) for ex in valset) / len(valset)
+        before_score = (
+            sum(recall_metric(ex, predictor(**ex.inputs())) for ex in valset) / len(valset)
+        )
+        after_score = (
+            sum(recall_metric(ex, optimized(**ex.inputs())) for ex in valset) / len(valset)
+        )
 
     except Exception as e:
         return {

@@ -11,6 +11,7 @@ Auto-generated from all feature plans. Last updated: 2026-02-25
 - Python 3.11+ + Click >=8.1 (CLI), Rich >=13.0 (terminal UI), fastembed >=0.2 (embeddings), numpy >=1.24, DSPy >=3.1.3 (optimization) (001-competitive-enhancement)
 - SQLite with WAL mode at `~/.sio/sio.db` (14 existing tables, adding 5 new) (001-competitive-enhancement)
 - Python 3.11+ + DSPy >=3.1.3 (core framework per Constitution V), Click >=8.1 (CLI), Rich >=13.0 (TUI), fastembed >=0.2 (ONNX embeddings for centroids), numpy >=1.24, sqlite3 (stdlib), tomllib (stdlib), `systemd-user` or Claude Code `CronCreate` for scheduling (selected in Phase 0 research) (004-pipeline-integrity-remediation)
+- **DSPy-first adoption (004, T073):** All LM construction goes through `sio.core.dspy.lm_factory` (no bare `dspy.LM()` calls). Three optimizers are available in `sio.core.dspy.optimizer::run_optimize`: GEPA (default), MIPROv2 (`mipro`), and BootstrapFewShot (`bootstrap`). Metrics are centralized in `sio.core.dspy.metrics::METRIC_REGISTRY`. Floor: `dspy>=3.1.3` (pinned in `pyproject.toml`).
 
 - Python 3.11+ + DSPy (latest, currently 3.1.3), fastembed, numpy, sqlite3 (stdlib), Click (CLI), Rich (terminal UI) (001-self-improving-organism)
 

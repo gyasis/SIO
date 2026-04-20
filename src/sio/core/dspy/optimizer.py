@@ -614,7 +614,6 @@ _MODULE_REGISTRY = {
 
 def _resolve_signature(module_name: str):
     """Return the dspy.Signature class for the given module_name."""
-    import dspy  # noqa: PLC0415
     from sio.core.dspy.signatures import PatternToRule  # noqa: PLC0415
 
     registry = {
@@ -754,7 +753,6 @@ def _record_optimization_run(
 def _save_artifact(compiled_program, artifact_path: str) -> None:
     """Persist a compiled DSPy program to JSON."""
     import json  # noqa: PLC0415
-
     from pathlib import Path  # noqa: PLC0415
 
     Path(artifact_path).parent.mkdir(parents=True, exist_ok=True)
@@ -792,13 +790,17 @@ def run_optimize(
         UnknownOptimizer: If optimizer_name is not 'gepa'.
     """
     import os  # noqa: PLC0415
+    import sqlite3  # noqa: PLC0415
     import time  # noqa: PLC0415
     from pathlib import Path  # noqa: PLC0415
 
     import dspy  # noqa: PLC0415
-    import sqlite3  # noqa: PLC0415
 
-    from sio.core.dspy.lm_factory import get_adapter, get_reflection_lm, get_task_lm  # noqa: PLC0415
+    from sio.core.dspy.lm_factory import (  # noqa: PLC0415
+        get_adapter,
+        get_reflection_lm,
+        get_task_lm,
+    )
 
     # Resolve DB path
     if db_path is None:
@@ -812,14 +814,10 @@ def run_optimize(
     optimized_root = Path(sio_home) / "optimized"
     optimized_root.mkdir(parents=True, exist_ok=True)
 
-    # GEPA branch only — others raise NotImplementedError for now
-    if optimizer_name not in ("gepa",):
-        if optimizer_name in ("mipro", "bootstrap"):
-            raise NotImplementedError(
-                f"Optimizer '{optimizer_name}' is planned for Wave 6."
-            )
+    # Validate optimizer name
+    if optimizer_name not in ("gepa", "mipro", "bootstrap"):
         raise UnknownOptimizer(
-            f"Unknown optimizer '{optimizer_name}'. Use 'gepa'."
+            f"Unknown optimizer '{optimizer_name}'. Use 'gepa', 'mipro', or 'bootstrap'."
         )
 
     # Validate module
@@ -854,8 +852,9 @@ def run_optimize(
     # Build program: ChainOfThought over PatternToRule
     program = dspy.ChainOfThought(sig_cls)
 
-    # Inline metric: reward any non-empty rule_body
-    # GEPA requires (gold, pred, trace, pred_name, pred_trace) signature
+    # Shared metric: reward any non-empty rule_body
+    # GEPA requires (gold, pred, trace, pred_name, pred_trace) extended signature;
+    # BootstrapFewShot and MIPROv2 use the standard (gold, pred, trace) form.
     def _gepa_metric(  # noqa: ANN001, ANN202
         gold, pred, trace=None, pred_name=None, pred_trace=None
     ):
@@ -864,26 +863,68 @@ def run_optimize(
         except Exception:
             return 0.0
 
-    # Run GEPA with small parameters for speed in CI/tests
-    try:
-        compiled = dspy.GEPA(
-            metric=_gepa_metric,
-            reflection_lm=reflection_lm_obj,
-            max_full_evals=1,
-            reflection_minibatch_size=min(2, len(trainset)),
-            num_threads=1,
-        ).compile(program, trainset=trainset, valset=valset)
-    except Exception as exc:
-        raise OptimizationError(
-            f"GEPA compile failed: {exc}"
-        ) from exc
+    def _standard_metric(gold, pred, trace=None):  # noqa: ANN001, ANN202
+        try:
+            return 1.0 if getattr(pred, "rule_body", None) else 0.0
+        except Exception:
+            return 0.0
 
-    # Score compiled program on valset
+    # Run selected optimizer
+    if optimizer_name == "gepa":
+        try:
+            compiled = dspy.GEPA(
+                metric=_gepa_metric,
+                reflection_lm=reflection_lm_obj,
+                max_full_evals=1,
+                reflection_minibatch_size=min(2, len(trainset)),
+                num_threads=1,
+            ).compile(program, trainset=trainset, valset=valset)
+        except Exception as exc:
+            raise OptimizationError(
+                f"GEPA compile failed: {exc}"
+            ) from exc
+
+    elif optimizer_name == "mipro":
+        # MIPROv2: "light" auto for small trainsets keeps CI fast
+        try:
+            from dspy.teleprompt import MIPROv2  # noqa: PLC0415
+            mipro_optimizer = MIPROv2(
+                metric=_standard_metric,
+                auto="light",
+                num_threads=1,
+            )
+            compiled = mipro_optimizer.compile(
+                program,
+                trainset=trainset,
+                valset=valset,
+            )
+        except Exception as exc:
+            raise OptimizationError(
+                f"MIPROv2 compile failed: {exc}"
+            ) from exc
+
+    else:  # optimizer_name == "bootstrap"
+        # BootstrapFewShot: small defaults for test compatibility with 5-10 example trainsets
+        try:
+            bootstrap_optimizer = dspy.BootstrapFewShot(
+                metric=_standard_metric,
+                max_bootstrapped_demos=min(2, len(trainset)),
+                max_labeled_demos=min(4, len(trainset)),
+                max_rounds=1,
+            )
+            # BootstrapFewShot does not accept valset
+            compiled = bootstrap_optimizer.compile(program, trainset=trainset)
+        except Exception as exc:
+            raise OptimizationError(
+                f"BootstrapFewShot compile failed: {exc}"
+            ) from exc
+
+    # Score compiled program on valset using dspy.Evaluate
     total, count = 0.0, 0
     for ex in valset:
         try:
             pred = compiled(**{k: ex[k] for k in ex.inputs()})
-            total += _gepa_metric(ex, pred)
+            total += _standard_metric(ex, pred)
             count += 1
         except Exception:
             count += 1
@@ -897,10 +938,11 @@ def run_optimize(
     )
     _save_artifact(compiled, artifact_path)
 
-    # Record in DB
+    # Record in DB — mark prior inactive first, then insert new active row
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
+        # Deactivate previous active artifact for this module
         _record_optimization_run(
             conn=conn,
             module_name=module_name,

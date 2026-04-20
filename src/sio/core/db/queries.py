@@ -891,6 +891,112 @@ def list_active_applied_changes(conn: sqlite3.Connection) -> list[dict]:
     return [_row_to_dict(r) for r in rows]
 
 
+# ---------------------------------------------------------------------------
+# 004 — Optimization run tracking (T069, data-model.md §2.9)
+# ---------------------------------------------------------------------------
+
+
+def mark_prior_inactive(conn: sqlite3.Connection, module_name: str) -> int:
+    """Set active=0 on all prior optimized_modules rows for module_name.
+
+    Must be called BEFORE inserting a new row so that only the latest
+    artifact is active at any point.
+
+    Args:
+        conn: Active database connection.
+        module_name: The module identifier (e.g. 'suggestion_generator').
+
+    Returns:
+        Number of rows flipped to inactive.
+    """
+    # Support both column naming conventions (active vs is_active)
+    affected = 0
+    for col in ("active", "is_active"):
+        try:
+            cur = conn.execute(
+                f"UPDATE optimized_modules SET {col}=0 "
+                f"WHERE (module_type=? OR module_name=?) AND {col}=1",
+                (module_name, module_name),
+            )
+            affected += cur.rowcount
+        except sqlite3.OperationalError:
+            pass  # Column may not exist in older schema — skip silently
+    conn.commit()
+    return affected
+
+
+def record_optimization_run(
+    conn: sqlite3.Connection,
+    *,
+    module_name: str,
+    optimizer_name: str,
+    metric_name: str,
+    trainset_size: int,
+    valset_size: int,
+    score: float,
+    task_lm: str | None,
+    reflection_lm: str | None,
+    artifact_path: str,
+) -> int:
+    """Insert a new optimized_modules row with active=1.
+
+    Callers MUST call :func:`mark_prior_inactive` before this function to
+    ensure only one active artifact exists per module at a time.
+
+    Args:
+        conn: Active database connection.
+        module_name: Identifier for the DSPy module (e.g. 'suggestion_generator').
+        optimizer_name: The optimizer used (gepa, mipro, bootstrap).
+        metric_name: The metric key from METRIC_REGISTRY used for scoring.
+        trainset_size: Number of training examples used.
+        valset_size: Number of validation examples used.
+        score: Final metric score on the validation set.
+        task_lm: LM model string used for the primary (task) LM, or None.
+        reflection_lm: LM model string used for the reflection LM, or None.
+        artifact_path: Absolute path to the saved compiled module JSON.
+
+    Returns:
+        The row ID of the newly inserted row.
+
+    Raises:
+        sqlite3.IntegrityError: If required columns are missing or constraints fail.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Try the full schema first; fall back gracefully for older schemas
+    try:
+        cur = conn.execute(
+            "INSERT INTO optimized_modules "
+            "(module_type, module_name, optimizer_used, optimizer_name, "
+            "file_path, artifact_path, training_count, trainset_size, "
+            "valset_size, score, metric_name, metric_after, "
+            "task_lm, reflection_lm, is_active, active, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?)",
+            (
+                module_name, module_name,
+                optimizer_name, optimizer_name,
+                artifact_path, artifact_path,
+                trainset_size, trainset_size,
+                valset_size, score,
+                metric_name, score,
+                task_lm, reflection_lm,
+                now,
+            ),
+        )
+    except sqlite3.OperationalError:
+        # Minimal fallback for schemas that only have the legacy columns
+        cur = conn.execute(
+            "INSERT INTO optimized_modules "
+            "(module_type, optimizer_used, file_path, training_count, "
+            "metric_after, is_active, created_at) "
+            "VALUES (?, ?, ?, ?, ?, 1, ?)",
+            (module_name, optimizer_name, artifact_path, trainset_size, score, now),
+        )
+
+    conn.commit()
+    return cur.lastrowid
+
+
 def mark_superseded(
     conn: sqlite3.Connection, id: int, by_id: int | None,
 ) -> bool:
