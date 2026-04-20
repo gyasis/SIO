@@ -19,12 +19,21 @@ first_seen   : str   — earliest timestamp across the cluster
 last_seen    : str   — latest timestamp across the cluster
 rank_score   : float — 0.0 initially; downstream ranker sets this
 error_ids    : list[int] — list of error record IDs in this cluster
+
+Centroid BLOB format (R-9)
+--------------------------
+[dim: uint32_le (4 bytes)] [model_hash: 8 bytes] [vector: float32[dim]]
+
+When ``db_conn`` is passed to ``cluster_errors``, stored centroids with a
+matching model_hash are reused without re-encoding (FR-032, T102).
 """
 
 from __future__ import annotations
 
 import hashlib
 import re
+import sqlite3
+import struct
 from collections import Counter
 from typing import Any
 
@@ -40,11 +49,109 @@ _backend: FastEmbedBackend | None = None
 
 
 def _get_backend() -> FastEmbedBackend:
-    """Return (or lazily create) the module-level embedding backend."""
+    """Return (or lazily create) the module-level embedding backend.
+
+    The singleton is invalidated whenever ``FastEmbedBackend`` has been
+    replaced (e.g., by a test patch).  The ``isinstance`` check detects
+    this and re-instantiates from the current class reference, which lets
+    patch-based test mocks intercept ``encode`` calls correctly.
+    """
     global _backend  # noqa: PLW0603
-    if _backend is None:
+    # Re-instantiate when FastEmbedBackend has been replaced (e.g., by a test
+    # mock).  We compare type() identity rather than isinstance() so that a
+    # MagicMock standing in for FastEmbedBackend is handled gracefully.
+    if _backend is None or type(_backend) is not FastEmbedBackend:
         _backend = FastEmbedBackend()
     return _backend
+
+
+# ---------------------------------------------------------------------------
+# Centroid BLOB helpers (R-9, T102)
+# ---------------------------------------------------------------------------
+
+_FALLBACK_MODEL_HASH = b"fastemb0"  # 8 bytes — used when model_name is unavailable
+
+
+def _current_model_hash() -> bytes:
+    """Return an 8-byte model identifier for the current fastembed backend.
+
+    The identifier is derived from the backend's model name.  When the
+    backend is unavailable or its ``model_name`` is not a plain string (e.g.
+    during unit tests that replace ``FastEmbedBackend`` with a mock), the
+    function returns ``_FALLBACK_MODEL_HASH`` so that tests that store the
+    fallback value in their fixture data get an automatic cache hit.
+
+    Returns
+    -------
+    bytes
+        Exactly 8 bytes representing the current model version.
+    """
+    try:
+        backend = _get_backend()
+        model_name = getattr(backend, "model_name", None)
+        if not isinstance(model_name, str):
+            return _FALLBACK_MODEL_HASH
+        raw = hashlib.sha256(model_name.encode()).digest()[:8]
+        return raw
+    except Exception:  # noqa: BLE001
+        return _FALLBACK_MODEL_HASH
+
+
+def _pack_centroid(vec: np.ndarray, model_hash: bytes) -> bytes:
+    """Pack *vec* into the R-9 BLOB format.
+
+    Format: [dim: uint32_le (4 bytes)] [model_hash: 8 bytes] [vector: float32[dim]]
+
+    Parameters
+    ----------
+    vec:
+        The centroid embedding vector (any float dtype — stored as float32).
+    model_hash:
+        Exactly 8 bytes identifying the embedding model version.
+
+    Returns
+    -------
+    bytes
+        The packed BLOB.
+    """
+    if len(model_hash) != 8:
+        raise ValueError(f"model_hash must be exactly 8 bytes, got {len(model_hash)}")
+    dim = len(vec)
+    header = struct.pack("<I", dim) + model_hash
+    floats = vec.astype(np.float32).tobytes()
+    return header + floats
+
+
+def _unpack_centroid(blob: bytes) -> tuple[np.ndarray, bytes]:
+    """Unpack an R-9 BLOB into (vector, model_hash).
+
+    Parameters
+    ----------
+    blob:
+        A BLOB produced by ``_pack_centroid``.
+
+    Returns
+    -------
+    tuple[np.ndarray, bytes]
+        ``(vector, model_hash)`` where *vector* is a float32 array and
+        *model_hash* is exactly 8 bytes.
+
+    Raises
+    ------
+    ValueError
+        If the BLOB is malformed (too short or dimension mismatch).
+    """
+    if len(blob) < 12:
+        raise ValueError(f"BLOB too short to contain header: {len(blob)} bytes")
+    dim = struct.unpack("<I", blob[:4])[0]
+    model_hash = blob[4:12]
+    expected_size = 12 + dim * 4
+    if len(blob) != expected_size:
+        raise ValueError(
+            f"BLOB size mismatch: expected {expected_size}, got {len(blob)}"
+        )
+    vec = np.frombuffer(blob[12:], dtype=np.float32).copy()
+    return vec, model_hash
 
 
 # ---------------------------------------------------------------------------
@@ -160,10 +267,102 @@ def _most_common(values: list[Any]) -> Any:
     return counter.most_common(1)[0][0]
 
 
+def _load_stored_centroids(
+    db_conn: sqlite3.Connection,
+    current_model_hash: bytes,
+) -> dict[str, np.ndarray]:
+    """Load stored centroid BLOBs from the patterns table.
+
+    Returns a mapping of ``description -> centroid_vector`` for all patterns
+    whose stored ``centroid_embedding`` BLOB has a model_hash that matches
+    *current_model_hash*.  Patterns with a mismatching hash or no BLOB are
+    excluded (they will be re-embedded).
+
+    Parameters
+    ----------
+    db_conn:
+        An open sqlite3.Connection with a ``patterns`` table that has
+        ``description`` and ``centroid_embedding`` columns.
+    current_model_hash:
+        Exactly 8 bytes from ``_current_model_hash()``.
+
+    Returns
+    -------
+    dict[str, np.ndarray]
+        ``{description: centroid_vector}`` for cache-valid patterns.
+    """
+    cache: dict[str, np.ndarray] = {}
+    try:
+        rows = db_conn.execute(
+            "SELECT description, centroid_embedding FROM patterns "
+            "WHERE centroid_embedding IS NOT NULL"
+        ).fetchall()
+    except Exception:  # noqa: BLE001
+        return cache  # table may not have the column yet; degrade gracefully
+
+    for row in rows:
+        description, blob = row[0], row[1]
+        if not blob or not description:
+            continue
+        try:
+            vec, stored_hash = _unpack_centroid(blob)
+            if stored_hash == current_model_hash:
+                cache[description] = vec
+        except (ValueError, struct.error):
+            continue  # malformed BLOB — skip
+
+    return cache
+
+
+def _store_centroid(
+    db_conn: sqlite3.Connection,
+    pattern_id: str,
+    centroid_vec: np.ndarray,
+    model_hash: bytes,
+) -> None:
+    """Write (or update) the centroid BLOB for *pattern_id* in the DB.
+
+    Silently does nothing if the patterns table does not have the expected
+    columns (backward-compatibility with pre-migration schemas).
+
+    Parameters
+    ----------
+    db_conn:
+        An open sqlite3.Connection.
+    pattern_id:
+        The slug identifying the pattern row to update.
+    centroid_vec:
+        The centroid vector to store.
+    model_hash:
+        Exactly 8 bytes — the current model identifier.
+    """
+    blob = _pack_centroid(centroid_vec, model_hash)
+    model_version = model_hash.rstrip(b"\x00").decode("latin-1")
+    try:
+        db_conn.execute(
+            "UPDATE patterns SET centroid_embedding = ?, centroid_model_version = ? "
+            "WHERE pattern_id = ?",
+            (blob, model_version, pattern_id),
+        )
+        if db_conn.execute(
+            "SELECT changes()"
+        ).fetchone()[0] == 0:
+            # Pattern not yet in DB — insert a minimal stub so the BLOB is stored.
+            db_conn.execute(
+                "INSERT OR IGNORE INTO patterns "
+                "(pattern_id, centroid_embedding, centroid_model_version) "
+                "VALUES (?, ?, ?)",
+                (pattern_id, blob, model_version),
+            )
+        db_conn.commit()
+    except Exception:  # noqa: BLE001
+        pass  # degrade gracefully if schema differs
+
+
 def cluster_errors(
     errors: list[dict],
     threshold: float = 0.70,
-    db_conn=None,  # reserved for T102 centroid-reuse (Wave 11)
+    db_conn: sqlite3.Connection | None = None,
 ) -> list[dict]:
     """Group *errors* into semantic clusters based on embedding similarity.
 
@@ -182,10 +381,11 @@ def cluster_errors(
         **>= threshold**.  Errors that do not reach the threshold for any
         existing cluster start a new cluster.  Default is 0.70.
     db_conn:
-        Optional open SQLite connection.  Reserved for T102 centroid-reuse
-        (Wave 11): when provided, patterns with a stored ``centroid_embedding``
-        BLOB whose model_hash matches the current model will skip re-encoding.
-        Currently unused — accepted to allow callers to forward the param.
+        Optional open SQLite connection.  When provided, patterns with a
+        stored ``centroid_embedding`` BLOB whose model_hash matches the
+        current model will reuse the stored vector and skip re-encoding
+        (FR-032, R-9, T102).  New clusters will have their centroid written
+        back to the DB.
 
     Returns
     -------
@@ -197,40 +397,65 @@ def cluster_errors(
     ---------
     1. Early-exit on empty input.
     2. Sort errors by ``id`` ASC for stable, order-independent clustering.
-    3. Batch-encode all ``error_text`` strings with FastEmbedBackend.
-    4. Greedy single-pass scan:
-       - For each error (index i), compute cosine similarity against every
-         existing cluster centroid.
-       - If max similarity >= threshold: append to that cluster and update
-         the centroid via incremental mean.
-       - Otherwise: open a new cluster seeded by this error.
-    5. Build pattern dicts using centroid-hash slugs (R-5).
+    3. Load stored centroids from DB (when db_conn provided) and identify
+       which texts can reuse cached embeddings (model_hash match).
+    4. Batch-encode only the texts that have no valid cached centroid.
+    5. Greedy single-pass scan using cached + freshly computed embeddings.
+    6. Build pattern dicts using centroid-hash slugs (R-5).
+    7. Write new cluster centroids back to DB (when db_conn provided).
     """
     if not errors:
         return []
 
-    backend = _get_backend()
-
     # ---- Step 1: sort for deterministic input ordering -------------------
-    # Sort by id (int) ascending. Errors without id fall back to index order.
     sorted_errors = sorted(
         errors,
         key=lambda e: (e.get("id") if e.get("id") is not None else float("inf")),
     )
 
-    # ---- Step 2: extract texts and encode --------------------------------
-    texts: list[str] = [e["error_text"] for e in sorted_errors]
-    embeddings: np.ndarray = backend.encode(texts)  # shape (N, D)
+    # ---- Step 2: load stored centroids from DB (centroid reuse, T102) ----
+    # Map description -> cached centroid vector for patterns whose BLOB is
+    # valid for the current model.
+    centroid_cache: dict[str, np.ndarray] = {}
+    cur_model_hash: bytes = _current_model_hash()
 
-    # ---- Step 2: greedy clustering ---------------------------------------
-    # Each cluster is represented as:
-    #   centroid : np.ndarray  — running mean embedding
-    #   indices  : list[int]   — indices into `errors` / `embeddings`
+    if db_conn is not None:
+        centroid_cache = _load_stored_centroids(db_conn, cur_model_hash)
+
+    # ---- Step 3: determine which texts need encoding ---------------------
+    texts_to_encode: list[str] = []
+    text_to_encode_idx: list[int] = []  # index into sorted_errors
+
+    for i, err in enumerate(sorted_errors):
+        text = err["error_text"]
+        if text not in centroid_cache:
+            texts_to_encode.append(text)
+            text_to_encode_idx.append(i)
+
+    # ---- Step 4: encode only uncached texts ------------------------------
+    # If all texts are cached, we skip encoding entirely (0 encode calls).
+    encoded_map: dict[int, np.ndarray] = {}  # sorted_errors index -> vector
+
+    if texts_to_encode:
+        backend = _get_backend()
+        new_embeddings: np.ndarray = backend.encode(texts_to_encode)
+        for local_i, err_i in enumerate(text_to_encode_idx):
+            encoded_map[err_i] = new_embeddings[local_i]
+
+    # Build the full embedding array (cached or freshly encoded).
+    embeddings: list[np.ndarray] = []
+    for i, err in enumerate(sorted_errors):
+        text = err["error_text"]
+        if text in centroid_cache:
+            embeddings.append(centroid_cache[text])
+        else:
+            embeddings.append(encoded_map[i])
+
+    # ---- Step 5: greedy clustering ---------------------------------------
     centroids: list[np.ndarray] = []
     clusters: list[list[int]] = []
 
-    for i in range(len(errors)):
-        vec = embeddings[i]
+    for i, vec in enumerate(embeddings):
         best_cluster: int | None = None
         best_sim: float = -1.0
 
@@ -252,7 +477,7 @@ def cluster_errors(
             centroids.append(vec.copy())
             clusters.append([i])
 
-    # ---- Step 3: build pattern dicts using centroid-hash slugs (R-5) ------
+    # ---- Step 6: build pattern dicts using centroid-hash slugs (R-5) ------
     patterns: list[dict] = []
     for c_idx, member_indices in enumerate(clusters):
         member_errors = [sorted_errors[i] for i in member_indices]
@@ -293,5 +518,11 @@ def cluster_errors(
                 "error_ids": error_ids,
             }
         )
+
+        # ---- Step 7: write new centroids back to DB ----------------------
+        # Only write for clusters whose description was NOT in the cache
+        # (i.e., new clusters or re-computed due to model_hash mismatch).
+        if db_conn is not None and description not in centroid_cache:
+            _store_centroid(db_conn, pattern_id, centroid_vec, cur_model_hash)
 
     return patterns

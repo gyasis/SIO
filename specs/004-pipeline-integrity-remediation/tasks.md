@@ -232,9 +232,9 @@
 - [x] T099 [P] [US7] Write failing unit test `tests/unit/clustering/test_slug_remap.py` covering: Jaccard overlap ≥ 0.5 between old and new pattern member sets → remap accepted and `ground_truth.remapped_from_pattern_id` populated; < 0.5 → rejected (no FK change); identical sets → remap idempotent (FR-014, R-5).
 - [x] T100 [US7] Write `scripts/remap_ground_truth_slugs.py`: Jaccard-overlap remap from old to new slugs; populate `ground_truth.remapped_from_pattern_id` audit column; pass T099.
 - [x] T101 [P] [US7] Write failing unit test `tests/unit/clustering/test_centroid_reuse.py` covering BLOB format `(dim, model_hash, vector)`, hit skips recompute, model-upgrade invalidates (FR-032, R-9, SC-011).
-- [ ] T102 [US7] Implement centroid BLOB pack/unpack in `src/sio/core/clustering/pattern_clusterer.py`; reuse when `centroid_model_version` matches current fastembed version; recompute otherwise.
+- [x] T102 [US7] Implement centroid BLOB pack/unpack in `src/sio/core/clustering/pattern_clusterer.py`; reuse when `centroid_model_version` matches current fastembed version; recompute otherwise.
 - [x] T103 [P] [US7] Write failing unit test `tests/unit/clustering/test_declining_grade.py` asserting a pattern with stale latest-error transitions to `'declining'` (FR-023, M4).
-- [ ] T104 [US7] Fix `src/sio/core/clustering/grader.py:80` to compute recency against `MAX(error_records.timestamp) WHERE pattern_id=?` — not current insert time.
+- [x] T104 [US7] Fix `src/sio/core/clustering/grader.py:80` to compute recency against `MAX(error_records.timestamp) WHERE pattern_id=?` — not current insert time.
 - [ ] T105 [US7] Fix `src/sio/core/clustering/ranker.py:75` empty-timestamp crash: guard `fromisoformat("")`, fall back to `mined_at` (FR-013, H6).
 - [ ] T106 [US7] Remove cross-type dedup in `_dedup_by_error_type_priority` — keep `tool_failure` rows alongside `user_correction` (FR-020, L2).
 

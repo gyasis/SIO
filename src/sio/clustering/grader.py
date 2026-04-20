@@ -29,6 +29,87 @@ from sio.suggestions.confidence import _compute_decay_multiplier, score_confiden
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Thresholds for compute_pattern_grade (T104, FR-023)
+# ---------------------------------------------------------------------------
+_DECLINING_DAYS = 7   # last error > 7 days ago → declining
+_DEAD_DAYS = 30       # last error > 30 days ago → dead
+
+
+def compute_pattern_grade(
+    db: sqlite3.Connection,
+    pattern_id: str,
+) -> str:
+    """Compute the lifecycle grade for a single pattern using live DB data.
+
+    Grade is determined by the age of the most recent error record associated
+    with *pattern_id*.  The recency is computed from::
+
+        MAX(error_records.timestamp) WHERE pattern_id = ?
+
+    If no ``error_records`` rows exist for *pattern_id*, the function falls
+    back to ``patterns.last_error_at``.
+
+    Grade rules (evaluated in order):
+    - ``"dead"``       — last error > 30 days ago
+    - ``"declining"``  — last error > 7 days ago
+    - ``"established"``— last error ≤ 7 days ago
+
+    Parameters
+    ----------
+    db:
+        An open ``sqlite3.Connection`` with ``error_records`` and ``patterns``
+        tables in scope.
+    pattern_id:
+        The ``pattern_id`` slug (TEXT) of the pattern to grade.
+
+    Returns
+    -------
+    str
+        One of ``"established"``, ``"declining"``, or ``"dead"``.
+
+    Notes
+    -----
+    - Timestamps are compared as ISO-8601 strings; they must be sortable
+      lexicographically, which holds for ``YYYY-MM-DDTHH:MM:SS...`` format.
+    - If the resolved timestamp cannot be parsed, the function returns
+      ``"established"`` (safe default — do not downgrade on bad data).
+    """
+    # 1. Try MAX(error_records.timestamp) for this pattern_id.
+    row = db.execute(
+        "SELECT MAX(timestamp) FROM error_records WHERE pattern_id = ?",
+        (pattern_id,),
+    ).fetchone()
+
+    last_ts: str | None = row[0] if row else None
+
+    # 2. Fallback to patterns.last_error_at when no error_records rows.
+    if last_ts is None:
+        pat_row = db.execute(
+            "SELECT last_error_at FROM patterns WHERE pattern_id = ?",
+            (pattern_id,),
+        ).fetchone()
+        last_ts = pat_row[0] if pat_row else None
+
+    if not last_ts:
+        return "established"  # no data — safe default
+
+    # 3. Parse timestamp and compute staleness.
+    try:
+        dt_last = datetime.fromisoformat(last_ts)
+        if dt_last.tzinfo is None:
+            dt_last = dt_last.replace(tzinfo=timezone.utc)
+        days_since = (datetime.now(timezone.utc) - dt_last).total_seconds() / 86400.0
+    except (ValueError, TypeError):
+        return "established"  # unparseable — safe default
+
+    # 4. Apply grade thresholds.
+    if days_since > _DEAD_DAYS:
+        return "dead"
+    if days_since > _DECLINING_DAYS:
+        return "declining"
+    return "established"
+
 
 def grade_pattern(
     pattern_row: dict | sqlite3.Row,
