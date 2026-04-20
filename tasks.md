@@ -1,1 +1,1 @@
-specs/001-competitive-enhancement/tasks.md
+specs/002-sio-redesign/tasks.md
