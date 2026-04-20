@@ -1,1 +1,1 @@
-specs/002-sio-redesign/tasks.md
+specs/004-pipeline-integrity-remediation/tasks.md
