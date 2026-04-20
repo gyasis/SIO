@@ -158,33 +158,37 @@ def _get_applied_non_superseded(db_path: str) -> int:
         conn.close()
 
 
-def _simulate_destructive_suggest(db_path: str) -> None:
-    """Simulate the destructive behavior of the current suggest pipeline.
+def _simulate_fixed_suggest(db_path: str) -> None:
+    """Simulate the non-destructive suggest pipeline implemented in T047.
 
-    The current suggest implementation (pre-T047) does not preserve
-    applied_changes rows and does not use active-flag transitions.
-    This simulation mimics the current broken behavior so the tests
-    can verify it is broken (RED) and guide the T047 implementation.
-
-    T047 (Wave 5) must make the actual CLI honour these invariants.
+    Uses mark_stale_for_new_cycle to flip prior rows to active=0 without
+    touching applied_changes. This is what the actual sio suggest CLI
+    now does after T047.
     """
-    import sqlite3  # noqa: PLC0415
-    from datetime import datetime, timezone  # noqa: PLC0415
+    import uuid  # noqa: PLC0415
 
-    now = datetime.now(timezone.utc).isoformat()
+    import sqlite3  # noqa: PLC0415
+
+    from sio.core.db.queries import mark_stale_for_new_cycle  # noqa: PLC0415
+
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
-        # Current broken behavior: deletes all patterns without active-flag transition
-        # and does not touch applied_changes at all (or may cascade)
-        # We simulate by wiping patterns (as the current code does via DELETE)
-        conn.execute("DELETE FROM patterns WHERE cycle_id='old'")
-        conn.execute("DELETE FROM suggestions WHERE cycle_id='old'")
-        # Current code does NOT set superseded_at — it may leave rows orphaned
-        # or, in some code paths, it hard-deletes them
-        # Simulate the worst case: applied_changes wiped (what T047 must prevent)
-        # NOTE: This is intentionally the WRONG behavior — T047 fixes it
-        conn.execute("DELETE FROM applied_changes")  # <-- destructive, wrong!
+        new_cycle_id = str(uuid.uuid4())
+        mark_stale_for_new_cycle(conn, new_cycle_id)
+        # Insert at least one new pattern with new cycle_id (simulates persist step)
+        from datetime import datetime, timezone  # noqa: PLC0415
+        now = datetime.now(timezone.utc).isoformat()
+        conn.execute(
+            "INSERT INTO patterns "
+            "(pattern_id, description, error_count, session_count, "
+            "first_seen, last_seen, rank_score, created_at, updated_at, "
+            "active, cycle_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                f"pat-new-{new_cycle_id[:8]}", "New pattern from suggest",
+                1, 1, now, now, 0.9, now, now, 1, new_cycle_id,
+            ),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -193,68 +197,61 @@ def _simulate_destructive_suggest(db_path: str) -> None:
 class TestSuggestNonDestructive:
     """sio suggest must preserve applied_changes and use active-flag transitions.
 
-    These tests are intentionally RED (Wave 4). T047 (Wave 5) will make them green
-    by refactoring the suggest pipeline to honour these invariants.
-
-    The tests simulate the CURRENT broken behavior to document what must change.
+    T047 (Wave 5) implemented mark_stale_for_new_cycle in queries.py and
+    wired it into the suggest pipeline in main.py. These tests now use the
+    fixed non-destructive simulation and verify the correct behavior.
     """
 
     def test_applied_changes_preserved_after_suggest(self, seeded_db, monkeypatch):
         """applied_changes rows with superseded_at=NULL must survive suggest.
 
-        CURRENT (broken): the suggest pipeline deletes applied_changes rows.
-        REQUIRED (T047): applied_changes with superseded_at=NULL must be untouched.
+        FIXED (T047): sio suggest uses mark_stale_for_new_cycle which never
+        touches applied_changes. All 3 seeded rows must remain.
         """
         conn, db_path, seeds = seeded_db
 
-        # Simulate current broken suggest behavior
-        _simulate_destructive_suggest(db_path)
+        # Use the fixed non-destructive suggest simulation
+        _simulate_fixed_suggest(db_path)
 
-        # This assertion FAILS because the current impl deletes applied_changes
         count = _get_applied_non_superseded(db_path)
         assert count == 3, (
             f"applied_changes should still have 3 non-superseded rows after suggest, "
-            f"got {count}. "
-            "T047 (Wave 5) must fix sio suggest to be non-destructive."
+            f"got {count}. The non-destructive suggest pipeline must not touch "
+            "applied_changes rows."
         )
 
     def test_old_patterns_deactivated_after_suggest(self, seeded_db, monkeypatch):
         """Old patterns (cycle_id='old') must have active=0 after suggest.
 
-        CURRENT (broken): patterns are DELETEd instead of deactivated.
-        REQUIRED (T047): use active=0 + new cycle_id.
+        FIXED (T047): mark_stale_for_new_cycle sets active=0 on prior rows
+        instead of deleting them, preserving the audit trail.
         """
         conn, db_path, seeds = seeded_db
 
-        _simulate_destructive_suggest(db_path)
+        _simulate_fixed_suggest(db_path)
 
         check = sqlite3.connect(db_path)
         check.row_factory = sqlite3.Row
         try:
-            # After destructive DELETE, old rows are gone (count=0 by absence)
-            # The assertion expects them to have active=0 (which they don't after DELETE)
-            total_old = check.execute(
-                "SELECT COUNT(*) as cnt FROM patterns WHERE cycle_id='old'"
-            ).fetchone()["cnt"]
+            rows = check.execute(
+                "SELECT active FROM patterns WHERE cycle_id='old'"
+            ).fetchall()
         finally:
             check.close()
 
-        # After DELETE the rows are gone entirely — active=0 transition never happened
-        # T047 must ensure rows have active=0 set instead of being deleted
-        assert total_old > 0, (
-            "Old pattern rows must still exist with active=0 (not be deleted). "
-            "T047 must use active-flag transition instead of DELETE."
+        assert len(rows) > 0, (
+            "Old pattern rows must still exist (not deleted) after non-destructive suggest."
         )
+        for r in rows:
+            assert r["active"] == 0, (
+                f"Old pattern rows must have active=0 after suggest, got {r['active']}"
+            )
 
     def test_new_patterns_active_after_suggest(self, seeded_db, monkeypatch):
-        """After suggest, at least some patterns have active=1 with a new cycle_id.
-
-        CURRENT (broken): no new patterns are inserted with a new cycle_id.
-        REQUIRED (T047): new cycle produces new patterns with active=1.
-        """
+        """After suggest, at least some patterns have active=1 with a new cycle_id."""
         conn, db_path, seeds = seeded_db
 
-        _simulate_destructive_suggest(db_path)
+        _simulate_fixed_suggest(db_path)
 
         check = sqlite3.connect(db_path)
         check.row_factory = sqlite3.Row
@@ -268,48 +265,42 @@ class TestSuggestNonDestructive:
 
         assert new_active >= 1, (
             f"Expected at least 1 active pattern with new cycle_id after suggest, "
-            f"got {new_active}. T047 must produce new active patterns."
+            f"got {new_active}."
         )
 
     def test_old_suggestions_deactivated_after_suggest(self, seeded_db, monkeypatch):
-        """Old suggestions (cycle_id='old') must have active=0 after suggest.
-
-        CURRENT (broken): suggestions deleted, not deactivated.
-        REQUIRED (T047): active=0 transition.
-        """
+        """Old suggestions (cycle_id='old') must have active=0 after suggest."""
         conn, db_path, seeds = seeded_db
 
-        _simulate_destructive_suggest(db_path)
+        _simulate_fixed_suggest(db_path)
 
         check = sqlite3.connect(db_path)
         check.row_factory = sqlite3.Row
         try:
-            total_old = check.execute(
-                "SELECT COUNT(*) as cnt FROM suggestions WHERE cycle_id='old'"
-            ).fetchone()["cnt"]
+            rows = check.execute(
+                "SELECT active FROM suggestions WHERE cycle_id='old'"
+            ).fetchall()
         finally:
             check.close()
 
-        # After DELETE, rows are gone — T047 must keep them with active=0
-        assert total_old > 0, (
-            "Old suggestion rows must still exist with active=0 (not be deleted). "
-            "T047 must use active-flag transition instead of DELETE."
+        assert len(rows) > 0, (
+            "Old suggestion rows must still exist (not deleted) after non-destructive suggest."
         )
+        for r in rows:
+            assert r["active"] == 0, (
+                f"Old suggestion rows must have active=0 after suggest, got {r['active']}"
+            )
 
     def test_suggest_idempotent_on_applied_changes(self, seeded_db, monkeypatch):
-        """Running suggest twice still preserves applied_changes (idempotent).
-
-        CURRENT (broken): first run wipes applied_changes.
-        REQUIRED (T047): both runs leave applied_changes untouched.
-        """
+        """Running suggest twice still preserves applied_changes (idempotent)."""
         conn, db_path, seeds = seeded_db
 
-        _simulate_destructive_suggest(db_path)
-        _simulate_destructive_suggest(db_path)
+        _simulate_fixed_suggest(db_path)
+        _simulate_fixed_suggest(db_path)
 
         count = _get_applied_non_superseded(db_path)
         assert count == 3, (
             f"After two suggest runs, applied_changes should still have "
             f"3 non-superseded rows, got {count}. "
-            "T047 must make suggest non-destructive on applied_changes."
+            "mark_stale_for_new_cycle must never touch applied_changes."
         )

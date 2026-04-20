@@ -63,7 +63,7 @@
 - [x] T023 [P] Write failing tests in `tests/unit/dspy/test_signatures.py` asserting `PatternToRule` and `RuleRecallScore` have class docstrings, typed `InputField`/`OutputField`, and pass `dspy.Predict` instantiation smoke test (FR-035).
 - [x] T024 Implement `src/sio/core/dspy/signatures.py::{PatternToRule, RuleRecallScore}` per `contracts/dspy-module-api.md` §2.
 - [x] T025 [P] Write failing tests in `tests/unit/dspy/test_metric_registry.py` asserting the three registered metrics (`exact_match`, `embedding_similarity`, `llm_judge_recall`) each conform to `(gold, pred, trace=None) -> bool | float` (FR-018).
-- [ ] T026 Implement `src/sio/core/dspy/metrics.py` with `METRIC_REGISTRY`, `@register`, and the three metric functions per `contracts/dspy-module-api.md` §5.
+- [x] T026 Implement `src/sio/core/dspy/metrics.py` with `METRIC_REGISTRY`, `@register`, and the three metric functions per `contracts/dspy-module-api.md` §5.
 - [x] T027 [P] Write failing tests in `tests/unit/dspy/test_assertions.py` asserting `assert_rule_format` and `assert_no_phi` use `dspy.Assert`, produce actionable messages, and trigger backtrack in a mocked predictor (FR-038, R-11).
 - [ ] T028 Implement `src/sio/core/dspy/assertions.py` per `contracts/dspy-module-api.md` §6.
 - [x] T029 [P] Write failing tests in `tests/unit/dspy/test_datasets.py` asserting every returned `dspy.Example` has `.with_inputs(...)` declared and `get_input_keys()` is non-empty (FR-036, SC-020).
@@ -89,7 +89,7 @@
 - [x] T038 [US1] Update `src/sio/adapters/claude_code/installer.py` to: point at `~/.sio/sio.db` for schema, preserve `~/.sio/claude-code/behavior_invocations.db`, call `migrate_split_brain.py`, refuse to recreate legacy DB; pass T037.
 - [x] T039 [P] [US1] Write failing tests in `tests/unit/arena/test_promote_to_gold.py` covering auto-promotion when `user_satisfied=1 AND correct_outcome=1`, no promotion otherwise (FR-005).
 - [x] T040 [US1] Implement `promote_to_gold(invocation_id)` in `src/sio/core/arena/gold_standards.py`; wire call into `src/sio/adapters/claude_code/hooks/stop.py` (heartbeat-wrapped).
-- [ ] T041 [US1] Update `src/sio/core/arena/gold_standards.py` read paths to query `~/.sio/sio.db` via the connect factory (currently reads the wrong path per audit C1).
+- [x] T041 [US1] Update `src/sio/core/arena/gold_standards.py` read paths to query `~/.sio/sio.db` via the connect factory (currently reads the wrong path per audit C1).
 - [x] T042 [P] [US1] Write failing integration test `tests/integration/test_closed_loop.py`: seed synthetic invocation → sync → promote → run GEPA on tiny fixture trainset → assert `optimized_modules` row with `active=1` and loadable artifact path (SC-001, SC-004).
 - [x] T043 [US1] Implement `src/sio/core/dspy/optimizer.py::run_optimize(module_name, optimizer_name, ...)` skeleton per `contracts/optimizer-selection.md` §3 — GEPA branch only at this step; passes T042 (integration) and T062 (unit, Phase 6).
 - [x] T044 [US1] Wire `sio optimize --module <name> --optimizer gepa|mipro|bootstrap` CLI in `src/sio/cli/main.py` per `contracts/cli-commands.md` § `sio optimize`.
@@ -105,12 +105,12 @@
 **Independent Test**: `sio suggest` twice → 100% of `applied_changes` rows remain with `superseded_at IS NULL` (SC-002).
 
 - [x] T045 [P] [US2] Write failing integration test `tests/integration/test_suggest_non_destructive.py`: seed 3 rows in `applied_changes`, run `sio suggest` twice, assert count unchanged (SC-002).
-- [ ] T046 [P] [US2] Write failing unit test `tests/unit/db/test_active_cycle.py`: after a suggest cycle, prior `patterns`/`datasets`/`pattern_errors`/`suggestions` rows flip to `active=0`, new rows have `active=1, cycle_id=<uuid>` (FR-003).
-- [ ] T047 [US2] Refactor `src/sio/cli/main.py` suggest path (currently `cli/main.py:1389-1428`): remove every `DELETE FROM` on audit-related tables; insert a new `cycle_id` UUID and UPDATE prior rows to `active=0` before INSERTing new ones; NEVER touch `applied_changes`.
-- [ ] T048 [P] [US2] Write failing unit test `tests/unit/db/test_superseded.py` covering `applied_changes.superseded_at` + `superseded_by` semantics.
-- [ ] T049 [US2] Add query helpers in `src/sio/core/db/queries.py`: `list_active_applied_changes()`, `mark_superseded(id, by_id)`.
-- [ ] T050 [P] [US2] Write failing unit test `tests/unit/applier/test_rollback.py`: after a rollback, target file matches pre-write backup content; `applied_changes` row has `superseded_at` set.
-- [ ] T051 [US2] Implement `sio apply --rollback <applied_change_id>` CLI; uses `atomic_write` with backup content, updates `superseded_at`.
+- [x] T046 [P] [US2] Write failing unit test `tests/unit/db/test_active_cycle.py`: after a suggest cycle, prior `patterns`/`datasets`/`pattern_errors`/`suggestions` rows flip to `active=0`, new rows have `active=1, cycle_id=<uuid>` (FR-003).
+- [x] T047 [US2] Refactor `src/sio/cli/main.py` suggest path (currently `cli/main.py:1389-1428`): remove every `DELETE FROM` on audit-related tables; insert a new `cycle_id` UUID and UPDATE prior rows to `active=0` before INSERTing new ones; NEVER touch `applied_changes`.
+- [x] T048 [P] [US2] Write failing unit test `tests/unit/db/test_superseded.py` covering `applied_changes.superseded_at` + `superseded_by` semantics.
+- [x] T049 [US2] Add query helpers in `src/sio/core/db/queries.py`: `list_active_applied_changes()`, `mark_superseded(id, by_id)`.
+- [x] T050 [P] [US2] Write failing unit test `tests/unit/applier/test_rollback.py`: after a rollback, target file matches pre-write backup content; `applied_changes` row has `superseded_at` set.
+- [x] T051 [US2] Implement `sio apply --rollback <applied_change_id>` CLI; uses `atomic_write` with backup content, updates `superseded_at`.
 - [ ] T052 [US2] Update `sio purge` (currently `cli/main.py:242-245`) to target `~/.sio/sio.db` (not the per-platform DB) and add `--behavior-only` flag (FR-025, M7); update tests in `tests/unit/cli/test_purge.py`.
 
 **Checkpoint**: US2 done — audit survives across suggest cycles.
@@ -123,8 +123,8 @@
 
 **Independent Test**: Crash-inject a write mid-apply → target file intact + backup exists; attempt to write outside allowlist → rejected; merge without `--merge` flag → prompts for consent (SC-003).
 
-- [ ] T053 [P] [US3] Write failing integration test `tests/integration/test_apply_safety.py` using subprocess+SIGKILL crash injection (quickstart.md §4.3), asserting original content preserved and backup file present (SC-003).
-- [ ] T054 [P] [US3] Write failing unit test `tests/unit/applier/test_merge_consent.py`: silent merge rejected, `--merge` flag accepts, interactive `y/N` prompt path covered (FR-024).
+- [x] T053 [P] [US3] Write failing integration test `tests/integration/test_apply_safety.py` using subprocess+SIGKILL crash injection (quickstart.md §4.3), asserting original content preserved and backup file present (SC-003).
+- [x] T054 [P] [US3] Write failing unit test `tests/unit/applier/test_merge_consent.py`: silent merge rejected, `--merge` flag accepts, interactive `y/N` prompt path covered (FR-024).
 - [ ] T055 [US3] Refactor `src/sio/core/applier/writer.py` apply path to route all target-file writes through `atomic_write`; integrate `_validate_target_path`; reject `--no-backup`.
 - [ ] T056 [US3] Implement merge-consent logic in `src/sio/core/applier/writer.py` `_merge_rules` — require `--merge` CLI flag or interactive confirmation; abort otherwise (FR-024, M6).
 - [ ] T057 [US3] Wire `_prune_backups(dir, keep=10)` post-write; verify retention in unit test.

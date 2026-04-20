@@ -1197,12 +1197,15 @@ def suggest(
     from rich.console import Console
     from rich.table import Table
 
+    import uuid
+
     from sio.clustering.pattern_clusterer import cluster_errors
     from sio.clustering.ranker import rank_patterns
     from sio.core.db.queries import (
         get_error_records,
         insert_pattern,
         link_error_to_pattern,
+        mark_stale_for_new_cycle,
     )
     from sio.datasets.builder import build_dataset
     from sio.suggestions.generator import generate_suggestions
@@ -1214,6 +1217,9 @@ def suggest(
 
     with _db_conn(db_path) as conn:
         console = Console()
+
+        # Generate a new cycle_id for this suggest run (FR-003, data-model.md §2.8)
+        cycle_id = str(uuid.uuid4())
 
         # 1. Get all errors (no limit), filtered by project if specified
         all_errors = get_error_records(conn, limit=0, project=project)
@@ -1385,16 +1391,10 @@ def suggest(
             )
             return
 
-        # 3. Persist patterns to DB (clear old patterns first for clean state)
-        #    Delete order: children before parents to respect foreign key constraints.
-        #    Chain: patterns -> datasets -> suggestions -> applied_changes
+        # 3. Persist patterns to DB — non-destructive active-flag transition (FR-003)
+        #    Mark prior active rows stale; applied_changes is NEVER touched.
         console.print("[bold]Step 2:[/bold] Persisting patterns to database...")
-        conn.execute("DELETE FROM applied_changes")
-        conn.execute("DELETE FROM suggestions")
-        conn.execute("DELETE FROM datasets")
-        conn.execute("DELETE FROM pattern_errors")
-        conn.execute("DELETE FROM patterns")
-        conn.commit()
+        mark_stale_for_new_cycle(conn, cycle_id)
 
         now_iso = datetime.now(timezone.utc).isoformat()
         seen_slugs: set[str] = set()
@@ -1411,6 +1411,8 @@ def suggest(
             p["centroid_embedding"] = None  # skip blob for now
             p["created_at"] = now_iso
             p["updated_at"] = now_iso
+            # Tag new patterns with the current cycle_id (active=1 by default)
+            p["cycle_id"] = cycle_id
             row_id = insert_pattern(conn, p)
             p["id"] = row_id  # store DB id for dataset builder
             persisted_patterns.append(p)
@@ -1421,13 +1423,8 @@ def suggest(
 
         console.print(f"  Persisted {len(persisted_patterns)} patterns with error links")
 
-        # 4. Build datasets (ephemeral — clear stale datasets and rebuild fresh)
-        #    Delete children of datasets before datasets itself.
+        # 4. Build datasets — insert new cycle's datasets (stale already marked in step 2)
         console.print("[bold]Step 3:[/bold] Building datasets...")
-        conn.execute("DELETE FROM applied_changes")
-        conn.execute("DELETE FROM suggestions")
-        conn.execute("DELETE FROM datasets")
-        conn.commit()
 
         datasets: dict[str, dict] = {}
         for p in persisted_patterns:
@@ -1436,12 +1433,12 @@ def suggest(
                 pid = metadata["pattern_id"]
                 ds_cur = conn.execute(
                     "INSERT INTO datasets (pattern_id, file_path, positive_count, "
-                    "negative_count, min_threshold, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "negative_count, min_threshold, created_at, updated_at, cycle_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         p["id"], metadata["file_path"],
                         metadata["positive_count"], metadata["negative_count"],
-                        min_examples, now_iso, now_iso,
+                        min_examples, now_iso, now_iso, cycle_id,
                     ),
                 )
                 conn.commit()
@@ -1463,19 +1460,16 @@ def suggest(
             persisted_patterns, datasets, conn, verbose=verbose, mode=mode,
         )
 
-        # Clear old suggestions and insert new ones
-        conn.execute("DELETE FROM suggestions WHERE status = 'pending'")
-        conn.commit()
-
+        # Insert new cycle's suggestions — stale ones already deactivated in step 2 (FR-003)
         for s in suggestions:
             conn.execute(
                 "INSERT INTO suggestions (pattern_id, dataset_id, description, "
                 "confidence, proposed_change, target_file, change_type, status, "
-                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "created_at, cycle_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     s["pattern_id"], s["dataset_id"], s["description"],
                     s["confidence"], s["proposed_change"], s["target_file"],
-                    s["change_type"], "pending", now_iso,
+                    s["change_type"], "pending", now_iso, cycle_id,
                 ),
             )
         conn.commit()
@@ -1622,7 +1616,7 @@ def reject(suggestion_id, note):
 
 
 @cli.command("apply")
-@click.argument("suggestion_id", type=int)
+@click.argument("suggestion_id", type=int, required=False, default=None)
 @click.option(
     "--experiment", is_flag=True, default=False,
     help="Apply on experiment branch instead of main.",
@@ -1631,7 +1625,11 @@ def reject(suggestion_id, note):
     "--force", is_flag=True, default=False,
     help="Skip budget check (not recommended).",
 )
-def apply_suggestion(suggestion_id, experiment, force):
+@click.option(
+    "--rollback", "rollback_id", type=int, default=None,
+    help="Roll back an applied change by its ID (from applied_changes table).",
+)
+def apply_suggestion(suggestion_id, experiment, force, rollback_id):
     """Apply an approved suggestion to its target file.
 
     Checks the instruction budget before applying. Uses delta-based
@@ -1642,7 +1640,33 @@ def apply_suggestion(suggestion_id, experiment, force):
         sio apply 5                 # Normal apply with budget check
         sio apply 5 --force         # Skip budget check
         sio apply 5 --experiment    # Apply on experiment branch
+        sio apply --rollback 42     # Roll back applied change #42
     """
+    # Handle rollback path — does not require suggestion_id
+    if rollback_id is not None:
+        from sio.core.applier.writer import (  # noqa: PLC0415
+            BackupMissingError,
+            rollback_applied_change,
+        )
+        db_path = os.path.expanduser("~/.sio/sio.db")
+        try:
+            result = rollback_applied_change(rollback_id, db_path=db_path)
+            click.echo(
+                f"Rolled back applied change {rollback_id}: "
+                f"restored {result['target']}"
+            )
+            raise SystemExit(0)
+        except ValueError as exc:
+            click.echo(f"Rollback failed: {exc}")
+            raise SystemExit(1)
+        except BackupMissingError as exc:
+            click.echo(f"Rollback failed — backup missing: {exc}")
+            raise SystemExit(1)
+
+    if suggestion_id is None:
+        click.echo("Error: missing argument 'SUGGESTION_ID'. Use --rollback for rollbacks.")
+        raise SystemExit(1)
+
     from sio.applier.writer import apply_change
     from sio.core.config import load_config
 

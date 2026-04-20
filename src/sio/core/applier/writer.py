@@ -15,6 +15,7 @@ Constitution: Principle XI (no stubs — every function performs real work).
 from __future__ import annotations
 
 import os
+import sqlite3
 from pathlib import Path
 
 from sio.core.util.time import utc_now_iso
@@ -65,6 +66,14 @@ class UnauthorizedApplyTarget(Exception):
 
 class BackupRequired(Exception):
     """Raised when a write is attempted without backup capability (future use)."""
+
+
+class BackupMissingError(Exception):
+    """Raised when rollback_applied_change cannot find the backup file.
+
+    The backup path stored in applied_changes references a file that no longer
+    exists on disk.  Manual recovery is required.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -222,3 +231,101 @@ def atomic_write(target: Path, new_content: str) -> Path:
         _prune_backups(backup_path.parent, keep=10)
 
     return backup_path if backup_path is not None else target
+
+
+# ---------------------------------------------------------------------------
+# Rollback (US2, FR-003)
+# ---------------------------------------------------------------------------
+
+def _open_rollback_db(db_path) -> tuple[sqlite3.Connection, bool]:
+    """Return (conn, owned) for rollback operations."""
+    if isinstance(db_path, sqlite3.Connection):
+        return db_path, False
+
+    if db_path is None:
+        canonical = os.environ.get(
+            "SIO_DB_PATH",
+            str(Path.home() / ".sio" / "sio.db"),
+        )
+        conn = sqlite3.connect(canonical)
+    else:
+        conn = sqlite3.connect(str(db_path))
+
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn, True
+
+
+def rollback_applied_change(
+    applied_change_id: int,
+    db_path=None,
+) -> dict:
+    """Revert a previously applied rule change using its backup file.
+
+    Looks up the applied_changes row identified by ``applied_change_id``,
+    reads the backup content from ``backup_path``, atomically writes the
+    backup content back to ``target_file``, and marks the row superseded.
+
+    Args:
+        applied_change_id: Primary key of the applied_changes row to roll back.
+        db_path: Connection, path string, or None (uses SIO_DB_PATH / sio.db).
+
+    Returns:
+        Dict with keys:
+        - ``"rolled_back"``: True
+        - ``"target"``: str path of the restored file
+        - ``"applied_change_id"``: the rolled-back row ID
+
+    Raises:
+        ValueError: When no applied_changes row exists for ``applied_change_id``.
+        BackupMissingError: When the backup file referenced in the row does not
+            exist on disk.
+        UnauthorizedApplyTarget: When target_file is outside the allowlist.
+        WriteIntegrityError: When the restore write fails the size integrity check.
+    """
+    conn, owned = _open_rollback_db(db_path)
+    try:
+        row = conn.execute(
+            "SELECT * FROM applied_changes WHERE id = ?",
+            (applied_change_id,),
+        ).fetchone()
+
+        if row is None:
+            raise ValueError(
+                f"applied_changes row with id={applied_change_id} does not exist"
+            )
+
+        backup_path_str = row["backup_path"]
+        target_path_str = row["target_file"]
+
+        if not backup_path_str:
+            raise BackupMissingError(
+                f"applied_changes row {applied_change_id} has no backup_path stored"
+            )
+
+        backup_path = Path(backup_path_str)
+        if not backup_path.exists():
+            raise BackupMissingError(
+                f"Backup file not found at {backup_path!r} for "
+                f"applied_changes row {applied_change_id}. "
+                "The file may have been pruned or moved."
+            )
+
+        target_path = Path(target_path_str)
+        backup_content = backup_path.read_text(encoding="utf-8")
+
+        # Atomically restore target from backup content
+        atomic_write(target_path, backup_content)
+
+        # Mark this applied_change as superseded (no successor ID for rollback)
+        from sio.core.db.queries import mark_superseded  # noqa: PLC0415
+        mark_superseded(conn, applied_change_id, by_id=None)
+
+        return {
+            "rolled_back": True,
+            "target": str(target_path),
+            "applied_change_id": applied_change_id,
+        }
+    finally:
+        if owned:
+            conn.close()

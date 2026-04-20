@@ -269,6 +269,8 @@ _PATTERN_COLS = [
     "pattern_id", "description", "tool_name", "error_count", "session_count",
     "first_seen", "last_seen", "rank_score", "centroid_embedding",
     "created_at", "updated_at",
+    # 004 columns — present after migrate_004; silently NULL-filled if absent
+    "cycle_id",
 ]
 
 
@@ -825,3 +827,94 @@ def insert_positive_record(
     if not _batch:
         conn.commit()
     return cur.lastrowid
+
+
+# ---------------------------------------------------------------------------
+# 004 — Active cycle helpers (FR-003, data-model.md §2.8)
+# ---------------------------------------------------------------------------
+
+
+def mark_stale_for_new_cycle(conn: sqlite3.Connection, new_cycle_id: str) -> None:
+    """Mark all prior active rows in patterns/datasets/pattern_errors/suggestions as inactive.
+
+    Sets ``active = 0`` for all rows whose ``cycle_id`` differs from
+    ``new_cycle_id`` (or is NULL) and whose ``active`` is currently 1.
+
+    Invariants (FR-003):
+    - ``applied_changes`` is NEVER touched by this helper.
+    - Rows already tagged with ``new_cycle_id`` remain ``active = 1``.
+    - Idempotent: calling twice with the same ``new_cycle_id`` has no
+      additional effect.
+
+    Args:
+        conn: Active database connection with WAL mode.
+        new_cycle_id: The UUID string for the current suggest run's cycle.
+    """
+    for table in ("patterns", "datasets", "pattern_errors", "suggestions"):
+        try:
+            conn.execute(
+                f"UPDATE {table} SET active = 0 "
+                f"WHERE active = 1 AND (cycle_id IS NULL OR cycle_id != ?)",
+                (new_cycle_id,),
+            )
+        except sqlite3.OperationalError:
+            # Table may not have active/cycle_id columns on older schemas — skip silently.
+            logger.debug(
+                "mark_stale_for_new_cycle: table '%s' missing active/cycle_id columns; "
+                "skipping (run migrate_004 to add them).",
+                table,
+            )
+    conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# 004 — Applied changes active audit helpers (data-model.md §2.7)
+# ---------------------------------------------------------------------------
+
+
+def list_active_applied_changes(conn: sqlite3.Connection) -> list[dict]:
+    """Return all applied_changes rows where superseded_at IS NULL.
+
+    These are the "live" applied changes that have not been rolled back or
+    replaced by a newer apply.
+
+    Args:
+        conn: Active database connection.
+
+    Returns:
+        List of applied_changes rows as dicts, ordered by applied_at DESC.
+    """
+    rows = conn.execute(
+        "SELECT * FROM applied_changes WHERE superseded_at IS NULL "
+        "ORDER BY applied_at DESC"
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def mark_superseded(
+    conn: sqlite3.Connection, id: int, by_id: int | None,
+) -> bool:
+    """Set superseded_at and superseded_by on an applied_changes row.
+
+    First-write-wins semantics: if superseded_at is already set, this call
+    is a no-op (does not update superseded_at a second time).
+
+    Args:
+        conn: Active database connection.
+        id: The applied_changes row ID to mark.
+        by_id: The ID of the newer applied_changes row that supersedes this one.
+            Pass None when rolling back without a successor.
+
+    Returns:
+        True if the row was updated (was not already superseded).
+        False if the row was already superseded (idempotent path).
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    # First-write-wins: only update if superseded_at is still NULL
+    cur = conn.execute(
+        "UPDATE applied_changes SET superseded_at = ?, superseded_by = ? "
+        "WHERE id = ? AND superseded_at IS NULL",
+        (now, by_id, id),
+    )
+    conn.commit()
+    return cur.rowcount > 0
