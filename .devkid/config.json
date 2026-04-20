@@ -21,8 +21,12 @@
     "timeout_minutes": 30
   },
   "sentinel": {
-    "enabled": true,
+    "enabled": false,
     "mode": "auto",
+    "tiers_file": "",
+    "min_tier": "",
+    "max_total_cost_usd": 5.0,
+    "max_total_duration_min": 30,
     "tier1": {
       "model": "qwen3-coder:30b",
       "ollama_url": "http://192.168.0.159:11434",
@@ -39,6 +43,7 @@
       "max_lines": 150,
       "allow_interface_changes": false
     },
+    "test_command": "",
     "placeholder": {
       "fail_on_detect": true,
       "patterns": [],
