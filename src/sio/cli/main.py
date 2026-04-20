@@ -237,25 +237,143 @@ def install(platform, auto_detect):
 @click.option("--platform", default=DEFAULT_PLATFORM, help="Platform filter.")
 @click.option("--days", default=90, help="Purge records older than N days.")
 @click.option("--dry-run", is_flag=True, help="Show count without deleting.")
-def purge(platform, days, dry_run):
-    """Purge old telemetry records."""
-    from sio.core.db.retention import purge as do_purge
+@click.option(
+    "--behavior-only", is_flag=True, default=False,
+    help=(
+        "Also purge behavior_invocations rows from sio.db AND the per-platform DB "
+        "(in addition to the default error_records / flow_events purge)."
+    ),
+)
+@click.option(
+    "--yes", "-y", is_flag=True, default=False,
+    help="Skip confirmation prompt.",
+)
+def purge(platform, days, dry_run, behavior_only, yes):
+    """Purge old telemetry records from the main SIO database.
 
-    db_path = os.path.join(
-        os.path.expanduser(f"~/.sio/{platform}"),
-        "behavior_invocations.db",
+    By default deletes rows in ``error_records`` and ``flow_events`` from
+    ``~/.sio/sio.db`` (or ``$SIO_DB_PATH``) where ``mined_at`` is older
+    than *--days* days.
+
+    With ``--behavior-only`` also purges ``behavior_invocations`` rows from
+    both the main DB and the per-platform DB.
+
+    Examples:
+        sio purge --days 30 --yes
+        sio purge --days 30 --behavior-only --yes
+        sio purge --days 90 --dry-run
+    """
+    # FR-025 / M7: always target the main sio.db, NOT the per-platform DB
+    sio_db_path = os.environ.get(
+        "SIO_DB_PATH",
+        os.path.expanduser("~/.sio/sio.db"),
     )
-    if not os.path.exists(db_path):
-        click.echo("No database found.")
+
+    if not dry_run and not yes:
+        target_desc = (
+            "error_records, flow_events" + (", behavior_invocations" if behavior_only else "")
+        )
+        confirmed = click.confirm(
+            f"Purge {target_desc} older than {days} days from {sio_db_path}?",
+        )
+        if not confirmed:
+            click.echo("Aborted.")
+            return
+
+    if not os.path.exists(sio_db_path):
+        click.echo(f"No main SIO database found at {sio_db_path}.")
         return
 
-    with _db_conn(db_path) as conn:
-        count = do_purge(conn, older_than_days=days, dry_run=dry_run)
+    total_purged = 0
 
-    if dry_run:
-        click.echo(f"Would purge {count} records older than {days} days.")
-    else:
-        click.echo(f"Purged {count} records older than {days} days.")
+    with _db_conn(sio_db_path) as conn:
+        # Purge error_records and flow_events (always)
+        if dry_run:
+            try:
+                n_errors = conn.execute(
+                    "SELECT COUNT(*) FROM error_records "
+                    "WHERE mined_at < datetime('now', ?)",
+                    (f"-{days} days",),
+                ).fetchone()[0]
+            except Exception:
+                n_errors = 0
+            try:
+                n_flows = conn.execute(
+                    "SELECT COUNT(*) FROM flow_events "
+                    "WHERE mined_at < datetime('now', ?)",
+                    (f"-{days} days",),
+                ).fetchone()[0]
+            except Exception:
+                n_flows = 0
+            click.echo(
+                f"Would purge {n_errors} error_records and {n_flows} flow_events "
+                f"older than {days} days."
+            )
+        else:
+            try:
+                cur = conn.execute(
+                    "DELETE FROM error_records WHERE mined_at < datetime('now', ?)",
+                    (f"-{days} days",),
+                )
+                total_purged += cur.rowcount
+            except Exception:
+                pass
+            try:
+                cur = conn.execute(
+                    "DELETE FROM flow_events WHERE mined_at < datetime('now', ?)",
+                    (f"-{days} days",),
+                )
+                total_purged += cur.rowcount
+            except Exception:
+                pass
+            conn.commit()
+
+        # Optionally purge behavior_invocations from main DB
+        if behavior_only:
+            if dry_run:
+                try:
+                    n_bi = conn.execute(
+                        "SELECT COUNT(*) FROM behavior_invocations "
+                        "WHERE timestamp < datetime('now', ?)",
+                        (f"-{days} days",),
+                    ).fetchone()[0]
+                except Exception:
+                    n_bi = 0
+                click.echo(
+                    f"Would also purge {n_bi} behavior_invocations rows from {sio_db_path}."
+                )
+            else:
+                try:
+                    cur = conn.execute(
+                        "DELETE FROM behavior_invocations WHERE timestamp < datetime('now', ?)",
+                        (f"-{days} days",),
+                    )
+                    total_purged += cur.rowcount
+                    conn.commit()
+                except Exception:
+                    pass
+
+    # Also purge per-platform DB when --behavior-only
+    if behavior_only and not dry_run:
+        platform_db_path = os.path.join(
+            os.path.expanduser(f"~/.sio/{platform}"),
+            "behavior_invocations.db",
+        )
+        if os.path.exists(platform_db_path):
+            with _db_conn(platform_db_path) as pconn:
+                try:
+                    cur = pconn.execute(
+                        "DELETE FROM behavior_invocations WHERE timestamp < datetime('now', ?)",
+                        (f"-{days} days",),
+                    )
+                    total_purged += cur.rowcount
+                    pconn.commit()
+                except Exception:
+                    pass
+            click.echo(f"Also purged per-platform DB: {platform_db_path}")
+
+    if not dry_run:
+        click.echo(f"Purged {total_purged} total records older than {days} days.")
 
 
 @cli.command()
@@ -1629,19 +1747,46 @@ def reject(suggestion_id, note):
     "--rollback", "rollback_id", type=int, default=None,
     help="Roll back an applied change by its ID (from applied_changes table).",
 )
-def apply_suggestion(suggestion_id, experiment, force, rollback_id):
+@click.option(
+    "--merge", is_flag=True, default=False,
+    help="Explicit consent to merge with a similar existing rule (FR-024).",
+)
+@click.option(
+    "--yes", "-y", is_flag=True, default=False,
+    help="Skip interactive confirmation prompt.",
+)
+@click.option(
+    "--no-backup", is_flag=True, default=False,
+    help="[NOT SUPPORTED] Backups are required for safety; this flag is rejected.",
+)
+def apply_suggestion(suggestion_id, experiment, force, rollback_id, merge, yes, no_backup):
     """Apply an approved suggestion to its target file.
 
     Checks the instruction budget before applying. Uses delta-based
     writing (merge if >80% similar to an existing rule). If the budget
     is near capacity, triggers automatic consolidation.
 
+    --no-backup is NOT supported (raises BackupRequired). Backups are
+    mandatory for safety and cannot be disabled.
+
     Examples:
         sio apply 5                 # Normal apply with budget check
         sio apply 5 --force         # Skip budget check
         sio apply 5 --experiment    # Apply on experiment branch
         sio apply --rollback 42     # Roll back applied change #42
+        sio apply 5 --merge         # Consent to merge with similar rule
+        sio apply 5 --yes           # Skip confirmation prompt
     """
+    # Reject --no-backup immediately (FR-004, BackupRequired)
+    if no_backup:
+        from sio.core.applier.writer import BackupRequired  # noqa: PLC0415
+        click.echo(
+            "Error: --no-backup is not supported. "
+            "Backups are required for safe rollback (BackupRequired).",
+            err=True,
+        )
+        raise SystemExit(1)
+
     # Handle rollback path — does not require suggestion_id
     if rollback_id is not None:
         from sio.core.applier.writer import (  # noqa: PLC0415

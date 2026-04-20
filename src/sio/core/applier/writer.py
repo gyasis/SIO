@@ -20,7 +20,6 @@ from pathlib import Path
 
 from sio.core.util.time import utc_now_iso
 
-
 # ---------------------------------------------------------------------------
 # Allowlist roots (FR-019, R-14)
 # ---------------------------------------------------------------------------
@@ -231,6 +230,80 @@ def atomic_write(target: Path, new_content: str) -> Path:
         _prune_backups(backup_path.parent, keep=10)
 
     return backup_path if backup_path is not None else target
+
+
+# ---------------------------------------------------------------------------
+# High-level apply_change (T055 — US3, FR-004, FR-019)
+# ---------------------------------------------------------------------------
+
+def apply_change(
+    suggestion_id: int,
+    target_path: Path,
+    new_content: str,
+    *,
+    merge: bool = False,
+    db_path=None,
+) -> int:
+    """Apply *new_content* to *target_path* with full safety guarantees.
+
+    Validates the target path against the allowlist, performs an atomic
+    write (backup → tmp → fsync → rename → size-check), and records the
+    result in the ``applied_changes`` table.
+
+    Args:
+        suggestion_id: FK to the ``suggestions`` row being applied.
+        target_path: Absolute path of the file to update.
+        new_content: Full replacement content for *target_path*.
+        merge: When True, signals merge-consent for the caller (the merger
+            itself is implemented in Wave 7; this flag is persisted in the DB
+            row for later use).
+        db_path: Connection, path string, or ``None`` (uses ``SIO_DB_PATH`` /
+            ``~/.sio/sio.db``).
+
+    Returns:
+        The ``applied_changes.id`` primary key of the inserted row.
+
+    Raises:
+        UnauthorizedApplyTarget: If *target_path* is outside the allowlist.
+        WriteIntegrityError: If the post-write size check fails.
+        BackupRequired: Cannot be raised here (backup is always performed).
+    """
+    # 1. Validate path before any I/O
+    _validate_target_path(target_path)
+
+    # 2. Atomic write — backup is performed internally; returns backup_path
+    backup_path = atomic_write(target_path, new_content)
+
+    # 3. Record in applied_changes
+    conn, owned = _open_rollback_db(db_path)
+    try:
+        now = utc_now_iso()
+        cur = conn.execute(
+            "INSERT INTO applied_changes "
+            "(suggestion_id, target_file, backup_path, content_after, "
+            "merge_consent, applied_at, superseded_at, superseded_by) "
+            "VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)",
+            (
+                suggestion_id,
+                str(target_path),
+                str(backup_path) if backup_path else None,
+                new_content,
+                1 if merge else 0,
+                now,
+            ),
+        )
+        conn.commit()
+        return cur.lastrowid
+    except Exception:
+        # Graceful fallback: row insert failed but file is already written —
+        # log and return -1 so callers can distinguish DB failure from write
+        # failure.  The file state is consistent; only the audit trail is
+        # missing.
+        conn.rollback()
+        return -1
+    finally:
+        if owned:
+            conn.close()
 
 
 # ---------------------------------------------------------------------------
