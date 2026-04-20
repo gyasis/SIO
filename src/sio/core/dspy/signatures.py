@@ -1,6 +1,46 @@
 """DSPy Signature definitions for suggestion generation and ground truth."""
 
+from __future__ import annotations
+
 import dspy
+
+
+class PatternToRule(dspy.Signature):
+    """Generate a concise CLAUDE.md rule that prevents the given error pattern.
+    The rule must be actionable, file-path-safe, and <= 3 sentences."""
+
+    pattern_description: str = dspy.InputField(
+        desc="Human-readable cluster name"
+    )
+    example_errors: list[str] = dspy.InputField(
+        desc="3-5 representative error messages"
+    )
+    project_context: str = dspy.InputField(
+        desc="Short description of the project or platform"
+    )
+
+    rule_title: str = dspy.OutputField(
+        desc="Title of the generated rule"
+    )
+    rule_body: str = dspy.OutputField(
+        desc="Rule body in Markdown, <= 3 sentences"
+    )
+    rule_rationale: str = dspy.OutputField(
+        desc="Why this rule prevents the pattern"
+    )
+
+
+class RuleRecallScore(dspy.Signature):
+    """Given a gold-standard rule and a candidate rule, score how well the
+    candidate captures the same preventive intent.
+    Returns a float in [0, 1]."""
+
+    gold_rule: str = dspy.InputField()
+    candidate_rule: str = dspy.InputField()
+
+    score: float = dspy.OutputField(desc="Recall score in [0, 1]")
+    reasoning: str = dspy.OutputField(desc="Brief justification")
+
 
 
 class SuggestionGenerator(dspy.Signature):

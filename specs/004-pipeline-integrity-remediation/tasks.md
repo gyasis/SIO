@@ -61,7 +61,7 @@
 - [x] T021 [P] Write failing tests in `tests/unit/dspy/test_lm_factory.py` covering: `get_task_lm()` returns `dspy.LM` with `cache=True`, `get_reflection_lm()` with `cache=False`, env-var overrides, `get_adapter()` provider-aware, grep-of-`src/` finds zero direct `dspy.LM(` outside the factory (FR-041, SC-022).
 - [x] T022 Implement `src/sio/core/dspy/lm_factory.py::{get_task_lm, get_reflection_lm, get_adapter, configure_default}` per `contracts/dspy-module-api.md` §1; pass T021.
 - [x] T023 [P] Write failing tests in `tests/unit/dspy/test_signatures.py` asserting `PatternToRule` and `RuleRecallScore` have class docstrings, typed `InputField`/`OutputField`, and pass `dspy.Predict` instantiation smoke test (FR-035).
-- [ ] T024 Implement `src/sio/core/dspy/signatures.py::{PatternToRule, RuleRecallScore}` per `contracts/dspy-module-api.md` §2.
+- [x] T024 Implement `src/sio/core/dspy/signatures.py::{PatternToRule, RuleRecallScore}` per `contracts/dspy-module-api.md` §2.
 - [x] T025 [P] Write failing tests in `tests/unit/dspy/test_metric_registry.py` asserting the three registered metrics (`exact_match`, `embedding_similarity`, `llm_judge_recall`) each conform to `(gold, pred, trace=None) -> bool | float` (FR-018).
 - [ ] T026 Implement `src/sio/core/dspy/metrics.py` with `METRIC_REGISTRY`, `@register`, and the three metric functions per `contracts/dspy-module-api.md` §5.
 - [x] T027 [P] Write failing tests in `tests/unit/dspy/test_assertions.py` asserting `assert_rule_format` and `assert_no_phi` use `dspy.Assert`, produce actionable messages, and trigger backtrack in a mocked predictor (FR-038, R-11).
@@ -84,15 +84,15 @@
 - [x] T033 [P] [US1] Write failing tests in `tests/unit/db/test_sync.py` covering: full sync copies all rows, second call copies zero, `INSERT OR IGNORE` identity `(platform, session_id, timestamp, tool_name)` is deduped (R-1, FR-002).
 - [x] T034 [P] [US1] Write failing tests in `tests/unit/db/test_sync_drift.py` covering drift-percentage computation with seeded divergence (supports `sio status` SC-009).
 - [x] T035 [US1] Implement `src/sio/core/db/sync.py::sync_behavior_invocations(since_timestamp=None)` per `contracts/storage-sync.md` §4; pass T033 and T034.
-- [ ] T036 [US1] Write `scripts/migrate_split_brain.py` calling `sync_behavior_invocations(None)` with friendly logging; one-time backfill of ≥ 38,091 legacy rows (FR-002).
-- [ ] T037 [P] [US1] Write failing tests in `tests/integration/test_installer_idempotent.py` running `sio install` twice, asserting per-platform DB untouched and `sio.db` row counts identical (FR-007, L6, SC-014).
-- [ ] T038 [US1] Update `src/sio/adapters/claude_code/installer.py` to: point at `~/.sio/sio.db` for schema, preserve `~/.sio/claude-code/behavior_invocations.db`, call `migrate_split_brain.py`, refuse to recreate legacy DB; pass T037.
-- [ ] T039 [P] [US1] Write failing tests in `tests/unit/arena/test_promote_to_gold.py` covering auto-promotion when `user_satisfied=1 AND correct_outcome=1`, no promotion otherwise (FR-005).
-- [ ] T040 [US1] Implement `promote_to_gold(invocation_id)` in `src/sio/core/arena/gold_standards.py`; wire call into `src/sio/adapters/claude_code/hooks/stop.py` (heartbeat-wrapped).
+- [x] T036 [US1] Write `scripts/migrate_split_brain.py` calling `sync_behavior_invocations(None)` with friendly logging; one-time backfill of ≥ 38,091 legacy rows (FR-002).
+- [x] T037 [P] [US1] Write failing tests in `tests/integration/test_installer_idempotent.py` running `sio install` twice, asserting per-platform DB untouched and `sio.db` row counts identical (FR-007, L6, SC-014).
+- [x] T038 [US1] Update `src/sio/adapters/claude_code/installer.py` to: point at `~/.sio/sio.db` for schema, preserve `~/.sio/claude-code/behavior_invocations.db`, call `migrate_split_brain.py`, refuse to recreate legacy DB; pass T037.
+- [x] T039 [P] [US1] Write failing tests in `tests/unit/arena/test_promote_to_gold.py` covering auto-promotion when `user_satisfied=1 AND correct_outcome=1`, no promotion otherwise (FR-005).
+- [x] T040 [US1] Implement `promote_to_gold(invocation_id)` in `src/sio/core/arena/gold_standards.py`; wire call into `src/sio/adapters/claude_code/hooks/stop.py` (heartbeat-wrapped).
 - [ ] T041 [US1] Update `src/sio/core/arena/gold_standards.py` read paths to query `~/.sio/sio.db` via the connect factory (currently reads the wrong path per audit C1).
-- [ ] T042 [P] [US1] Write failing integration test `tests/integration/test_closed_loop.py`: seed synthetic invocation → sync → promote → run GEPA on tiny fixture trainset → assert `optimized_modules` row with `active=1` and loadable artifact path (SC-001, SC-004).
-- [ ] T043 [US1] Implement `src/sio/core/dspy/optimizer.py::run_optimize(module_name, optimizer_name, ...)` skeleton per `contracts/optimizer-selection.md` §3 — GEPA branch only at this step; passes T042 (integration) and T062 (unit, Phase 6).
-- [ ] T044 [US1] Wire `sio optimize --module <name> --optimizer gepa|mipro|bootstrap` CLI in `src/sio/cli/main.py` per `contracts/cli-commands.md` § `sio optimize`.
+- [x] T042 [P] [US1] Write failing integration test `tests/integration/test_closed_loop.py`: seed synthetic invocation → sync → promote → run GEPA on tiny fixture trainset → assert `optimized_modules` row with `active=1` and loadable artifact path (SC-001, SC-004).
+- [x] T043 [US1] Implement `src/sio/core/dspy/optimizer.py::run_optimize(module_name, optimizer_name, ...)` skeleton per `contracts/optimizer-selection.md` §3 — GEPA branch only at this step; passes T042 (integration) and T062 (unit, Phase 6).
+- [x] T044 [US1] Wire `sio optimize --module <name> --optimizer gepa|mipro|bootstrap` CLI in `src/sio/cli/main.py` per `contracts/cli-commands.md` § `sio optimize`.
 
 **Checkpoint**: US1 MVP — closed loop flows end-to-end with GEPA.
 
@@ -104,7 +104,7 @@
 
 **Independent Test**: `sio suggest` twice → 100% of `applied_changes` rows remain with `superseded_at IS NULL` (SC-002).
 
-- [ ] T045 [P] [US2] Write failing integration test `tests/integration/test_suggest_non_destructive.py`: seed 3 rows in `applied_changes`, run `sio suggest` twice, assert count unchanged (SC-002).
+- [x] T045 [P] [US2] Write failing integration test `tests/integration/test_suggest_non_destructive.py`: seed 3 rows in `applied_changes`, run `sio suggest` twice, assert count unchanged (SC-002).
 - [ ] T046 [P] [US2] Write failing unit test `tests/unit/db/test_active_cycle.py`: after a suggest cycle, prior `patterns`/`datasets`/`pattern_errors`/`suggestions` rows flip to `active=0`, new rows have `active=1, cycle_id=<uuid>` (FR-003).
 - [ ] T047 [US2] Refactor `src/sio/cli/main.py` suggest path (currently `cli/main.py:1389-1428`): remove every `DELETE FROM` on audit-related tables; insert a new `cycle_id` UUID and UPDATE prior rows to `active=0` before INSERTing new ones; NEVER touch `applied_changes`.
 - [ ] T048 [P] [US2] Write failing unit test `tests/unit/db/test_superseded.py` covering `applied_changes.superseded_at` + `superseded_by` semantics.

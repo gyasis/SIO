@@ -2370,6 +2370,104 @@ def _display_optimization_diff(console, conn, result):
 
 
 # ---------------------------------------------------------------------------
+# sio optimize — GEPA closed-loop optimizer (T044 / FR-036, FR-038)
+# ---------------------------------------------------------------------------
+
+
+@cli.command("optimize")
+@click.option(
+    "--module",
+    "module_name",
+    default="suggestion_generator",
+    show_default=True,
+    help="Module to optimize (e.g. suggestion_generator).",
+)
+@click.option(
+    "--optimizer",
+    "optimizer_name",
+    type=click.Choice(["gepa", "mipro", "bootstrap"]),
+    default="gepa",
+    show_default=True,
+    help="Prompt optimizer to use.",
+)
+@click.option(
+    "--trainset-size",
+    default=200,
+    show_default=True,
+    type=int,
+    help="Max gold_standards rows to use for training.",
+)
+@click.option(
+    "--valset-size",
+    default=50,
+    show_default=True,
+    type=int,
+    help="Max gold_standards rows to use for validation.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Print config and exit without running optimization.",
+)
+def optimize_cmd(module_name, optimizer_name, trainset_size, valset_size, dry_run):
+    """Run prompt optimization against the gold_standards corpus.
+
+    Uses GEPA (or mipro/bootstrap in Wave 6) to compile an optimized
+    DSPy program and save the artifact to ~/.sio/optimized/.
+    Records the run in the optimized_modules table.
+    """
+    from rich.console import Console  # noqa: PLC0415
+
+    console = Console()
+
+    if dry_run:
+        console.print("[bold]Dry run — config:[/bold]")
+        console.print(f"  module:        {module_name}")
+        console.print(f"  optimizer:     {optimizer_name}")
+        console.print(f"  trainset_size: {trainset_size}")
+        console.print(f"  valset_size:   {valset_size}")
+        raise SystemExit(0)
+
+    from sio.core.dspy.optimizer import (  # noqa: PLC0415
+        InsufficientData,
+        OptimizationError,
+        UnknownOptimizer,
+        run_optimize,
+    )
+
+    console.print(
+        f"\n[bold]Optimizing[/bold] module=[cyan]{module_name}[/cyan] "
+        f"optimizer=[cyan]{optimizer_name}[/cyan] ...\n"
+    )
+
+    try:
+        result = run_optimize(
+            module_name=module_name,
+            optimizer_name=optimizer_name,
+            trainset_size=trainset_size,
+            valset_size=valset_size,
+        )
+    except InsufficientData as exc:
+        console.print(
+            f"[red]Insufficient data:[/red] {exc}\n"
+            "Run [bold]sio mine[/bold] and promote invocations with "
+            "[bold]sio promote-to-gold[/bold] first."
+        )
+        raise SystemExit(1)
+    except (UnknownOptimizer, NotImplementedError) as exc:
+        console.print(f"[red]Optimizer error:[/red] {exc}")
+        raise SystemExit(1)
+    except OptimizationError as exc:
+        console.print(f"[red]Optimization failed:[/red] {exc}")
+        raise SystemExit(1)
+
+    console.print("[green]Optimization complete.[/green]")
+    console.print(f"  artifact: {result['artifact']}")
+    console.print(f"  score:    {result['score']:.4f}")
+    console.print(f"  optimizer: {result['optimizer']}")
+
+
+# ---------------------------------------------------------------------------
 # Dataset export commands (v2.1 — training data generation)
 # ---------------------------------------------------------------------------
 

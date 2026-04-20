@@ -10,7 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from sio.core.constants import DEFAULT_PLATFORM
-from sio.core.db.schema import init_db
+from sio.core.db.connect import open_db
+from sio.core.db.schema import ensure_schema_version, init_db
 
 _CONFIG_TEMPLATE = """\
 # SIO configuration — ~/.sio/config.toml
@@ -81,20 +82,41 @@ def install(
     if claude_dir is None:
         claude_dir = os.path.expanduser("~/.claude")
 
+    # Honour SIO_HOME override (used by tests) to determine canonical DB location
+    _sio_home = os.environ.get(
+        "SIO_HOME", os.path.expanduser("~/.sio")
+    )
+
     os.makedirs(db_dir, exist_ok=True)
     os.makedirs(claude_dir, exist_ok=True)
 
     # Create ground truth and optimized module directories
-    sio_base = os.path.expanduser("~/.sio")
+    sio_base = _sio_home
     os.makedirs(os.path.join(sio_base, "ground_truth"), exist_ok=True)
     os.makedirs(os.path.join(sio_base, "optimized"), exist_ok=True)
 
     # Create config.toml template if not present
     config_created = _install_config(sio_base)
 
-    # Initialize database
+    # Initialize per-platform database (FR-007: preserve per-platform DB)
     db_path = os.path.join(db_dir, "behavior_invocations.db")
     conn = init_db(db_path)
+
+    # --- FR-007 + SC-014: Ensure canonical sio.db has schema_version ---
+    # The canonical DB lives at ~/.sio/sio.db (or SIO_DB_PATH env override)
+    canonical_db_path = os.environ.get(
+        "SIO_DB_PATH", os.path.join(_sio_home, "sio.db")
+    )
+    os.makedirs(os.path.dirname(canonical_db_path), exist_ok=True)
+    with open_db(canonical_db_path) as canonical_conn:
+        # Ensure all base tables exist in canonical DB
+        _ensure_canonical_schema(canonical_conn)
+        # Ensure schema_version table + baseline row exist (idempotent)
+        ensure_schema_version(canonical_conn)
+        # Apply 004 migration if not yet applied (idempotent)
+        _apply_004_migration_if_needed(canonical_db_path, canonical_conn)
+    # One-time backfill: mirror per-platform rows into canonical DB
+    _run_split_brain_backfill()
 
     # Register hooks in settings.json
     settings_path = os.path.join(claude_dir, "settings.json")
@@ -257,3 +279,100 @@ def _install_skills(claude_dir: str) -> list[str]:
         installed.append(skill_name)
 
     return installed
+
+
+def _ensure_canonical_schema(conn) -> None:
+    """Create all base SIO tables in the canonical sio.db if not present.
+
+    Delegates to init_db logic but via an already-open connection.
+    Uses CREATE TABLE IF NOT EXISTS so safe to call repeatedly.
+    """
+    from sio.core.db.schema import (  # noqa: PLC0415
+        _APPLIED_CHANGES_DDL,
+        _AUTORESEARCH_TXLOG_DDL,
+        _BEHAVIOR_INVOCATIONS_DDL,
+        _DATASETS_DDL,
+        _ERROR_RECORDS_DDL,
+        _FLOW_EVENTS_DDL,
+        _GOLD_STANDARDS_DDL,
+        _GROUND_TRUTH_DDL,
+        _INDEXES,
+        _OPTIMIZED_MODULES_DDL,
+        _OPTIMIZATION_RUNS_DDL,
+        _PATTERN_ERRORS_DDL,
+        _PATTERNS_DDL,
+        _PLATFORM_CONFIG_DDL,
+        _POSITIVE_RECORDS_DDL,
+        _PROCESSED_SESSIONS_DDL,
+        _RECALL_EXAMPLES_DDL,
+        _SESSION_METRICS_DDL,
+        _SUGGESTIONS_DDL,
+        _VELOCITY_SNAPSHOTS_DDL,
+    )
+
+    for ddl in [
+        _BEHAVIOR_INVOCATIONS_DDL,
+        _OPTIMIZATION_RUNS_DDL,
+        _GOLD_STANDARDS_DDL,
+        _PLATFORM_CONFIG_DDL,
+        _ERROR_RECORDS_DDL,
+        _PATTERNS_DDL,
+        _PATTERN_ERRORS_DDL,
+        _DATASETS_DDL,
+        _SUGGESTIONS_DDL,
+        _APPLIED_CHANGES_DDL,
+        _FLOW_EVENTS_DDL,
+        _RECALL_EXAMPLES_DDL,
+        _GROUND_TRUTH_DDL,
+        _OPTIMIZED_MODULES_DDL,
+        _PROCESSED_SESSIONS_DDL,
+        _SESSION_METRICS_DDL,
+        _POSITIVE_RECORDS_DDL,
+        _VELOCITY_SNAPSHOTS_DDL,
+        _AUTORESEARCH_TXLOG_DDL,
+    ]:
+        conn.execute(ddl)
+
+    for idx_sql in _INDEXES:
+        try:
+            conn.execute(idx_sql)
+        except Exception:
+            pass  # Index may already exist
+
+    conn.commit()
+
+
+def _apply_004_migration_if_needed(
+    canonical_db_path: str, conn
+) -> None:
+    """Apply 004 migration to canonical DB if not already applied. Idempotent."""
+    import sqlite3  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    try:
+        row = conn.execute(
+            "SELECT status FROM schema_version WHERE version=2"
+        ).fetchone()
+        if row and row["status"] == "applied":
+            return  # Already applied
+    except Exception:
+        pass  # schema_version table doesn't exist yet — migrate_004 will create it
+
+    # Call migrate_004.migrate() which is idempotent
+    try:
+        from scripts.migrate_004 import migrate  # noqa: PLC0415
+
+        migrate(canonical_db_path)
+    except Exception:
+        # Migration failure must not break installation
+        pass
+
+
+def _run_split_brain_backfill() -> None:
+    """Run the one-time sync backfill. Swallows all errors — never breaks install."""
+    try:
+        from scripts.migrate_split_brain import main as split_brain_main  # noqa: PLC0415
+
+        split_brain_main()
+    except Exception:
+        pass
