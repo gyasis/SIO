@@ -9,6 +9,8 @@
 
 SIO's data-ingestion surface (error mining, flow mining, positive-signal capture) is healthy, but the downstream training, optimization, suggestion, and audit pipeline is starving, silently destroying state, or running unsafely. An adversarial audit produced 34 findings across four severity tiers (7 CRITICAL, 12 HIGH, 8 MEDIUM, 6 LOW, including H10/H11/H12/L6 flagged by two hunters). This feature restores end-to-end data flow from hook capture → labeled examples → optimization → suggestion → safe application → audit trail, then hardens every destructive or silent-failure path, then closes the long tail of correctness defects. Per owner direction, **all audit findings are in scope — no deferrals.**
 
+**DSPy is a first-class dependency of this remediation**, not an implementation detail. Per owner direction (2026-04-20), SIO treats DSPy as its core optimization/quality framework and therefore adopts the full DSPy 3.1.3 surface: structured `Signature`/`Module` programs, multiple optimizer strategies (`BootstrapFewShot`, `MIPROv2`, `GEPA`), runtime assertions (`dspy.Assert`/`dspy.Suggest`), adapter-based native function calling, and first-class save/load of optimized modules. Phase 3 of this feature codifies DSPy usage so that the suggestion generator, metric evaluator, and optimizer path all speak the same framework idiomatically. See `research/dspy-3.x-reference.md` for the canonical reference used by the plan phase.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - DSPy optimizer receives labeled examples and produces real optimization runs (Priority: P1)
@@ -143,7 +145,25 @@ As the operator, when I review generated suggestions, I want most to be worth ap
 
 ---
 
-### User Story 9 - Adversarial re-audit returns clean (Priority: P3)
+### User Story 9 - SIO speaks DSPy idiomatically end-to-end (Priority: P2)
+
+As the operator, I want every part of SIO that reasons, scores, or optimizes to use DSPy as a first-class framework so that the training pipeline, suggestion generator, and recall metric all benefit from DSPy's optimization, assertion, and adapter features rather than from ad-hoc code. Today the recall metric is a trivial string-equality function, the suggestion generator does not use DSPy's runtime assertions, and the optimizer path has no concept of "which teleprompter do I use for this module."
+
+**Why this priority**: DSPy is SIO's core framework. Bolt-on usage was what produced the trivially-broken recall metric and the 92% suggestion rejection rate. Making DSPy idiomatic across the codebase is a prerequisite for any future quality work.
+
+**Independent Test**: Pick any reasoning step in SIO (e.g., the suggestion generator). Verify it is a `dspy.Module` with a declared `Signature`, scored via `dspy.Evaluate` against a devset, optimized by a chosen teleprompter, and that the compiled program is persisted via `save()`/`load()`. Verifiable without touching the other user stories.
+
+**Acceptance Scenarios**:
+
+1. **Given** a reasoning module in SIO, **When** inspecting its source, **Then** it is implemented as a `dspy.Module` with a class-based `Signature` using `InputField`/`OutputField` and type hints.
+2. **Given** the operator chooses an optimizer, **When** they invoke `sio optimize`, **Then** they can select between GEPA (default), MIPROv2, and BootstrapFewShot per module without code changes.
+3. **Given** a candidate reasoning output that violates a format constraint, **When** the module runs, **Then** `dspy.Assert` triggers a backtrack attempt rather than emitting the malformed output.
+4. **Given** an optimized module, **When** optimization completes, **Then** the compiled program is saved to a JSON artifact and recorded in the `optimized_modules` table with a path that loads cleanly on next invocation.
+5. **Given** the provider supports native function calling, **When** a tool-using module runs, **Then** it uses `ChatAdapter(use_native_function_calling=True)` rather than DSPy-managed tool orchestration.
+
+---
+
+### User Story 10 - Adversarial re-audit returns clean (Priority: P3)
 
 As the operator, after the remediation lands, I want an independent re-audit to confirm zero CRITICAL and zero HIGH findings remain, so that I have an objective gate on "done" rather than relying on the original audit list being exhaustive.
 
@@ -203,7 +223,7 @@ As the operator, after the remediation lands, I want an independent re-audit to 
 
 - **FR-016**: All hooks MUST write a heartbeat record with last-success, last-error, consecutive-failure-count, and hook name; `sio status` MUST surface this health to the operator, including stale-heartbeat detection.
 - **FR-017**: The data store MUST carry a schema-version marker and MUST refuse to start if a prior migration is partially applied.
-- **FR-018**: The recall-evaluation metric MUST distinguish correct from hallucinated outputs (the current trivial string-equality metric MUST be replaced by a semantic-similarity or exact-match method appropriate per task type).
+- **FR-018**: The recall-evaluation metric MUST distinguish correct from hallucinated outputs. The current trivial string-equality metric MUST be replaced by a task-appropriate method drawn from: exact-match (routing/flow tasks), embedding-based semantic similarity with documented threshold (natural-language tasks), or LLM-as-judge (quality-of-reasoning tasks). The metric function MUST conform to the DSPy signature `metric(gold, pred, trace=None) -> bool | float` so it is usable by `dspy.Evaluate` and every DSPy teleprompter.
 - **FR-019**: The file-write allowlist MUST NOT grant blanket write access to the current working directory; only explicit allowlisted locations are writable.
 - **FR-020**: Lower-priority error records (e.g., tool-failure) MUST NOT be deduped away in favor of higher-priority rows of a different type; dedup MUST be within-type only.
 - **FR-021**: Flow success heuristics MUST require an explicit positive signal rather than marking any absence-of-negative as success.
@@ -214,13 +234,23 @@ As the operator, after the remediation lands, I want an independent re-audit to 
 - **FR-026**: The flow extractor MUST accept additional common language extensions (at minimum Rust, Go, Java, C++, notebook files).
 - **FR-027**: The mining pipeline MUST log a warning when an expected session directory is missing, not skip silently.
 - **FR-028**: The file-hash function MUST guard against pathologically large files (e.g., > 1 GB) with a size cap and warning, not OOM.
-- **FR-029**: Suggestion generation MUST be instrumented so that rejection reasons at each stage are recorded for quality analysis.
+- **FR-029**: Suggestion generation MUST be instrumented so that rejection reasons at each stage are recorded for quality analysis. Instrumentation MUST include scoring against a held-out devset via `dspy.Evaluate`, and it MAY include runtime `dspy.Assert`/`dspy.Suggest` guardrails that reject malformed suggestions before the approval gate and trigger DSPy backtracking.
 
 #### Timezone, Platform, and Centroid Correctness (Phase 3 add-ons)
 
 - **FR-030**: All timestamps MUST be timezone-aware; naive inputs MUST be normalized to UTC on write and stored in an explicit ISO-8601 form with UTC offset.
 - **FR-031**: The platform label used by writers and readers MUST come from a single shared constant; no string duplication is permitted in either path.
 - **FR-032**: Clustering MUST support per-pattern centroid persistence so that re-running suggestion generation reuses existing vectors for unchanged patterns instead of recomputing embeddings for the entire corpus every run.
+
+#### DSPy First-Class Adoption (Phase 3 add-ons)
+
+- **FR-035**: Every SIO reasoning module (suggestion generator, recall evaluator, routing decider, flow predictor) MUST be implemented as a `dspy.Module` subclass with a class-based `dspy.Signature` declaring explicit `InputField`/`OutputField` members with type hints and docstring-level task instructions.
+- **FR-036**: The training pipeline MUST construct training examples as `dspy.Example` instances marked with `.with_inputs(...)` to designate input fields; raw dicts or ad-hoc tuples MUST NOT be passed to any teleprompter.
+- **FR-037**: The optimizer surface MUST support at least three teleprompters — `GEPA` (default), `MIPROv2`, and `BootstrapFewShot` — selectable per reasoning module without source changes (e.g., via `sio optimize --optimizer gepa|mipro|bootstrap`). GEPA MUST be wired with a separate `reflection_lm` (typically a stronger model than the task LM) and with both `trainset` and `valset`.
+- **FR-038**: Every reasoning module MAY declare runtime `dspy.Assert` or `dspy.Suggest` constraints for format, factual-consistency, and tool-output validity. Assert failures MUST trigger DSPy backtracking with the failure message fed back into the LM; Suggest failures MUST be logged and included in suggestion instrumentation data (see FR-029).
+- **FR-039**: Compiled/optimized modules MUST be persisted via `program.save(path)` and restored via `program.load(path)`. The `optimized_modules` table MUST store the filesystem path, the optimizer name, the metric name, the training set size, and the resulting score; the path MUST load cleanly on a fresh program instance of matching structure.
+- **FR-040**: When the underlying LM provider supports native function calling, tool-using modules MUST be configured with `ChatAdapter(use_native_function_calling=True)` (or `JSONAdapter` when strict schema output is required). DSPy-managed tool orchestration MUST be reserved for providers that lack native support.
+- **FR-041**: The DSPy LM MUST be configured through a single shared factory (e.g., `sio.dspy_config.get_lm()`) so that cache settings, temperature defaults, and provider selection are centralized. Direct `dspy.LM(...)` calls scattered across modules MUST NOT be permitted.
 
 #### Coverage Closure (Phase 4)
 
@@ -238,6 +268,10 @@ As the operator, after the remediation lands, I want an independent re-audit to 
 - **Session mining checkpoint**: Per-file state recording the last processed byte offset and subagent/parent linkage so that re-runs are idempotent.
 - **Schema version marker**: A record of the current data-store migration version so that the system refuses to run against a partially migrated store.
 - **Backup snapshot**: A timestamped pre-write copy of a user-owned target file, retained per a documented retention policy (keep last N per file).
+- **DSPy reasoning module**: A `dspy.Module` subclass implementing one of SIO's reasoning steps (suggestion generation, recall evaluation, routing, flow prediction). Declares a `Signature`, uses one or more `Predict`/`ChainOfThought`/`ReAct` predictors, optionally carries `dspy.Assert` guardrails, and is the unit of optimization.
+- **Optimized module artifact**: A JSON file produced by `program.save(...)` containing the compiled prompts, few-shot demos, and optimizer metadata. Identified by its filesystem path; restored via `program.load(...)` onto a matching-structure program instance. Referenced by a row in the `optimized_modules` table.
+- **DSPy training example**: A `dspy.Example` instance with `.with_inputs(...)` declared, converted from a gold-standard tool-invocation record. The canonical unit of training data for any teleprompter.
+- **Optimizer selection**: A per-module choice of teleprompter (`gepa`, `mipro`, `bootstrap`) plus optimizer-specific parameters (e.g., GEPA's `reflection_lm`, `max_full_evals`, `reflection_minibatch_size`; MIPROv2's `auto` level).
 
 ## Success Criteria *(mandatory)*
 
@@ -258,6 +292,13 @@ As the operator, after the remediation lands, I want an independent re-audit to 
 - **SC-013**: Two independent adversarial audits of the post-fix codebase return zero CRITICAL and zero HIGH findings.
 - **SC-014**: Running `sio install` after the remediation does not create the legacy data store path and does not revert the canonical data path.
 - **SC-015**: Every finding from the original audit is closed with a task reference in the changelog; zero deferrals remain.
+- **SC-016**: 100% of SIO reasoning modules (suggestion generator, recall evaluator, routing decider, flow predictor) are implemented as `dspy.Module` subclasses with class-based `dspy.Signature` declarations.
+- **SC-017**: `sio optimize --optimizer gepa` (default), `--optimizer mipro`, and `--optimizer bootstrap` each run end-to-end on the same module without code changes and each produce a saved artifact loadable on a fresh run.
+- **SC-018**: GEPA optimization of the suggestion generator produces a statistically better score on the held-out devset than the pre-optimization baseline (measured via `dspy.Evaluate`), with the reflection LM being a different model than the task LM.
+- **SC-019**: At least one `dspy.Assert` guardrail is active in the suggestion generator, and the instrumentation log captures backtrack counts per run.
+- **SC-020**: 100% of DSPy training examples passed to any teleprompter are `dspy.Example` instances with `.with_inputs(...)` declared — no raw dicts.
+- **SC-021**: On a provider that supports native function calling (e.g., OpenAI or Anthropic), tool-using modules run with `use_native_function_calling=True`; a unit test verifies the adapter choice.
+- **SC-022**: A single DSPy LM factory is the only code path that instantiates `dspy.LM` in SIO; a grep of the codebase returns zero ad-hoc `dspy.LM(...)` calls outside that factory.
 
 ## Assumptions
 
@@ -269,6 +310,11 @@ As the operator, after the remediation lands, I want an independent re-audit to 
 - The backup retention policy default is "last 10 per file." The operator may adjust; the default satisfies FR-004.
 - Ground-truth remap after slug change is keyed on overlap of the member error set between old and new clusters.
 - `sio status` runs in under 2 seconds on a typical store (up to low millions of rows); the 2-second target in SC-009 is a usability bar, not a hard performance requirement.
+- DSPy 3.1.3 (or higher) is the adopted framework version; `dspy.Tool.execute()` and GEPA are available at this version. See `research/dspy-3.x-reference.md` for the canonical API surface used in planning.
+- **GEPA is the default optimizer**, with `MIPROv2` and `BootstrapFewShot` as selectable alternatives per FR-037. The per-module optimizer choice is deferred to the plan phase based on module characteristics (short-form classification vs. multi-step reasoning).
+- The `reflection_lm` used by GEPA is a stronger (higher-quality, typically more expensive) model than the task LM; a sane default is specified in the DSPy LM factory (FR-041) but is overridable.
+- Runtime assertions (`dspy.Assert`) are preferred over post-hoc validation when a format or factual constraint is expressible inside the module's `forward()`.
+- Native function calling is preferred over DSPy-managed tool orchestration whenever the provider supports it; this is an adapter configuration choice, not a code-structure change.
 
 ## Dependencies
 
@@ -279,10 +325,10 @@ As the operator, after the remediation lands, I want an independent re-audit to 
 
 ## Out of Scope
 
-- New SIO commands or user-facing features beyond the `sio status` health surface update.
-- DSPy module or signature redesign beyond replacing the trivially-broken recall metric.
+- New SIO user-facing commands beyond the `sio status` health surface update and the `sio optimize --optimizer …` selector added by FR-037.
+- DSPy module redesigns beyond what FR-035 through FR-041 require for idiomatic adoption. Introducing entirely new reasoning steps (e.g., a new routing decider) is a follow-up.
 - Full migration framework. A `schema_version` marker is added; the existing `IF NOT EXISTS` ALTER pattern is retained.
 - Multi-platform agent support (Cursor, Codex, Aider). Only `claude-code` is in scope.
 - Web UI for suggestion review.
-- LLM-as-judge replacement for the recall metric.
+- Fine-tuning the underlying LM (`BootstrapFinetune`); only prompt/demo optimization is in scope.
 - Distributed mining (remains single-machine).

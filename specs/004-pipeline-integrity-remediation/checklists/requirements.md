@@ -33,8 +33,9 @@
 
 - PRD source (`PRD-pipeline-integrity-remediation.md`) is intentionally implementation-rich (file paths, line numbers, SQL, table names). Those are kept in the PRD for the planning phase. The spec translates them into technology-agnostic user stories, functional requirements, and success criteria.
 - Audit scope is non-negotiable per the PRD's §6.1 ("Scope Statement"): zero deferrals across all 34 adversarial findings, enforced by User Story 9 and FR-033 / FR-034.
-- 9 prioritized user stories: 3 × P1 (data-flow unblock, audit preservation, safe writes), 3 × P2 (autoresearch, mining correctness, observability), 3 × P3 (slug stability, suggestion quality, re-audit gate).
-- Success criteria SC-001 through SC-015 cover every exit criterion from the PRD's four phases in measurable, technology-agnostic form.
+- 10 prioritized user stories: 3 × P1 (data-flow unblock, audit preservation, safe writes), 4 × P2 (autoresearch, mining correctness, observability, DSPy idiomatic adoption), 3 × P3 (slug stability, suggestion quality, re-audit gate).
+- Success criteria SC-001 through SC-015 cover every exit criterion from the PRD's four phases; SC-016 through SC-022 add the DSPy first-class adoption gates (2026-04-20 addendum).
+- Functional requirements FR-035 through FR-041 were added per owner direction (2026-04-20) to make DSPy a first-class dependency: idiomatic `Module`/`Signature`, `Example`-shaped training data, three optimizers (**GEPA default**, MIPROv2, BootstrapFewShot), runtime `dspy.Assert`, persisted optimized artifacts, native function calling, centralized LM factory.
 - Key non-obvious requirements surfaced from the audit and now captured in the spec:
   - Timezone normalization (FR-030 / edge case / SC-008) — guards against non-UTC host drift.
   - Platform-string single-source-of-truth (FR-031) — prevents silent zero-row reads after the data-flow fix.

@@ -1,11 +1,13 @@
 # PRD — SIO Pipeline Integrity & Training-Data Remediation
 
-**Status:** Draft
+**Status:** Draft (addendum 2026-04-20: DSPy first-class)
 **Author:** Gyasi Sutton (with adversarial bug-hunter agent analysis)
-**Date:** 2026-04-15
+**Date:** 2026-04-15 (DSPy addendum 2026-04-20)
 **Owner:** SIO core
 **Target branch:** `feat/pipeline-integrity-remediation`
 **Speckit constitution required:** Yes — this PRD will feed `/speckit-workflow` for true dev
+
+> **Addendum (2026-04-20) — DSPy is first-class.** Per owner direction, SIO treats DSPy 3.1.3+ as its core optimization/quality framework, not an implementation detail. This addendum expands Phase 3 scope to include idiomatic DSPy adoption across every SIO reasoning module: class-based `Signature`/`Module` programs, `dspy.Example`-shaped training data, three selectable optimizers (**GEPA as default**, `MIPROv2` and `BootstrapFewShot` as alternatives), runtime `dspy.Assert` guardrails, native function-calling adapters, centralized LM factory, and explicit `save`/`load` persistence of optimized modules. See `specs/004-pipeline-integrity-remediation/spec.md` FR-035 through FR-041 and `research/dspy-3.x-reference.md` for the canonical API surface. This does **not** change the adversarial-audit scope (§6.1 remains authoritative: zero deferrals across the 34 findings) — it layers DSPy idiomaticity on top.
 
 ---
 
