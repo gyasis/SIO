@@ -9,6 +9,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from sio.core.constants import DEFAULT_PLATFORM
 from sio.core.db.schema import init_db
 
 _CONFIG_TEMPLATE = """\
@@ -109,13 +110,13 @@ def install(
         "(platform, db_path, hooks_installed, skills_installed, "
         "config_updated, capability_tier, installed_at) "
         "VALUES (?, ?, 1, 1, 1, 1, ?)",
-        ("claude-code", db_path, now),
+        (DEFAULT_PLATFORM, db_path, now),
     )
     conn.commit()
     conn.close()
 
     return {
-        "platform": "claude-code",
+        "platform": DEFAULT_PLATFORM,
         "db_created": True,
         "db_path": db_path,
         "hooks_registered": hooks_registered,

@@ -18,7 +18,7 @@
 - [x] T001 Verify toolchain: `python --version` ≥ 3.11, `uv --version`, `sqlite3 --version` ≥ 3.35 (for WAL + `ATTACH`). Document versions in `specs/004-pipeline-integrity-remediation/ENV_SETUP.md`.
 - [x] T002 Create missing directory skeleton with `__init__.py` files: `src/sio/core/dspy/`, `src/sio/core/util/`, `src/sio/core/db/` (if missing), `src/sio/autoresearch/`, `scripts/` (if missing), and test dirs `tests/unit/{dspy,db,clustering,applier,mining,hooks,util,constants}/`, `tests/integration/`.
 - [x] T003 [P] Add / pin deps in `pyproject.toml`: `dspy-ai>=3.1.3`, `fastembed>=0.2`, `numpy>=1.24`, `click>=8.1`, `rich>=13.0`, test extras `pytest>=8`, `pytest-cov`, `ruff>=0.4`. Run `uv sync --all-extras`.
-- [ ] T004 [P] Configure `ruff.toml` to cover new paths and align with 99-char line limit; confirm `pytest.ini` / `pyproject.toml` `[tool.pytest.ini_options]` discovers `tests/unit` and `tests/integration`.
+- [x] T004 [P] Configure `ruff.toml` to cover new paths and align with 99-char line limit; confirm `pytest.ini` / `pyproject.toml` `[tool.pytest.ini_options]` discovers `tests/unit` and `tests/integration`.
 - [x] T005 Create shared test fixtures in `tests/conftest.py`: `tmp_sio_db`, `tmp_platform_db`, `mock_lm`, `fake_fastembed`, `freeze_utc_now` per `specs/004-pipeline-integrity-remediation/quickstart.md` §4.
 
 **Checkpoint**: Environment ready; test harness loadable.
@@ -36,29 +36,29 @@
 - [x] T008 [P] Write failing tests in `tests/unit/db/test_connect.py` asserting PRAGMAs (`journal_mode=WAL`, `busy_timeout=30000`, `synchronous=NORMAL`, `foreign_keys=ON`) applied by the factory.
 - [x] T009 Implement `src/sio/core/db/connect.py::open_db(path, read_only=False)` (R-8); pass T008.
 - [x] T010 [P] Write failing test in `tests/unit/constants/test_default_platform.py` asserting `DEFAULT_PLATFORM == "claude-code"` and grep-of-`src/` finds zero string-literal `"claude-code"` outside `src/sio/core/constants.py` and test files (FR-031, SC-022 parity).
-- [ ] T011 Implement `src/sio/core/constants.py` exporting `DEFAULT_PLATFORM` and refactor every existing `"claude-code"` literal in `src/` to import it.
+- [x] T011 Implement `src/sio/core/constants.py` exporting `DEFAULT_PLATFORM` and refactor every existing `"claude-code"` literal in `src/` to import it.
 
 ### Schema and migration (TDD pairs)
 
 - [x] T012 [P] Write failing tests in `tests/unit/db/test_schema_version.py` covering: seed on first connect, `'applying'` detection refuses to start, `sio db repair` marks `'failed'` (FR-017, R-10).
-- [ ] T013 Add `schema_version` table DDL + startup check to `src/sio/core/db/schema.py`; implement `sio db migrate` and `sio db repair` CLI in `src/sio/cli/main.py`.
-- [ ] T014 [P] Write failing tests in `tests/unit/db/test_migration_004.py` that run `scripts/migrate_004.py` against a clone of a seeded DB, assert all `ALTER TABLE` + `CREATE INDEX` statements are additive and idempotent (per data-model.md §5).
+- [x] T013 Add `schema_version` table DDL + startup check to `src/sio/core/db/schema.py`; implement `sio db migrate` and `sio db repair` CLI in `src/sio/cli/main.py`.
+- [x] T014 [P] Write failing tests in `tests/unit/db/test_migration_004.py` that run `scripts/migrate_004.py` against a clone of a seeded DB, assert all `ALTER TABLE` + `CREATE INDEX` statements are additive and idempotent (per data-model.md §5).
 - [ ] T015 Write `scripts/migrate_004.py` applying every delta in data-model.md §2 (§2.1 – §2.10), including all hot-read indexes (FR-015); ensure wrapping in one `schema_version` transaction row `(2, now(), 'applying', ...)` → `'applied'`.
 
 ### Atomic write + path allowlist (TDD pairs)
 
-- [ ] T016 [P] Write failing tests in `tests/unit/applier/test_atomic_write.py` covering: backup created pre-write, `os.replace` atomic rename, post-write size check, retention `keep=10`, timestamp format (FR-004, R-4).
-- [ ] T017 [P] Write failing tests in `tests/unit/applier/test_allowlist.py` covering: valid paths under `~/.claude/`, rejected `../../etc/hosts`, rejected symlink traversal, `SIO_APPLY_EXTRA_ROOTS` parsing (FR-019, R-14).
-- [ ] T018 Implement `src/sio/core/applier/writer.py::atomic_write(target, content)` + `_validate_target_path(target)` + `_prune_backups(dir, keep=10)`; pass T016 and T017.
+- [x] T016 [P] Write failing tests in `tests/unit/applier/test_atomic_write.py` covering: backup created pre-write, `os.replace` atomic rename, post-write size check, retention `keep=10`, timestamp format (FR-004, R-4).
+- [x] T017 [P] Write failing tests in `tests/unit/applier/test_allowlist.py` covering: valid paths under `~/.claude/`, rejected `../../etc/hosts`, rejected symlink traversal, `SIO_APPLY_EXTRA_ROOTS` parsing (FR-019, R-14).
+- [x] T018 Implement `src/sio/core/applier/writer.py::atomic_write(target, content)` + `_validate_target_path(target)` + `_prune_backups(dir, keep=10)`; pass T016 and T017.
 
 ### Heartbeat primitive (TDD pairs)
 
-- [ ] T019 [P] Write failing tests in `tests/unit/hooks/test_heartbeat.py` covering: `record_success` resets `consecutive_failures`, `record_failure` increments it, atomic JSON write, crash-mid-write leaves previous valid JSON (FR-016, `contracts/hook-heartbeat.md` §6).
-- [ ] T020 Implement `src/sio/adapters/claude_code/hooks/_heartbeat.py` (`record_success`, `record_failure`, `_update`); pass T019.
+- [x] T019 [P] Write failing tests in `tests/unit/hooks/test_heartbeat.py` covering: `record_success` resets `consecutive_failures`, `record_failure` increments it, atomic JSON write, crash-mid-write leaves previous valid JSON (FR-016, `contracts/hook-heartbeat.md` §6).
+- [x] T020 Implement `src/sio/adapters/claude_code/hooks/_heartbeat.py` (`record_success`, `record_failure`, `_update`); pass T019.
 
 ### DSPy foundations (TDD pairs — unblock US1 and US9)
 
-- [ ] T021 [P] Write failing tests in `tests/unit/dspy/test_lm_factory.py` covering: `get_task_lm()` returns `dspy.LM` with `cache=True`, `get_reflection_lm()` with `cache=False`, env-var overrides, `get_adapter()` provider-aware, grep-of-`src/` finds zero direct `dspy.LM(` outside the factory (FR-041, SC-022).
+- [x] T021 [P] Write failing tests in `tests/unit/dspy/test_lm_factory.py` covering: `get_task_lm()` returns `dspy.LM` with `cache=True`, `get_reflection_lm()` with `cache=False`, env-var overrides, `get_adapter()` provider-aware, grep-of-`src/` finds zero direct `dspy.LM(` outside the factory (FR-041, SC-022).
 - [ ] T022 Implement `src/sio/core/dspy/lm_factory.py::{get_task_lm, get_reflection_lm, get_adapter, configure_default}` per `contracts/dspy-module-api.md` §1; pass T021.
 - [ ] T023 [P] Write failing tests in `tests/unit/dspy/test_signatures.py` asserting `PatternToRule` and `RuleRecallScore` have class docstrings, typed `InputField`/`OutputField`, and pass `dspy.Predict` instantiation smoke test (FR-035).
 - [ ] T024 Implement `src/sio/core/dspy/signatures.py::{PatternToRule, RuleRecallScore}` per `contracts/dspy-module-api.md` §2.

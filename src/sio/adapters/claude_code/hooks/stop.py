@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_PLATFORM = "claude-code"
+from sio.core.constants import DEFAULT_PLATFORM as _DEFAULT_PLATFORM  # noqa: E402
 _DEFAULT_DB_DIR = os.path.expanduser("~/.sio/claude-code")
 _ERROR_LOG = os.path.expanduser("~/.sio/hook_errors.log")
 _SKILLS_DIR = os.path.expanduser("~/.claude/skills/learned")

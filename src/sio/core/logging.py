@@ -28,7 +28,7 @@ class JSONFormatter(logging.Formatter):
 
 
 def setup_error_logging(
-    platform: str = "claude-code",
+    platform: str | None = None,
     log_dir: str | None = None,
 ) -> logging.Logger:
     """Set up structured error logging for a platform.
@@ -40,6 +40,9 @@ def setup_error_logging(
     Returns:
         Configured logger instance.
     """
+    from sio.core.constants import DEFAULT_PLATFORM  # noqa: PLC0415
+    if platform is None:
+        platform = DEFAULT_PLATFORM
     if log_dir is None:
         log_dir = os.path.expanduser(f"~/.sio/{platform}")
     os.makedirs(log_dir, exist_ok=True)

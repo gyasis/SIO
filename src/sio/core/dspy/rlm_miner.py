@@ -49,7 +49,8 @@ def _corpus_search(corpus_path: str, query: str) -> str:
     try:
         from sio.core.dspy.corpus_indexer import index_corpus
 
-        idx = index_corpus("claude-code", history_dir=corpus_path)
+        from sio.core.constants import DEFAULT_PLATFORM  # noqa: PLC0415
+        idx = index_corpus(DEFAULT_PLATFORM, history_dir=corpus_path)
         results = idx.search_keyword(query, top_k=3)
         if results:
             return "\n---\n".join(r.snippet for r in results)

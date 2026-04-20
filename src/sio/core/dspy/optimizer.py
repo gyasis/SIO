@@ -13,6 +13,8 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from sio.core.constants import DEFAULT_PLATFORM
+
 logger = logging.getLogger(__name__)
 
 
@@ -59,7 +61,7 @@ _MIPROV2_THRESHOLD = 50  # examples needed for MIPROv2
 def check_quality_gates(
     conn: sqlite3.Connection,
     skill: str,
-    platform: str = "claude-code",
+    platform: str = DEFAULT_PLATFORM,
     min_examples: int = _MIN_EXAMPLES,
     min_failures: int = _MIN_FAILURES,
     min_sessions: int = _MIN_SESSIONS,
@@ -451,7 +453,7 @@ def optimize_suggestions(
 def optimize(
     conn: sqlite3.Connection,
     skill_name: str,
-    platform: str = "claude-code",
+    platform: str = DEFAULT_PLATFORM,
     optimizer: str = "gepa",
     dry_run: bool = False,
 ) -> dict:
@@ -568,7 +570,7 @@ def optimize(
 def run_optimization(
     conn: sqlite3.Connection,
     skill: str,
-    platform: str = "claude-code",
+    platform: str = DEFAULT_PLATFORM,
     optimizer: str = "gepa",
 ) -> dict:
     """Public alias for optimize() with 'skill' kwarg.

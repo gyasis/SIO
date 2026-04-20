@@ -41,5 +41,6 @@ sio = "sio.cli.main:cli"
 packages = ["src/sio"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests/unit", "tests/integration"]
 pythonpath = ["src"]
+addopts = "-ra -q --strict-markers"

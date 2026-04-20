@@ -8,7 +8,9 @@ from importlib.metadata import version as pkg_version
 
 import click
 
-_DEFAULT_DB_DIR = os.path.expanduser("~/.sio/claude-code")
+from sio.core.constants import DEFAULT_PLATFORM
+
+_DEFAULT_DB_DIR = os.path.expanduser(f"~/.sio/{DEFAULT_PLATFORM}")
 
 
 @contextmanager
@@ -50,7 +52,7 @@ def cli():
 
 
 @cli.command()
-@click.option("--platform", default="claude-code", help="Platform filter.")
+@click.option("--platform", default=DEFAULT_PLATFORM, help="Platform filter.")
 @click.option("--skill", default=None, help="Skill name filter.")
 @click.option(
     "--format",
@@ -98,7 +100,7 @@ def health(platform, skill, fmt):
 
 
 @cli.command()
-@click.option("--platform", default="claude-code", help="Platform filter.")
+@click.option("--platform", default=DEFAULT_PLATFORM, help="Platform filter.")
 @click.option("--session", default=None, help="Session ID filter.")
 @click.option("--limit", default=20, help="Max items to review.")
 def review(platform, session, limit):
@@ -149,7 +151,7 @@ def review(platform, session, limit):
 
 @cli.command()
 @click.argument("skill_name")
-@click.option("--platform", default="claude-code", help="Platform filter.")
+@click.option("--platform", default=DEFAULT_PLATFORM, help="Platform filter.")
 @click.option(
     "--optimizer",
     type=click.Choice(["gepa", "miprov2", "bootstrap"]),
@@ -210,8 +212,8 @@ def optimize(skill_name, platform, optimizer, dry_run):
 @cli.command()
 @click.option(
     "--platform",
-    type=click.Choice(["claude-code"]),
-    default="claude-code",
+    type=click.Choice([DEFAULT_PLATFORM]),
+    default=DEFAULT_PLATFORM,
     help="Platform to install.",
 )
 @click.option("--auto", "auto_detect", is_flag=True, help="Auto-detect platform.")
@@ -232,7 +234,7 @@ def install(platform, auto_detect):
 
 
 @cli.command()
-@click.option("--platform", default="claude-code", help="Platform filter.")
+@click.option("--platform", default=DEFAULT_PLATFORM, help="Platform filter.")
 @click.option("--days", default=90, help="Purge records older than N days.")
 @click.option("--dry-run", is_flag=True, help="Show count without deleting.")
 def purge(platform, days, dry_run):
@@ -257,7 +259,7 @@ def purge(platform, days, dry_run):
 
 
 @cli.command()
-@click.option("--platform", default="claude-code", help="Platform filter.")
+@click.option("--platform", default=DEFAULT_PLATFORM, help="Platform filter.")
 @click.option(
     "--format", "fmt",
     type=click.Choice(["json", "csv"]),
@@ -3810,6 +3812,144 @@ def discover(repo, fmt):
                 f"{c['error_count']:>6} {c['session_count']:>5} "
                 f"{c['confidence']:>6.2f}"
             )
+
+
+# ---------------------------------------------------------------------------
+# sio db — schema migration commands (T013, FR-017)
+# ---------------------------------------------------------------------------
+
+
+@cli.group()
+def db():
+    """Database schema management commands."""
+
+
+@db.command("migrate")
+@click.option(
+    "--db-path",
+    default=os.path.expanduser("~/.sio/sio.db"),
+    help="Path to the SIO database.",
+    show_default=True,
+)
+def db_migrate(db_path):
+    """Apply any pending schema migrations to the SIO database.
+
+    Runs ensure_schema_version() to seed the baseline row, then
+    executes any scripts/migrate_00N.py found in the project root.
+    """
+    import glob as _glob
+    import importlib.util
+    from pathlib import Path
+
+    from sio.core.db.schema import ensure_schema_version, refuse_to_start
+
+    click.echo(f"Opening database: {db_path}")
+    conn = _get_sio_db_conn()
+    if conn is None:
+        click.echo(
+            f"Database not found at {db_path}. Run 'sio install' first.",
+            err=True,
+        )
+        raise SystemExit(1)
+
+    try:
+        refuse_to_start(conn)
+    except Exception as exc:  # noqa: BLE001
+        click.echo(f"ERROR: {exc}", err=True)
+        click.echo("Run 'sio db repair' to resolve partial migrations.", err=True)
+        raise SystemExit(1)
+
+    ensure_schema_version(conn)
+    click.echo("schema_version: baseline row confirmed.")
+
+    # Discover migration scripts in the scripts/ directory relative to the
+    # installed package or CWD as fallback.
+    project_candidates = [
+        Path(__file__).parents[4] / "scripts",  # editable install
+        Path.cwd() / "scripts",
+    ]
+    scripts_dir = next(
+        (p for p in project_candidates if p.is_dir()), None
+    )
+    if scripts_dir is None:
+        click.echo("No scripts/ directory found — nothing to migrate.")
+        conn.close()
+        return
+
+    migration_scripts = sorted(
+        _glob.glob(str(scripts_dir / "migrate_*.py"))
+    )
+    if not migration_scripts:
+        click.echo("No migration scripts found.")
+        conn.close()
+        return
+
+    applied = 0
+    for script_path in migration_scripts:
+        spec = importlib.util.spec_from_file_location("_migration", script_path)
+        mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        if hasattr(mod, "migrate"):
+            click.echo(f"Applying {Path(script_path).name}...")
+            mod.migrate(Path(db_path))
+            applied += 1
+
+    conn.close()
+    click.echo(f"Migration complete. {applied} script(s) applied.")
+
+
+@db.command("repair")
+@click.option(
+    "--db-path",
+    default=os.path.expanduser("~/.sio/sio.db"),
+    help="Path to the SIO database.",
+    show_default=True,
+)
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt.")
+def db_repair(db_path, yes):
+    """Mark stuck 'applying' migration rows as 'failed'.
+
+    Use this command after a migration crashed mid-run.  Operator confirmation
+    is required unless --yes is passed.
+    """
+    import sqlite3 as _sqlite3
+
+    from sio.core.db.schema import PartialMigrationError
+
+    conn = _sqlite3.connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT version, description FROM schema_version WHERE status='applying'"
+        ).fetchall()
+    except _sqlite3.OperationalError:
+        click.echo("schema_version table not found — nothing to repair.")
+        conn.close()
+        return
+
+    if not rows:
+        click.echo("No stuck migrations found.")
+        conn.close()
+        return
+
+    click.echo(f"Found {len(rows)} stuck migration(s):")
+    for version, desc in rows:
+        click.echo(f"  version={version}: {desc!r}")
+
+    if not yes:
+        confirmed = click.confirm(
+            "Mark all as 'failed'? This allows SIO to start again."
+        )
+        if not confirmed:
+            click.echo("Repair cancelled.")
+            conn.close()
+            return
+
+    conn.execute(
+        "UPDATE schema_version SET status='failed' WHERE status='applying'"
+    )
+    conn.commit()
+    conn.close()
+    click.echo(f"Marked {len(rows)} migration(s) as 'failed'. SIO can now start.")
 
 
 if __name__ == "__main__":

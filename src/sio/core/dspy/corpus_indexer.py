@@ -138,9 +138,9 @@ def index_corpus(
     """Build BM25 + embedding index over conversation history.
 
     Args:
-        platform: Platform name (e.g., 'claude-code').
+        platform: Platform name (e.g., the value of DEFAULT_PLATFORM).
         history_dir: Directory containing .md files.
-            Defaults to ~/.specstory/history/ for claude-code.
+            Defaults to ~/.specstory/history/ for the default platform.
 
     Returns:
         CorpusIndex with keyword and embedding search.

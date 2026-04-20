@@ -1,10 +1,16 @@
 line-length = 99
 
+src = ["src", "tests", "scripts"]
+exclude = [".venv", "uv.lock", "specs"]
+
 [lint]
 select = ["E", "F", "I", "W"]
 
 [lint.per-file-ignores]
 "tests/**/*.py" = ["E501"]
+
+[lint.isort]
+known-first-party = ["sio"]
 
 [format]
 line-ending = "auto"

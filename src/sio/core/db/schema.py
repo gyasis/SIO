@@ -499,3 +499,89 @@ def init_db(db_path: str) -> sqlite3.Connection:
 
     conn.commit()
     return conn
+
+
+# ---------------------------------------------------------------------------
+# schema_version — FR-017 (data-model.md §2.1)
+# ---------------------------------------------------------------------------
+
+_SCHEMA_VERSION_DDL = """
+CREATE TABLE IF NOT EXISTS schema_version (
+    version     INTEGER PRIMARY KEY,
+    applied_at  TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'applied',
+    description TEXT
+)
+"""
+
+
+class PartialMigrationError(Exception):
+    """Raised when a migration row with status='applying' is detected at startup.
+
+    Indicates a previous migration crashed mid-run.  Operator must run
+    ``sio db repair`` to mark stuck rows as 'failed' before SIO will start.
+    """
+
+
+def ensure_schema_version(conn: sqlite3.Connection) -> None:
+    """Create schema_version table and seed baseline row if not present.
+
+    Idempotent: safe to call multiple times on the same connection.
+    Seeds ``(version=1, status='applied', description='baseline')`` on first run.
+    """
+    from sio.core.util.time import utc_now_iso  # noqa: PLC0415
+
+    conn.execute(_SCHEMA_VERSION_DDL)
+    conn.commit()
+    existing = conn.execute(
+        "SELECT version FROM schema_version WHERE version=1"
+    ).fetchone()
+    if existing is None:
+        conn.execute(
+            "INSERT INTO schema_version (version, applied_at, status, description) "
+            "VALUES (1, ?, 'applied', 'baseline')",
+            (utc_now_iso(),),
+        )
+        conn.commit()
+
+
+def begin_migration(conn: sqlite3.Connection, version: int, description: str) -> None:
+    """Insert a migration row with status='applying' at migration start.
+
+    Must be called before executing migration SQL.  Paired with
+    :func:`finish_migration` on success.
+    """
+    from sio.core.util.time import utc_now_iso  # noqa: PLC0415
+
+    conn.execute(
+        "INSERT INTO schema_version (version, applied_at, status, description) "
+        "VALUES (?, ?, 'applying', ?)",
+        (version, utc_now_iso(), description),
+    )
+    conn.commit()
+
+
+def finish_migration(conn: sqlite3.Connection, version: int) -> None:
+    """Update a migration row from 'applying' to 'applied' on success."""
+    conn.execute(
+        "UPDATE schema_version SET status='applied' WHERE version=?",
+        (version,),
+    )
+    conn.commit()
+
+
+def refuse_to_start(conn: sqlite3.Connection) -> None:
+    """Raise PartialMigrationError if any schema_version row has status='applying'.
+
+    Called at SIO startup to prevent running against a partially-migrated DB.
+    Operator must run ``sio db repair`` to resolve.
+    """
+    row = conn.execute(
+        "SELECT version, description FROM schema_version WHERE status='applying' LIMIT 1"
+    ).fetchone()
+    if row is not None:
+        version, description = row
+        raise PartialMigrationError(
+            f"Migration version={version} ({description!r}) has status='applying' — "
+            "the previous migration crashed.  Run 'sio db repair' to resolve."
+        )
