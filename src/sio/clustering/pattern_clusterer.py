@@ -304,18 +304,38 @@ def _load_stored_centroids(
     except Exception:  # noqa: BLE001
         return by_id, by_desc  # table may not have the column yet; degrade gracefully
 
+    # Audit Round 2 H-R2.7 residual (Hunter #2, DSPy): collision-safe
+    # description cache. A description string can legitimately be reused
+    # across distinct pattern_ids (two clusters may share a human-readable
+    # cluster name). Previously by_desc was a simple dict and silently
+    # overwrote — the second pattern's centroid clobbered the first,
+    # causing cross-cluster reuse of the wrong vector.
+    #
+    # Fix: First pass records (description -> {pattern_id: vec}). Any
+    # description that appears in >1 pattern is REMOVED from by_desc.
+    # Only unique descriptions survive into the text-match shortcut.
+    desc_pending: dict[str, dict[str, np.ndarray]] = {}
+
     for row in rows:
         pattern_id, description, blob = row[0], row[1], row[2]
         if not blob or not pattern_id:
             continue
         try:
             vec, stored_hash = _unpack_centroid(blob)
-            if stored_hash == current_model_hash:
-                by_id[pattern_id] = vec
-                if description:
-                    by_desc[description] = vec
+            if stored_hash != current_model_hash:
+                continue
+            by_id[pattern_id] = vec
+            if description:
+                desc_pending.setdefault(description, {})[pattern_id] = vec
         except (ValueError, struct.error):
             continue  # malformed BLOB — skip
+
+    for description, pid_map in desc_pending.items():
+        if len(pid_map) == 1:
+            # Unique description — safe to use in text-match shortcut
+            by_desc[description] = next(iter(pid_map.values()))
+        # Multi-pattern descriptions are EXCLUDED (collision — wrong vec
+        # might be picked). The caller will encode fresh for these texts.
 
     return by_id, by_desc
 
