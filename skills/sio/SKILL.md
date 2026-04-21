@@ -77,7 +77,8 @@ sio apply (write rules)        sio recall (topic filter + polish)
                                    ↓
                                sio export-dataset (ML training data)
                                    ↓
-                               DSPy optimization (future)
+                               sio optimize-suggestions (GEPA / MIPROv2 /
+                                                         BootstrapFewShot)
 ```
 
 ## Two Tiers
@@ -85,7 +86,7 @@ sio apply (write rules)        sio recall (topic filter + polish)
 | Tier | Commands | Cost | Engine |
 |------|----------|------|--------|
 | **Cheap** | mine, errors, flows, distill, recall (no --polish), export | $0 | Regex + SQLite |
-| **Expensive** | suggest, recall --polish | ~$0.02-0.05 | LLM (Gemini/Haiku) |
+| **Expensive** | suggest, recall --polish, optimize-suggestions | ~$0.02-0.50 | LLM (task + reflection for GEPA) |
 
 ## Data Locations
 

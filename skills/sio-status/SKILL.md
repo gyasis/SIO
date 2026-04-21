@@ -60,4 +60,8 @@ sio errors --project "${PROJECT}" -n 0 2>/dev/null || echo "  No errors for this
 
 - The DB contains errors from ALL projects. Status shows the global view.
 - Downstream commands (`errors`, `patterns`, `suggest`) auto-detect the current project.
-- Datasets are ephemeral — rebuilt fresh each `sio suggest` run, no stale accumulation.
+- Datasets are non-destructively versioned: each `sio suggest` run assigns a new
+  `cycle_id` (UUID) and marks prior rows `active=0` rather than deleting them
+  (FR-003, Audit Round 2 C-R2.6). Historical datasets stay queryable; add
+  `WHERE active=1` when you only want the current cycle. `applied_changes` are
+  NEVER touched by `sio suggest`.
