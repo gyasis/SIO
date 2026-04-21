@@ -364,6 +364,17 @@ _INDEXES = [
     ),
     "CREATE INDEX IF NOT EXISTS idx_satisfaction ON behavior_invocations(user_satisfied)",
     "CREATE INDEX IF NOT EXISTS idx_timestamp ON behavior_invocations(timestamp)",
+    # Audit Round 2 N-R2D.1: identity UNIQUE indexes required for INSERT OR IGNORE
+    # dedup. Without these, per-platform DBs created by init_db() never dedupe
+    # hook-written rows, and canonical-DB sync silently duplicates every row.
+    (
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_bi_identity "
+        "ON behavior_invocations(platform, session_id, timestamp, tool_name)"
+    ),
+    (
+        "CREATE INDEX IF NOT EXISTS ix_bi_platform_timestamp "
+        "ON behavior_invocations(platform, timestamp)"
+    ),
     # v2 indexes
     "CREATE INDEX IF NOT EXISTS idx_error_session ON error_records(session_id)",
     "CREATE INDEX IF NOT EXISTS idx_error_type ON error_records(error_type)",
@@ -382,6 +393,16 @@ _INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_flow_hash ON flow_events(flow_hash)",
     "CREATE INDEX IF NOT EXISTS idx_flow_session ON flow_events(session_id)",
     "CREATE INDEX IF NOT EXISTS idx_flow_timestamp ON flow_events(timestamp)",
+    # Audit Round 2 N-R2D.1: identity UNIQUE required for INSERT OR IGNORE dedup
+    # on flow mining re-runs (FR-008). Without this, re-mine duplicates flows.
+    (
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_fe_identity "
+        "ON flow_events(file_path, session_id, flow_hash)"
+    ),
+    (
+        "CREATE INDEX IF NOT EXISTS ix_fe_success_hash "
+        "ON flow_events(was_successful, flow_hash)"
+    ),
     # processed_sessions indexes
     "CREATE INDEX IF NOT EXISTS idx_ps_path ON processed_sessions(file_path)",
     "CREATE INDEX IF NOT EXISTS idx_ps_hash ON processed_sessions(file_hash)",
