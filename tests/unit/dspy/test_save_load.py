@@ -28,8 +28,12 @@ def _import_persistence():
 # ---------------------------------------------------------------------------
 
 
-def _make_mock_program(mock_lm):
-    """Return a minimal dspy.Module that can be saved/loaded."""
+def _make_mock_program(mock_lm):  # noqa: ARG001
+    """Return a minimal dspy.Module that can be saved/loaded.
+
+    Only used by the "does save_compiled write a file" tests that don't
+    care about the module's predictor structure.
+    """
     import dspy  # noqa: PLC0415
 
     class _TinyModule(dspy.Module):
@@ -41,6 +45,23 @@ def _make_mock_program(mock_lm):
             return self.pred(question=question)
 
     return _TinyModule()
+
+
+def _make_suggestion_generator_program(mock_lm):  # noqa: ARG001
+    """Return a fresh SuggestionGenerator for real round-trip tests.
+
+    Audit Round 2 N-R2D.4 fix (commit d5f8bf8) raises
+    ArtifactStructureMismatch on ZERO predictor-name overlap. Tests that
+    exercise the load_compiled('suggestion_generator', ...) path MUST
+    save from a SuggestionGenerator instance (not a _TinyModule whose
+    predictor is named 'pred' instead of 'generate.predict'). Using the
+    real class also makes the round-trip genuinely test the production
+    class's save/load, not an arbitrary stand-in.
+    """
+    from sio.core.dspy.persistence import MODULE_REGISTRY  # noqa: PLC0415
+
+    cls = MODULE_REGISTRY["suggestion_generator"]
+    return cls()
 
 
 # ---------------------------------------------------------------------------
@@ -80,11 +101,16 @@ def test_save_compiled_writes_json(tmp_path, mock_lm):
 
 
 def test_load_compiled_returns_instance(tmp_path, mock_lm):
-    """load_compiled('suggestion_generator', path) returns a dspy.Module instance."""
+    """load_compiled('suggestion_generator', path) returns a dspy.Module instance.
+
+    Uses a real SuggestionGenerator for the save side so the round-trip
+    is genuine — predictor names match, load succeeds without the
+    zero-overlap ArtifactStructureMismatch guard firing.
+    """
     import dspy  # noqa: PLC0415
 
     p = _import_persistence()
-    program = _make_mock_program(mock_lm)
+    program = _make_suggestion_generator_program(mock_lm)
     out_path = tmp_path / "sg.json"
     p.save_compiled(program, out_path)
 
@@ -99,10 +125,16 @@ def test_load_compiled_returns_instance(tmp_path, mock_lm):
 
 
 def test_round_trip_save_load_equivalent(tmp_path, mock_lm):
-    """save + load + forward on same input must produce structurally equivalent predictions."""
+    """save + load round-trip on SuggestionGenerator preserves predictor structure.
+
+    Uses the same class on both sides of the round-trip so predictor names
+    align (`generate.predict` in both). This is the actual functionality
+    operators rely on: save an optimized module, load it back with the
+    same structure.
+    """
     p = _import_persistence()
 
-    program = _make_mock_program(mock_lm)
+    program = _make_suggestion_generator_program(mock_lm)
     out_path = tmp_path / "rt.json"
     p.save_compiled(program, out_path)
 
@@ -111,11 +143,14 @@ def test_round_trip_save_load_equivalent(tmp_path, mock_lm):
     # Both should be callable dspy.Module instances
     assert callable(loaded), "Loaded program must be callable"
 
-    # Round-trip check: both programs have the same predictor count
+    # Round-trip check: both programs have the same predictor count AND names
     orig_predictors = list(program.named_predictors())
     loaded_predictors = list(loaded.named_predictors())
     assert len(orig_predictors) == len(loaded_predictors), (
         f"Predictor count mismatch: orig={len(orig_predictors)}, loaded={len(loaded_predictors)}"
+    )
+    assert [n for n, _ in orig_predictors] == [n for n, _ in loaded_predictors], (
+        "Predictor names must match after round-trip"
     )
 
 
