@@ -14,16 +14,31 @@ import sqlite3
 def load_training_corpus(conn: sqlite3.Connection) -> list:
     """Load positive-labeled ground truth rows as ``dspy.Example`` objects.
 
-    Each Example has input fields (``error_examples``, ``error_type``,
-    ``pattern_summary``) and output fields (``target_surface``, ``rule_title``,
-    ``prevention_instructions``, ``rationale``).
+    Audit Round 2 N-R2D.1 (Hunter #2, DSPy): examples now match the
+    canonical ``PatternToRule`` signature (sio.core.dspy.signatures.
+    PatternToRule) per ``contracts/dspy-module-api.md`` §3:
+
+      inputs  : pattern_description (str), example_errors (list[str]),
+                project_context (str)
+      outputs : rule_title, rule_body, rule_rationale
+
+    DB fields are mapped thus:
+      error_type + pattern_summary     → pattern_description (prefixed)
+      error_examples_json              → example_errors (parsed, cap 5)
+      (no DB field)                    → project_context (empty default)
+      prevention_instructions           → rule_body
+      rationale                         → rule_rationale
+      target_surface                    → dropped (not an output in new sig)
 
     Args:
         conn: SQLite connection with SIO schema.
 
     Returns:
-        List of ``dspy.Example`` with ``.with_inputs()`` set correctly.
+        List of ``dspy.Example`` with ``.with_inputs()`` set to the 3
+        canonical input fields.
     """
+    import json
+
     import dspy
 
     from sio.core.db.queries import get_training_corpus
@@ -32,15 +47,45 @@ def load_training_corpus(conn: sqlite3.Connection) -> list:
     examples = []
 
     for row in rows:
+        # Extract error messages from the stored JSON blob
+        example_errors: list[str] = []
+        try:
+            parsed = json.loads(row["error_examples_json"] or "[]")
+            if isinstance(parsed, list):
+                items = parsed
+            elif isinstance(parsed, dict):
+                items = parsed.get("examples", [])
+            else:
+                items = []
+            for ex_row in items[:5]:
+                if isinstance(ex_row, dict):
+                    msg = ex_row.get("error_text") or ex_row.get("error_message") or \
+                        ex_row.get("context_message")
+                    if msg:
+                        example_errors.append(str(msg)[:500])
+                elif isinstance(ex_row, str):
+                    example_errors.append(ex_row[:500])
+        except (json.JSONDecodeError, TypeError, KeyError):
+            pass
+        if not example_errors:
+            # Fallback: use pattern_summary as a single example so the
+            # optimizer still has signal to work with
+            example_errors = [row["pattern_summary"] or "No example available"]
+
+        pattern_description = (
+            f"[{row['error_type']}] {row['pattern_summary']}"
+            if row.get("error_type") and row.get("pattern_summary")
+            else (row.get("pattern_summary") or row.get("error_type") or "")
+        )
+
         ex = dspy.Example(
-            error_examples=row["error_examples_json"],
-            error_type=row["error_type"],
-            pattern_summary=row["pattern_summary"],
-            target_surface=row["target_surface"],
+            pattern_description=pattern_description,
+            example_errors=example_errors,
+            project_context="",  # not stored in DB; optimizer tolerates empty
             rule_title=row["rule_title"],
-            prevention_instructions=row["prevention_instructions"],
-            rationale=row["rationale"],
-        ).with_inputs("error_examples", "error_type", "pattern_summary")
+            rule_body=row["prevention_instructions"],
+            rule_rationale=row["rationale"],
+        ).with_inputs("pattern_description", "example_errors", "project_context")
         examples.append(ex)
 
     return examples
