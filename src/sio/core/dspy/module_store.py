@@ -44,28 +44,43 @@ def save_module(
     file_path = os.path.join(store_dir, filename)
     module.save(file_path)
 
-    # Deactivate previous and insert new in a single transaction
-    conn.execute(
-        "UPDATE optimized_modules SET is_active = 0 WHERE module_type = ? AND is_active = 1",
-        (module_type,),
-    )
-    cursor = conn.execute(
-        "INSERT INTO optimized_modules "
-        "(module_type, optimizer_used, file_path, training_count, "
-        "metric_before, metric_after, is_active, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
-        (
-            module_type,
-            optimizer_used,
-            file_path,
-            training_count,
-            metric_before,
-            metric_after,
-            now.isoformat(),
-        ),
-    )
-    conn.commit()  # single commit for both operations
-    return cursor.lastrowid
+    # Audit Round 2 N-R2D.3 (DSPy): deactivate + insert MUST be atomic.
+    # Previously the bare conn.execute calls relied on implicit transaction
+    # semantics; if the INSERT failed (schema drift, NOT NULL), the UPDATE
+    # had already deactivated the prior active module → operator left with
+    # zero active modules and no new one registered. Wrap in `with conn:`
+    # which commits on success and rolls back on any exception.
+    try:
+        with conn:
+            conn.execute(
+                "UPDATE optimized_modules "
+                "SET is_active = 0 WHERE module_type = ? AND is_active = 1",
+                (module_type,),
+            )
+            cursor = conn.execute(
+                "INSERT INTO optimized_modules "
+                "(module_type, optimizer_used, file_path, training_count, "
+                "metric_before, metric_after, is_active, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
+                (
+                    module_type,
+                    optimizer_used,
+                    file_path,
+                    training_count,
+                    metric_before,
+                    metric_after,
+                    now.isoformat(),
+                ),
+            )
+            new_row_id = cursor.lastrowid
+    except Exception:
+        # Clean up orphan artifact file so disk state mirrors DB state
+        try:
+            os.unlink(file_path)
+        except OSError:
+            pass
+        raise
+    return new_row_id
 
 
 def load_module(module_class, file_path: str):
