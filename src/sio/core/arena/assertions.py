@@ -66,7 +66,8 @@ def no_new_regressions(pre: dict, post: dict) -> AssertionResult:
 
 
 def confidence_above_threshold(
-    pattern: dict, threshold: float = 0.7,
+    pattern: dict,
+    threshold: float = 0.7,
 ) -> AssertionResult:
     """Assert that the pattern confidence exceeds *threshold*.
 
@@ -87,7 +88,8 @@ def confidence_above_threshold(
 
 
 def budget_within_limits(
-    file_path: str, config: Any,
+    file_path: str,
+    config: Any,
 ) -> AssertionResult:
     """Assert that the target file has not exceeded its line budget.
 
@@ -183,13 +185,15 @@ def run_assertions(
 
         fn = _BUILTIN_ASSERTIONS.get(name)
         if fn is None:
-            results.append(AssertionResult(
-                passed=False,
-                name=name,
-                actual_value=0.0,
-                threshold=0.0,
-                detail=f"Unknown assertion: {name}",
-            ))
+            results.append(
+                AssertionResult(
+                    passed=False,
+                    name=name,
+                    actual_value=0.0,
+                    threshold=0.0,
+                    detail=f"Unknown assertion: {name}",
+                )
+            )
             continue
 
         # Dispatch with correct arguments per assertion

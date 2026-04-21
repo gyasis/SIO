@@ -18,9 +18,7 @@ from sio.datasets.builder import _error_to_example, _load_existing_file, _resolv
 _DEFAULT_MIN_THRESHOLD = 5
 
 
-def _get_dataset_for_pattern(
-    db_conn: sqlite3.Connection, pattern_row_id: int
-) -> dict | None:
+def _get_dataset_for_pattern(db_conn: sqlite3.Connection, pattern_row_id: int) -> dict | None:
     """Return the datasets row for a pattern, or None if absent."""
     row = db_conn.execute(
         "SELECT * FROM datasets WHERE pattern_id = ?",
@@ -69,8 +67,7 @@ def _update_dataset_counts(
     """Update positive_count and negative_count on an existing datasets row."""
     now_iso = datetime.now(timezone.utc).isoformat()
     db_conn.execute(
-        "UPDATE datasets SET positive_count = ?, negative_count = ?, updated_at = ? "
-        "WHERE id = ?",
+        "UPDATE datasets SET positive_count = ?, negative_count = ?, updated_at = ? WHERE id = ?",
         (positive_count, negative_count, now_iso, dataset_id),
     )
     db_conn.commit()
@@ -164,9 +161,7 @@ def accumulate(
             existing_ids: set[Any] = {
                 ex.get("id") for ex in existing_examples if ex.get("id") is not None
             }
-            truly_new = [
-                ex for ex in new_examples if ex.get("id") not in existing_ids
-            ]
+            truly_new = [ex for ex in new_examples if ex.get("id") not in existing_ids]
 
             combined = existing_examples + truly_new
 
@@ -174,9 +169,7 @@ def accumulate(
 
             positive_count = sum(1 for ex in combined if ex.get("label") == 1)
             negative_count = sum(1 for ex in combined if ex.get("label") == 0)
-            _update_dataset_counts(
-                db_conn, existing_dataset["id"], positive_count, negative_count
-            )
+            _update_dataset_counts(db_conn, existing_dataset["id"], positive_count, negative_count)
             updated_count += 1
 
         else:

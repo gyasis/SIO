@@ -83,9 +83,7 @@ def install(
         claude_dir = os.path.expanduser("~/.claude")
 
     # Honour SIO_HOME override (used by tests) to determine canonical DB location
-    _sio_home = os.environ.get(
-        "SIO_HOME", os.path.expanduser("~/.sio")
-    )
+    _sio_home = os.environ.get("SIO_HOME", os.path.expanduser("~/.sio"))
 
     os.makedirs(db_dir, exist_ok=True)
     os.makedirs(claude_dir, exist_ok=True)
@@ -104,9 +102,7 @@ def install(
 
     # --- FR-007 + SC-014: Ensure canonical sio.db has schema_version ---
     # The canonical DB lives at ~/.sio/sio.db (or SIO_DB_PATH env override)
-    canonical_db_path = os.environ.get(
-        "SIO_DB_PATH", os.path.join(_sio_home, "sio.db")
-    )
+    canonical_db_path = os.environ.get("SIO_DB_PATH", os.path.join(_sio_home, "sio.db"))
     os.makedirs(os.path.dirname(canonical_db_path), exist_ok=True)
     with open_db(canonical_db_path) as canonical_conn:
         # Ensure all base tables exist in canonical DB
@@ -297,8 +293,8 @@ def _ensure_canonical_schema(conn) -> None:
         _GOLD_STANDARDS_DDL,
         _GROUND_TRUTH_DDL,
         _INDEXES,
-        _OPTIMIZED_MODULES_DDL,
         _OPTIMIZATION_RUNS_DDL,
+        _OPTIMIZED_MODULES_DDL,
         _PATTERN_ERRORS_DDL,
         _PATTERNS_DDL,
         _PLATFORM_CONFIG_DDL,
@@ -342,17 +338,11 @@ def _ensure_canonical_schema(conn) -> None:
     conn.commit()
 
 
-def _apply_004_migration_if_needed(
-    canonical_db_path: str, conn
-) -> None:
+def _apply_004_migration_if_needed(canonical_db_path: str, conn) -> None:
     """Apply 004 migration to canonical DB if not already applied. Idempotent."""
-    import sqlite3  # noqa: PLC0415
-    from pathlib import Path  # noqa: PLC0415
 
     try:
-        row = conn.execute(
-            "SELECT status FROM schema_version WHERE version=2"
-        ).fetchone()
+        row = conn.execute("SELECT status FROM schema_version WHERE version=2").fetchone()
         if row and row["status"] == "applied":
             return  # Already applied
     except Exception:

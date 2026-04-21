@@ -13,8 +13,10 @@ def generate_diff(before: str, after: str) -> str:
     after_lines = after.splitlines(keepends=True)
 
     diff_lines = difflib.unified_diff(
-        before_lines, after_lines,
-        fromfile="before", tofile="after",
+        before_lines,
+        after_lines,
+        fromfile="before",
+        tofile="after",
     )
     return "".join(diff_lines)
 
@@ -55,18 +57,16 @@ def commit_artifact(path: str, message: str) -> None:
     """
     add_result = subprocess.run(
         ["git", "add", path],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if add_result.returncode != 0:
-        raise RuntimeError(
-            f"git add failed: {add_result.stderr}"
-        )
+        raise RuntimeError(f"git add failed: {add_result.stderr}")
 
     commit_result = subprocess.run(
         ["git", "commit", "-m", message],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if commit_result.returncode != 0:
-        raise RuntimeError(
-            f"git commit failed: {commit_result.stderr}"
-        )
+        raise RuntimeError(f"git commit failed: {commit_result.stderr}")

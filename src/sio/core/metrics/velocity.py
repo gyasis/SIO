@@ -57,8 +57,7 @@ def compute_velocity_snapshot(
 
     # Count total errors in the window (all types)
     total_row = db.execute(
-        "SELECT COUNT(*) FROM error_records "
-        "WHERE timestamp >= ? AND timestamp <= ?",
+        "SELECT COUNT(*) FROM error_records WHERE timestamp >= ? AND timestamp <= ?",
         (window_start, window_end),
     ).fetchone()
     total_errors_in_window = total_row[0]
@@ -106,15 +105,12 @@ def compute_velocity_snapshot(
         pre_type_count = pre_type_row[0]
 
         pre_total_row = db.execute(
-            "SELECT COUNT(*) FROM error_records "
-            "WHERE timestamp >= ? AND timestamp <= ?",
+            "SELECT COUNT(*) FROM error_records WHERE timestamp >= ? AND timestamp <= ?",
             (pre_window_start, pre_window_end),
         ).fetchone()
         pre_total_count = pre_total_row[0]
 
-        pre_rate = (
-            pre_type_count / pre_total_count if pre_total_count > 0 else 0.0
-        )
+        pre_rate = pre_type_count / pre_total_count if pre_total_count > 0 else 0.0
 
         # correction_decay_rate = (pre_rate - post_rate) / pre_rate
         if pre_rate > 0:
@@ -129,8 +125,7 @@ def compute_velocity_snapshot(
 
         # Get distinct sessions after the rule was applied, ordered by time
         session_rows = db.execute(
-            "SELECT DISTINCT session_id FROM error_records "
-            "WHERE timestamp > ? ORDER BY timestamp",
+            "SELECT DISTINCT session_id FROM error_records WHERE timestamp > ? ORDER BY timestamp",
             (applied_at,),
         ).fetchall()
 
@@ -145,13 +140,11 @@ def compute_velocity_snapshot(
 
                 # Count errors in this session
                 s_type = db.execute(
-                    "SELECT COUNT(*) FROM error_records "
-                    "WHERE session_id = ? AND error_type = ?",
+                    "SELECT COUNT(*) FROM error_records WHERE session_id = ? AND error_type = ?",
                     (sid, error_type),
                 ).fetchone()[0]
                 s_total = db.execute(
-                    "SELECT COUNT(*) FROM error_records "
-                    "WHERE session_id = ?",
+                    "SELECT COUNT(*) FROM error_records WHERE session_id = ?",
                     (sid,),
                 ).fetchone()[0]
 
@@ -233,14 +226,11 @@ def get_velocity_trends(
     """
     if error_type:
         rows = db.execute(
-            "SELECT * FROM velocity_snapshots "
-            "WHERE error_type = ? ORDER BY created_at",
+            "SELECT * FROM velocity_snapshots WHERE error_type = ? ORDER BY created_at",
             (error_type,),
         ).fetchall()
     else:
-        rows = db.execute(
-            "SELECT * FROM velocity_snapshots ORDER BY created_at"
-        ).fetchall()
+        rows = db.execute("SELECT * FROM velocity_snapshots ORDER BY created_at").fetchall()
 
     return [_row_to_dict(r) for r in rows]
 
@@ -308,8 +298,11 @@ def get_skill_effectiveness(
             desc = rd.get("description") or ""
             # Use a simple heuristic: look for common error type names
             for candidate in (
-                "tool_failure", "user_correction", "repeated_attempt",
-                "undo", "agent_admission",
+                "tool_failure",
+                "user_correction",
+                "repeated_attempt",
+                "undo",
+                "agent_admission",
             ):
                 if candidate.replace("_", " ") in desc.lower() or candidate in desc.lower():
                     error_type = candidate
@@ -317,14 +310,16 @@ def get_skill_effectiveness(
 
         if not error_type:
             # Cannot measure effectiveness without an error type
-            results.append({
-                "skill_path": skill_path,
-                "target_error_type": None,
-                "pre_rate": None,
-                "post_rate": None,
-                "improvement_pct": None,
-                "sessions_tracked": 0,
-            })
+            results.append(
+                {
+                    "skill_path": skill_path,
+                    "target_error_type": None,
+                    "pre_rate": None,
+                    "post_rate": None,
+                    "improvement_pct": None,
+                    "sessions_tracked": 0,
+                }
+            )
             continue
 
         # Find velocity snapshots for this error type, linked to this suggestion
@@ -340,14 +335,16 @@ def get_skill_effectiveness(
         ).fetchall()
 
         if not snapshots:
-            results.append({
-                "skill_path": skill_path,
-                "target_error_type": error_type,
-                "pre_rate": None,
-                "post_rate": None,
-                "improvement_pct": None,
-                "sessions_tracked": 0,
-            })
+            results.append(
+                {
+                    "skill_path": skill_path,
+                    "target_error_type": error_type,
+                    "pre_rate": None,
+                    "post_rate": None,
+                    "improvement_pct": None,
+                    "sessions_tracked": 0,
+                }
+            )
             continue
 
         snap_dicts = [dict(s) for s in snapshots]
@@ -388,13 +385,15 @@ def get_skill_effectiveness(
 
             sessions_tracked = len(snap_dicts)
 
-        results.append({
-            "skill_path": skill_path,
-            "target_error_type": error_type,
-            "pre_rate": round(pre_rate, 4),
-            "post_rate": round(post_rate, 4),
-            "improvement_pct": round(improvement_pct, 1),
-            "sessions_tracked": sessions_tracked,
-        })
+        results.append(
+            {
+                "skill_path": skill_path,
+                "target_error_type": error_type,
+                "pre_rate": round(pre_rate, 4),
+                "post_rate": round(post_rate, 4),
+                "improvement_pct": round(improvement_pct, 1),
+                "sessions_tracked": sessions_tracked,
+            }
+        )
 
     return results

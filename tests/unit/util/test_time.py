@@ -13,14 +13,15 @@ from datetime import datetime, timezone
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _import_module():
     """Import the module under test; raises ImportError if not yet created."""
     from sio.core.util import time as time_mod  # noqa: PLC0415
+
     return time_mod
 
 
@@ -81,12 +82,13 @@ def test_to_utc_iso_naive_with_eastern_tz(monkeypatch):
     EST = UTC-5, EDT = UTC-4. We freeze to a winter date to ensure EST.
     2026-01-20T09:00:00 in EST (UTC-5) == 2026-01-20T14:00:00+00:00.
     """
-    import os
     monkeypatch.setenv("TZ", "America/New_York")
     # Reload time module to pick up TZ change (platform-dependent)
     try:
         import importlib
+
         import sio.core.util.time as _t
+
         importlib.reload(_t)
         mod = _t
     except ImportError:

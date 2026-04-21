@@ -117,8 +117,7 @@ def install_schedule() -> dict[str, Any]:
     """
     if sys.platform == "win32":
         raise RuntimeError(
-            "Cron scheduling is not supported on Windows. "
-            "Use Task Scheduler (schtasks) instead."
+            "Cron scheduling is not supported on Windows. Use Task Scheduler (schtasks) instead."
         )
     current = _read_crontab()
     # Remove any pre-existing SIO lines to prevent duplicates.

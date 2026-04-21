@@ -333,3 +333,63 @@ As the operator, after the remediation lands, I want an independent re-audit to 
 - Web UI for suggestion review.
 - Fine-tuning the underlying LM (`BootstrapFinetune`); only prompt/demo optimization is in scope.
 - Distributed mining (remains single-machine).
+
+---
+
+## Changelog (T114 — FR-033, SC-015)
+
+All 34 original audit findings (C1-C7, H1-H12, M1-M8, L1-L6) are closed.
+Zero deferrals remain.
+
+### Per-Finding Closure References
+
+| Finding | Severity | Task | Commit | File:Line |
+|---------|----------|------|--------|-----------|
+| C1 — Gold standards reads wrong DB path | CRITICAL | T041 | 39491ff Wave 4 | `src/sio/core/arena/gold_standards.py` |
+| C2 — Suggestion run silently drops applied-change log | CRITICAL | T048 | c693998 Wave 5 | `src/sio/suggestions/dspy_generator.py` |
+| C3 — Atomic write not used for CLAUDE.md | CRITICAL | T018 | fa9f3fd Wave 2 | `src/sio/core/applier/writer.py` |
+| C4 — Path allowlist not enforced | CRITICAL | T018 | fa9f3fd Wave 2 | `src/sio/core/applier/writer.py:_validate_target_path` |
+| C5 — DSPy optimizer never receives labeled examples | CRITICAL | T035 | 5c3d710 Wave 3 | `src/sio/core/db/sync.py` |
+| C6 — Optimized module save/load path missing | CRITICAL | T032 | 5c3d710 Wave 3 | `src/sio/core/dspy/persistence.py` |
+| C7 — Hook heartbeat not atomic | CRITICAL | T020 | fa9f3fd Wave 2 | `src/sio/adapters/claude_code/hooks/_heartbeat.py` |
+| H1 — LM factory missing; ad-hoc dspy.LM() everywhere | HIGH | T022 | 5c3d710 Wave 3 | `src/sio/core/dspy/lm_factory.py` |
+| H2 — No schema version guard | HIGH | T013 | 5c3d710 Wave 3 | `src/sio/core/db/schema.py:schema_version` |
+| H3 — Migration not idempotent | HIGH | T015 | 5c3d710 Wave 3 | `scripts/migrate_004.py` |
+| H4 — Behavior invocations split brain | HIGH | T035 | 5c3d710 Wave 3 | `src/sio/core/db/sync.py` |
+| H5 — Installer recreates legacy DB | HIGH | T038 | 39491ff Wave 4 | `src/sio/adapters/claude_code/installer.py` |
+| H6 — fromisoformat("") crash in ranker | HIGH | T106 | Wave 12 | `src/sio/clustering/ranker.py:75` |
+| H7 — Gold standard promotion not triggered | HIGH | T040 | 39491ff Wave 4 | `src/sio/adapters/claude_code/hooks/stop.py` |
+| H8 — dspy.Example missing .with_inputs() | HIGH | T030 | 5c3d710 Wave 3 | `src/sio/core/dspy/datasets.py` |
+| H9 — Metric registry not enforcing signature | HIGH | T026 | 5c3d710 Wave 3 | `src/sio/core/dspy/metrics.py` |
+| H10 — No GEPA/MIPROv2 optimizer wired | HIGH | T043 | 39491ff Wave 4 | `src/sio/core/dspy/optimizer.py` |
+| H11 — Bootstrap optimizer missing | HIGH | T063 | 163495b Wave 7 | `src/sio/core/dspy/optimizer.py:bootstrap_branch` |
+| H12 — MIPROv2 not wired | HIGH | T062 | 163495b Wave 7 | `src/sio/core/dspy/optimizer.py:mipro_branch` |
+| M1 — processed_sessions schema missing T085 columns | MEDIUM | T-REGR | Wave 12 | `src/sio/core/db/schema.py:_PROCESSED_SESSIONS_DDL` |
+| M2 — Cross-type dedup data loss | MEDIUM | T105 | Wave 12 | `src/sio/mining/pipeline.py:_dedup_by_error_type_priority` |
+| M3 — File > 1 GB blocks pipeline | MEDIUM | T089 | Wave 12 | `src/sio/mining/pipeline.py:_file_hash` |
+| M4 — Centroid BLOB not reused | MEDIUM | T104 | 7562495 Wave 11 | `src/sio/clustering/grader.py` |
+| M5 — Declining-grade pattern not detected | MEDIUM | T104 | 7562495 Wave 11 | `src/sio/clustering/grader.py` |
+| M6 — Suggestion instrumentation missing | MEDIUM | T108 | Wave 12 | `src/sio/suggestions/dspy_generator.py:SuggestionGenerator.forward` |
+| M7 — PatternToRule signature lacks few-shot guidance | MEDIUM | T109 | Wave 12 | `src/sio/core/dspy/signatures.py:PatternToRule` |
+| M8 — hook_health_rows duplicated in main.py | MEDIUM | T094 | Wave 12 | `src/sio/cli/main.py:2168` (import, not inline) |
+| L1 — Status hook-health not centralized | LOW | T094 | Wave 12 | `src/sio/cli/status.py:hook_health_rows` |
+| L2 — Within-type dedup audit | LOW | T105 | Wave 12 | `src/sio/mining/pipeline.py` |
+| L3 — Autoresearch not scheduled | LOW | T054 | c448423 Wave 8 | `src/sio/autoresearch/cadence.py` |
+| L4 — Velocity metric not wired | LOW | T075 | 1044ed1 Wave 9 | `src/sio/core/metrics/velocity.py` |
+| L5 — Assertion backtrack count not captured | LOW | T108 | Wave 12 | `src/sio/suggestions/dspy_generator.py` |
+| L6 — Suggestion quality baseline undocumented | LOW | T110 | Wave 12 | `specs/004-pipeline-integrity-remediation/research/suggestion_quality_baseline.md` |
+
+### Wave Summary
+
+| Wave | Commit | Key Deliverables |
+|------|--------|-----------------|
+| Wave 1 | 60d99c2 | Setup, directory skeleton, dep pinning, conftest fixtures |
+| Wave 2 | fa9f3fd | Constants, schema_version, atomic write, heartbeat |
+| Wave 3 | 5c3d710 | Migration script, LM factory, DSPy signatures/metrics/assertions/datasets/persistence, sync |
+| Wave 4 | 39491ff | US1 MVP — closed loop WORKING (sync→promote→GEPA→artifact) |
+| Wave 5 | c693998 | Metrics, US2 non-destructive suggestion, rollback, US3 safety tests |
+| Wave 7 | 163495b | DSPy module rewrites, all 3 optimizers, instrumentation scaffolding |
+| Wave 8 | c448423 | US9 finish, US4 autoresearch scheduling, US5 streaming mine |
+| Wave 9 | 1044ed1 | SuggestionGenerator, US5 mining refactor, US6 status scaffolding |
+| Wave 11 | 7562495 | Centroid BLOB reuse, declining-grade grader (T104) |
+| Wave 12 | (current) | T-REGR fix, T089/T105/T106/T108/T109/T110/T111-T120 polish |

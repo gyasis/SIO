@@ -82,10 +82,10 @@ class TestSaveModule:
         ).fetchone()
         assert row is not None, "No row inserted into optimized_modules"
         # Access by index since row_factory may be sqlite3.Row
-        assert row[0] == "suggestion"       # module_type
+        assert row[0] == "suggestion"  # module_type
         assert row[1] == "BootstrapFewShot"  # optimizer_used
-        assert row[2] == 50                  # training_count
-        assert row[4] == pytest.approx(0.78) # metric_after
+        assert row[2] == 50  # training_count
+        assert row[4] == pytest.approx(0.78)  # metric_after
 
 
 # ---------------------------------------------------------------------------

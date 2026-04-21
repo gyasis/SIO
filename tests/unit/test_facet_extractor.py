@@ -254,7 +254,9 @@ class TestSessionComplexity:
         """Few messages + few tokens -> simple."""
         metrics = _make_metrics(total_input=10, total_output=5)
         msgs = _make_messages(
-            count=2, input_tokens=5, output_tokens=3,
+            count=2,
+            input_tokens=5,
+            output_tokens=3,
         )
         result = extract_facets(msgs, session_metrics=metrics)
         sc = result["session_complexity"]
@@ -292,7 +294,8 @@ class TestFacetCaching:
         """Cached result is returned for same hash on second call."""
         cache_dir = str(tmp_path / "facets")
         monkeypatch.setattr(
-            "sio.mining.facet_extractor._FACETS_DIR", cache_dir,
+            "sio.mining.facet_extractor._FACETS_DIR",
+            cache_dir,
         )
 
         msgs = _make_messages(
@@ -318,7 +321,8 @@ class TestFacetCaching:
         """Without file_hash, no cache file is created."""
         cache_dir = str(tmp_path / "facets_nocache")
         monkeypatch.setattr(
-            "sio.mining.facet_extractor._FACETS_DIR", cache_dir,
+            "sio.mining.facet_extractor._FACETS_DIR",
+            cache_dir,
         )
 
         extract_facets(_make_messages(count=2))
@@ -331,7 +335,8 @@ class TestFacetCaching:
         """Corrupted cache file causes recomputation."""
         cache_dir = str(tmp_path / "facets_corrupt")
         monkeypatch.setattr(
-            "sio.mining.facet_extractor._FACETS_DIR", cache_dir,
+            "sio.mining.facet_extractor._FACETS_DIR",
+            cache_dir,
         )
 
         fhash = _hash_content("corrupt-test")

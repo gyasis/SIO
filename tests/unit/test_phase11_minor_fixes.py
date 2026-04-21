@@ -146,9 +146,7 @@ class TestSeedCountAndSurface:
         ids = seed_ground_truth(config, mem_db, surface="claude_md_rule")
         assert len(ids) >= 1
 
-        rows = mem_db.execute(
-            "SELECT DISTINCT target_surface FROM ground_truth"
-        ).fetchall()
+        rows = mem_db.execute("SELECT DISTINCT target_surface FROM ground_truth").fetchall()
         surfaces = {dict(r)["target_surface"] for r in rows}
         assert surfaces == {"claude_md_rule"}
 
@@ -226,7 +224,10 @@ class TestQualityAssessmentPersistence:
     @patch("sio.core.dspy.modules.GroundTruthModule")
     @patch("sio.core.dspy.lm_factory.create_lm")
     def test_generator_persists_quality_assessment(
-        self, mock_create_lm, mock_module_cls, mem_db,
+        self,
+        mock_create_lm,
+        mock_module_cls,
+        mem_db,
     ):
         """generate_candidates should store quality_assessment from DSPy."""
         mock_create_lm.return_value = MagicMock()
@@ -256,9 +257,13 @@ class TestQualityAssessmentPersistence:
         mem_db.commit()
 
         pattern = {
-            "id": 1, "pattern_id": "gen-qa-test",
-            "description": "Test", "tool_name": "Bash",
-            "error_count": 5, "session_count": 3, "error_type": "tool_failure",
+            "id": 1,
+            "pattern_id": "gen-qa-test",
+            "description": "Test",
+            "tool_name": "Bash",
+            "error_count": 5,
+            "session_count": 3,
+            "error_type": "tool_failure",
         }
         dataset = {"id": 0, "file_path": ""}
         config = SIOConfig(llm_model="test/model")
@@ -287,9 +292,7 @@ class TestSeededPatternIds:
         seed_ground_truth(config, mem_db)
 
         # Every seeded ground_truth.pattern_id should have a matching patterns row
-        gt_rows = mem_db.execute(
-            "SELECT DISTINCT pattern_id FROM ground_truth"
-        ).fetchall()
+        gt_rows = mem_db.execute("SELECT DISTINCT pattern_id FROM ground_truth").fetchall()
         for row in gt_rows:
             pid = dict(row)["pattern_id"]
             pat_row = mem_db.execute(
@@ -407,9 +410,7 @@ class TestRowFactoryValidation:
     def test_normal_row_converts(self, mem_db):
         from sio.core.db.queries import _row_to_dict
 
-        row = mem_db.execute(
-            "SELECT 1 as a, 2 as b"
-        ).fetchone()
+        row = mem_db.execute("SELECT 1 as a, 2 as b").fetchone()
         d = _row_to_dict(row)
         assert d == {"a": 1, "b": 2}
 
@@ -425,9 +426,7 @@ class TestUnrecognizedTomlKeys:
     def test_warns_on_unknown_keys(self, tmp_path, caplog):
         config_file = tmp_path / "config.toml"
         config_file.write_text(
-            'retention_days = 30\n'
-            'bogus_key = "should warn"\n'
-            'another_unknown = 42\n'
+            'retention_days = 30\nbogus_key = "should warn"\nanother_unknown = 42\n'
         )
         with caplog.at_level(logging.WARNING, logger="sio.core.config"):
             cfg = load_config(str(config_file))
@@ -437,7 +436,7 @@ class TestUnrecognizedTomlKeys:
 
     def test_no_warning_for_known_keys(self, tmp_path, caplog):
         config_file = tmp_path / "config.toml"
-        config_file.write_text('retention_days = 60\nmin_examples = 20\n')
+        config_file.write_text("retention_days = 60\nmin_examples = 20\n")
         with caplog.at_level(logging.WARNING, logger="sio.core.config"):
             load_config(str(config_file))
 
@@ -457,7 +456,8 @@ class TestQueryEmbShapeSafety:
         from sio.core.dspy.corpus_indexer import CorpusIndex
 
         idx = CorpusIndex(
-            file_count=1, chunk_count=2,
+            file_count=1,
+            chunk_count=2,
             _chunks=[
                 {"text": "hello world", "path": "/a.md"},
                 {"text": "foo bar baz", "path": "/b.md"},
@@ -465,10 +465,13 @@ class TestQueryEmbShapeSafety:
         )
 
         # Inject mock backend and embeddings
-        idx._embeddings = np.array([
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-        ], dtype=np.float32)
+        idx._embeddings = np.array(
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+            ],
+            dtype=np.float32,
+        )
 
         mock_backend = MagicMock()
         # Return 2D array (shape [1, 4]) to test flattening
@@ -495,7 +498,8 @@ class TestSimilarityThresholdFiltering:
         from sio.core.dspy.corpus_indexer import CorpusIndex
 
         idx = CorpusIndex(
-            file_count=1, chunk_count=3,
+            file_count=1,
+            chunk_count=3,
             _chunks=[
                 {"text": "very relevant", "path": "/a.md"},
                 {"text": "somewhat relevant", "path": "/b.md"},
@@ -504,16 +508,17 @@ class TestSimilarityThresholdFiltering:
         )
 
         # Create embeddings where chunk 2 has near-zero similarity
-        idx._embeddings = np.array([
-            [1.0, 0.0, 0.0],  # High sim with query
-            [0.5, 0.5, 0.0],  # Medium sim
-            [0.0, 0.0, 1.0],  # Orthogonal = 0 sim
-        ], dtype=np.float32)
+        idx._embeddings = np.array(
+            [
+                [1.0, 0.0, 0.0],  # High sim with query
+                [0.5, 0.5, 0.0],  # Medium sim
+                [0.0, 0.0, 1.0],  # Orthogonal = 0 sim
+            ],
+            dtype=np.float32,
+        )
 
         mock_backend = MagicMock()
-        mock_backend.encode_single.return_value = np.array(
-            [1.0, 0.0, 0.0], dtype=np.float32
-        )
+        mock_backend.encode_single.return_value = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         idx._backend = mock_backend
 
         results = idx.search_embedding("relevant", top_k=3)
@@ -578,11 +583,16 @@ class TestBatchCommits:
         from sio.core.db.queries import insert_error_record
 
         record = {
-            "session_id": "s1", "timestamp": datetime.now(timezone.utc).isoformat(),
-            "source_type": "test", "source_file": "test.md",
-            "tool_name": "Bash", "error_text": "Error",
-            "user_message": "msg", "context_before": None,
-            "context_after": None, "error_type": "tool_failure",
+            "session_id": "s1",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "source_type": "test",
+            "source_file": "test.md",
+            "tool_name": "Bash",
+            "error_text": "Error",
+            "user_message": "msg",
+            "context_before": None,
+            "context_after": None,
+            "error_type": "tool_failure",
             "mined_at": datetime.now(timezone.utc).isoformat(),
         }
         spy = _CommitSpy(mem_db)
@@ -596,11 +606,16 @@ class TestBatchCommits:
         from sio.core.db.queries import insert_error_record
 
         record = {
-            "session_id": "s1", "timestamp": datetime.now(timezone.utc).isoformat(),
-            "source_type": "test", "source_file": "test.md",
-            "tool_name": "Bash", "error_text": "Error",
-            "user_message": "msg", "context_before": None,
-            "context_after": None, "error_type": "tool_failure",
+            "session_id": "s1",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "source_type": "test",
+            "source_file": "test.md",
+            "tool_name": "Bash",
+            "error_text": "Error",
+            "user_message": "msg",
+            "context_before": None,
+            "context_after": None,
+            "error_type": "tool_failure",
             "mined_at": datetime.now(timezone.utc).isoformat(),
         }
         spy = _CommitSpy(mem_db)
@@ -613,27 +628,38 @@ class TestBatchCommits:
         from sio.core.db.queries import insert_error_record, insert_pattern, link_error_to_pattern
 
         now = datetime.now(timezone.utc).isoformat()
-        pat_id = insert_pattern(mem_db, {
-            "pattern_id": "batch-test",
-            "description": "test",
-            "tool_name": None,
-            "error_count": 1,
-            "session_count": 1,
-            "first_seen": now,
-            "last_seen": now,
-            "rank_score": 1.0,
-            "centroid_embedding": None,
-            "created_at": now,
-            "updated_at": now,
-        })
-        err_id = insert_error_record(mem_db, {
-            "session_id": "s1", "timestamp": now,
-            "source_type": "test", "source_file": "test.md",
-            "tool_name": "Bash", "error_text": "Error",
-            "user_message": "msg", "context_before": None,
-            "context_after": None, "error_type": "tool_failure",
-            "mined_at": now,
-        })
+        pat_id = insert_pattern(
+            mem_db,
+            {
+                "pattern_id": "batch-test",
+                "description": "test",
+                "tool_name": None,
+                "error_count": 1,
+                "session_count": 1,
+                "first_seen": now,
+                "last_seen": now,
+                "rank_score": 1.0,
+                "centroid_embedding": None,
+                "created_at": now,
+                "updated_at": now,
+            },
+        )
+        err_id = insert_error_record(
+            mem_db,
+            {
+                "session_id": "s1",
+                "timestamp": now,
+                "source_type": "test",
+                "source_file": "test.md",
+                "tool_name": "Bash",
+                "error_text": "Error",
+                "user_message": "msg",
+                "context_before": None,
+                "context_after": None,
+                "error_type": "tool_failure",
+                "mined_at": now,
+            },
+        )
         spy = _CommitSpy(mem_db)
         link_error_to_pattern(spy, pat_id, err_id, _batch=True)
         assert spy.commit_count == 0

@@ -152,7 +152,7 @@
 
 **Wave B — implementations (run after Wave A is committed):**
 
-- [ ] T066 [US9] Rewrite `src/sio/suggestions/dspy_generator.py` as `SuggestionGenerator(dspy.Module)` using `PatternToRule` signature, `dspy.ChainOfThought`, and `assert_rule_format` + `assert_no_phi` per `contracts/dspy-module-api.md` §3 (FR-035, SC-016); pass T059.
+- [x] T066 [US9] Rewrite `src/sio/suggestions/dspy_generator.py` as `SuggestionGenerator(dspy.Module)` using `PatternToRule` signature, `dspy.ChainOfThought`, and `assert_rule_format` + `assert_no_phi` per `contracts/dspy-module-api.md` §3 (FR-035, SC-016); pass T059.
 - [x] T067 [US9] Rewrite `src/sio/training/recall_trainer.py` as `RecallEvaluator(dspy.Module)` using `RuleRecallScore`; replace the trivial string-equality metric with `METRIC_REGISTRY["embedding_similarity"]` default (FR-018, FR-035, SC-016); pass T060.
 - [x] T068 [US9] Implement all three branches in `src/sio/core/dspy/optimizer.py::run_optimize` per `contracts/optimizer-selection.md` §3 (gepa, mipro, bootstrap); wire `dspy.Evaluate` scoring on held-out eval set; call `save_compiled(compiled, artifact_path)`; pass T061, T062, T063.
 - [x] T069 [US9] Implement `record_optimization_run(...)` + `mark_prior_inactive(module_name)` in `src/sio/core/db/queries.py`; write row with `optimizer_name`, `metric_name`, `trainset_size`, `valset_size`, `score`, `task_lm`, `reflection_lm`, `artifact_path` (data-model.md §2.9).
@@ -190,16 +190,16 @@
 
 - [x] T080 [P] [US5] Write failing unit test `tests/unit/mining/test_streaming_parse.py` asserting `jsonl_parser.iter_events(path)` streams (use memory-tracking) and parses 10k-line fixture without `read_text()` call (FR-009).
 - [x] T081 [US5] Refactor `src/sio/mining/jsonl_parser.py` to stream via `for line in open(path, 'rb')` (replaces `file_path.read_text()` at line 417).
-- [ ] T082 [P] [US5] Write failing unit test `tests/unit/mining/test_byte_offset.py` covering: append-and-remine reads only new bytes, truncation-rotation resets offset via mtime check (FR-010, R-6).
-- [ ] T083 [US5] Add `last_offset`, `last_mtime` reads/writes in `src/sio/mining/pipeline.py` wrapping ingest loop; update `processed_sessions` in same transaction.
-- [ ] T084 [P] [US5] Write failing unit test `tests/unit/mining/test_subagent_link.py` covering both path patterns (`subagents/<parent>/<child>.jsonl` and `<parent>__subagent_<child>.jsonl`) → sets `is_subagent=1, parent_session_id=<parent>` (FR-011, R-13).
+- [x] T082 [P] [US5] Write failing unit test `tests/unit/mining/test_byte_offset.py` covering: append-and-remine reads only new bytes, truncation-rotation resets offset via mtime check (FR-010, R-6).
+- [x] T083 [US5] Add `last_offset`, `last_mtime` reads/writes in `src/sio/mining/pipeline.py` wrapping ingest loop; update `processed_sessions` in same transaction.
+- [x] T084 [P] [US5] Write failing unit test `tests/unit/mining/test_subagent_link.py` covering both path patterns (`subagents/<parent>/<child>.jsonl` and `<parent>__subagent_<child>.jsonl`) → sets `is_subagent=1, parent_session_id=<parent>` (FR-011, R-13).
 - [x] T085 [US5] Implement subagent path detection in `src/sio/mining/pipeline.py::_classify_session_file(path)`; propagate to `error_records` and `flow_events`.
-- [ ] T086 [P] [US5] Write failing unit test `tests/unit/mining/test_flow_dedup.py` asserting `sio flows --mine-first` run twice writes zero new flow_events on unchanged corpus (FR-008).
-- [ ] T087 [US5] Refactor `src/sio/mining/flow_pipeline.py:53-144` to honor `processed_sessions` + `flow_events` UNIQUE `(file_path, session_id, flow_hash)` constraint.
-- [ ] T088 [US5] Fix `src/sio/mining/flow_extractor.py`: n-gram `range(n_min, n_max + 1)` (FR-022, M5); extension allowlist `.rs/.go/.java/.cpp/.ipynb` (FR-026, L1); explicit positive-signal success heuristic (FR-021, L3).
-- [ ] T089 [US5] Implement 1 GB file-hash guard in `src/sio/mining/pipeline.py::_file_hash` (FR-028, L5) and WARN-on-missing-dir log in `_iter_session_dirs` (FR-027, L4).
-- [ ] T090 [P] [US5] Write failing integration test `tests/integration/test_mining_idempotence.py` doing a full two-pass mine on fixture corpus; assert zero row delta on second pass and peak RSS < 500 MB (SC-006, SC-007).
-- [ ] T091 [US5] Ensure `busy_timeout=30000` applied via `open_db()` everywhere in mining code paths (FR-012, H4); remove any ad-hoc `sqlite3.connect(...)` in mining modules.
+- [x] T086 [P] [US5] Write failing unit test `tests/unit/mining/test_flow_dedup.py` asserting `sio flows --mine-first` run twice writes zero new flow_events on unchanged corpus (FR-008).
+- [x] T087 [US5] Refactor `src/sio/mining/flow_pipeline.py:53-144` to honor `processed_sessions` + `flow_events` UNIQUE `(file_path, session_id, flow_hash)` constraint.
+- [x] T088 [US5] Fix `src/sio/mining/flow_extractor.py`: n-gram `range(n_min, n_max + 1)` (FR-022, M5); extension allowlist `.rs/.go/.java/.cpp/.ipynb` (FR-026, L1); explicit positive-signal success heuristic (FR-021, L3).
+- [x] T089 [US5] Implement 1 GB file-hash guard in `src/sio/mining/pipeline.py::_file_hash` (FR-028, L5) and WARN-on-missing-dir log in `_iter_session_dirs` (FR-027, L4).
+- [x] T090 [P] [US5] Write failing integration test `tests/integration/test_mining_idempotence.py` doing a full two-pass mine on fixture corpus; assert zero row delta on second pass and peak RSS < 500 MB (SC-006, SC-007).
+- [x] T091 [US5] Ensure `busy_timeout=30000` applied via `open_db()` everywhere in mining code paths (FR-012, H4); remove any ad-hoc `sqlite3.connect(...)` in mining modules.
 
 **Checkpoint**: US5 done — mining is idempotent, streaming, and subagent-aware.
 
@@ -211,9 +211,9 @@
 
 **Independent Test**: Inject a hook failure → `sio status` shows `warn` within one heartbeat cycle; 3 consecutive failures → `error`; stale heartbeat over threshold → `stale` (SC-009).
 
-- [ ] T092 [P] [US6] Write failing integration test `tests/integration/test_sio_status_health.py` covering the four states (`healthy`, `warn`, `error`, `never-seen`) plus latency < 2 s assertion.
+- [x] T092 [P] [US6] Write failing integration test `tests/integration/test_sio_status_health.py` covering the four states (`healthy`, `warn`, `error`, `never-seen`) plus latency < 2 s assertion.
 - [x] T093 [US6] Wrap `src/sio/adapters/claude_code/hooks/post_tool_use.py`, `stop.py`, `pre_compact.py` in the heartbeat try/finally pattern per `contracts/hook-heartbeat.md` §5; remove bare `except Exception: pass` (H8, FR-016).
-- [ ] T094 [US6] Implement `src/sio/cli/status.py::hook_health_rows()` per `contracts/hook-heartbeat.md` §4.
+- [x] T094 [US6] Implement `src/sio/cli/status.py::hook_health_rows()` per `contracts/hook-heartbeat.md` §4.
 - [x] T095 [US6] Expand `sio status` CLI rendering in `src/sio/cli/main.py` to include sections: Hooks, Mining, Training, Audit, Database; render via Rich tables per `contracts/cli-commands.md` § `sio status`.
 - [x] T096 [US6] Include sync-drift summary line in Training section (`SELECT COUNT(*) FROM <platform>.behavior_invocations` vs `sio.db`) emitting `in sync` / `warn` / `error` per `contracts/storage-sync.md` §6.
 
@@ -235,8 +235,8 @@
 - [x] T102 [US7] Implement centroid BLOB pack/unpack in `src/sio/core/clustering/pattern_clusterer.py`; reuse when `centroid_model_version` matches current fastembed version; recompute otherwise.
 - [x] T103 [P] [US7] Write failing unit test `tests/unit/clustering/test_declining_grade.py` asserting a pattern with stale latest-error transitions to `'declining'` (FR-023, M4).
 - [x] T104 [US7] Fix `src/sio/core/clustering/grader.py:80` to compute recency against `MAX(error_records.timestamp) WHERE pattern_id=?` — not current insert time.
-- [ ] T105 [US7] Fix `src/sio/core/clustering/ranker.py:75` empty-timestamp crash: guard `fromisoformat("")`, fall back to `mined_at` (FR-013, H6).
-- [ ] T106 [US7] Remove cross-type dedup in `_dedup_by_error_type_priority` — keep `tool_failure` rows alongside `user_correction` (FR-020, L2).
+- [x] T105 [US7] Fix `src/sio/core/clustering/ranker.py:75` empty-timestamp crash: guard `fromisoformat("")`, fall back to `mined_at` (FR-013, H6).
+- [x] T106 [US7] Remove cross-type dedup in `_dedup_by_error_type_priority` — keep `tool_failure` rows alongside `user_correction` (FR-020, L2).
 
 **Checkpoint**: US7 done — clustering is deterministic and incremental.
 
@@ -248,10 +248,10 @@
 
 **Independent Test**: Run a batch of 100 generated suggestions, review via `sio suggest --review`, compute `approved / total` ≥ 30% (SC-012).
 
-- [ ] T107 [P] [US8] Write failing integration test `tests/integration/test_suggestion_quality_instrumented.py` asserting per-stage rejection reasons populated in `suggestions` table after a run (FR-029).
-- [ ] T108 [US8] Add rejection-reason capture in `src/sio/suggestions/dspy_generator.py` via `dspy.Evaluate` + stage decorators; write to `suggestions.instrumentation_json`.
-- [ ] T109 [US8] Tune `SuggestionGenerator` prompt (docstring + few-shot from gold_standards) and metric selection (`llm_judge_recall` for this module); re-optimize via GEPA.
-- [ ] T110 [US8] Run batch, measure approval rate; record baseline-vs-new comparison in `specs/004-pipeline-integrity-remediation/research/suggestion_quality_baseline.md`; target ≥ 30% (SC-012).
+- [x] T107 [P] [US8] Write failing integration test `tests/integration/test_suggestion_quality_instrumented.py` asserting per-stage rejection reasons populated in `suggestions` table after a run (FR-029).
+- [x] T108 [US8] Add rejection-reason capture in `src/sio/suggestions/dspy_generator.py` via `dspy.Evaluate` + stage decorators; write to `suggestions.instrumentation_json`.
+- [x] T109 [US8] Tune `SuggestionGenerator` prompt (docstring + few-shot from gold_standards) and metric selection (`llm_judge_recall` for this module); re-optimize via GEPA.
+- [x] T110 [US8] Run batch, measure approval rate; record baseline-vs-new comparison in `specs/004-pipeline-integrity-remediation/research/suggestion_quality_baseline.md`; target ≥ 30% (SC-012).
 
 **Checkpoint**: US8 done — suggestion generator produces operator-approvable rules at target rate.
 
@@ -263,10 +263,10 @@
 
 **Independent Test**: Spawn two `adversarial-bug-hunter` sub-agents concurrently on the post-fix repo; consolidate results → zero CRITICAL, zero HIGH (SC-013, FR-033, FR-034).
 
-- [ ] T111 [P] [US10] Run `adversarial-bug-hunter` agent #1 (targeted scan of Phase 1/2/3 touched files) against HEAD; save report to `specs/004-pipeline-integrity-remediation/research/audit_hunter1.md`.
-- [ ] T112 [P] [US10] Run `adversarial-bug-hunter` agent #2 (general codebase scan) against HEAD; save report to `specs/004-pipeline-integrity-remediation/research/audit_hunter2.md`.
-- [ ] T113 [US10] Consolidate findings; assert zero CRITICAL / HIGH. Any new MEDIUM / LOW → open follow-up PRD; do NOT block this feature.
-- [ ] T114 [US10] Update `PRD-pipeline-integrity-remediation.md` changelog section with file:line citation for each of the 34 original findings; confirm zero "deferred" markers remain anywhere in the PRD (FR-033, SC-015).
+- [x] T111 [P] [US10] Run `adversarial-bug-hunter` agent #1 (targeted scan of Phase 1/2/3 touched files) against HEAD; save report to `specs/004-pipeline-integrity-remediation/research/audit_hunter1.md`.
+- [x] T112 [P] [US10] Run `adversarial-bug-hunter` agent #2 (general codebase scan) against HEAD; save report to `specs/004-pipeline-integrity-remediation/research/audit_hunter2.md`.
+- [x] T113 [US10] Consolidate findings; assert zero CRITICAL / HIGH. Any new MEDIUM / LOW → open follow-up PRD; do NOT block this feature.
+- [x] T114 [US10] Update `PRD-pipeline-integrity-remediation.md` changelog section with file:line citation for each of the 34 original findings; confirm zero "deferred" markers remain anywhere in the PRD (FR-033, SC-015).
 
 **Checkpoint**: US10 done — re-audit clean; every finding closed.
 
@@ -274,12 +274,16 @@
 
 ## Phase 13: Polish & Cross-Cutting
 
-- [ ] T115 [P] Run `uv run pytest --cov=src/sio --cov-report=term-missing` and verify ≥ 72% coverage on new/changed modules; address gaps.
-- [ ] T116 [P] Run `uv run ruff check --fix .` and `uv run ruff format .`; commit cleanup.
-- [ ] T117 [P] Update `README.md` pipeline diagram: per-platform DB → sync → sio.db → DSPy path; include GEPA/MIPROv2/BootstrapFewShot selector.
-- [ ] T118 [P] Update `/home/gyasisutton/.claude/rules/tools/sio.md` with the correct DB paths (per `CLAUDE.md` note in spec §8 Definition of Done).
-- [ ] T119 Verify every success criterion SC-001..SC-022 via `specs/004-pipeline-integrity-remediation/quickstart.md` §6 walkthrough; tick each in `checklists/requirements.md`.
-- [ ] T120 Tag release; write `specs/004-pipeline-integrity-remediation/CHANGELOG.md` with per-task file:line citations for each original audit finding (supports T114).
+- [x] T115 [P] Run `uv run pytest --cov=src/sio --cov-report=term-missing` and verify ≥ 72% coverage on new/changed modules; address gaps.
+- [x] T116 [P] Run `uv run ruff check --fix .` and `uv run ruff format .`; commit cleanup.
+- [x] T117 [P] Update `README.md` pipeline diagram: per-platform DB → sync → sio.db → DSPy path; include GEPA/MIPROv2/BootstrapFewShot selector.
+- [x] T118 [P] Update `/home/gyasisutton/.claude/rules/tools/sio.md` with the correct DB paths (per `CLAUDE.md` note in spec §8 Definition of Done).
+- [x] T119 Verify every success criterion SC-001..SC-022 via `specs/004-pipeline-integrity-remediation/quickstart.md` §6 walkthrough; tick each in `checklists/requirements.md`.
+- [x] T120 Tag release; write `specs/004-pipeline-integrity-remediation/CHANGELOG.md` with per-task file:line citations for each original audit finding (supports T114).
+
+### Regression Fix
+
+- [x] T-REGR Fix Wave 10 processed_sessions regressions from T085 — `_PROCESSED_SESSIONS_DDL` in `src/sio/core/db/schema.py` was missing `is_subagent`, `parent_session_id`, `last_offset`, `last_mtime` columns added by T085's INSERT SQL. Fixed by adding those columns to the DDL. Resolved 9 failing integration tests.
 
 ---
 

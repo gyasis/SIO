@@ -18,19 +18,18 @@ Run to confirm RED:
 
 from __future__ import annotations
 
-import struct
 import sqlite3
-import tempfile
+import struct
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # BLOB helpers (mirror what T102 will implement)
 # ---------------------------------------------------------------------------
+
 
 def _pack_centroid(vec: np.ndarray, model_hash: bytes) -> bytes:
     """Pack a centroid vector into the R-9 BLOB format."""
@@ -53,6 +52,7 @@ def _unpack_centroid(blob: bytes) -> tuple[np.ndarray, bytes]:
 # ---------------------------------------------------------------------------
 # Test DB fixture
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def db_with_patterns(tmp_path: Path):
@@ -77,6 +77,7 @@ def db_with_patterns(tmp_path: Path):
 # T101-1: centroid_embedding BLOB has correct format
 # ---------------------------------------------------------------------------
 
+
 def test_centroid_blob_format():
     """Packed BLOB must decode to same vector + model_hash."""
     model_hash = b"fastemb0"  # 8 bytes
@@ -92,6 +93,7 @@ def test_centroid_blob_format():
 # ---------------------------------------------------------------------------
 # T101-2: Re-cluster with same members reads BLOB, does NOT re-embed
 # ---------------------------------------------------------------------------
+
 
 def test_recluster_same_members_skips_embed(db_with_patterns):
     """When centroid_embedding is present and model_hash matches, embed_texts NOT called."""
@@ -143,6 +145,7 @@ def test_recluster_same_members_skips_embed(db_with_patterns):
 # ---------------------------------------------------------------------------
 # T101-3: model_hash mismatch → BLOB invalidated, centroid recomputed
 # ---------------------------------------------------------------------------
+
 
 def test_model_hash_mismatch_triggers_recompute(db_with_patterns):
     """When stored model_hash != current model_hash, centroid must be recomputed."""
@@ -197,6 +200,7 @@ def test_model_hash_mismatch_triggers_recompute(db_with_patterns):
 # T101-4: New cluster (no BLOB) → centroid computed and stored
 # ---------------------------------------------------------------------------
 
+
 def test_new_cluster_computes_and_stores_centroid(db_with_patterns):
     """A new cluster with no existing BLOB must compute centroid and store it."""
     from sio.clustering.pattern_clusterer import cluster_errors  # noqa: PLC0415
@@ -240,6 +244,7 @@ def test_new_cluster_computes_and_stores_centroid(db_with_patterns):
 # ---------------------------------------------------------------------------
 # T101-5: centroid_model_version column updated on write
 # ---------------------------------------------------------------------------
+
 
 def test_centroid_model_version_written_on_store(db_with_patterns):
     """centroid_model_version must be populated when centroid is stored."""

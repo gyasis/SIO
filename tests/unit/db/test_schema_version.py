@@ -17,7 +17,6 @@ from pathlib import Path
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers — import under-test symbols
 # ---------------------------------------------------------------------------
@@ -26,12 +25,14 @@ import pytest
 def _import_schema():
     """Import the schema module; raises if not yet implemented."""
     from sio.core.db import schema  # noqa: PLC0415
+
     return schema
 
 
 def _import_error():
     """Import PartialMigrationError; raises if not yet defined."""
     from sio.core.db.schema import PartialMigrationError  # noqa: PLC0415
+
     return PartialMigrationError
 
 
@@ -89,9 +90,7 @@ def test_schema_version_baseline_applied_at_is_utc(tmp_path: Path):
     conn = _connect(db_path)
     try:
         schema_mod.ensure_schema_version(conn)
-        row = conn.execute(
-            "SELECT applied_at FROM schema_version WHERE version=1"
-        ).fetchone()
+        row = conn.execute("SELECT applied_at FROM schema_version WHERE version=1").fetchone()
         assert row is not None
         assert row[0], "applied_at must not be empty"
     finally:
@@ -128,18 +127,14 @@ def test_migration_applying_then_applied(tmp_path: Path):
         # Simulate starting a migration (version 2).
         schema_mod.begin_migration(conn, version=2, description="add index")
 
-        row = conn.execute(
-            "SELECT status FROM schema_version WHERE version=2"
-        ).fetchone()
+        row = conn.execute("SELECT status FROM schema_version WHERE version=2").fetchone()
         assert row is not None, "Migration row version=2 not found after begin_migration"
         assert row[0] == "applying", f"Expected 'applying', got {row[0]!r}"
 
         # Simulate successful completion.
         schema_mod.finish_migration(conn, version=2)
 
-        row = conn.execute(
-            "SELECT status FROM schema_version WHERE version=2"
-        ).fetchone()
+        row = conn.execute("SELECT status FROM schema_version WHERE version=2").fetchone()
         assert row[0] == "applied", f"Expected 'applied', got {row[0]!r}"
     finally:
         conn.close()

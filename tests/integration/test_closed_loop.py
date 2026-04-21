@@ -12,13 +12,11 @@ Uses monkeypatching to avoid real API calls while keeping the GEPA code path rea
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -84,17 +82,19 @@ def _seed_gold_standards(conn, db_path: str, n: int = 5) -> None:
         )
         invocation_id = cur.lastrowid
 
-        example_json = json.dumps({
-            "inputs": ["pattern_description", "example_errors", "project_context"],
-            "data": {
-                "pattern_description": f"Pattern {i}: repeated tool failure",
-                "example_errors": [f"Error {i}.{j}" for j in range(3)],
-                "project_context": "SIO self-improving agent",
-                "rule_title": f"Rule {i}: Prevent tool failure",
-                "rule_body": f"Never call the tool without checking param {i}.",
-                "rule_rationale": f"This prevents pattern {i} from recurring.",
-            },
-        })
+        example_json = json.dumps(
+            {
+                "inputs": ["pattern_description", "example_errors", "project_context"],
+                "data": {
+                    "pattern_description": f"Pattern {i}: repeated tool failure",
+                    "example_errors": [f"Error {i}.{j}" for j in range(3)],
+                    "project_context": "SIO self-improving agent",
+                    "rule_title": f"Rule {i}: Prevent tool failure",
+                    "rule_body": f"Never call the tool without checking param {i}.",
+                    "rule_rationale": f"This prevents pattern {i} from recurring.",
+                },
+            }
+        )
 
         conn.execute(
             """
@@ -128,9 +128,7 @@ def _seed_gold_standards(conn, db_path: str, n: int = 5) -> None:
 class TestClosedLoop:
     """run_optimize golden thread: gold_standards → artifact → optimized_modules."""
 
-    def test_run_optimize_returns_expected_keys(
-        self, tmp_sio_db, tmp_path, monkeypatch
-    ):
+    def test_run_optimize_returns_expected_keys(self, tmp_sio_db, tmp_path, monkeypatch):
         """run_optimize returns dict with artifact, score, optimizer keys."""
         conn, db_path = tmp_sio_db
         _seed_gold_standards(conn, db_path, n=5)
@@ -142,9 +140,7 @@ class TestClosedLoop:
         # Patch dspy to avoid real API calls
         import dspy  # noqa: PLC0415
 
-        monkeypatch.setattr(
-            dspy, "configure", lambda **kwargs: None, raising=False
-        )
+        monkeypatch.setattr(dspy, "configure", lambda **kwargs: None, raising=False)
 
         from sio.core.dspy.optimizer import run_optimize  # noqa: PLC0415
 
@@ -161,9 +157,7 @@ class TestClosedLoop:
         assert "optimizer" in result, "result must contain 'optimizer' key"
         assert result["optimizer"] == "gepa"
 
-    def test_run_optimize_creates_artifact_file(
-        self, tmp_sio_db, tmp_path, monkeypatch
-    ):
+    def test_run_optimize_creates_artifact_file(self, tmp_sio_db, tmp_path, monkeypatch):
         """run_optimize creates a non-empty JSON artifact file."""
         conn, db_path = tmp_sio_db
         _seed_gold_standards(conn, db_path, n=5)
@@ -185,16 +179,12 @@ class TestClosedLoop:
         )
 
         artifact_path = Path(result["artifact"])
-        assert artifact_path.exists(), (
-            f"Artifact file must exist at {artifact_path}"
-        )
+        assert artifact_path.exists(), f"Artifact file must exist at {artifact_path}"
         assert artifact_path.stat().st_size > 0, "Artifact file must not be empty"
         parsed = json.loads(artifact_path.read_text())
         assert isinstance(parsed, dict), "Artifact must be valid JSON dict"
 
-    def test_run_optimize_inserts_optimized_modules_row(
-        self, tmp_sio_db, tmp_path, monkeypatch
-    ):
+    def test_run_optimize_inserts_optimized_modules_row(self, tmp_sio_db, tmp_path, monkeypatch):
         """run_optimize inserts a row into optimized_modules with active=1."""
         conn, db_path = tmp_sio_db
         _seed_gold_standards(conn, db_path, n=5)
@@ -218,9 +208,7 @@ class TestClosedLoop:
         # Re-read from DB
         check_conn = sqlite3.connect(db_path)
         check_conn.row_factory = sqlite3.Row
-        rows = check_conn.execute(
-            "SELECT * FROM optimized_modules"
-        ).fetchall()
+        rows = check_conn.execute("SELECT * FROM optimized_modules").fetchall()
         check_conn.close()
 
         assert len(rows) >= 1, "optimized_modules must have at least 1 row after optimize"
@@ -230,18 +218,14 @@ class TestClosedLoop:
         # Active row must have artifact_path pointing to existing file
         active_row = active_rows[0]
         artifact_col = (
-            active_row["artifact_path"]
-            if "artifact_path" in active_row.keys()
-            else None
+            active_row["artifact_path"] if "artifact_path" in active_row.keys() else None
         )
         assert artifact_col is not None, "artifact_path column must be populated"
         assert Path(artifact_col).exists(), (
             f"artifact_path must point to existing file: {artifact_col}"
         )
 
-    def test_run_optimize_second_call_transitions_active(
-        self, tmp_sio_db, tmp_path, monkeypatch
-    ):
+    def test_run_optimize_second_call_transitions_active(self, tmp_sio_db, tmp_path, monkeypatch):
         """Second run_optimize: old active row → active=0, new row → active=1."""
         conn, db_path = tmp_sio_db
         _seed_gold_standards(conn, db_path, n=5)
@@ -270,28 +254,17 @@ class TestClosedLoop:
 
         check_conn = sqlite3.connect(db_path)
         check_conn.row_factory = sqlite3.Row
-        rows = check_conn.execute(
-            "SELECT * FROM optimized_modules"
-        ).fetchall()
+        rows = check_conn.execute("SELECT * FROM optimized_modules").fetchall()
         check_conn.close()
 
-        assert len(rows) == 2, (
-            f"Expected 2 rows after two optimize calls, got {len(rows)}"
-        )
+        assert len(rows) == 2, f"Expected 2 rows after two optimize calls, got {len(rows)}"
         # Exactly one active
         active_count = sum(
-            1 for r in rows
-            if r["is_active"] == 1 or (
-                "active" in r.keys() and r["active"] == 1
-            )
+            1 for r in rows if r["is_active"] == 1 or ("active" in r.keys() and r["active"] == 1)
         )
-        assert active_count == 1, (
-            f"Expected exactly 1 active row, got {active_count}"
-        )
+        assert active_count == 1, f"Expected exactly 1 active row, got {active_count}"
 
-    def test_run_optimize_raises_insufficient_data(
-        self, tmp_sio_db, tmp_path, monkeypatch
-    ):
+    def test_run_optimize_raises_insufficient_data(self, tmp_sio_db, tmp_path, monkeypatch):
         """run_optimize raises InsufficientData when gold_standards has < 5 rows."""
         conn, db_path = tmp_sio_db
         # Seed only 2 rows — below the minimum threshold

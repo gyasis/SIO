@@ -32,8 +32,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Thresholds for compute_pattern_grade (T104, FR-023)
 # ---------------------------------------------------------------------------
-_DECLINING_DAYS = 7   # last error > 7 days ago → declining
-_DEAD_DAYS = 30       # last error > 30 days ago → dead
+_DECLINING_DAYS = 7  # last error > 7 days ago → declining
+_DEAD_DAYS = 30  # last error > 30 days ago → dead
 
 
 def compute_pattern_grade(
@@ -222,11 +222,13 @@ def run_grading(
                 "UPDATE patterns SET grade = ? WHERE id = ?",
                 (new_grade, pattern_db_id),
             )
-            changes.append({
-                "pattern_id": pattern_db_id,
-                "old_grade": old_grade,
-                "new_grade": new_grade,
-            })
+            changes.append(
+                {
+                    "pattern_id": pattern_db_id,
+                    "old_grade": old_grade,
+                    "new_grade": new_grade,
+                }
+            )
 
     db.commit()
     return changes
@@ -350,9 +352,7 @@ def promote_flow_to_skill(
     sequence = row_dicts[0]["sequence"]
     total_count = len(row_dicts)
     success_count = sum(1 for r in row_dicts if r["was_successful"])
-    success_rate = (
-        (success_count / total_count * 100) if total_count > 0 else 0.0
-    )
+    success_rate = (success_count / total_count * 100) if total_count > 0 else 0.0
 
     if total_count < 2:
         logger.warning(
@@ -382,14 +382,20 @@ def promote_flow_to_skill(
     )
 
     skill_content = generate_skill_from_flow(
-        flow_ngram, normalized_rate, session_examples,
+        flow_ngram,
+        normalized_rate,
+        session_examples,
     )
 
     # Build a slug from the flow tool names
     tool_names = [t.strip() for t in sequence.split("\u2192")]
     safe_name = "-".join(
-        t.replace("(", "").replace(")", "").replace("+", "")
-        .replace(".", "_").replace(" ", "").lower()
+        t.replace("(", "")
+        .replace(")", "")
+        .replace("+", "")
+        .replace(".", "_")
+        .replace(" ", "")
+        .lower()
         for t in tool_names[:4]
     )
     slug = f"sio-flow-{safe_name}"

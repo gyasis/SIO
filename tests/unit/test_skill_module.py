@@ -26,8 +26,7 @@ class TestSkillGeneratorSignature:
             "flow_sequence",
         }
         assert expected == set(input_fields.keys()), (
-            f"Input fields mismatch. Expected: {expected}, "
-            f"Got: {set(input_fields.keys())}"
+            f"Input fields mismatch. Expected: {expected}, Got: {set(input_fields.keys())}"
         )
 
     def test_signature_has_output_fields(self):
@@ -40,8 +39,7 @@ class TestSkillGeneratorSignature:
             "guardrails",
         }
         assert expected == set(output_fields.keys()), (
-            f"Output fields mismatch. Expected: {expected}, "
-            f"Got: {set(output_fields.keys())}"
+            f"Output fields mismatch. Expected: {expected}, Got: {set(output_fields.keys())}"
         )
 
     def test_signature_is_dspy_signature(self):
@@ -71,9 +69,7 @@ class TestSkillGeneratorModule:
         from sio.core.dspy.skill_module import SkillGeneratorModule
 
         mod = SkillGeneratorModule()
-        assert hasattr(mod, "generate"), (
-            "SkillGeneratorModule must have a 'generate' attribute"
-        )
+        assert hasattr(mod, "generate"), "SkillGeneratorModule must have a 'generate' attribute"
 
     def test_module_forward_signature(self):
         from sio.core.dspy.skill_module import SkillGeneratorModule
@@ -88,8 +84,7 @@ class TestSkillGeneratorModule:
             "flow_sequence",
         }
         assert expected.issubset(param_names), (
-            f"forward() missing parameters: {expected - param_names}. "
-            f"Has: {param_names}"
+            f"forward() missing parameters: {expected - param_names}. Has: {param_names}"
         )
 
     def test_module_has_generate_skill_method(self):
@@ -107,15 +102,8 @@ class TestSkillGeneratorModule:
 
         mock_result = SimpleNamespace(
             trigger_conditions="When editing Python files with imports",
-            ordered_steps=(
-                "1. Read the file\n"
-                "2. Check imports with Grep\n"
-                "3. Edit the file"
-            ),
-            guardrails=(
-                "- NEVER skip import verification\n"
-                "- ALWAYS run ruff check after editing"
-            ),
+            ordered_steps=("1. Read the file\n2. Check imports with Grep\n3. Edit the file"),
+            guardrails=("- NEVER skip import verification\n- ALWAYS run ruff check after editing"),
         )
         mod.generate = MagicMock(return_value=mock_result)
 

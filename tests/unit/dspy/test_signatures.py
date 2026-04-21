@@ -12,20 +12,22 @@ Tests assert (per contracts/dspy-module-api.md §2):
 Run to confirm RED before T024:
     uv run pytest tests/unit/dspy/test_signatures.py -v
 """
+
 from __future__ import annotations
 
 import inspect
-import pytest
 
 
 def _import_signatures():
     from sio.core.dspy import signatures  # noqa: PLC0415
+
     return signatures
 
 
 # ---------------------------------------------------------------------------
 # PatternToRule tests
 # ---------------------------------------------------------------------------
+
 
 def test_pattern_to_rule_has_docstring():
     """PatternToRule must have a non-empty class docstring."""
@@ -36,7 +38,6 @@ def test_pattern_to_rule_has_docstring():
 
 def test_pattern_to_rule_has_pattern_description_input():
     """PatternToRule must have pattern_description as an InputField."""
-    import dspy  # noqa: PLC0415
     sigs = _import_signatures()
     cls = sigs.PatternToRule
     assert "pattern_description" in cls.model_fields, (
@@ -89,20 +90,20 @@ def test_pattern_to_rule_has_rule_rationale_output():
 def test_pattern_to_rule_example_errors_is_list_type():
     """PatternToRule.example_errors must be typed as list[str]."""
     import typing  # noqa: PLC0415
+
     sigs = _import_signatures()
     hints = typing.get_type_hints(sigs.PatternToRule)
     assert "example_errors" in hints, "No type hint found for 'example_errors'"
     hint = hints["example_errors"]
     # Accept list[str] — the hint may be str or List[str] depending on DSPy version
     origin = getattr(hint, "__origin__", None)
-    assert origin is list or hint is list, (
-        f"Expected list type for example_errors, got {hint!r}"
-    )
+    assert origin is list or hint is list, f"Expected list type for example_errors, got {hint!r}"
 
 
 def test_pattern_to_rule_predict_smoke():
     """dspy.Predict(PatternToRule) must instantiate without error."""
     import dspy  # noqa: PLC0415
+
     sigs = _import_signatures()
     predictor = dspy.Predict(sigs.PatternToRule)
     assert predictor is not None
@@ -110,7 +111,6 @@ def test_pattern_to_rule_predict_smoke():
 
 def test_pattern_to_rule_input_keys():
     """PatternToRule input keys must include the three required fields."""
-    import dspy  # noqa: PLC0415
     sigs = _import_signatures()
     sig_instance = sigs.PatternToRule
     # Access input fields from DSPy signature
@@ -132,6 +132,7 @@ def test_pattern_to_rule_output_keys():
 # ---------------------------------------------------------------------------
 # RuleRecallScore tests
 # ---------------------------------------------------------------------------
+
 
 def test_rule_recall_score_has_docstring():
     """RuleRecallScore must have a non-empty class docstring."""
@@ -159,9 +160,7 @@ def test_rule_recall_score_has_candidate_rule_input():
 def test_rule_recall_score_has_score_output():
     """RuleRecallScore must have score as an OutputField."""
     sigs = _import_signatures()
-    assert "score" in sigs.RuleRecallScore.model_fields, (
-        "RuleRecallScore missing 'score' field"
-    )
+    assert "score" in sigs.RuleRecallScore.model_fields, "RuleRecallScore missing 'score' field"
 
 
 def test_rule_recall_score_has_reasoning_output():
@@ -175,6 +174,7 @@ def test_rule_recall_score_has_reasoning_output():
 def test_rule_recall_score_predict_smoke():
     """dspy.Predict(RuleRecallScore) must instantiate without error."""
     import dspy  # noqa: PLC0415
+
     sigs = _import_signatures()
     predictor = dspy.Predict(sigs.RuleRecallScore)
     assert predictor is not None

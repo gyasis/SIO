@@ -10,10 +10,8 @@ Tests:
 
 from __future__ import annotations
 
-import ast
 import re
 from pathlib import Path
-
 
 MINING_SRC = Path("/home/gyasisutton/dev/projects/SIO/src/sio/mining")
 
@@ -40,8 +38,7 @@ def test_no_direct_sqlite3_connect_in_mining():
     assert not violations, (
         "Direct sqlite3.connect() calls found in mining modules. "
         "All connections must route through sio.core.db.connect.open_db() "
-        "to ensure busy_timeout=30000 is applied (FR-012, H4, R-8).\n"
-        + "\n".join(violations)
+        "to ensure busy_timeout=30000 is applied (FR-012, H4, R-8).\n" + "\n".join(violations)
     )
 
 
@@ -64,9 +61,7 @@ def test_open_db_sets_busy_timeout():
             row = conn.execute("PRAGMA busy_timeout").fetchone()
             assert row is not None, "PRAGMA busy_timeout returned None"
             # SQLite returns the timeout in ms
-            assert row[0] == 30000, (
-                f"open_db() must set busy_timeout=30000, got {row[0]}"
-            )
+            assert row[0] == 30000, f"open_db() must set busy_timeout=30000, got {row[0]}"
         finally:
             conn.close()
 
@@ -89,8 +84,6 @@ def test_open_db_sets_wal_mode():
         try:
             row = conn.execute("PRAGMA journal_mode").fetchone()
             assert row is not None
-            assert row[0].lower() == "wal", (
-                f"open_db() must set journal_mode=WAL, got {row[0]!r}"
-            )
+            assert row[0].lower() == "wal", f"open_db() must set journal_mode=WAL, got {row[0]!r}"
         finally:
             conn.close()

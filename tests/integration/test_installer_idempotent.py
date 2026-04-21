@@ -11,9 +11,7 @@ These tests verify:
 
 from __future__ import annotations
 
-import os
 import sqlite3
-from pathlib import Path
 
 import pytest
 
@@ -57,9 +55,7 @@ def _get_platform_row_count(env: dict) -> int:
         return 0
     conn = sqlite3.connect(str(db_path))
     try:
-        row = conn.execute(
-            "SELECT COUNT(*) FROM behavior_invocations"
-        ).fetchone()
+        row = conn.execute("SELECT COUNT(*) FROM behavior_invocations").fetchone()
         return row[0] if row else 0
     except sqlite3.OperationalError:
         return 0
@@ -75,9 +71,7 @@ def _get_canonical_row_count(env: dict) -> int:
     conn = sqlite3.connect(str(sio_db))
     conn.row_factory = sqlite3.Row
     try:
-        row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM behavior_invocations"
-        ).fetchone()
+        row = conn.execute("SELECT COUNT(*) as cnt FROM behavior_invocations").fetchone()
         return row["cnt"] if row else 0
     except sqlite3.OperationalError:
         return 0
@@ -152,15 +146,12 @@ class TestInstallerIdempotent:
         rows = _schema_version_rows(sio_env)
 
         # Must have at least one schema_version row
-        assert len(rows) >= 1, (
-            f"schema_version table must have at least 1 row, got {len(rows)}"
-        )
+        assert len(rows) >= 1, f"schema_version table must have at least 1 row, got {len(rows)}"
 
         # The baseline row (version=1, status='applied') must exist
         baseline = [r for r in rows if r.get("version") == 1]
         assert baseline, (
-            "No schema_version row with version=1 found after install. "
-            f"Rows found: {rows}"
+            f"No schema_version row with version=1 found after install. Rows found: {rows}"
         )
         assert baseline[0]["status"] == "applied", (
             f"Baseline row status must be 'applied', got {baseline[0]['status']!r}"

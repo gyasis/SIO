@@ -21,12 +21,22 @@ These patterns are buried in session transcripts. SIO extracts them, finds the s
 ## How It Works
 
 ```
+Per-Platform DB                    Canonical DB                    DSPy Training Layer
+~/.sio/<platform>/          sync   ~/.sio/sio.db               optimizer selection
+behavior_invocations.db  -------> (error_records, patterns, -----> GEPA (default)
+ (hook writes here)                processed_sessions,              MIPROv2
+                                   gold_standards,                  BootstrapFewShot
+                                   optimized_modules)                    |
+                                          |                        Optimized Module
+                                          v                        (.json artifact)
 Session Transcripts        Error Patterns           Suggestions            Config Changes
 (SpecStory / JSONL)  --->  (clustered by      --->  (ranked by       --->  (CLAUDE.md rules,
-                            embedding                confidence)           hooks, skills)
-                            similarity)                  |
-                                                  Human Review
-                                                (approve / reject)
+                            fastembed +              confidence +          hooks, skills)
+                            cosine sim)              DSPy Assert)               |
+                                  |                       |             Atomic write +
+                            Dedup: within-         Human Review         Backup (keep=10)
+                            type only              (approve/reject)
+                            (FR-020)
 
 v2.1 additions:
 
@@ -39,6 +49,16 @@ Session Transcripts  --->  Tool Flows    --->  Distilled       --->  Training Da
                                               (topic filter +
                                                Gemini polish)
 ```
+
+### Pipeline Integrity (v004 — 2026-04)
+
+The v004 remediation hardened every stage of the pipeline:
+
+- **Per-platform DB sync**: Hook writes land in `~/.sio/<platform>/behavior_invocations.db`; `sio sync` idempotently copies to canonical `~/.sio/sio.db` using `INSERT OR IGNORE` dedup on `(platform, session_id, timestamp, tool_name)`.
+- **DSPy-first optimization**: Three optimizers wired (`GEPA` default, `MIPROv2`, `BootstrapFewShot`). Run via `sio optimize --optimizer gepa`.
+- **File-size guard**: Files > 1 GB skipped with WARNING in `_file_hash` (FR-027).
+- **Within-type dedup**: `_dedup_by_error_type_priority` now groups by `(session_id, user_message, error_type)` so `tool_failure` and `user_correction` rows are preserved side-by-side (FR-020).
+- **Atomic writes**: All config-file writes use `os.replace` + timestamped backup, keep-last-10 retention.
 
 **The full pipeline:**
 

@@ -9,10 +9,7 @@ Tests:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
-import pytest
-
+from unittest.mock import MagicMock
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
@@ -33,6 +30,7 @@ class _FakeModule:
 
     def __call__(self, **kwargs):
         import dspy  # noqa: PLC0415
+
         self._call_count += 1
         if self._assert_fail_on_call is not None and self._call_count == self._assert_fail_on_call:
             dspy.Assert(False, "Intentional test assertion failure")
@@ -46,7 +44,10 @@ class _FakeModule:
 
 def test_instrument_module_returns_instrumented_wrapper():
     """instrument_module must return an _InstrumentedModule with forward/backtrack counters."""
-    from sio.suggestions.instrumentation import _InstrumentedModule, instrument_module  # noqa: PLC0415
+    from sio.suggestions.instrumentation import (  # noqa: PLC0415
+        _InstrumentedModule,
+        instrument_module,
+    )
 
     module = _FakeModule()
     wrapped = instrument_module(module, suggestion_id=1)
@@ -74,9 +75,7 @@ def test_instrument_module_counts_assert_failures():
     wrapped._forward_count = 3
     wrapped._backtrack_count = 1
 
-    assert wrapped.forward_count == 3, (
-        f"Expected forward_count=3, got {wrapped.forward_count}"
-    )
+    assert wrapped.forward_count == 3, f"Expected forward_count=3, got {wrapped.forward_count}"
     assert wrapped.backtrack_count == 1, (
         f"Expected backtrack_count=1, got {wrapped.backtrack_count}"
     )

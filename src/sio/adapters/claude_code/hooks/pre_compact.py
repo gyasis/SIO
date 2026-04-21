@@ -10,7 +10,6 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
-from sio.core.constants import DEFAULT_PLATFORM as _DEFAULT_PLATFORM  # noqa: E402
 _DEFAULT_DB_DIR = os.path.expanduser("~/.sio/claude-code")
 _ERROR_LOG = os.path.expanduser("~/.sio/hook_errors.log")
 
@@ -51,16 +50,14 @@ def _do_snapshot(stdin_json: str, *, conn=None) -> None:
 
         # Count tool calls from behavior_invocations
         inv_row = conn.execute(
-            "SELECT COUNT(*) as total "
-            "FROM behavior_invocations WHERE session_id = ?",
+            "SELECT COUNT(*) as total FROM behavior_invocations WHERE session_id = ?",
             (session_id,),
         ).fetchone()
         tool_call_count = inv_row["total"] if inv_row else 0
 
         # Count errors from error_records
         err_row = conn.execute(
-            "SELECT COUNT(*) as errors "
-            "FROM error_records WHERE session_id = ?",
+            "SELECT COUNT(*) as errors FROM error_records WHERE session_id = ?",
             (session_id,),
         ).fetchone()
         error_count = err_row["errors"] if err_row else 0
@@ -68,8 +65,7 @@ def _do_snapshot(stdin_json: str, *, conn=None) -> None:
         # Count positive signals already captured for this session
         try:
             pos_row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM positive_records "
-                "WHERE session_id = ?",
+                "SELECT COUNT(*) as cnt FROM positive_records WHERE session_id = ?",
                 (session_id,),
             ).fetchone()
             positive_count = pos_row["cnt"] if pos_row else 0
@@ -118,6 +114,7 @@ def handle_pre_compact(stdin_json: str, *, conn=None) -> str:
     _session_id: str | None = None
     try:
         import json as _json  # noqa: PLC0415
+
         _session_id = _json.loads(stdin_json).get("session_id")
     except Exception:
         pass
@@ -126,6 +123,7 @@ def handle_pre_compact(stdin_json: str, *, conn=None) -> str:
         _do_snapshot(stdin_json, conn=conn)
         try:
             from sio.adapters.claude_code.hooks._heartbeat import record_success  # noqa: PLC0415
+
             record_success("pre_compact", session_id=_session_id)
         except Exception:
             pass
@@ -134,14 +132,20 @@ def handle_pre_compact(stdin_json: str, *, conn=None) -> str:
         try:
             _do_snapshot(stdin_json, conn=conn)
             try:
-                from sio.adapters.claude_code.hooks._heartbeat import record_success  # noqa: PLC0415
+                from sio.adapters.claude_code.hooks._heartbeat import (
+                    record_success,  # noqa: PLC0415
+                )
+
                 record_success("pre_compact", session_id=_session_id)
             except Exception:
                 pass
         except Exception as second_err:
             _log_error(f"retry failed: {first_err!r} -> {second_err!r}")
             try:
-                from sio.adapters.claude_code.hooks._heartbeat import record_failure  # noqa: PLC0415
+                from sio.adapters.claude_code.hooks._heartbeat import (
+                    record_failure,  # noqa: PLC0415
+                )
+
                 record_failure("pre_compact", second_err)
             except Exception:
                 pass

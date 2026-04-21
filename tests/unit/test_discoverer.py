@@ -165,7 +165,10 @@ class TestClassifyCandidate:
         from collections import Counter
 
         result = _classify_candidate(
-            Counter({"Bash": 5}), ["flow1"], 0, 5,
+            Counter({"Bash": 5}),
+            ["flow1"],
+            0,
+            5,
         )
         assert result == "workflow-sequence"
 
@@ -173,7 +176,10 @@ class TestClassifyCandidate:
         from collections import Counter
 
         result = _classify_candidate(
-            Counter({"Edit": 10}), [], 0, 10,
+            Counter({"Edit": 10}),
+            [],
+            0,
+            10,
         )
         assert result == "tool-specific"
 
@@ -181,7 +187,10 @@ class TestClassifyCandidate:
         from collections import Counter
 
         result = _classify_candidate(
-            Counter({"Bash": 3, "Read": 2}), [], 8, 10,
+            Counter({"Bash": 3, "Read": 2}),
+            [],
+            8,
+            10,
         )
         assert result == "repo-specific"
 
@@ -262,11 +271,7 @@ class TestDiscoverSkillCandidates:
             )
 
         candidates = discover_skill_candidates(db)
-        flow_candidates = [
-            c
-            for c in candidates
-            if "orphan-flow" in c["flow_hashes"]
-        ]
+        flow_candidates = [c for c in candidates if "orphan-flow" in c["flow_hashes"]]
         assert len(flow_candidates) == 1
         assert flow_candidates[0]["suggested_skill_type"] == "workflow-sequence"
 
@@ -288,10 +293,18 @@ class TestDiscoverSkillCandidates:
     def test_sorted_by_confidence(self, db) -> None:
         """Candidates should be sorted by confidence descending."""
         _insert_pattern(
-            db, pattern_id="low", tool_name="Glob", error_count=2, session_count=1,
+            db,
+            pattern_id="low",
+            tool_name="Glob",
+            error_count=2,
+            session_count=1,
         )
         _insert_pattern(
-            db, pattern_id="high", tool_name="Write", error_count=15, session_count=8,
+            db,
+            pattern_id="high",
+            tool_name="Write",
+            error_count=15,
+            session_count=8,
         )
 
         candidates = discover_skill_candidates(db)

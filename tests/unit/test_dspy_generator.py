@@ -143,9 +143,7 @@ class TestSanitizeExamples:
     def test_strips_aws_access_keys(self):
         from sio.suggestions.dspy_generator import _sanitize_examples
 
-        raw = json.dumps(
-            [{"error_text": "AccessDenied: key=AKIAIOSFODNN7EXAMPLE"}]
-        )
+        raw = json.dumps([{"error_text": "AccessDenied: key=AKIAIOSFODNN7EXAMPLE"}])
         result = _sanitize_examples(raw)
         assert "AKIAIOSFODNN7EXAMPLE" not in result
 
@@ -165,9 +163,7 @@ class TestSanitizeExamples:
     def test_strips_password_patterns(self):
         from sio.suggestions.dspy_generator import _sanitize_examples
 
-        raw = json.dumps(
-            [{"error_text": "password=SuperSecret123!"}]
-        )
+        raw = json.dumps([{"error_text": "password=SuperSecret123!"}])
         result = _sanitize_examples(raw)
         assert "SuperSecret123!" not in result
 
@@ -239,7 +235,11 @@ class TestGenerateDspySuggestion:
     """generate_dspy_suggestion calls SuggestionModule and returns correct schema."""
 
     def _run_with_mock(
-        self, sample_pattern, sample_dataset, mock_config, mock_prediction,
+        self,
+        sample_pattern,
+        sample_dataset,
+        mock_config,
+        mock_prediction,
     ):
         """Helper to run generate_dspy_suggestion with mocked DSPy."""
         with (
@@ -257,62 +257,115 @@ class TestGenerateDspySuggestion:
             from sio.suggestions.dspy_generator import generate_dspy_suggestion
 
             result = generate_dspy_suggestion(
-                sample_pattern, sample_dataset, mock_config,
+                sample_pattern,
+                sample_dataset,
+                mock_config,
             )
             return result, mock_instance, mock_create_lm
 
     def test_returns_dict_with_required_keys(
-        self, sample_pattern, sample_dataset, mock_config, mock_dspy_prediction,
+        self,
+        sample_pattern,
+        sample_dataset,
+        mock_config,
+        mock_dspy_prediction,
     ):
         result, _, _ = self._run_with_mock(
-            sample_pattern, sample_dataset, mock_config, mock_dspy_prediction,
+            sample_pattern,
+            sample_dataset,
+            mock_config,
+            mock_dspy_prediction,
         )
         required = {
-            "target_surface", "rule_title", "prevention_instructions",
-            "rationale", "reasoning_trace", "confidence", "proposed_change",
-            "status", "target_file", "_using_dspy", "pattern_id", "dataset_id",
+            "target_surface",
+            "rule_title",
+            "prevention_instructions",
+            "rationale",
+            "reasoning_trace",
+            "confidence",
+            "proposed_change",
+            "status",
+            "target_file",
+            "_using_dspy",
+            "pattern_id",
+            "dataset_id",
         }
         missing = required - set(result.keys())
         assert not missing, f"Missing keys: {missing}"
 
     def test_target_surface_is_valid(
-        self, sample_pattern, sample_dataset, mock_config, mock_dspy_prediction,
+        self,
+        sample_pattern,
+        sample_dataset,
+        mock_config,
+        mock_dspy_prediction,
     ):
         result, _, _ = self._run_with_mock(
-            sample_pattern, sample_dataset, mock_config, mock_dspy_prediction,
+            sample_pattern,
+            sample_dataset,
+            mock_config,
+            mock_dspy_prediction,
         )
         assert result["target_surface"] in VALID_TARGET_SURFACES
 
     def test_confidence_is_float_between_0_and_1(
-        self, sample_pattern, sample_dataset, mock_config, mock_dspy_prediction,
+        self,
+        sample_pattern,
+        sample_dataset,
+        mock_config,
+        mock_dspy_prediction,
     ):
         result, _, _ = self._run_with_mock(
-            sample_pattern, sample_dataset, mock_config, mock_dspy_prediction,
+            sample_pattern,
+            sample_dataset,
+            mock_config,
+            mock_dspy_prediction,
         )
         assert isinstance(result["confidence"], float)
         assert 0.0 <= result["confidence"] <= 1.0
 
     def test_status_is_pending(
-        self, sample_pattern, sample_dataset, mock_config, mock_dspy_prediction,
+        self,
+        sample_pattern,
+        sample_dataset,
+        mock_config,
+        mock_dspy_prediction,
     ):
         result, _, _ = self._run_with_mock(
-            sample_pattern, sample_dataset, mock_config, mock_dspy_prediction,
+            sample_pattern,
+            sample_dataset,
+            mock_config,
+            mock_dspy_prediction,
         )
         assert result["status"] == "pending"
 
     def test_using_dspy_flag_is_true(
-        self, sample_pattern, sample_dataset, mock_config, mock_dspy_prediction,
+        self,
+        sample_pattern,
+        sample_dataset,
+        mock_config,
+        mock_dspy_prediction,
     ):
         result, _, _ = self._run_with_mock(
-            sample_pattern, sample_dataset, mock_config, mock_dspy_prediction,
+            sample_pattern,
+            sample_dataset,
+            mock_config,
+            mock_dspy_prediction,
         )
         assert result["_using_dspy"] is True
 
     def test_calls_suggestion_module_forward(
-        self, sample_pattern, sample_dataset, mock_config, mock_dspy_prediction,
+        self,
+        sample_pattern,
+        sample_dataset,
+        mock_config,
+        mock_dspy_prediction,
     ):
         _, mock_instance, _ = self._run_with_mock(
-            sample_pattern, sample_dataset, mock_config, mock_dspy_prediction,
+            sample_pattern,
+            sample_dataset,
+            mock_config,
+            mock_dspy_prediction,
         )
         mock_instance.forward.assert_called_once()
         kwargs = mock_instance.forward.call_args.kwargs
@@ -321,7 +374,10 @@ class TestGenerateDspySuggestion:
         assert "pattern_summary" in kwargs
 
     def test_invalid_target_surface_falls_back_to_claude_md_rule(
-        self, sample_pattern, sample_dataset, mock_config,
+        self,
+        sample_pattern,
+        sample_dataset,
+        mock_config,
     ):
         bad_pred = MagicMock()
         bad_pred.target_surface = "invalid_surface_xyz"
@@ -331,12 +387,18 @@ class TestGenerateDspySuggestion:
         bad_pred.reasoning = "trace"
 
         result, _, _ = self._run_with_mock(
-            sample_pattern, sample_dataset, mock_config, bad_pred,
+            sample_pattern,
+            sample_dataset,
+            mock_config,
+            bad_pred,
         )
         assert result["target_surface"] == "claude_md_rule"
 
     def test_raises_runtime_error_when_no_lm(
-        self, sample_pattern, sample_dataset, mock_config,
+        self,
+        sample_pattern,
+        sample_dataset,
+        mock_config,
     ):
         with patch("sio.core.dspy.lm_factory.create_lm") as mock_create_lm:
             mock_create_lm.return_value = None
@@ -345,7 +407,9 @@ class TestGenerateDspySuggestion:
 
             with pytest.raises(RuntimeError, match="No LLM backend available"):
                 generate_dspy_suggestion(
-                    sample_pattern, sample_dataset, mock_config,
+                    sample_pattern,
+                    sample_dataset,
+                    mock_config,
                 )
 
 
@@ -361,9 +425,7 @@ class TestSurfaceTargetMap:
         from sio.suggestions.dspy_generator import _SURFACE_TARGET_MAP
 
         for surface in VALID_TARGET_SURFACES:
-            assert surface in _SURFACE_TARGET_MAP, (
-                f"Missing mapping for surface: {surface}"
-            )
+            assert surface in _SURFACE_TARGET_MAP, f"Missing mapping for surface: {surface}"
 
     def test_claude_md_rule_maps_to_claude_md(self):
         from sio.suggestions.dspy_generator import _SURFACE_TARGET_MAP
@@ -396,7 +458,11 @@ class TestSurfaceTargetMap:
         assert _SURFACE_TARGET_MAP["project_config"] == "CLAUDE.md"
 
     def test_target_file_set_from_surface(
-        self, sample_pattern, sample_dataset, mock_config, mock_dspy_prediction,
+        self,
+        sample_pattern,
+        sample_dataset,
+        mock_config,
+        mock_dspy_prediction,
     ):
         """The target_file in the result must match the surface mapping."""
         mock_dspy_prediction.target_surface = "hook_config"
@@ -414,7 +480,9 @@ class TestSurfaceTargetMap:
             from sio.suggestions.dspy_generator import generate_dspy_suggestion
 
             result = generate_dspy_suggestion(
-                sample_pattern, sample_dataset, mock_config,
+                sample_pattern,
+                sample_dataset,
+                mock_config,
             )
             assert result["target_file"] == ".claude/hooks/"
 
@@ -428,7 +496,11 @@ class TestVerboseLogging:
     """When verbose=True, DSPy input/output must be logged."""
 
     def test_verbose_logs_dspy_input(
-        self, sample_pattern, sample_dataset, mock_config, mock_dspy_prediction,
+        self,
+        sample_pattern,
+        sample_dataset,
+        mock_config,
+        mock_dspy_prediction,
         caplog,
     ):
         with (
@@ -445,14 +517,21 @@ class TestVerboseLogging:
 
             with caplog.at_level(logging.INFO, logger="sio.suggestions.dspy_generator"):
                 generate_dspy_suggestion(
-                    sample_pattern, sample_dataset, mock_config, verbose=True,
+                    sample_pattern,
+                    sample_dataset,
+                    mock_config,
+                    verbose=True,
                 )
 
             assert any("DSPy input" in msg for msg in caplog.messages)
             assert any("DSPy output" in msg for msg in caplog.messages)
 
     def test_no_logs_when_not_verbose(
-        self, sample_pattern, sample_dataset, mock_config, mock_dspy_prediction,
+        self,
+        sample_pattern,
+        sample_dataset,
+        mock_config,
+        mock_dspy_prediction,
         caplog,
     ):
         with (
@@ -469,7 +548,10 @@ class TestVerboseLogging:
 
             with caplog.at_level(logging.INFO, logger="sio.suggestions.dspy_generator"):
                 generate_dspy_suggestion(
-                    sample_pattern, sample_dataset, mock_config, verbose=False,
+                    sample_pattern,
+                    sample_dataset,
+                    mock_config,
+                    verbose=False,
                 )
 
             dspy_logs = [m for m in caplog.messages if "DSPy input" in m or "DSPy output" in m]
@@ -517,7 +599,9 @@ class TestGeneratorDspyIntegration:
         # Patch create_lm to return None (no LLM)
         with patch("sio.core.dspy.lm_factory.create_lm", return_value=None):
             result = generate_suggestions(
-                [pattern], {"pat-test-001": dataset}, v2_db,
+                [pattern],
+                {"pat-test-001": dataset},
+                v2_db,
             )
 
         assert len(result) == 1
@@ -565,7 +649,9 @@ class TestGeneratorDspyIntegration:
             MockModule.return_value = mock_instance
 
             result = generate_suggestions(
-                [pattern], {"pat-test-002": dataset}, v2_db,
+                [pattern],
+                {"pat-test-002": dataset},
+                v2_db,
             )
 
         assert len(result) == 1
@@ -610,7 +696,9 @@ class TestGeneratorDspyIntegration:
             ),
         ):
             result = generate_suggestions(
-                [pattern], {"pat-test-003": dataset}, v2_db,
+                [pattern],
+                {"pat-test-003": dataset},
+                v2_db,
             )
 
         assert len(result) == 1

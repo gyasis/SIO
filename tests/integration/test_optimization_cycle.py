@@ -85,28 +85,36 @@ class TestQualityGates:
     def test_gates_pass_with_sufficient_data(self, seeded_db):
         conn, _ = seeded_db
         result = check_quality_gates(
-            conn, skill="Read", platform="claude-code",
+            conn,
+            skill="Read",
+            platform="claude-code",
         )
         assert result.passed is True, f"Quality gates should pass: {result.reason}"
 
     def test_gates_report_example_count(self, seeded_db):
         conn, _ = seeded_db
         result = check_quality_gates(
-            conn, skill="Read", platform="claude-code",
+            conn,
+            skill="Read",
+            platform="claude-code",
         )
         assert result.example_count == 15
 
     def test_gates_report_failure_count(self, seeded_db):
         conn, _ = seeded_db
         result = check_quality_gates(
-            conn, skill="Read", platform="claude-code",
+            conn,
+            skill="Read",
+            platform="claude-code",
         )
         assert result.failure_count == 10
 
     def test_gates_report_session_count(self, seeded_db):
         conn, _ = seeded_db
         result = check_quality_gates(
-            conn, skill="Read", platform="claude-code",
+            conn,
+            skill="Read",
+            platform="claude-code",
         )
         assert result.session_count >= 3
 
@@ -115,14 +123,19 @@ class TestQualityGates:
             insert_invocation(
                 tmp_db,
                 sample_invocation(
-                    session_id=f"few-{i}", platform="claude-code",
-                    tool_name="Read", user_satisfied=0,
-                    correct_outcome=0, labeled_by="auto",
+                    session_id=f"few-{i}",
+                    platform="claude-code",
+                    tool_name="Read",
+                    user_satisfied=0,
+                    correct_outcome=0,
+                    labeled_by="auto",
                     labeled_at=datetime.now(timezone.utc).isoformat(),
                 ),
             )
         result = check_quality_gates(
-            tmp_db, skill="Read", platform="claude-code",
+            tmp_db,
+            skill="Read",
+            platform="claude-code",
         )
         assert result.passed is False
         assert "example" in result.reason.lower()
@@ -132,9 +145,12 @@ class TestQualityGates:
             insert_invocation(
                 tmp_db,
                 sample_invocation(
-                    session_id=f"succ-{i}", platform="claude-code",
-                    tool_name="Read", user_satisfied=1,
-                    correct_outcome=1, labeled_by="auto",
+                    session_id=f"succ-{i}",
+                    platform="claude-code",
+                    tool_name="Read",
+                    user_satisfied=1,
+                    correct_outcome=1,
+                    labeled_by="auto",
                     labeled_at=datetime.now(timezone.utc).isoformat(),
                 ),
             )
@@ -142,14 +158,19 @@ class TestQualityGates:
             insert_invocation(
                 tmp_db,
                 sample_invocation(
-                    session_id=f"fail-{i}", platform="claude-code",
-                    tool_name="Read", user_satisfied=0,
-                    correct_outcome=0, labeled_by="auto",
+                    session_id=f"fail-{i}",
+                    platform="claude-code",
+                    tool_name="Read",
+                    user_satisfied=0,
+                    correct_outcome=0,
+                    labeled_by="auto",
                     labeled_at=datetime.now(timezone.utc).isoformat(),
                 ),
             )
         result = check_quality_gates(
-            tmp_db, skill="Read", platform="claude-code",
+            tmp_db,
+            skill="Read",
+            platform="claude-code",
         )
         assert result.passed is False
         assert "failure" in result.reason.lower()
@@ -160,14 +181,18 @@ class TestQualityGates:
                 tmp_db,
                 sample_invocation(
                     session_id="only-sess-A" if i < 6 else "only-sess-B",
-                    platform="claude-code", tool_name="Read",
-                    user_satisfied=0, correct_outcome=0,
+                    platform="claude-code",
+                    tool_name="Read",
+                    user_satisfied=0,
+                    correct_outcome=0,
                     labeled_by="auto",
                     labeled_at=datetime.now(timezone.utc).isoformat(),
                 ),
             )
         result = check_quality_gates(
-            tmp_db, skill="Read", platform="claude-code",
+            tmp_db,
+            skill="Read",
+            platform="claude-code",
         )
         assert result.passed is False
         assert "session" in result.reason.lower()
@@ -204,9 +229,7 @@ class TestRunOptimization:
         result = run_optimization(conn, skill="Read", platform="claude-code")
 
         opt_id = result["optimization_id"]
-        row = conn.execute(
-            "SELECT * FROM optimization_runs WHERE id = ?", (opt_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM optimization_runs WHERE id = ?", (opt_id,)).fetchone()
 
         assert row is not None
         assert row["status"] == "pending"
@@ -243,9 +266,12 @@ class TestRunOptimization:
             insert_invocation(
                 tmp_db,
                 sample_invocation(
-                    session_id=f"tiny-{i}", platform="claude-code",
-                    tool_name="Read", user_satisfied=0,
-                    correct_outcome=0, labeled_by="auto",
+                    session_id=f"tiny-{i}",
+                    platform="claude-code",
+                    tool_name="Read",
+                    user_satisfied=0,
+                    correct_outcome=0,
+                    labeled_by="auto",
                     labeled_at=datetime.now(timezone.utc).isoformat(),
                 ),
             )
@@ -258,8 +284,11 @@ class TestOptimizationResult:
 
     def test_optimization_result_has_required_fields(self):
         result = OptimizationResult(
-            passed=True, reason="",
-            example_count=15, failure_count=10, session_count=5,
+            passed=True,
+            reason="",
+            example_count=15,
+            failure_count=10,
+            session_count=5,
         )
         assert result.passed is True
         assert result.example_count == 15

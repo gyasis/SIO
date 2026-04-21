@@ -10,11 +10,8 @@ Per data-model.md §2.9:
 from __future__ import annotations
 
 import sqlite3
-import tempfile
-import os
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -76,16 +73,15 @@ def test_record_optimization_run_inserts_active_row(tmp_db):
     assert isinstance(row_id, int), "record_optimization_run must return an int row id"
     assert row_id > 0, "Returned row id must be positive"
 
-    row = tmp_db.execute(
-        "SELECT * FROM optimized_modules WHERE id = ?", (row_id,)
-    ).fetchone()
+    row = tmp_db.execute("SELECT * FROM optimized_modules WHERE id = ?", (row_id,)).fetchone()
     assert row is not None, "Row must exist in optimized_modules"
     # active and is_active both set to 1
-    assert row["is_active"] == 1 or row["active"] == 1, (
-        "Newly inserted row must have active=1"
-    )
+    assert row["is_active"] == 1 or row["active"] == 1, "Newly inserted row must have active=1"
     assert row["score"] == 0.75 or row["metric_after"] == 0.75
-    assert row["module_type"] == "suggestion_generator" or row["module_name"] == "suggestion_generator"
+    assert (
+        row["module_type"] == "suggestion_generator"
+        or row["module_name"] == "suggestion_generator"
+    )
 
 
 # ---------------------------------------------------------------------------

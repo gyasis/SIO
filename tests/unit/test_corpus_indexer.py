@@ -11,16 +11,13 @@ from sio.core.dspy.corpus_indexer import index_corpus
 def corpus_dir(tmp_path):
     """Create a temp directory with markdown files."""
     (tmp_path / "session-001.md").write_text(
-        "# Session 1\n\nUser asked to read foo.py.\n"
-        "The Read tool returned file contents.\n"
+        "# Session 1\n\nUser asked to read foo.py.\nThe Read tool returned file contents.\n"
     )
     (tmp_path / "session-002.md").write_text(
-        "# Session 2\n\nUser ran tests with pytest.\n"
-        "## Results\nAll 10 tests passed.\n"
+        "# Session 2\n\nUser ran tests with pytest.\n## Results\nAll 10 tests passed.\n"
     )
     (tmp_path / "session-003.md").write_text(
-        "# Session 3\n\nUser debugged a Bash error.\n"
-        "The error was a missing file path.\n"
+        "# Session 3\n\nUser debugged a Bash error.\nThe error was a missing file path.\n"
     )
     return str(tmp_path)
 
@@ -136,9 +133,13 @@ class TestRealEmbeddingSearch:
         dim = 8
 
         # Make embedding search favor the LAST chunk (opposite of keyword order)
-        chunk_embeddings = np.random.default_rng(42).random(
-            (n_chunks, dim),
-        ).astype(np.float32)
+        chunk_embeddings = (
+            np.random.default_rng(42)
+            .random(
+                (n_chunks, dim),
+            )
+            .astype(np.float32)
+        )
         # Normalize
         norms = np.linalg.norm(chunk_embeddings, axis=1, keepdims=True)
         chunk_embeddings = chunk_embeddings / np.maximum(norms, 1e-10)
@@ -173,7 +174,8 @@ class TestRealEmbeddingSearch:
 
         # Patch the import inside _ensure_embeddings to fail
         with patch(
-            "sio.core.dspy.corpus_indexer._fastembed_available", False,
+            "sio.core.dspy.corpus_indexer._fastembed_available",
+            False,
         ):
             results = idx.search_embedding("pytest tests")
             # Should still return results via keyword fallback
@@ -192,13 +194,19 @@ class TestRealEmbeddingSearch:
         mock_backend_cls = MagicMock()
         n_chunks = len(idx._chunks)
         mock_backend_cls.return_value.encode.return_value = np.ones(
-            (n_chunks, 8), dtype=np.float32,
+            (n_chunks, 8),
+            dtype=np.float32,
         )
 
-        with patch(
-            "sio.core.dspy.corpus_indexer._fastembed_available", True,
-        ), patch(
-            "sio.core.dspy.corpus_indexer.FastEmbedBackend", mock_backend_cls,
+        with (
+            patch(
+                "sio.core.dspy.corpus_indexer._fastembed_available",
+                True,
+            ),
+            patch(
+                "sio.core.dspy.corpus_indexer.FastEmbedBackend",
+                mock_backend_cls,
+            ),
         ):
             idx._ensure_embeddings()
             assert idx._embeddings is not None

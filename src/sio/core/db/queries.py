@@ -9,11 +9,26 @@ from datetime import datetime, timezone
 logger = logging.getLogger(__name__)
 
 _INVOCATION_COLS = [
-    "session_id", "timestamp", "platform", "user_message", "behavior_type",
-    "actual_action", "expected_action", "activated", "correct_action",
-    "correct_outcome", "user_satisfied", "user_note", "passive_signal",
-    "history_file", "line_start", "line_end", "token_count", "latency_ms",
-    "labeled_by", "labeled_at",
+    "session_id",
+    "timestamp",
+    "platform",
+    "user_message",
+    "behavior_type",
+    "actual_action",
+    "expected_action",
+    "activated",
+    "correct_action",
+    "correct_outcome",
+    "user_satisfied",
+    "user_note",
+    "passive_signal",
+    "history_file",
+    "line_start",
+    "line_end",
+    "token_count",
+    "latency_ms",
+    "labeled_by",
+    "labeled_at",
 ]
 
 
@@ -23,7 +38,10 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
 
 
 def insert_invocation(
-    conn: sqlite3.Connection, record: dict, *, _batch: bool = False,
+    conn: sqlite3.Connection,
+    record: dict,
+    *,
+    _batch: bool = False,
 ) -> int:
     cols = _INVOCATION_COLS
     placeholders = ", ".join(["?"] * len(cols))
@@ -39,15 +57,11 @@ def insert_invocation(
 
 
 def get_invocation_by_id(conn: sqlite3.Connection, id: int) -> dict | None:
-    row = conn.execute(
-        "SELECT * FROM behavior_invocations WHERE id = ?", (id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM behavior_invocations WHERE id = ?", (id,)).fetchone()
     return _row_to_dict(row) if row else None
 
 
-def get_unlabeled(
-    conn: sqlite3.Connection, platform: str, limit: int = 50
-) -> list[dict]:
+def get_unlabeled(conn: sqlite3.Connection, platform: str, limit: int = 50) -> list[dict]:
     rows = conn.execute(
         "SELECT * FROM behavior_invocations WHERE user_satisfied IS NULL AND platform = ? "
         "ORDER BY timestamp DESC LIMIT ?",
@@ -56,9 +70,7 @@ def get_unlabeled(
     return [_row_to_dict(r) for r in rows]
 
 
-def get_by_skill(
-    conn: sqlite3.Connection, skill_name: str, platform: str = None
-) -> list[dict]:
+def get_by_skill(conn: sqlite3.Connection, skill_name: str, platform: str = None) -> list[dict]:
     if platform:
         rows = conn.execute(
             "SELECT * FROM behavior_invocations WHERE actual_action = ? AND platform = ?",
@@ -163,16 +175,13 @@ def get_labeled_for_optimizer(
     if count_row[0] < min_examples:
         return []
     rows = conn.execute(
-        f"SELECT * FROM behavior_invocations {where} "
-        "ORDER BY timestamp DESC",
+        f"SELECT * FROM behavior_invocations {where} ORDER BY timestamp DESC",
         (skill, platform),
     ).fetchall()
     return [_row_to_dict(r) for r in rows]
 
 
-def count_by_pattern(
-    conn: sqlite3.Connection, behavior_type: str, failure_mode: str
-) -> int:
+def count_by_pattern(conn: sqlite3.Connection, behavior_type: str, failure_mode: str) -> int:
     # Map failure_mode strings to SQL conditions
     mode_map = {
         "incorrect_outcome": "correct_outcome = 0",
@@ -181,10 +190,7 @@ def count_by_pattern(
     }
     condition = mode_map.get(failure_mode)
     if condition is None:
-        raise ValueError(
-            f"Unknown failure_mode: {failure_mode!r}. "
-            f"Valid: {sorted(mode_map)}"
-        )
+        raise ValueError(f"Unknown failure_mode: {failure_mode!r}. Valid: {sorted(mode_map)}")
     row = conn.execute(
         f"SELECT COUNT(*) FROM behavior_invocations WHERE behavior_type = ? AND {condition}",
         (behavior_type,),
@@ -197,10 +203,21 @@ def count_by_pattern(
 # ---------------------------------------------------------------------------
 
 _ERROR_RECORD_COLS = [
-    "session_id", "timestamp", "source_type", "source_file", "tool_name",
-    "error_text", "user_message", "context_before", "context_after",
-    "error_type", "tool_input", "tool_output", "mined_at",
-    "is_subagent", "parent_session_id",
+    "session_id",
+    "timestamp",
+    "source_type",
+    "source_file",
+    "tool_name",
+    "error_text",
+    "user_message",
+    "context_before",
+    "context_after",
+    "error_type",
+    "tool_input",
+    "tool_output",
+    "mined_at",
+    "is_subagent",
+    "parent_session_id",
 ]
 
 # Default values for cols that have NOT NULL constraints and may be absent in
@@ -212,7 +229,10 @@ _ERROR_RECORD_DEFAULTS: dict[str, object] = {
 
 
 def insert_error_record(
-    conn: sqlite3.Connection, record: dict, *, _batch: bool = False,
+    conn: sqlite3.Connection,
+    record: dict,
+    *,
+    _batch: bool = False,
 ) -> int:
     """Insert an error record. Returns the new row ID."""
     cols = _ERROR_RECORD_COLS
@@ -274,9 +294,17 @@ def count_error_records(conn: sqlite3.Connection) -> int:
 # ---------------------------------------------------------------------------
 
 _PATTERN_COLS = [
-    "pattern_id", "description", "tool_name", "error_count", "session_count",
-    "first_seen", "last_seen", "rank_score", "centroid_embedding",
-    "created_at", "updated_at",
+    "pattern_id",
+    "description",
+    "tool_name",
+    "error_count",
+    "session_count",
+    "first_seen",
+    "last_seen",
+    "rank_score",
+    "centroid_embedding",
+    "created_at",
+    "updated_at",
     # 004 columns — present after migrate_004; silently NULL-filled if absent
     "cycle_id",
 ]
@@ -321,17 +349,24 @@ def get_patterns(conn: sqlite3.Connection, min_count: int = 0) -> list[dict]:
 
 def get_pattern_by_id(conn: sqlite3.Connection, pattern_id: str) -> dict | None:
     """Get a pattern by its human-readable pattern_id slug."""
-    row = conn.execute(
-        "SELECT * FROM patterns WHERE pattern_id = ?", (pattern_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM patterns WHERE pattern_id = ?", (pattern_id,)).fetchone()
     return _row_to_dict(row) if row else None
 
 
-_PATTERN_UPDATE_ALLOWED = frozenset({
-    "description", "tool_name", "error_count", "session_count",
-    "first_seen", "last_seen", "rank_score", "centroid_embedding",
-    "updated_at", "grade",
-})
+_PATTERN_UPDATE_ALLOWED = frozenset(
+    {
+        "description",
+        "tool_name",
+        "error_count",
+        "session_count",
+        "first_seen",
+        "last_seen",
+        "rank_score",
+        "centroid_embedding",
+        "updated_at",
+        "grade",
+    }
+)
 
 
 def update_pattern(conn: sqlite3.Connection, id: int, **fields) -> bool:
@@ -357,8 +392,11 @@ def update_pattern(conn: sqlite3.Connection, id: int, **fields) -> bool:
 
 
 def link_error_to_pattern(
-    conn: sqlite3.Connection, pattern_id: int, error_id: int,
-    *, _batch: bool = False,
+    conn: sqlite3.Connection,
+    pattern_id: int,
+    error_id: int,
+    *,
+    _batch: bool = False,
 ) -> None:
     """Link an error record to a pattern (join table)."""
     conn.execute(
@@ -369,9 +407,7 @@ def link_error_to_pattern(
         conn.commit()
 
 
-def get_errors_for_pattern(
-    conn: sqlite3.Connection, pattern_id: int
-) -> list[dict]:
+def get_errors_for_pattern(conn: sqlite3.Connection, pattern_id: int) -> list[dict]:
     """Get all error records linked to a pattern."""
     rows = conn.execute(
         "SELECT er.* FROM error_records er "
@@ -388,8 +424,14 @@ def get_errors_for_pattern(
 # ---------------------------------------------------------------------------
 
 _DATASET_COLS = [
-    "pattern_id", "file_path", "positive_count", "negative_count",
-    "min_threshold", "lineage_sessions", "created_at", "updated_at",
+    "pattern_id",
+    "file_path",
+    "positive_count",
+    "negative_count",
+    "min_threshold",
+    "lineage_sessions",
+    "created_at",
+    "updated_at",
 ]
 
 
@@ -407,20 +449,22 @@ def insert_dataset(conn: sqlite3.Connection, record: dict) -> int:
     return cur.lastrowid
 
 
-def get_dataset_for_pattern(
-    conn: sqlite3.Connection, pattern_id: int
-) -> dict | None:
+def get_dataset_for_pattern(conn: sqlite3.Connection, pattern_id: int) -> dict | None:
     """Get the dataset for a given pattern."""
-    row = conn.execute(
-        "SELECT * FROM datasets WHERE pattern_id = ?", (pattern_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM datasets WHERE pattern_id = ?", (pattern_id,)).fetchone()
     return _row_to_dict(row) if row else None
 
 
-_DATASET_UPDATE_ALLOWED = frozenset({
-    "file_path", "positive_count", "negative_count", "min_threshold",
-    "lineage_sessions", "updated_at",
-})
+_DATASET_UPDATE_ALLOWED = frozenset(
+    {
+        "file_path",
+        "positive_count",
+        "negative_count",
+        "min_threshold",
+        "lineage_sessions",
+        "updated_at",
+    }
+)
 
 
 def update_dataset(conn: sqlite3.Connection, id: int, **fields) -> bool:
@@ -445,9 +489,18 @@ def update_dataset(conn: sqlite3.Connection, id: int, **fields) -> bool:
 # ---------------------------------------------------------------------------
 
 _SUGGESTION_COLS = [
-    "pattern_id", "dataset_id", "description", "confidence",
-    "proposed_change", "target_file", "change_type", "status",
-    "ai_explanation", "user_note", "created_at", "reviewed_at",
+    "pattern_id",
+    "dataset_id",
+    "description",
+    "confidence",
+    "proposed_change",
+    "target_file",
+    "change_type",
+    "status",
+    "ai_explanation",
+    "user_note",
+    "created_at",
+    "reviewed_at",
 ]
 
 
@@ -465,9 +518,7 @@ def insert_suggestion(conn: sqlite3.Connection, record: dict) -> int:
     return cur.lastrowid
 
 
-def get_suggestions(
-    conn: sqlite3.Connection, status: str = None
-) -> list[dict]:
+def get_suggestions(conn: sqlite3.Connection, status: str = None) -> list[dict]:
     """Get suggestions, optionally filtered by status."""
     if status:
         rows = conn.execute(
@@ -475,9 +526,7 @@ def get_suggestions(
             (status,),
         ).fetchall()
     else:
-        rows = conn.execute(
-            "SELECT * FROM suggestions ORDER BY created_at DESC"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM suggestions ORDER BY created_at DESC").fetchall()
     return [_row_to_dict(r) for r in rows]
 
 
@@ -505,8 +554,13 @@ def update_suggestion_status(
 # ---------------------------------------------------------------------------
 
 _APPLIED_CHANGE_COLS = [
-    "suggestion_id", "target_file", "diff_before", "diff_after",
-    "commit_sha", "applied_at", "rolled_back_at",
+    "suggestion_id",
+    "target_file",
+    "diff_before",
+    "diff_after",
+    "commit_sha",
+    "applied_at",
+    "rolled_back_at",
 ]
 
 
@@ -526,15 +580,11 @@ def insert_applied_change(conn: sqlite3.Connection, record: dict) -> int:
 
 def get_applied_change(conn: sqlite3.Connection, id: int) -> dict | None:
     """Get an applied change by ID."""
-    row = conn.execute(
-        "SELECT * FROM applied_changes WHERE id = ?", (id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM applied_changes WHERE id = ?", (id,)).fetchone()
     return _row_to_dict(row) if row else None
 
 
-def mark_rolled_back(
-    conn: sqlite3.Connection, id: int, rolled_back_at: str
-) -> bool:
+def mark_rolled_back(conn: sqlite3.Connection, id: int, rolled_back_at: str) -> bool:
     """Mark an applied change as rolled back."""
     cur = conn.execute(
         "UPDATE applied_changes SET rolled_back_at = ? WHERE id = ?",
@@ -597,8 +647,7 @@ def insert_ground_truth(
     if pat_row is None:
         if strict:
             raise ValueError(
-                f"ground_truth.pattern_id '{pattern_id}' has no matching "
-                f"patterns row"
+                f"ground_truth.pattern_id '{pattern_id}' has no matching patterns row"
             )
         logger.warning(
             "ground_truth.pattern_id '%s' has no matching patterns row; "
@@ -614,18 +663,26 @@ def insert_ground_truth(
         "source, confidence, file_path, quality_assessment, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            pattern_id, error_examples_json, error_type, pattern_summary,
-            target_surface, rule_title, prevention_instructions, rationale,
-            source, confidence, file_path, quality_assessment, now,
+            pattern_id,
+            error_examples_json,
+            error_type,
+            pattern_summary,
+            target_surface,
+            rule_title,
+            prevention_instructions,
+            rationale,
+            source,
+            confidence,
+            file_path,
+            quality_assessment,
+            now,
         ),
     )
     conn.commit()
     return cur.lastrowid
 
 
-def get_ground_truth_by_pattern(
-    conn: sqlite3.Connection, pattern_id: str
-) -> list[dict]:
+def get_ground_truth_by_pattern(conn: sqlite3.Connection, pattern_id: str) -> list[dict]:
     """Get all ground truth entries for a pattern.
 
     Args:
@@ -757,17 +814,32 @@ def get_ground_truth_stats(conn: sqlite3.Connection) -> dict:
 # ---------------------------------------------------------------------------
 
 _SESSION_METRICS_COLS = [
-    "session_id", "file_path", "total_input_tokens", "total_output_tokens",
-    "total_cache_read_tokens", "total_cache_create_tokens", "cache_hit_ratio",
-    "total_cost_usd", "session_duration_seconds", "message_count",
-    "tool_call_count", "error_count", "correction_count",
-    "positive_signal_count", "sidechain_count", "stop_reason_distribution",
-    "model_used", "mined_at",
+    "session_id",
+    "file_path",
+    "total_input_tokens",
+    "total_output_tokens",
+    "total_cache_read_tokens",
+    "total_cache_create_tokens",
+    "cache_hit_ratio",
+    "total_cost_usd",
+    "session_duration_seconds",
+    "message_count",
+    "tool_call_count",
+    "error_count",
+    "correction_count",
+    "positive_signal_count",
+    "sidechain_count",
+    "stop_reason_distribution",
+    "model_used",
+    "mined_at",
 ]
 
 
 def insert_session_metrics(
-    conn: sqlite3.Connection, record: dict, *, _batch: bool = False,
+    conn: sqlite3.Connection,
+    record: dict,
+    *,
+    _batch: bool = False,
 ) -> int:
     """Insert or replace a session_metrics row. Returns the row ID.
 
@@ -787,7 +859,10 @@ def insert_session_metrics(
 
 
 def insert_session_metrics_if_new(
-    conn: sqlite3.Connection, record: dict, *, _batch: bool = False,
+    conn: sqlite3.Connection,
+    record: dict,
+    *,
+    _batch: bool = False,
 ) -> int:
     """Insert a session_metrics row only if no row exists for this session_id.
 
@@ -814,14 +889,23 @@ def insert_session_metrics_if_new(
 # ---------------------------------------------------------------------------
 
 _POSITIVE_RECORD_COLS = [
-    "session_id", "timestamp", "signal_type", "signal_text",
-    "context_before", "tool_name", "sentiment_score",
-    "source_file", "mined_at",
+    "session_id",
+    "timestamp",
+    "signal_type",
+    "signal_text",
+    "context_before",
+    "tool_name",
+    "sentiment_score",
+    "source_file",
+    "mined_at",
 ]
 
 
 def insert_positive_record(
-    conn: sqlite3.Connection, record: dict, *, _batch: bool = False,
+    conn: sqlite3.Connection,
+    record: dict,
+    *,
+    _batch: bool = False,
 ) -> int:
     """Insert a positive signal record. Returns the new row ID."""
     cols = _POSITIVE_RECORD_COLS
@@ -893,8 +977,7 @@ def list_active_applied_changes(conn: sqlite3.Connection) -> list[dict]:
         List of applied_changes rows as dicts, ordered by applied_at DESC.
     """
     rows = conn.execute(
-        "SELECT * FROM applied_changes WHERE superseded_at IS NULL "
-        "ORDER BY applied_at DESC"
+        "SELECT * FROM applied_changes WHERE superseded_at IS NULL ORDER BY applied_at DESC"
     ).fetchall()
     return [_row_to_dict(r) for r in rows]
 
@@ -981,13 +1064,20 @@ def record_optimization_run(
             "task_lm, reflection_lm, is_active, active, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?)",
             (
-                module_name, module_name,
-                optimizer_name, optimizer_name,
-                artifact_path, artifact_path,
-                trainset_size, trainset_size,
-                valset_size, score,
-                metric_name, score,
-                task_lm, reflection_lm,
+                module_name,
+                module_name,
+                optimizer_name,
+                optimizer_name,
+                artifact_path,
+                artifact_path,
+                trainset_size,
+                trainset_size,
+                valset_size,
+                score,
+                metric_name,
+                score,
+                task_lm,
+                reflection_lm,
                 now,
             ),
         )
@@ -1006,7 +1096,9 @@ def record_optimization_run(
 
 
 def mark_superseded(
-    conn: sqlite3.Connection, id: int, by_id: int | None,
+    conn: sqlite3.Connection,
+    id: int,
+    by_id: int | None,
 ) -> bool:
     """Set superseded_at and superseded_by on an applied_changes row.
 

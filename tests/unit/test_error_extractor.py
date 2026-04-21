@@ -240,9 +240,7 @@ class TestIdentifyUserCorrections:
         results = extract_errors(messages, _SOURCE_FILE, _SOURCE_TYPE)
 
         correction_records = [r for r in results if r["error_type"] == "user_correction"]
-        assert len(correction_records) >= 1, (
-            f"Expected user_correction for message: {content!r}"
-        )
+        assert len(correction_records) >= 1, f"Expected user_correction for message: {content!r}"
 
     def test_correction_user_message_field_set(self):
         """The user_message field must contain the correcting message text."""
@@ -295,9 +293,18 @@ class TestIdentifyRepeatedAttempts:
         """Three consecutive Bash calls with similar input must produce a repeated_attempt."""
         messages = [
             _human("Run the tests.", offset=0),
-            _assistant("Running.", tool_name="Bash", tool_input={"command": "pytest tests/ -v"}, offset=1),
-            _assistant("Retrying.", tool_name="Bash", tool_input={"command": "pytest tests/ -v"}, offset=2),
-            _assistant("Retrying again.", tool_name="Bash", tool_input={"command": "pytest tests/ -v"}, offset=3),
+            _assistant(
+                "Running.", tool_name="Bash", tool_input={"command": "pytest tests/ -v"}, offset=1
+            ),
+            _assistant(
+                "Retrying.", tool_name="Bash", tool_input={"command": "pytest tests/ -v"}, offset=2
+            ),
+            _assistant(
+                "Retrying again.",
+                tool_name="Bash",
+                tool_input={"command": "pytest tests/ -v"},
+                offset=3,
+            ),
         ]
 
         results = extract_errors(messages, _SOURCE_FILE, _SOURCE_TYPE)
@@ -308,9 +315,24 @@ class TestIdentifyRepeatedAttempts:
     def test_repeated_attempt_captures_tool_name(self):
         """The tool_name field on repeated_attempt records matches the repeated tool."""
         messages = [
-            _assistant("Read attempt 1.", tool_name="Read", tool_input={"file_path": "/tmp/foo.py"}, offset=0),
-            _assistant("Read attempt 2.", tool_name="Read", tool_input={"file_path": "/tmp/foo.py"}, offset=1),
-            _assistant("Read attempt 3.", tool_name="Read", tool_input={"file_path": "/tmp/foo.py"}, offset=2),
+            _assistant(
+                "Read attempt 1.",
+                tool_name="Read",
+                tool_input={"file_path": "/tmp/foo.py"},
+                offset=0,
+            ),
+            _assistant(
+                "Read attempt 2.",
+                tool_name="Read",
+                tool_input={"file_path": "/tmp/foo.py"},
+                offset=1,
+            ),
+            _assistant(
+                "Read attempt 3.",
+                tool_name="Read",
+                tool_input={"file_path": "/tmp/foo.py"},
+                offset=2,
+            ),
         ]
 
         results = extract_errors(messages, _SOURCE_FILE, _SOURCE_TYPE)
@@ -337,7 +359,9 @@ class TestIdentifyRepeatedAttempts:
         messages = [
             _assistant("Read.", tool_name="Read", tool_input={"file_path": "/tmp/a.py"}, offset=0),
             _assistant("Bash.", tool_name="Bash", tool_input={"command": "ls"}, offset=1),
-            _assistant("Read again.", tool_name="Read", tool_input={"file_path": "/tmp/a.py"}, offset=2),
+            _assistant(
+                "Read again.", tool_name="Read", tool_input={"file_path": "/tmp/a.py"}, offset=2
+            ),
         ]
 
         results = extract_errors(messages, _SOURCE_FILE, _SOURCE_TYPE)
@@ -348,9 +372,15 @@ class TestIdentifyRepeatedAttempts:
     def test_repeated_attempt_schema_complete(self):
         """repeated_attempt records must satisfy the full ErrorRecord schema."""
         messages = [
-            _assistant("Attempt 1.", tool_name="Glob", tool_input={"pattern": "**/*.py"}, offset=0),
-            _assistant("Attempt 2.", tool_name="Glob", tool_input={"pattern": "**/*.py"}, offset=1),
-            _assistant("Attempt 3.", tool_name="Glob", tool_input={"pattern": "**/*.py"}, offset=2),
+            _assistant(
+                "Attempt 1.", tool_name="Glob", tool_input={"pattern": "**/*.py"}, offset=0
+            ),
+            _assistant(
+                "Attempt 2.", tool_name="Glob", tool_input={"pattern": "**/*.py"}, offset=1
+            ),
+            _assistant(
+                "Attempt 3.", tool_name="Glob", tool_input={"pattern": "**/*.py"}, offset=2
+            ),
         ]
 
         results = extract_errors(messages, _SOURCE_FILE, _SOURCE_TYPE)
@@ -725,9 +755,7 @@ class TestSchemaViaFixture:
     """Use the shared sample_error_records fixture to verify that real
     extract_errors output is compatible with the v2 error_records table."""
 
-    def test_extracted_records_insertable_into_v2_db(
-        self, v2_db, sample_error_records
-    ):
+    def test_extracted_records_insertable_into_v2_db(self, v2_db, sample_error_records):
         """Records returned by extract_errors must be insertable into v2_db.
 
         This cross-validates the dict shape returned by extract_errors against
@@ -770,9 +798,7 @@ class TestSchemaViaFixture:
 
         assert row_count == len(records)
 
-    def test_fixture_and_extracted_records_share_schema(
-        self, sample_error_records
-    ):
+    def test_fixture_and_extracted_records_share_schema(self, sample_error_records):
         """Keys from the fixture must match keys produced by extract_errors.
 
         This guards against silent schema drift between the fixture and the

@@ -69,21 +69,25 @@ def _parse_rule_blocks(text: str) -> list[dict]:
 
         if is_blank:
             if current_lines:
-                blocks.append({
-                    "text": "\n".join(current_lines),
-                    "start_line": start_line,
-                    "end_line": i - 1,
-                })
+                blocks.append(
+                    {
+                        "text": "\n".join(current_lines),
+                        "start_line": start_line,
+                        "end_line": i - 1,
+                    }
+                )
                 current_lines = []
             continue
 
         if is_heading and current_lines:
             # Flush the previous block before starting a heading block.
-            blocks.append({
-                "text": "\n".join(current_lines),
-                "start_line": start_line,
-                "end_line": i - 1,
-            })
+            blocks.append(
+                {
+                    "text": "\n".join(current_lines),
+                    "start_line": start_line,
+                    "end_line": i - 1,
+                }
+            )
             current_lines = []
 
         if not current_lines:
@@ -92,11 +96,13 @@ def _parse_rule_blocks(text: str) -> list[dict]:
 
     # Flush remaining.
     if current_lines:
-        blocks.append({
-            "text": "\n".join(current_lines),
-            "start_line": start_line,
-            "end_line": len(lines) - 1,
-        })
+        blocks.append(
+            {
+                "text": "\n".join(current_lines),
+                "start_line": start_line,
+                "end_line": len(lines) - 1,
+            }
+        )
 
     return blocks
 
@@ -104,6 +110,7 @@ def _parse_rule_blocks(text: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Cosine similarity (reused from pattern_clusterer pattern)
 # ---------------------------------------------------------------------------
+
 
 def _cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     """Return cosine similarity between two 1-D numpy vectors."""
@@ -190,10 +197,7 @@ def check_budget(
             status="ok",
             current_lines=current,
             cap=cap,
-            message=(
-                f"Budget: {current}/{cap} lines ({utilization:.0%}) "
-                f"-- near capacity"
-            ),
+            message=(f"Budget: {current}/{cap} lines ({utilization:.0%}) -- near capacity"),
         )
 
     # Already at or over cap — no room even after consolidation.
@@ -285,8 +289,7 @@ def trigger_consolidation(
         # Combine: use the longer as base, append unique lines from shorter.
         keep_lines = set(block_texts[keep].splitlines())
         extra_lines = [
-            ln for ln in block_texts[drop].splitlines()
-            if ln.strip() and ln not in keep_lines
+            ln for ln in block_texts[drop].splitlines() if ln.strip() and ln not in keep_lines
         ]
         if extra_lines:
             block_texts[keep] = block_texts[keep] + "\n" + "\n".join(extra_lines)

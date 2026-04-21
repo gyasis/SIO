@@ -87,8 +87,7 @@ class TxLog:
         """
         if cycle is not None:
             rows = self._db.execute(
-                "SELECT * FROM autoresearch_txlog "
-                "WHERE cycle_number = ? ORDER BY id",
+                "SELECT * FROM autoresearch_txlog WHERE cycle_number = ? ORDER BY id",
                 (cycle,),
             ).fetchall()
         else:

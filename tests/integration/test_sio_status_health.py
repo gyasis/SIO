@@ -15,13 +15,11 @@ States tested:
 from __future__ import annotations
 
 import json
-import os
 import tempfile
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -189,9 +187,7 @@ def test_hook_health_rows_returns_expected_hooks():
 
     hook_names = {r[0] for r in rows}
     for hook in EXPECTED_HOOKS:
-        assert hook in hook_names, (
-            f"Expected hook {hook!r} in hook_health_rows output"
-        )
+        assert hook in hook_names, f"Expected hook {hook!r} in hook_health_rows output"
 
 
 # ---------------------------------------------------------------------------

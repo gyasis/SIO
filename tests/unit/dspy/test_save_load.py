@@ -9,23 +9,24 @@ Tests assert (per contracts/dspy-module-api.md §7):
 Run to confirm RED before T032:
     uv run pytest tests/unit/dspy/test_save_load.py -v
 """
+
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
 
 def _import_persistence():
     from sio.core.dspy import persistence  # noqa: PLC0415
+
     return persistence
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_mock_program(mock_lm):
     """Return a minimal dspy.Module that can be saved/loaded."""
@@ -45,6 +46,7 @@ def _make_mock_program(mock_lm):
 # ---------------------------------------------------------------------------
 # 1. save_compiled writes a JSON file
 # ---------------------------------------------------------------------------
+
 
 def test_save_compiled_creates_file(tmp_path, mock_lm):
     """save_compiled(program, path) must write a file at the given path."""
@@ -76,9 +78,11 @@ def test_save_compiled_writes_json(tmp_path, mock_lm):
 # 2. load_compiled returns correct type
 # ---------------------------------------------------------------------------
 
+
 def test_load_compiled_returns_instance(tmp_path, mock_lm):
     """load_compiled('suggestion_generator', path) returns a dspy.Module instance."""
     import dspy  # noqa: PLC0415
+
     p = _import_persistence()
     program = _make_mock_program(mock_lm)
     out_path = tmp_path / "sg.json"
@@ -86,18 +90,16 @@ def test_load_compiled_returns_instance(tmp_path, mock_lm):
 
     loaded = p.load_compiled("suggestion_generator", out_path)
     assert loaded is not None, "load_compiled returned None"
-    assert isinstance(loaded, dspy.Module), (
-        f"Expected dspy.Module subclass, got {type(loaded)}"
-    )
+    assert isinstance(loaded, dspy.Module), f"Expected dspy.Module subclass, got {type(loaded)}"
 
 
 # ---------------------------------------------------------------------------
 # 3. Round-trip produces equivalent predictions
 # ---------------------------------------------------------------------------
 
+
 def test_round_trip_save_load_equivalent(tmp_path, mock_lm):
     """save + load + forward on same input must produce structurally equivalent predictions."""
-    import dspy  # noqa: PLC0415
     p = _import_persistence()
 
     program = _make_mock_program(mock_lm)
@@ -113,14 +115,14 @@ def test_round_trip_save_load_equivalent(tmp_path, mock_lm):
     orig_predictors = list(program.named_predictors())
     loaded_predictors = list(loaded.named_predictors())
     assert len(orig_predictors) == len(loaded_predictors), (
-        f"Predictor count mismatch: orig={len(orig_predictors)}, "
-        f"loaded={len(loaded_predictors)}"
+        f"Predictor count mismatch: orig={len(orig_predictors)}, loaded={len(loaded_predictors)}"
     )
 
 
 # ---------------------------------------------------------------------------
 # 4. Unknown module name raises error
 # ---------------------------------------------------------------------------
+
 
 def test_load_compiled_unknown_module_raises(tmp_path, mock_lm):
     """load_compiled with unknown module name must raise KeyError or ValueError."""
@@ -136,6 +138,7 @@ def test_load_compiled_unknown_module_raises(tmp_path, mock_lm):
 # ---------------------------------------------------------------------------
 # 5. MODULE_REGISTRY exists
 # ---------------------------------------------------------------------------
+
 
 def test_module_registry_exists():
     """persistence.py must export MODULE_REGISTRY dict."""

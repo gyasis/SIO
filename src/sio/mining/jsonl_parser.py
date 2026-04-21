@@ -97,12 +97,8 @@ def _extract_message_metadata(raw: dict[str, Any]) -> dict[str, Any]:
             usage = message["usage"]
 
     if usage:
-        meta["input_tokens"] = _get_camel_or_snake(
-            usage, "input_tokens", "inputTokens"
-        )
-        meta["output_tokens"] = _get_camel_or_snake(
-            usage, "output_tokens", "outputTokens"
-        )
+        meta["input_tokens"] = _get_camel_or_snake(usage, "input_tokens", "inputTokens")
+        meta["output_tokens"] = _get_camel_or_snake(usage, "output_tokens", "outputTokens")
         meta["cache_creation_input_tokens"] = _get_camel_or_snake(
             usage, "cache_creation_input_tokens", "cacheCreationInputTokens"
         )
@@ -121,9 +117,7 @@ def _extract_message_metadata(raw: dict[str, Any]) -> dict[str, Any]:
         if meta["cost_usd"] is None:
             meta["cost_usd"] = _get_camel_or_snake(message, "cost_usd", "costUsd")
         if meta["stop_reason"] is None:
-            meta["stop_reason"] = _get_camel_or_snake(
-                message, "stop_reason", "stopReason"
-            )
+            meta["stop_reason"] = _get_camel_or_snake(message, "stop_reason", "stopReason")
         if meta["model"] is None:
             meta["model"] = message.get("model")
 
@@ -195,47 +189,51 @@ def _parse_real_user(raw: dict[str, Any], tool_use_map: _ToolUseMap) -> list[dic
                 error_str: str | None = None
                 if is_error:
                     error_str = (
-                        result_content
-                        if isinstance(result_content, str)
-                        else str(result_content)
+                        result_content if isinstance(result_content, str) else str(result_content)
                     )
 
-                records.append({
-                    "role": "assistant",  # treat as assistant context for error extraction
-                    "content": "",
-                    "tool_name": tool_name,
-                    "tool_input": tool_input,
-                    "tool_output": result_content if not is_error else None,
-                    "error": error_str,
-                    "timestamp": timestamp,
-                    **_META_FIELD_DEFAULTS,
-                })
+                records.append(
+                    {
+                        "role": "assistant",  # treat as assistant context for error extraction
+                        "content": "",
+                        "tool_name": tool_name,
+                        "tool_input": tool_input,
+                        "tool_output": result_content if not is_error else None,
+                        "error": error_str,
+                        "timestamp": timestamp,
+                        **_META_FIELD_DEFAULTS,
+                    }
+                )
 
         # Also emit the text portions as a user message
         text = _extract_content_text(content)
         if text.strip() or not has_tool_results:
-            records.append({
+            records.append(
+                {
+                    "role": "user",
+                    "content": text,
+                    "tool_name": None,
+                    "tool_input": None,
+                    "tool_output": None,
+                    "error": None,
+                    "timestamp": timestamp,
+                    **_META_FIELD_DEFAULTS,
+                }
+            )
+    else:
+        # Plain string content
+        records.append(
+            {
                 "role": "user",
-                "content": text,
+                "content": _extract_content_text(content),
                 "tool_name": None,
                 "tool_input": None,
                 "tool_output": None,
                 "error": None,
                 "timestamp": timestamp,
                 **_META_FIELD_DEFAULTS,
-            })
-    else:
-        # Plain string content
-        records.append({
-            "role": "user",
-            "content": _extract_content_text(content),
-            "tool_name": None,
-            "tool_input": None,
-            "tool_output": None,
-            "error": None,
-            "timestamp": timestamp,
-            **_META_FIELD_DEFAULTS,
-        })
+            }
+        )
 
     return records
 
@@ -255,16 +253,18 @@ def _parse_real_assistant(raw: dict[str, Any], tool_use_map: _ToolUseMap) -> lis
 
     # Emit one record for the assistant's text
     text = _extract_content_text(content)
-    records.append({
-        "role": "assistant",
-        "content": text,
-        "tool_name": None,
-        "tool_input": None,
-        "tool_output": None,
-        "error": None,
-        "timestamp": timestamp,
-        **meta,
-    })
+    records.append(
+        {
+            "role": "assistant",
+            "content": text,
+            "tool_name": None,
+            "tool_input": None,
+            "tool_output": None,
+            "error": None,
+            "timestamp": timestamp,
+            **meta,
+        }
+    )
 
     # Extract tool_use blocks
     if isinstance(content, list):
@@ -280,16 +280,18 @@ def _parse_real_assistant(raw: dict[str, Any], tool_use_map: _ToolUseMap) -> lis
                     "tool_input": tool_input,
                 }
 
-                records.append({
-                    "role": "assistant",
-                    "content": "",
-                    "tool_name": tool_name,
-                    "tool_input": tool_input,
-                    "tool_output": None,
-                    "error": None,
-                    "timestamp": timestamp,
-                    **meta,
-                })
+                records.append(
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_name": tool_name,
+                        "tool_input": tool_input,
+                        "tool_output": None,
+                        "error": None,
+                        "timestamp": timestamp,
+                        **meta,
+                    }
+                )
 
     return records
 

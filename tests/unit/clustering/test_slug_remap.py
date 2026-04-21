@@ -17,15 +17,14 @@ Run to confirm RED:
 from __future__ import annotations
 
 import sqlite3
-import tempfile
 from pathlib import Path
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 def _open_db(tmp_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(tmp_path / "sio.db"))
@@ -79,13 +78,13 @@ def db(tmp_path: Path) -> sqlite3.Connection:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _seed_errors(conn: sqlite3.Connection, n: int, base_id: int = 0) -> list[int]:
     """Insert n error records and return their IDs."""
     ids = []
     for i in range(n):
         cur = conn.execute(
-            "INSERT INTO error_records (session_id, error_text, timestamp) "
-            "VALUES (?, ?, ?)",
+            "INSERT INTO error_records (session_id, error_text, timestamp) VALUES (?, ?, ?)",
             (f"sess_{base_id + i:03d}", f"error text {base_id + i}", "2026-04-20T10:00:00Z"),
         )
         ids.append(cur.lastrowid)
@@ -204,9 +203,7 @@ def test_low_overlap_leaves_ground_truth_orphaned(db, db_path):
             f"Low overlap: remapped_from_pattern_id should be NULL, got {row['remapped_from_pattern_id']!r}"
         )
 
-    assert summary["skipped"] >= 2, (
-        f"Expected at least 2 skipped rows, got {summary['skipped']}"
-    )
+    assert summary["skipped"] >= 2, f"Expected at least 2 skipped rows, got {summary['skipped']}"
 
 
 # ---------------------------------------------------------------------------

@@ -39,7 +39,9 @@ class CorpusIndex:
     _backend: object | None = field(default=None, repr=False)
 
     def search_keyword(
-        self, query: str, top_k: int = 5,
+        self,
+        query: str,
+        top_k: int = 5,
     ) -> list[SearchResult]:
         """Search by keyword (BM25-style term matching)."""
         query_terms = set(query.lower().split())
@@ -53,7 +55,8 @@ class CorpusIndex:
         scored.sort(key=lambda x: -x[0])
         return [
             SearchResult(
-                path=c["path"], score=s,
+                path=c["path"],
+                score=s,
                 snippet=c["text"][:200],
             )
             for s, c in scored[:top_k]
@@ -76,7 +79,9 @@ class CorpusIndex:
         self._embeddings = self._backend.encode(texts)
 
     def search_embedding(
-        self, query: str, top_k: int = 5,
+        self,
+        query: str,
+        top_k: int = 5,
         min_similarity: float = 0.3,
     ) -> list[SearchResult]:
         """Search by embedding (cosine similarity via fastembed vectors).
@@ -115,7 +120,7 @@ class CorpusIndex:
 
 def _chunk_markdown(text: str, path: str, chunk_size: int = 500) -> list[dict]:
     """Split markdown into chunks by headers or fixed size."""
-    sections = re.split(r'\n(?=#{1,3}\s)', text)
+    sections = re.split(r"\n(?=#{1,3}\s)", text)
     chunks = []
     for section in sections:
         section = section.strip()
@@ -125,7 +130,7 @@ def _chunk_markdown(text: str, path: str, chunk_size: int = 500) -> list[dict]:
             chunks.append({"text": section, "path": path})
         else:
             for i in range(0, len(section), chunk_size):
-                piece = section[i:i + chunk_size].strip()
+                piece = section[i : i + chunk_size].strip()
                 if piece:
                     chunks.append({"text": piece, "path": path})
     return chunks

@@ -14,7 +14,6 @@ from pathlib import Path
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Constant value
 # ---------------------------------------------------------------------------
@@ -23,6 +22,7 @@ import pytest
 def test_default_platform_equals_claude_code():
     """DEFAULT_PLATFORM must equal the string 'claude-code'."""
     from sio.core.constants import DEFAULT_PLATFORM  # noqa: PLC0415
+
     assert DEFAULT_PLATFORM == "claude-code", (
         f"Expected DEFAULT_PLATFORM == 'claude-code', got {DEFAULT_PLATFORM!r}"
     )
@@ -31,6 +31,7 @@ def test_default_platform_equals_claude_code():
 def test_default_platform_is_str():
     """DEFAULT_PLATFORM must be a plain str, not bytes or enum."""
     from sio.core.constants import DEFAULT_PLATFORM  # noqa: PLC0415
+
     assert isinstance(DEFAULT_PLATFORM, str)
 
 
@@ -78,7 +79,9 @@ def test_no_string_literal_claude_code_outside_constants():
         text = py_file.read_text(encoding="utf-8")
         for lineno, line in enumerate(text.splitlines(), start=1):
             if _LITERAL_PATTERN.search(line):
-                violations.append(f"{py_file.relative_to(src_root.parent.parent)}:{lineno}: {line.strip()}")
+                violations.append(
+                    f"{py_file.relative_to(src_root.parent.parent)}:{lineno}: {line.strip()}"
+                )
 
     assert not violations, (
         "FR-031 violation — raw 'claude-code' string literals found in src/sio/ "

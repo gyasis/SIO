@@ -26,8 +26,11 @@ class TestClosedLoop:
 
         # Step 1: Capture telemetry (simulate 15 tool calls)
         sessions = {
-            "sess-A": 4, "sess-B": 3, "sess-C": 3,
-            "sess-D": 3, "sess-E": 2,
+            "sess-A": 4,
+            "sess-B": 3,
+            "sess-C": 3,
+            "sess-D": 3,
+            "sess-E": 2,
         }
         inv_ids = []
         seq = 0
@@ -52,8 +55,10 @@ class TestClosedLoop:
 
         # Step 2: Verify auto-labeler produces labels
         label = auto_label(
-            tool_name="Read", tool_input="foo.py",
-            tool_output="file contents", error=None,
+            tool_name="Read",
+            tool_input="foo.py",
+            tool_output="file contents",
+            error=None,
         )
         assert label["activated"] == 1
         assert label["correct_outcome"] == 1
@@ -76,8 +81,10 @@ class TestClosedLoop:
                 "score": 0.8,
             }
             result = optimize(
-                conn, skill_name="Read",
-                platform="claude-code", optimizer="gepa",
+                conn,
+                skill_name="Read",
+                platform="claude-code",
+                optimizer="gepa",
             )
 
         assert result["status"] == "pending"

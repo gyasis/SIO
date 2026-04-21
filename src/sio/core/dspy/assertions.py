@@ -30,6 +30,7 @@ import dspy
 # ---------------------------------------------------------------------------
 
 if not hasattr(dspy, "Assert"):
+
     def _assert_compat(condition: bool, msg: str = "", **kwargs) -> None:
         """Lightweight shim for dspy.Assert when not natively available.
 
@@ -106,11 +107,7 @@ def assert_no_phi(pred: dspy.Prediction) -> None:
         Triggers DSPy's backtracking mechanism (or raises ``AssertionError``
         in compatibility mode) on violation.
     """
-    blob = (
-        f"{pred.rule_title}\n"
-        f"{pred.rule_body}\n"
-        f"{pred.rule_rationale}"
-    )
+    blob = f"{pred.rule_title}\n{pred.rule_body}\n{pred.rule_rationale}"
     for token in _PHI_TOKENS:
         dspy.Assert(
             token not in blob,

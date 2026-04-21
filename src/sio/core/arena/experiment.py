@@ -32,9 +32,7 @@ def _repo_root() -> str:
     """Detect the git repo root for the current working directory."""
     result = _git("rev-parse", "--show-toplevel")
     if result.returncode != 0:
-        raise RuntimeError(
-            f"Not inside a git repository: {result.stderr.strip()}"
-        )
+        raise RuntimeError(f"Not inside a git repository: {result.stderr.strip()}")
     return result.stdout.strip()
 
 
@@ -74,9 +72,7 @@ def create_experiment(
     if result.returncode != 0:
         # Clean up the branch on failure
         _git("branch", "-D", branch, cwd=repo)
-        raise RuntimeError(
-            f"Failed to create worktree for {branch}: {result.stderr}"
-        )
+        raise RuntimeError(f"Failed to create worktree for {branch}: {result.stderr}")
 
     # Update suggestion status
     db.execute(
@@ -138,8 +134,7 @@ def promote_experiment(
 
     if suggestion_id is not None:
         db.execute(
-            "UPDATE suggestions SET status = 'pending_approval' "
-            "WHERE id = ?",
+            "UPDATE suggestions SET status = 'pending_approval' WHERE id = ?",
             (suggestion_id,),
         )
         db.commit()
@@ -147,7 +142,9 @@ def promote_experiment(
     # Clean up the worktree but keep the branch for merge
     repo = _repo_root()
     worktree_dir = os.path.join(
-        repo, ".worktrees", branch.replace("/", "-"),
+        repo,
+        ".worktrees",
+        branch.replace("/", "-"),
     )
     if os.path.isdir(worktree_dir):
         _git("worktree", "remove", worktree_dir, "--force", cwd=repo)
@@ -172,15 +169,16 @@ def rollback_experiment(
 
     if suggestion_id is not None:
         db.execute(
-            "UPDATE suggestions SET status = 'failed_experiment' "
-            "WHERE id = ?",
+            "UPDATE suggestions SET status = 'failed_experiment' WHERE id = ?",
             (suggestion_id,),
         )
         db.commit()
 
     repo = _repo_root()
     worktree_dir = os.path.join(
-        repo, ".worktrees", branch.replace("/", "-"),
+        repo,
+        ".worktrees",
+        branch.replace("/", "-"),
     )
 
     # Remove the worktree

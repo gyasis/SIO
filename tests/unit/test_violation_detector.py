@@ -205,7 +205,8 @@ class TestParseRules:
         assert rules == []
 
     def test_skips_content_in_code_blocks(
-        self, rules_with_code_blocks: Path,
+        self,
+        rules_with_code_blocks: Path,
     ) -> None:
         """Imperative text inside code fences is not extracted as rules."""
         rules = parse_rules(rules_with_code_blocks)
@@ -230,7 +231,8 @@ class TestParseRules:
         assert hasattr(r, "line_number")
 
     def test_case_insensitive_imperative_detection(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Both uppercase and lowercase imperative keywords are detected."""
         content = textwrap.dedent("""\
@@ -412,16 +414,20 @@ class TestDetectViolations:
         ]
         errors = [
             _error_record(
-                "SELECT * FROM users", timestamp="2026-02-25T10:00:01.000Z",
+                "SELECT * FROM users",
+                timestamp="2026-02-25T10:00:01.000Z",
             ),
             _error_record(
-                "SELECT * FROM orders", timestamp="2026-02-25T10:00:05.000Z",
+                "SELECT * FROM orders",
+                timestamp="2026-02-25T10:00:05.000Z",
             ),
             _error_record(
-                "SELECT * FROM products", timestamp="2026-02-25T10:00:10.000Z",
+                "SELECT * FROM products",
+                timestamp="2026-02-25T10:00:10.000Z",
             ),
             _error_record(
-                "relative path ./foo", timestamp="2026-02-25T10:00:08.000Z",
+                "relative path ./foo",
+                timestamp="2026-02-25T10:00:08.000Z",
             ),
         ]
 
@@ -521,7 +527,9 @@ class TestGetViolationReport:
     """Tests for get_violation_report() — full pipeline with DB."""
 
     def test_report_with_violations(
-        self, in_memory_db: sqlite3.Connection, rules_file: Path,
+        self,
+        in_memory_db: sqlite3.Connection,
+        rules_file: Path,
     ) -> None:
         """Report includes violations when errors match rules."""
         # Insert error records that violate rules.
@@ -531,9 +539,13 @@ class TestGetViolationReport:
             "error_text, error_type, mined_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
-                "session-1", "2026-02-25T10:00:00Z", "specstory",
-                "test.md", "Executed SELECT * FROM users",
-                "tool_failure", "2026-02-25T12:00:00Z",
+                "session-1",
+                "2026-02-25T10:00:00Z",
+                "specstory",
+                "test.md",
+                "Executed SELECT * FROM users",
+                "tool_failure",
+                "2026-02-25T12:00:00Z",
             ),
         )
         in_memory_db.execute(
@@ -542,15 +554,20 @@ class TestGetViolationReport:
             "error_text, error_type, mined_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
-                "session-2", "2026-02-25T11:00:00Z", "specstory",
-                "test.md", "SELECT * FROM orders",
-                "tool_failure", "2026-02-25T12:00:00Z",
+                "session-2",
+                "2026-02-25T11:00:00Z",
+                "specstory",
+                "test.md",
+                "SELECT * FROM orders",
+                "tool_failure",
+                "2026-02-25T12:00:00Z",
             ),
         )
         in_memory_db.commit()
 
         report = get_violation_report(
-            in_memory_db, [str(rules_file)],
+            in_memory_db,
+            [str(rules_file)],
         )
 
         assert report["total_rules"] > 0
@@ -568,7 +585,9 @@ class TestGetViolationReport:
         assert select_summary[0]["sessions"] >= 1
 
     def test_report_no_violations(
-        self, in_memory_db: sqlite3.Connection, rules_file: Path,
+        self,
+        in_memory_db: sqlite3.Connection,
+        rules_file: Path,
     ) -> None:
         """Report with no matching errors shows all rules compliant."""
         # Insert an error that matches no rule.
@@ -578,15 +597,20 @@ class TestGetViolationReport:
             "error_text, error_type, mined_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
-                "session-1", "2026-02-25T10:00:00Z", "specstory",
-                "test.md", "Connection timed out",
-                "tool_failure", "2026-02-25T12:00:00Z",
+                "session-1",
+                "2026-02-25T10:00:00Z",
+                "specstory",
+                "test.md",
+                "Connection timed out",
+                "tool_failure",
+                "2026-02-25T12:00:00Z",
             ),
         )
         in_memory_db.commit()
 
         report = get_violation_report(
-            in_memory_db, [str(rules_file)],
+            in_memory_db,
+            [str(rules_file)],
         )
 
         assert report["violations"] == []
@@ -595,11 +619,14 @@ class TestGetViolationReport:
         assert report["violation_summary"] == []
 
     def test_report_empty_rules(
-        self, in_memory_db: sqlite3.Connection, empty_rules_file: Path,
+        self,
+        in_memory_db: sqlite3.Connection,
+        empty_rules_file: Path,
     ) -> None:
         """Report with no parsable rules returns empty result."""
         report = get_violation_report(
-            in_memory_db, [str(empty_rules_file)],
+            in_memory_db,
+            [str(empty_rules_file)],
         )
 
         assert report["total_rules"] == 0
@@ -607,11 +634,14 @@ class TestGetViolationReport:
         assert report["violations"] == []
 
     def test_report_empty_db(
-        self, in_memory_db: sqlite3.Connection, rules_file: Path,
+        self,
+        in_memory_db: sqlite3.Connection,
+        rules_file: Path,
     ) -> None:
         """Report with no error records returns empty violations."""
         report = get_violation_report(
-            in_memory_db, [str(rules_file)],
+            in_memory_db,
+            [str(rules_file)],
         )
 
         assert report["violations"] == []
@@ -619,7 +649,9 @@ class TestGetViolationReport:
         assert report["date_range"]["start"] is None
 
     def test_report_with_since_filter(
-        self, in_memory_db: sqlite3.Connection, rules_file: Path,
+        self,
+        in_memory_db: sqlite3.Connection,
+        rules_file: Path,
     ) -> None:
         """Since filter restricts which error records are checked."""
         # Insert old and new errors.
@@ -629,9 +661,13 @@ class TestGetViolationReport:
             "error_text, error_type, mined_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
-                "session-old", "2026-01-01T10:00:00Z", "specstory",
-                "test.md", "SELECT * FROM old_table",
-                "tool_failure", "2026-01-01T12:00:00Z",
+                "session-old",
+                "2026-01-01T10:00:00Z",
+                "specstory",
+                "test.md",
+                "SELECT * FROM old_table",
+                "tool_failure",
+                "2026-01-01T12:00:00Z",
             ),
         )
         in_memory_db.execute(
@@ -640,9 +676,13 @@ class TestGetViolationReport:
             "error_text, error_type, mined_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
-                "session-new", "2026-02-25T10:00:00Z", "specstory",
-                "test.md", "SELECT * FROM new_table",
-                "tool_failure", "2026-02-25T12:00:00Z",
+                "session-new",
+                "2026-02-25T10:00:00Z",
+                "specstory",
+                "test.md",
+                "SELECT * FROM new_table",
+                "tool_failure",
+                "2026-02-25T12:00:00Z",
             ),
         )
         in_memory_db.commit()
@@ -660,7 +700,9 @@ class TestGetViolationReport:
         assert all(ts >= "2026-02-01" for ts in timestamps)
 
     def test_report_multiple_rule_files(
-        self, in_memory_db: sqlite3.Connection, tmp_path: Path,
+        self,
+        in_memory_db: sqlite3.Connection,
+        tmp_path: Path,
     ) -> None:
         """Report aggregates rules from multiple instruction files."""
         file1 = tmp_path / "rules1.md"
@@ -675,15 +717,20 @@ class TestGetViolationReport:
             "error_text, error_type, mined_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
-                "session-1", "2026-02-25T10:00:00Z", "specstory",
-                "test.md", "SELECT * FROM orders",
-                "tool_failure", "2026-02-25T12:00:00Z",
+                "session-1",
+                "2026-02-25T10:00:00Z",
+                "specstory",
+                "test.md",
+                "SELECT * FROM orders",
+                "tool_failure",
+                "2026-02-25T12:00:00Z",
             ),
         )
         in_memory_db.commit()
 
         report = get_violation_report(
-            in_memory_db, [str(file1), str(file2)],
+            in_memory_db,
+            [str(file1), str(file2)],
         )
 
         assert report["total_rules"] == 2
@@ -692,7 +739,9 @@ class TestGetViolationReport:
         assert report["compliant_rules"] >= 1
 
     def test_report_violation_dict_structure(
-        self, in_memory_db: sqlite3.Connection, tmp_path: Path,
+        self,
+        in_memory_db: sqlite3.Connection,
+        tmp_path: Path,
     ) -> None:
         """Violation dicts in report have expected keys for JSON output."""
         rule_file = tmp_path / "rules.md"
@@ -704,22 +753,33 @@ class TestGetViolationReport:
             "error_text, error_type, mined_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
-                "session-1", "2026-02-25T10:00:00Z", "specstory",
-                "test.md", "SELECT * FROM foo",
-                "tool_failure", "2026-02-25T12:00:00Z",
+                "session-1",
+                "2026-02-25T10:00:00Z",
+                "specstory",
+                "test.md",
+                "SELECT * FROM foo",
+                "tool_failure",
+                "2026-02-25T12:00:00Z",
             ),
         )
         in_memory_db.commit()
 
         report = get_violation_report(
-            in_memory_db, [str(rule_file)],
+            in_memory_db,
+            [str(rule_file)],
         )
 
         assert len(report["violations"]) >= 1
         v = report["violations"][0]
         expected_keys = {
-            "rule_text", "rule_file", "rule_line", "error_text",
-            "error_type", "session_id", "timestamp", "match_type",
+            "rule_text",
+            "rule_file",
+            "rule_line",
+            "error_text",
+            "error_type",
+            "session_id",
+            "timestamp",
+            "match_type",
             "confidence",
         }
         assert expected_keys.issubset(v.keys())

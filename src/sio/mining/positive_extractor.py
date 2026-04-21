@@ -94,9 +94,7 @@ def _is_gratitude(content: str) -> bool:
     if any(pat.search(content) for pat in _GRATITUDE_PATTERNS):
         return True
     # Single-word matches from flow_extractor that are gratitude-specific
-    gratitude_words = re.compile(
-        r"\b(thanks|awesome|perfect)\b", re.IGNORECASE
-    )
+    gratitude_words = re.compile(r"\b(thanks|awesome|perfect)\b", re.IGNORECASE)
     return bool(gratitude_words.search(content))
 
 
@@ -115,9 +113,7 @@ def _word_count(content: str) -> int:
     return len(content.split())
 
 
-def _prev_assistant_content(
-    messages: list[dict[str, Any]], before_idx: int
-) -> str | None:
+def _prev_assistant_content(messages: list[dict[str, Any]], before_idx: int) -> str | None:
     """Return truncated content of the most recent assistant message before *before_idx*."""
     for i in range(before_idx - 1, -1, -1):
         if messages[i].get("role") == "assistant":
@@ -127,9 +123,7 @@ def _prev_assistant_content(
     return None
 
 
-def _prev_tool_name(
-    messages: list[dict[str, Any]], before_idx: int
-) -> str | None:
+def _prev_tool_name(messages: list[dict[str, Any]], before_idx: int) -> str | None:
     """Return the tool_name from the most recent tool_use record before *before_idx*."""
     for i in range(before_idx - 1, -1, -1):
         tn = messages[i].get("tool_name")
@@ -138,9 +132,7 @@ def _prev_tool_name(
     return None
 
 
-def _has_pending_errors(
-    messages: list[dict[str, Any]], up_to_idx: int
-) -> bool:
+def _has_pending_errors(messages: list[dict[str, Any]], up_to_idx: int) -> bool:
     """Return True if there are unresolved errors in the recent message window.
 
     Scans backwards from *up_to_idx* looking for error fields.  Stops at the
@@ -152,9 +144,7 @@ def _has_pending_errors(
         if msg.get("error"):
             return True
         # If we hit a prior positive user message, treat earlier errors as resolved
-        if msg.get("role") in ("human", "user") and _has_any_positive(
-            _content_of(msg)
-        ):
+        if msg.get("role") in ("human", "user") and _has_any_positive(_content_of(msg)):
             break
     return False
 
@@ -221,20 +211,24 @@ def extract_positive_signals(
 
         # 1. Confirmation — explicit agreement phrases
         if _is_confirmation(content):
-            signals.append({
-                "signal_type": "confirmation",
-                "signal_text": content,
-                **base,
-            })
+            signals.append(
+                {
+                    "signal_type": "confirmation",
+                    "signal_text": content,
+                    **base,
+                }
+            )
             continue  # most specific wins; don't double-count
 
         # 2. Gratitude — thankful phrasing
         if _is_gratitude(content):
-            signals.append({
-                "signal_type": "gratitude",
-                "signal_text": content,
-                **base,
-            })
+            signals.append(
+                {
+                    "signal_type": "gratitude",
+                    "signal_text": content,
+                    **base,
+                }
+            )
             continue
 
         # 3. Implicit approval — short positive response after tool execution
@@ -245,11 +239,13 @@ def extract_positive_signals(
             and not _has_negative(content)
             and _has_any_positive(content)
         ):
-            signals.append({
-                "signal_type": "implicit_approval",
-                "signal_text": content,
-                **base,
-            })
+            signals.append(
+                {
+                    "signal_type": "implicit_approval",
+                    "signal_text": content,
+                    **base,
+                }
+            )
 
     # 4. Session success — session ends with a positive signal and no pending errors
     #    Check the last user message in the conversation
@@ -274,23 +270,18 @@ def extract_positive_signals(
             # Only deduplicate if session_success was already emitted for this
             # exact message (prevents true duplicates, not cross-type overlap).
             already_session_success = any(
-                s["signal_type"] == "session_success"
-                and s["signal_text"] == last_content
+                s["signal_type"] == "session_success" and s["signal_text"] == last_content
                 for s in signals
             )
             if not already_session_success:
-                signals.append({
-                    "signal_type": "session_success",
-                    "signal_text": last_content,
-                    "context_before": _prev_assistant_content(
-                        parsed_messages, last_user_idx
-                    ),
-                    "tool_name": _prev_tool_name(
-                        parsed_messages, last_user_idx
-                    ),
-                    "timestamp": parsed_messages[last_user_idx].get(
-                        "timestamp"
-                    ),
-                })
+                signals.append(
+                    {
+                        "signal_type": "session_success",
+                        "signal_text": last_content,
+                        "context_before": _prev_assistant_content(parsed_messages, last_user_idx),
+                        "tool_name": _prev_tool_name(parsed_messages, last_user_idx),
+                        "timestamp": parsed_messages[last_user_idx].get("timestamp"),
+                    }
+                )
 
     return signals

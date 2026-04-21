@@ -155,9 +155,7 @@ class TestDetectReInvocation:
         )
 
         # Same user_message ("read foo.py") used with different tools (Read vs Bash)
-        assert (
-            detect_re_invocation("sess-re-1", "read foo.py", tmp_db) is True
-        )
+        assert detect_re_invocation("sess-re-1", "read foo.py", tmp_db) is True
 
     def test_no_false_positive_sequential_calls(self, tmp_db, sample_invocation):
         """Sequential calls with different intents should not trigger."""
@@ -178,6 +176,4 @@ class TestDetectReInvocation:
             ),
         )
 
-        assert (
-            detect_re_invocation("sess-re-2", "write file C", tmp_db) is False
-        )
+        assert detect_re_invocation("sess-re-2", "write file C", tmp_db) is False

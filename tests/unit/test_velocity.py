@@ -101,9 +101,16 @@ class TestComputeVelocitySnapshotBasic:
         result = compute_velocity_snapshot(tmp_db, "unused_import", window_days=7)
 
         required_keys = {
-            "error_type", "error_rate", "error_count_in_window",
-            "correction_decay_rate", "adaptation_speed", "rule_applied",
-            "rule_suggestion_id", "window_start", "window_end", "created_at",
+            "error_type",
+            "error_rate",
+            "error_count_in_window",
+            "correction_decay_rate",
+            "adaptation_speed",
+            "rule_applied",
+            "rule_suggestion_id",
+            "window_start",
+            "window_end",
+            "created_at",
         }
         assert required_keys.issubset(result.keys())
 
@@ -192,13 +199,17 @@ class TestPreRuleBaseline:
         """10 unused_import errors in 7-day window, total 20 -> rate = 0.5."""
         for i in range(10):
             _insert_error(
-                tmp_db, error_type="unused_import",
-                session_id=f"sess-ui-{i}", hours_ago=i * 2,
+                tmp_db,
+                error_type="unused_import",
+                session_id=f"sess-ui-{i}",
+                hours_ago=i * 2,
             )
         for i in range(10):
             _insert_error(
-                tmp_db, error_type="select_star",
-                session_id=f"sess-ss-{i}", hours_ago=i * 2,
+                tmp_db,
+                error_type="select_star",
+                session_id=f"sess-ss-{i}",
+                hours_ago=i * 2,
             )
 
         result = compute_velocity_snapshot(tmp_db, "unused_import", window_days=7)
@@ -220,14 +231,18 @@ class TestCorrectionDecayRate:
         # Pre-rule: 10 errors of type before rule applied (4 days ago)
         for i in range(10):
             _insert_error(
-                tmp_db, error_type="unused_import",
-                session_id=f"sess-pre-{i}", days_ago=5 + i * 0.1,
+                tmp_db,
+                error_type="unused_import",
+                session_id=f"sess-pre-{i}",
+                days_ago=5 + i * 0.1,
             )
         # Also have some total context
         for i in range(10):
             _insert_error(
-                tmp_db, error_type="other",
-                session_id=f"sess-pre-other-{i}", days_ago=5 + i * 0.1,
+                tmp_db,
+                error_type="other",
+                session_id=f"sess-pre-other-{i}",
+                days_ago=5 + i * 0.1,
             )
 
         # Apply a rule 3 days ago
@@ -237,14 +252,18 @@ class TestCorrectionDecayRate:
         # Post-rule: only 3 errors of type in recent window (improvement)
         for i in range(3):
             _insert_error(
-                tmp_db, error_type="unused_import",
-                session_id=f"sess-post-{i}", days_ago=i * 0.5,
+                tmp_db,
+                error_type="unused_import",
+                session_id=f"sess-post-{i}",
+                days_ago=i * 0.5,
             )
         # And 10 other errors to maintain total context
         for i in range(10):
             _insert_error(
-                tmp_db, error_type="other",
-                session_id=f"sess-post-other-{i}", days_ago=i * 0.5,
+                tmp_db,
+                error_type="other",
+                session_id=f"sess-post-other-{i}",
+                days_ago=i * 0.5,
             )
 
         result = compute_velocity_snapshot(tmp_db, "unused_import", window_days=7)
@@ -287,19 +306,25 @@ class TestAdaptationSpeed:
         # Pre-rule: 10 errors across 2 sessions
         for i in range(5):
             _insert_error(
-                tmp_db, error_type="unused_import",
-                session_id="sess-pre-a", days_ago=5 + i * 0.01,
+                tmp_db,
+                error_type="unused_import",
+                session_id="sess-pre-a",
+                days_ago=5 + i * 0.01,
             )
         for i in range(5):
             _insert_error(
-                tmp_db, error_type="unused_import",
-                session_id="sess-pre-b", days_ago=5.1 + i * 0.01,
+                tmp_db,
+                error_type="unused_import",
+                session_id="sess-pre-b",
+                days_ago=5.1 + i * 0.01,
             )
         # Need total errors for rate denominator
         for i in range(10):
             _insert_error(
-                tmp_db, error_type="other",
-                session_id=f"sess-pre-other-{i}", days_ago=5 + i * 0.05,
+                tmp_db,
+                error_type="other",
+                session_id=f"sess-pre-other-{i}",
+                days_ago=5 + i * 0.05,
             )
 
         # Apply rule 3 days ago
@@ -310,20 +335,26 @@ class TestAdaptationSpeed:
         # Session 1: 2 errors of type + 10 other
         for i in range(2):
             _insert_error(
-                tmp_db, error_type="unused_import",
-                session_id="sess-post-1", days_ago=2 + i * 0.01,
+                tmp_db,
+                error_type="unused_import",
+                session_id="sess-post-1",
+                days_ago=2 + i * 0.01,
             )
         for i in range(10):
             _insert_error(
-                tmp_db, error_type="other",
-                session_id="sess-post-1", days_ago=2 + i * 0.01,
+                tmp_db,
+                error_type="other",
+                session_id="sess-post-1",
+                days_ago=2 + i * 0.01,
             )
 
         # Session 2: 0 errors of type + 10 other
         for i in range(10):
             _insert_error(
-                tmp_db, error_type="other",
-                session_id="sess-post-2", days_ago=1 + i * 0.01,
+                tmp_db,
+                error_type="other",
+                session_id="sess-post-2",
+                days_ago=1 + i * 0.01,
             )
 
         result = compute_velocity_snapshot(tmp_db, "unused_import", window_days=7)
@@ -356,8 +387,10 @@ class TestEdgeCases:
         """Errors exist but none of the requested type."""
         for i in range(5):
             _insert_error(
-                tmp_db, error_type="select_star",
-                session_id=f"sess-{i}", days_ago=i,
+                tmp_db,
+                error_type="select_star",
+                session_id=f"sess-{i}",
+                days_ago=i,
             )
 
         result = compute_velocity_snapshot(tmp_db, "unused_import", window_days=7)
@@ -444,8 +477,15 @@ class TestGetVelocityTrends:
 
         snapshot = trends[0]
         expected_keys = {
-            "id", "error_type", "session_id", "error_rate",
-            "error_count_in_window", "window_start", "window_end",
-            "rule_applied", "rule_suggestion_id", "created_at",
+            "id",
+            "error_type",
+            "session_id",
+            "error_rate",
+            "error_count_in_window",
+            "window_start",
+            "window_end",
+            "rule_applied",
+            "rule_suggestion_id",
+            "created_at",
         }
         assert expected_keys.issubset(snapshot.keys())

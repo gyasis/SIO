@@ -153,64 +153,37 @@ class TestSignalTypeClassification:
 
     def test_confirmation_yes_exactly(self, conversation_with_positive_signals):
         """'yes exactly' after tool call => confirmation signal."""
-        signals = extract_positive_signals(
-            conversation_with_positive_signals
-        )
-        confirmation_signals = [
-            s for s in signals if s["signal_type"] == "confirmation"
-        ]
+        signals = extract_positive_signals(conversation_with_positive_signals)
+        confirmation_signals = [s for s in signals if s["signal_type"] == "confirmation"]
         assert len(confirmation_signals) >= 1
-        assert any(
-            "yes exactly" in s["signal_text"].lower()
-            for s in confirmation_signals
-        )
+        assert any("yes exactly" in s["signal_text"].lower() for s in confirmation_signals)
 
     def test_gratitude_thanks_great_work(self, conversation_with_positive_signals):
         """'thanks great work' => gratitude signal."""
-        signals = extract_positive_signals(
-            conversation_with_positive_signals
-        )
-        gratitude_signals = [
-            s for s in signals if s["signal_type"] == "gratitude"
-        ]
+        signals = extract_positive_signals(conversation_with_positive_signals)
+        gratitude_signals = [s for s in signals if s["signal_type"] == "gratitude"]
         assert len(gratitude_signals) >= 1
-        assert any(
-            "thanks" in s["signal_text"].lower() for s in gratitude_signals
-        )
+        assert any("thanks" in s["signal_text"].lower() for s in gratitude_signals)
 
     def test_implicit_approval_perfect(self, conversation_with_positive_signals):
         """'perfect' after tool execution => gratitude signal (single-word
         positive keywords like 'perfect' are classified as gratitude)."""
-        signals = extract_positive_signals(
-            conversation_with_positive_signals
-        )
+        signals = extract_positive_signals(conversation_with_positive_signals)
         # "perfect" matches _is_gratitude() via single-word gratitude check,
         # so it is classified as gratitude, not implicit_approval.
-        gratitude_signals = [
-            s for s in signals if s["signal_type"] == "gratitude"
-        ]
-        assert any(
-            "perfect" in s["signal_text"].lower() for s in gratitude_signals
-        )
+        gratitude_signals = [s for s in signals if s["signal_type"] == "gratitude"]
+        assert any("perfect" in s["signal_text"].lower() for s in gratitude_signals)
 
     def test_session_success_looks_good(self, conversation_with_positive_signals):
         """'looks good' at session end => session_success signal."""
-        signals = extract_positive_signals(
-            conversation_with_positive_signals
-        )
-        success_signals = [
-            s for s in signals if s["signal_type"] == "session_success"
-        ]
+        signals = extract_positive_signals(conversation_with_positive_signals)
+        success_signals = [s for s in signals if s["signal_type"] == "session_success"]
         assert len(success_signals) >= 1
-        assert any(
-            "looks good" in s["signal_text"].lower() for s in success_signals
-        )
+        assert any("looks good" in s["signal_text"].lower() for s in success_signals)
 
     def test_all_four_signal_types_detected(self, conversation_with_positive_signals):
         """Conversation fixture should yield all 4 signal types."""
-        signals = extract_positive_signals(
-            conversation_with_positive_signals
-        )
+        signals = extract_positive_signals(conversation_with_positive_signals)
         detected_types = {s["signal_type"] for s in signals}
         assert "confirmation" in detected_types
         assert "gratitude" in detected_types
@@ -226,69 +199,42 @@ class TestSignalTypeClassification:
 class TestContextCapture:
     """FR-009: Each signal stores context_before and tool_name."""
 
-    def test_context_before_captures_assistant_action(
-        self, conversation_with_positive_signals
-    ):
+    def test_context_before_captures_assistant_action(self, conversation_with_positive_signals):
         """context_before should contain what the assistant did before the signal."""
-        signals = extract_positive_signals(
-            conversation_with_positive_signals
-        )
+        signals = extract_positive_signals(conversation_with_positive_signals)
         # The first confirmation signal follows a Read tool call
-        confirmation = next(
-            s for s in signals if s["signal_type"] == "confirmation"
-        )
+        confirmation = next(s for s in signals if s["signal_type"] == "confirmation")
         assert confirmation["context_before"] is not None
         assert len(confirmation["context_before"]) > 0
 
-    def test_tool_name_captured_for_tool_related_signals(
-        self, conversation_with_positive_signals
-    ):
+    def test_tool_name_captured_for_tool_related_signals(self, conversation_with_positive_signals):
         """tool_name should be set when the signal follows a tool call."""
-        signals = extract_positive_signals(
-            conversation_with_positive_signals
-        )
+        signals = extract_positive_signals(conversation_with_positive_signals)
         # "yes exactly" follows a Read call
-        confirmation = next(
-            s for s in signals if s["signal_type"] == "confirmation"
-        )
+        confirmation = next(s for s in signals if s["signal_type"] == "confirmation")
         assert confirmation["tool_name"] == "Read"
 
-    def test_gratitude_captures_preceding_tool(
-        self, conversation_with_positive_signals
-    ):
+    def test_gratitude_captures_preceding_tool(self, conversation_with_positive_signals):
         """Gratitude signal after Edit should capture tool_name='Edit'."""
-        signals = extract_positive_signals(
-            conversation_with_positive_signals
-        )
-        gratitude = next(
-            s for s in signals if s["signal_type"] == "gratitude"
-        )
+        signals = extract_positive_signals(conversation_with_positive_signals)
+        gratitude = next(s for s in signals if s["signal_type"] == "gratitude")
         assert gratitude["tool_name"] == "Edit"
 
-    def test_implicit_approval_captures_preceding_tool(
-        self, conversation_with_positive_signals
-    ):
+    def test_implicit_approval_captures_preceding_tool(self, conversation_with_positive_signals):
         """'perfect' after Bash tool => tool_name='Bash'.
         Note: 'perfect' is classified as gratitude, not implicit_approval."""
-        signals = extract_positive_signals(
-            conversation_with_positive_signals
-        )
+        signals = extract_positive_signals(conversation_with_positive_signals)
         perfect_signal = next(
             s
             for s in signals
-            if s["signal_type"] == "gratitude"
-            and "perfect" in s["signal_text"].lower()
+            if s["signal_type"] == "gratitude" and "perfect" in s["signal_text"].lower()
         )
         assert perfect_signal["tool_name"] == "Bash"
 
-    def test_signal_keys_present(
-        self, conversation_with_positive_signals
-    ):
+    def test_signal_keys_present(self, conversation_with_positive_signals):
         """Every signal should carry the expected keys from the implementation:
         signal_type, signal_text, context_before, tool_name, timestamp."""
-        signals = extract_positive_signals(
-            conversation_with_positive_signals
-        )
+        signals = extract_positive_signals(conversation_with_positive_signals)
         expected_keys = {"signal_type", "signal_text", "context_before", "tool_name", "timestamp"}
         for signal in signals:
             assert expected_keys.issubset(signal.keys()), (
@@ -297,9 +243,7 @@ class TestContextCapture:
 
     def test_timestamp_propagated(self, conversation_with_positive_signals):
         """Every signal should have a valid timestamp."""
-        signals = extract_positive_signals(
-            conversation_with_positive_signals
-        )
+        signals = extract_positive_signals(conversation_with_positive_signals)
         for signal in signals:
             assert signal["timestamp"] is not None
             assert "2026-03-01T10:00:" in signal["timestamp"]
@@ -345,21 +289,16 @@ class TestPatternCoverage:
 
     def test_at_least_seven_patterns_matched(self, diverse_positive_messages):
         """At least 7 distinct positive messages should produce signals."""
-        signals = extract_positive_signals(
-            diverse_positive_messages
-        )
+        signals = extract_positive_signals(diverse_positive_messages)
         # Each positive message should produce at least one signal
         matched_texts = {s["signal_text"].lower() for s in signals}
         assert len(matched_texts) >= 7, (
-            f"Expected at least 7 matched patterns, got {len(matched_texts)}: "
-            f"{matched_texts}"
+            f"Expected at least 7 matched patterns, got {len(matched_texts)}: {matched_texts}"
         )
 
     def test_signal_types_are_valid(self, diverse_positive_messages):
         """All returned signal_type values must be from the allowed set."""
-        signals = extract_positive_signals(
-            diverse_positive_messages
-        )
+        signals = extract_positive_signals(diverse_positive_messages)
         valid_types = {
             "confirmation",
             "gratitude",

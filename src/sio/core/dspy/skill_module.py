@@ -54,9 +54,7 @@ class SkillGeneratorModule(_Module):
 
     def __init__(self) -> None:
         if _dspy is None:
-            raise ImportError(
-                "dspy is required for SkillGeneratorModule — pip install dspy"
-            )
+            raise ImportError("dspy is required for SkillGeneratorModule — pip install dspy")
         super().__init__()
         from sio.core.dspy.signatures import SkillGeneratorSignature
 
@@ -152,9 +150,7 @@ def _load_optimized_or_default(
                     "Loading optimized skill_generator module: %s",
                     active["file_path"],
                 )
-                return load_module(
-                    SkillGeneratorModule, active["file_path"]
-                )
+                return load_module(SkillGeneratorModule, active["file_path"])
         except Exception:
             logger.debug(
                 "Failed to load optimized module, using default",
@@ -209,8 +205,7 @@ def generate_skill_safe(
         )
     except (ImportError, Exception) as exc:
         logger.info(
-            "LLM-backed skill generation unavailable (%s), "
-            "falling back to template",
+            "LLM-backed skill generation unavailable (%s), falling back to template",
             exc,
         )
         return _template_skill(

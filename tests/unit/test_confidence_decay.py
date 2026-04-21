@@ -163,38 +163,61 @@ class TestScoreConfidenceWithDecay:
         """A pattern seen today should have the same score as no-decay."""
         score_base = score_confidence(pattern, dataset)
         score_fresh = score_confidence(
-            pattern, dataset, last_seen=_days_ago_iso(0), config=_DEFAULT_CFG,
+            pattern,
+            dataset,
+            last_seen=_days_ago_iso(0),
+            config=_DEFAULT_CFG,
         )
         assert score_fresh == pytest.approx(score_base, abs=0.01)
 
     def test_old_pattern_lower_score(self, pattern: dict, dataset: dict) -> None:
         """A stale pattern should score lower than a fresh one."""
         score_fresh = score_confidence(
-            pattern, dataset, last_seen=_days_ago_iso(0), config=_DEFAULT_CFG,
+            pattern,
+            dataset,
+            last_seen=_days_ago_iso(0),
+            config=_DEFAULT_CFG,
         )
         score_old = score_confidence(
-            pattern, dataset, last_seen=_days_ago_iso(60), config=_DEFAULT_CFG,
+            pattern,
+            dataset,
+            last_seen=_days_ago_iso(60),
+            config=_DEFAULT_CFG,
         )
         assert score_old < score_fresh
 
     def test_decay_respects_floor_in_confidence(
-        self, pattern: dict, dataset: dict,
+        self,
+        pattern: dict,
+        dataset: dict,
     ) -> None:
         """Even very old patterns should not produce confidence below floor * raw."""
         score_old = score_confidence(
-            pattern, dataset, last_seen=_days_ago_iso(365), config=_DEFAULT_CFG,
+            pattern,
+            dataset,
+            last_seen=_days_ago_iso(365),
+            config=_DEFAULT_CFG,
         )
         assert score_old >= 0.0
 
     def test_cooling_band_intermediate(self, pattern: dict, dataset: dict) -> None:
         """Cooling band pattern should score between fresh and stale."""
         score_fresh = score_confidence(
-            pattern, dataset, last_seen=_days_ago_iso(0), config=_DEFAULT_CFG,
+            pattern,
+            dataset,
+            last_seen=_days_ago_iso(0),
+            config=_DEFAULT_CFG,
         )
         score_cooling = score_confidence(
-            pattern, dataset, last_seen=_days_ago_iso(21), config=_DEFAULT_CFG,
+            pattern,
+            dataset,
+            last_seen=_days_ago_iso(21),
+            config=_DEFAULT_CFG,
         )
         score_stale = score_confidence(
-            pattern, dataset, last_seen=_days_ago_iso(60), config=_DEFAULT_CFG,
+            pattern,
+            dataset,
+            last_seen=_days_ago_iso(60),
+            config=_DEFAULT_CFG,
         )
         assert score_stale < score_cooling < score_fresh

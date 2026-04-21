@@ -14,29 +14,31 @@ Run to confirm RED before implementing writer.py:
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Import helpers
 # ---------------------------------------------------------------------------
 
+
 def _import_validate():
     from sio.core.applier.writer import _validate_target_path  # noqa: PLC0415
+
     return _validate_target_path
 
 
 def _import_unauthorized_error():
     from sio.core.applier.writer import UnauthorizedApplyTarget  # noqa: PLC0415
+
     return UnauthorizedApplyTarget
 
 
 # ---------------------------------------------------------------------------
 # 1. Valid path under ~/.claude/ — no exception
 # ---------------------------------------------------------------------------
+
 
 def test_valid_claude_path_passes():
     """A real path under ~/.claude/ must pass validation without exception."""
@@ -57,6 +59,7 @@ def test_valid_claude_rules_path_passes():
 # ---------------------------------------------------------------------------
 # 2. Rejected paths
 # ---------------------------------------------------------------------------
+
 
 def test_etc_hosts_rejected():
     """An absolute path outside allowlist raises UnauthorizedApplyTarget."""
@@ -80,6 +83,7 @@ def test_home_file_rejected():
 # 3. Traversal attack via dotdot
 # ---------------------------------------------------------------------------
 
+
 def test_traversal_dotdot_rejected():
     """~/.claude/../etc/hosts resolves outside allowlist and must be rejected."""
     validate = _import_validate()
@@ -95,6 +99,7 @@ def test_traversal_dotdot_rejected():
 # ---------------------------------------------------------------------------
 # 4. Symlink traversal — real dest outside allowlist
 # ---------------------------------------------------------------------------
+
 
 def test_symlink_to_outside_allowlist_rejected(tmp_path: Path):
     """A symlink that resolves to outside ~/.claude/ must be rejected."""
@@ -120,6 +125,7 @@ def test_symlink_to_outside_allowlist_rejected(tmp_path: Path):
     # If validate() does Path.resolve(), it will catch this.
     # We import writer and temporarily patch ALLOWLIST_ROOTS
     from sio.core.applier import writer  # noqa: PLC0415
+
     original_roots = writer.ALLOWLIST_ROOTS
     try:
         writer.ALLOWLIST_ROOTS = [fake_claude]
@@ -133,6 +139,7 @@ def test_symlink_to_outside_allowlist_rejected(tmp_path: Path):
 # 5. SIO_APPLY_EXTRA_ROOTS env var extends allowlist
 # ---------------------------------------------------------------------------
 
+
 def test_extra_roots_env_var_allows_path(tmp_path: Path, monkeypatch):
     """SIO_APPLY_EXTRA_ROOTS=/tmp/extra → /tmp/extra/foo.md passes validation."""
     extra_root = tmp_path / "extra"
@@ -143,9 +150,14 @@ def test_extra_roots_env_var_allows_path(tmp_path: Path, monkeypatch):
     # We need the function to re-evaluate ALLOWLIST_ROOTS with the new env
     # If the module caches roots at import time, monkeypatching module attr is needed
     from sio.core.applier import writer  # noqa: PLC0415
+
     original_roots = writer.ALLOWLIST_ROOTS
     # Simulate the extra roots being loaded
-    extra_roots_env = monkeypatch.getenv("SIO_APPLY_EXTRA_ROOTS") if hasattr(monkeypatch, 'getenv') else extra_root
+    extra_roots_env = (
+        monkeypatch.getenv("SIO_APPLY_EXTRA_ROOTS")
+        if hasattr(monkeypatch, "getenv")
+        else extra_root
+    )
     writer.ALLOWLIST_ROOTS = list(original_roots) + [extra_root]
 
     try:
@@ -162,6 +174,7 @@ def test_extra_roots_validates_correctly(tmp_path: Path, monkeypatch):
     UnauthorizedApplyTarget = _import_unauthorized_error()
 
     from sio.core.applier import writer  # noqa: PLC0415
+
     original_roots = writer.ALLOWLIST_ROOTS
     extra_root = tmp_path / "extra"
     extra_root.mkdir()
@@ -178,6 +191,7 @@ def test_extra_roots_validates_correctly(tmp_path: Path, monkeypatch):
 # 6. UnauthorizedApplyTarget is an Exception subclass
 # ---------------------------------------------------------------------------
 
+
 def test_unauthorized_apply_target_is_exception():
     """UnauthorizedApplyTarget must be a subclass of Exception."""
     UnauthorizedApplyTarget = _import_unauthorized_error()
@@ -187,6 +201,7 @@ def test_unauthorized_apply_target_is_exception():
 # ---------------------------------------------------------------------------
 # 7. Path.cwd() NOT in allowlist
 # ---------------------------------------------------------------------------
+
 
 def test_cwd_relative_outside_claude_rejected(tmp_path: Path, monkeypatch):
     """A file in cwd that is not under ~/.claude/ must be rejected."""

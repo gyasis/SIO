@@ -71,8 +71,14 @@ def rank_patterns(patterns: list[dict[str, Any]]) -> list[dict[str, Any]]:
     scored: list[dict[str, Any]] = []
 
     for pattern in patterns:
-        last_seen_raw: str = pattern["last_seen"]
-        last_seen: datetime = datetime.fromisoformat(last_seen_raw)
+        last_seen_raw: str = pattern.get("last_seen") or ""
+        # T106: guard against empty or malformed timestamps (FR-013, audit H6).
+        # Fall back to "now" so the pattern is ranked as maximally recent rather
+        # than crashing the whole ranking pass.
+        try:
+            last_seen: datetime = datetime.fromisoformat(last_seen_raw)
+        except (ValueError, TypeError):
+            last_seen = now
 
         # Ensure both datetimes are timezone-aware so subtraction is valid.
         # If last_seen is naive we treat it as UTC (matches test helper _ts).

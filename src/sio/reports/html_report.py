@@ -28,12 +28,11 @@ from typing import Any
 
 
 def _query_session_metrics(
-    conn: sqlite3.Connection, days: int,
+    conn: sqlite3.Connection,
+    days: int,
 ) -> list[dict[str, Any]]:
     """Return session_metrics rows from the last *days* days."""
-    cutoff = (
-        datetime.now(timezone.utc) - timedelta(days=days)
-    ).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     rows = conn.execute(
         "SELECT session_id, total_input_tokens, total_output_tokens, "
         "total_cache_read_tokens, total_cache_create_tokens, "
@@ -48,12 +47,11 @@ def _query_session_metrics(
 
 
 def _query_error_trend(
-    conn: sqlite3.Connection, days: int,
+    conn: sqlite3.Connection,
+    days: int,
 ) -> list[dict[str, Any]]:
     """Return daily error counts for the last *days* days."""
-    cutoff = (
-        datetime.now(timezone.utc) - timedelta(days=days)
-    ).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     rows = conn.execute(
         "SELECT DATE(timestamp) AS day, COUNT(*) AS count "
         "FROM error_records WHERE timestamp >= ? "
@@ -86,12 +84,11 @@ def _query_suggestions(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 
 
 def _query_velocity(
-    conn: sqlite3.Connection, days: int,
+    conn: sqlite3.Connection,
+    days: int,
 ) -> list[dict[str, Any]]:
     """Return velocity snapshots for the last *days* days."""
-    cutoff = (
-        datetime.now(timezone.utc) - timedelta(days=days)
-    ).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     rows = conn.execute(
         "SELECT error_type, session_id, error_rate, "
         "error_count_in_window, window_start, window_end, "
@@ -116,14 +113,9 @@ def _metrics_to_js(metrics: list[dict[str, Any]]) -> str:
     cache_ratios = []
     for m in metrics:
         labels.append((m.get("mined_at") or "")[:10])
-        tokens.append(
-            (m.get("total_input_tokens") or 0)
-            + (m.get("total_output_tokens") or 0)
-        )
+        tokens.append((m.get("total_input_tokens") or 0) + (m.get("total_output_tokens") or 0))
         costs.append(round(m.get("total_cost_usd") or 0, 4))
-        cache_ratios.append(
-            round((m.get("cache_hit_ratio") or 0) * 100, 1)
-        )
+        cache_ratios.append(round((m.get("cache_hit_ratio") or 0) * 100, 1))
     return (
         f"const metricsLabels = {json.dumps(labels)};\n"
         f"const metricsTokens = {json.dumps(tokens)};\n"
@@ -135,10 +127,7 @@ def _metrics_to_js(metrics: list[dict[str, Any]]) -> str:
 def _error_trend_to_js(trend: list[dict[str, Any]]) -> str:
     labels = [t.get("day", "") for t in trend]
     counts = [t.get("count", 0) for t in trend]
-    return (
-        f"const errorLabels = {json.dumps(labels)};\n"
-        f"const errorCounts = {json.dumps(counts)};"
-    )
+    return f"const errorLabels = {json.dumps(labels)};\nconst errorCounts = {json.dumps(counts)};"
 
 
 def _velocity_to_js(velocity: list[dict[str, Any]]) -> str:
@@ -150,31 +139,36 @@ def _velocity_to_js(velocity: list[dict[str, Any]]) -> str:
 
     datasets_js: list[dict[str, Any]] = []
     colors = [
-        "#3b82f6", "#ef4444", "#10b981", "#f59e0b",
-        "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16",
+        "#3b82f6",
+        "#ef4444",
+        "#10b981",
+        "#f59e0b",
+        "#8b5cf6",
+        "#ec4899",
+        "#06b6d4",
+        "#84cc16",
     ]
-    all_labels: list[str] = sorted({
-        (v.get("window_end") or v.get("created_at", ""))[:10]
-        for v in velocity
-    })
+    all_labels: list[str] = sorted(
+        {(v.get("window_end") or v.get("created_at", ""))[:10] for v in velocity}
+    )
 
     for idx, (etype, snapshots) in enumerate(sorted(by_type.items())):
         data_map = {
-            (s.get("window_end") or s.get("created_at", ""))[:10]: s.get(
-                "error_rate", 0
-            )
+            (s.get("window_end") or s.get("created_at", ""))[:10]: s.get("error_rate", 0)
             for s in snapshots
         }
         data = [round(data_map.get(lbl, 0), 3) for lbl in all_labels]
         color = colors[idx % len(colors)]
-        datasets_js.append({
-            "label": etype,
-            "data": data,
-            "borderColor": color,
-            "backgroundColor": color + "33",
-            "tension": 0.3,
-            "fill": False,
-        })
+        datasets_js.append(
+            {
+                "label": etype,
+                "data": data,
+                "borderColor": color,
+                "backgroundColor": color + "33",
+                "tension": 0.3,
+                "fill": False,
+            }
+        )
 
     return (
         f"const velocityLabels = {json.dumps(all_labels)};\n"
@@ -186,13 +180,11 @@ def _velocity_to_js(velocity: list[dict[str, Any]]) -> str:
 # HTML building blocks
 # ---------------------------------------------------------------------------
 
+
 def _build_pattern_rows(patterns: list[dict[str, Any]]) -> str:
     """Build HTML table rows for patterns."""
     if not patterns:
-        return (
-            '<tr><td colspan="7" class="empty-msg">'
-            "No patterns discovered yet.</td></tr>"
-        )
+        return '<tr><td colspan="7" class="empty-msg">No patterns discovered yet.</td></tr>'
     rows: list[str] = []
     for p in patterns:
         confidence = p.get("rank_score", 0)
@@ -206,9 +198,9 @@ def _build_pattern_rows(patterns: list[dict[str, Any]]) -> str:
         }.get(grade, "badge-yellow")
         rows.append(
             f"<tr>"
-            f'<td>{_esc(p.get("pattern_id") or str(p.get("id", "")))}</td>'
-            f'<td>{_esc(p.get("description") or "")}</td>'
-            f'<td>{_esc(p.get("tool_name") or "-")}</td>'
+            f"<td>{_esc(p.get('pattern_id') or str(p.get('id', '')))}</td>"
+            f"<td>{_esc(p.get('description') or '')}</td>"
+            f"<td>{_esc(p.get('tool_name') or '-')}</td>"
             f'<td class="num">{p.get("error_count", 0)}</td>'
             f'<td class="num">{p.get("session_count", 0)}</td>'
             f'<td><div class="bar-container">'
@@ -244,13 +236,7 @@ def _build_suggestion_cards(suggestions: list[dict[str, Any]]) -> str:
             f'<div class="card-body">'
             f"<p><strong>{desc}</strong></p>"
             f'<p class="target">Target: {target}</p>'
-            + (
-                '<p class="explanation">'
-                + explanation
-                + "</p>"
-                if explanation
-                else ""
-            )
+            + ('<p class="explanation">' + explanation + "</p>" if explanation else "")
             + f'<pre class="rule-text" id="rule-{sid}">{change}</pre>'
             f'<button class="copy-btn" onclick="copyRule({sid})">'
             f"Copy Rule</button>"
@@ -262,10 +248,7 @@ def _build_suggestion_cards(suggestions: list[dict[str, Any]]) -> str:
 def _esc(text: str) -> str:
     """Escape HTML entities."""
     return (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
+        text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
     )
 
 
@@ -624,19 +607,11 @@ def generate_html_report(
 
     # Aggregate stats
     total_tokens = sum(
-        (m.get("total_input_tokens") or 0)
-        + (m.get("total_output_tokens") or 0)
-        for m in metrics
+        (m.get("total_input_tokens") or 0) + (m.get("total_output_tokens") or 0) for m in metrics
     )
     total_cost = sum(m.get("total_cost_usd") or 0 for m in metrics)
-    cache_ratios = [
-        m.get("cache_hit_ratio") or 0 for m in metrics
-    ]
-    avg_cache = (
-        round(sum(cache_ratios) / len(cache_ratios) * 100, 1)
-        if cache_ratios
-        else 0.0
-    )
+    cache_ratios = [m.get("cache_hit_ratio") or 0 for m in metrics]
+    avg_cache = round(sum(cache_ratios) / len(cache_ratios) * 100, 1) if cache_ratios else 0.0
     total_errors = sum(m.get("error_count") or 0 for m in metrics)
 
     # Format large numbers

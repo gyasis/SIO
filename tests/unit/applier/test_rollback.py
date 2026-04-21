@@ -15,19 +15,19 @@ Invariants:
 Run to confirm RED before T051:
     uv run pytest tests/unit/applier/test_rollback.py -v
 """
+
 from __future__ import annotations
 
-import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -80,12 +80,14 @@ def _import_rollback():
         BackupMissingError,
         rollback_applied_change,
     )
+
     return rollback_applied_change, BackupMissingError
 
 
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestRollbackAppliedChange:
     """rollback_applied_change must revert target file and mark row superseded."""
@@ -98,7 +100,7 @@ class TestRollbackAppliedChange:
 
     def test_happy_path_reverts_target_content(self, tmp_path, monkeypatch):
         """After rollback, target file must contain the backed-up (original) content."""
-        from sio.core.applier.writer import atomic_write, ALLOWLIST_ROOTS  # noqa: PLC0415
+        from sio.core.applier.writer import ALLOWLIST_ROOTS, atomic_write  # noqa: PLC0415
 
         # Allow tmp_path in allowlist
         monkeypatch.setattr(
@@ -122,8 +124,11 @@ class TestRollbackAppliedChange:
         # Set up DB
         conn, db_path = _fresh_db(tmp_path)
         row_id = _insert_applied_change(
-            conn, str(target), str(backup_path),
-            diff_before=original_content, diff_after=new_content,
+            conn,
+            str(target),
+            str(backup_path),
+            diff_before=original_content,
+            diff_after=new_content,
         )
         conn.close()
 
@@ -134,13 +139,12 @@ class TestRollbackAppliedChange:
         # Target must revert to original
         reverted = target.read_text(encoding="utf-8")
         assert reverted == original_content, (
-            f"Target must revert to original content after rollback. "
-            f"Got: {reverted!r}"
+            f"Target must revert to original content after rollback. Got: {reverted!r}"
         )
 
     def test_happy_path_sets_superseded_at(self, tmp_path, monkeypatch):
         """After rollback, applied_changes row must have superseded_at set."""
-        from sio.core.applier.writer import atomic_write, ALLOWLIST_ROOTS  # noqa: PLC0415
+        from sio.core.applier.writer import ALLOWLIST_ROOTS, atomic_write  # noqa: PLC0415
 
         monkeypatch.setattr(
             "sio.core.applier.writer.ALLOWLIST_ROOTS",
@@ -173,7 +177,7 @@ class TestRollbackAppliedChange:
 
     def test_happy_path_returns_dict(self, tmp_path, monkeypatch):
         """rollback_applied_change must return a dict with rolled_back=True."""
-        from sio.core.applier.writer import atomic_write, ALLOWLIST_ROOTS  # noqa: PLC0415
+        from sio.core.applier.writer import ALLOWLIST_ROOTS, atomic_write  # noqa: PLC0415
 
         monkeypatch.setattr(
             "sio.core.applier.writer.ALLOWLIST_ROOTS",
@@ -217,8 +221,11 @@ class TestRollbackAppliedChange:
         Path(target).write_text("CONTENT", encoding="utf-8")
 
         row_id = _insert_applied_change(
-            conn, target, missing_backup,
-            diff_before="ORIGINAL", diff_after="CONTENT",
+            conn,
+            target,
+            missing_backup,
+            diff_before="ORIGINAL",
+            diff_after="CONTENT",
         )
         conn.close()
 

@@ -107,11 +107,13 @@ def _find_tool_calls(parsed_messages: list[dict[str, Any]]) -> list[dict[str, An
     tool_calls: list[dict[str, Any]] = []
     for idx, msg in enumerate(parsed_messages):
         if msg.get("role") == "assistant" and msg.get("tool_name"):
-            tool_calls.append({
-                "index": idx,
-                "tool_name": msg["tool_name"],
-                "msg": msg,
-            })
+            tool_calls.append(
+                {
+                    "index": idx,
+                    "tool_name": msg["tool_name"],
+                    "msg": msg,
+                }
+            )
     return tool_calls
 
 
@@ -183,7 +185,8 @@ def detect_approvals(parsed_messages: list[dict[str, Any]]) -> dict[str, Any]:
     for tc in tool_calls:
         tool_name = tc["tool_name"]
         response_content = _find_next_user_response(
-            parsed_messages, tc["index"],
+            parsed_messages,
+            tc["index"],
         )
 
         # If no user response follows (end of conversation), treat as

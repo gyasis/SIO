@@ -428,8 +428,7 @@ class TestProcessedSessionsColumns:
         for name, expected_type in self.EXPECTED_COLUMNS.items():
             assert name in cols, f"Missing column: {name}"
             assert cols[name]["type"] == expected_type, (
-                f"Column {name} type mismatch: expected {expected_type}, "
-                f"got {cols[name]['type']}"
+                f"Column {name} type mismatch: expected {expected_type}, got {cols[name]['type']}"
             )
 
     def test_skipped_default_is_zero(self, conn):

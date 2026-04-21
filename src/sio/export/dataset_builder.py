@@ -31,6 +31,7 @@ def _time_filter_sql(since: str | None) -> tuple[str, list]:
     if not since:
         return "", []
     from sio.mining.time_filter import parse_since
+
     cutoff = parse_since(since)
     if cutoff:
         return "AND timestamp >= ?", [cutoff.isoformat()]
@@ -70,22 +71,24 @@ def build_routing_dataset(
     dataset = []
     for row in rows:
         was_successful = row["error_type"] not in ("tool_failure",)
-        dataset.append({
-            "inputs": {
-                "user_query": row["user_message"][:500],  # Truncate long queries
-                "context": (row["context_before"] or "")[:300],
-            },
-            "outputs": {
-                "tool_choice": row["tool_name"],
-                "was_successful": was_successful,
-            },
-            "metadata": {
-                "session_id": row["session_id"],
-                "timestamp": row["timestamp"],
-                "error_type": row["error_type"],
-                "task": "routing",
-            },
-        })
+        dataset.append(
+            {
+                "inputs": {
+                    "user_query": row["user_message"][:500],  # Truncate long queries
+                    "context": (row["context_before"] or "")[:300],
+                },
+                "outputs": {
+                    "tool_choice": row["tool_name"],
+                    "was_successful": was_successful,
+                },
+                "metadata": {
+                    "session_id": row["session_id"],
+                    "timestamp": row["timestamp"],
+                    "error_type": row["error_type"],
+                    "task": "routing",
+                },
+            }
+        )
 
     return dataset
 
@@ -136,24 +139,26 @@ def build_recovery_dataset(
         recovery = db_conn.execute(next_sql, (fail["session_id"], fail["id"])).fetchone()
 
         if recovery:
-            dataset.append({
-                "inputs": {
-                    "error_message": (fail["error_text"] or "")[:500],
-                    "failed_tool": fail["failed_tool"],
-                    "tool_input": (fail["tool_input"] or "")[:300],
-                    "user_context": (fail["user_message"] or "")[:300],
-                },
-                "outputs": {
-                    "recovery_tool": recovery["tool_name"],
-                    "recovery_input": (recovery["tool_input"] or "")[:300],
-                    "was_successful": True,
-                },
-                "metadata": {
-                    "session_id": fail["session_id"],
-                    "timestamp": fail["timestamp"],
-                    "task": "recovery",
-                },
-            })
+            dataset.append(
+                {
+                    "inputs": {
+                        "error_message": (fail["error_text"] or "")[:500],
+                        "failed_tool": fail["failed_tool"],
+                        "tool_input": (fail["tool_input"] or "")[:300],
+                        "user_context": (fail["user_message"] or "")[:300],
+                    },
+                    "outputs": {
+                        "recovery_tool": recovery["tool_name"],
+                        "recovery_input": (recovery["tool_input"] or "")[:300],
+                        "was_successful": True,
+                    },
+                    "metadata": {
+                        "session_id": fail["session_id"],
+                        "timestamp": fail["timestamp"],
+                        "task": "recovery",
+                    },
+                }
+            )
 
     return dataset
 
@@ -195,24 +200,26 @@ def build_flow_dataset(
 
         # Create training pair: given first N-1 tools, predict the last
         for split_point in range(1, len(tools)):
-            dataset.append({
-                "inputs": {
-                    "current_tools": " → ".join(tools[:split_point]),
-                    "current_tool_count": split_point,
-                },
-                "outputs": {
-                    "next_tool": tools[split_point] if split_point < len(tools) else "",
-                    "full_sequence": row["sequence"],
-                    "confidence": row["success_rate"],
-                },
-                "metadata": {
-                    "flow_hash": row["flow_hash"],
-                    "occurrence_count": row["count"],
-                    "success_rate": row["success_rate"],
-                    "session_count": row["session_count"],
-                    "task": "flow",
-                },
-            })
+            dataset.append(
+                {
+                    "inputs": {
+                        "current_tools": " → ".join(tools[:split_point]),
+                        "current_tool_count": split_point,
+                    },
+                    "outputs": {
+                        "next_tool": tools[split_point] if split_point < len(tools) else "",
+                        "full_sequence": row["sequence"],
+                        "confidence": row["success_rate"],
+                    },
+                    "metadata": {
+                        "flow_hash": row["flow_hash"],
+                        "occurrence_count": row["count"],
+                        "success_rate": row["success_rate"],
+                        "session_count": row["session_count"],
+                        "task": "flow",
+                    },
+                }
+            )
 
     return dataset
 

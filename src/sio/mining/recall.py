@@ -69,12 +69,14 @@ def topic_filter(distilled: dict, query: str) -> dict:
     filtered_steps = []
     for step in distilled.get("steps", []):
         # Check summary, tool_input, and tool for matches
-        searchable = " ".join([
-            step.get("summary", ""),
-            step.get("tool_input", ""),
-            step.get("tool", ""),
-            step.get("tool_output_preview", ""),
-        ])
+        searchable = " ".join(
+            [
+                step.get("summary", ""),
+                step.get("tool_input", ""),
+                step.get("tool", ""),
+                step.get("tool_output_preview", ""),
+            ]
+        )
         if pattern.search(searchable):
             filtered_steps.append(step)
 
@@ -126,16 +128,19 @@ def detect_struggles(steps: list[dict]) -> list[dict]:
             for j in range(i + 1, min(i + 4, len(steps))):
                 fix_candidate = steps[j]
                 # Same tool or similar summary = potential fix
-                if (fix_candidate.get("tool") == step.get("tool") or
-                        _files_overlap(step.get("summary", ""), fix_candidate.get("summary", ""))):
+                if fix_candidate.get("tool") == step.get("tool") or _files_overlap(
+                    step.get("summary", ""), fix_candidate.get("summary", "")
+                ):
                     fix_output = fix_candidate.get("tool_output_preview", "")
                     if not error_patterns.search(fix_output):
-                        struggles.append({
-                            "failure_step": step["step_num"],
-                            "fix_step": fix_candidate["step_num"],
-                            "failure_summary": step.get("summary", ""),
-                            "fix_summary": fix_candidate.get("summary", ""),
-                        })
+                        struggles.append(
+                            {
+                                "failure_step": step["step_num"],
+                                "fix_step": fix_candidate["step_num"],
+                                "failure_summary": step.get("summary", ""),
+                                "fix_summary": fix_candidate.get("summary", ""),
+                            }
+                        )
                         break
 
     return struggles
@@ -144,8 +149,8 @@ def detect_struggles(steps: list[dict]) -> list[dict]:
 def _files_overlap(summary1: str, summary2: str) -> bool:
     """Check if two step summaries reference the same file."""
     # Extract file paths from summaries
-    paths1 = set(re.findall(r'[/\w.-]+\.\w{1,6}', summary1))
-    paths2 = set(re.findall(r'[/\w.-]+\.\w{1,6}', summary2))
+    paths1 = set(re.findall(r"[/\w.-]+\.\w{1,6}", summary1))
+    paths2 = set(re.findall(r"[/\w.-]+\.\w{1,6}", summary2))
     return bool(paths1 & paths2)
 
 
@@ -183,9 +188,9 @@ def format_recall_output(filtered: dict, struggles: list[dict]) -> str:
                 params = json.loads(step["tool_input"])
                 cmd = params.get("command", "")
                 if cmd and len(cmd) < 300:
-                    lines.append(f"   ```bash")
+                    lines.append("   ```bash")
                     lines.append(f"   {cmd}")
-                    lines.append(f"   ```")
+                    lines.append("   ```")
             except (json.JSONDecodeError, TypeError):
                 pass
 

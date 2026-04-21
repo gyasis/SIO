@@ -153,7 +153,8 @@ class TestAccumulateFeedsIntoExistingDatasets:
         ]
         _write_initial_dataset_file(ds_file, examples=initial_examples)
         _insert_dataset(
-            v2_db, pattern_row_id,
+            v2_db,
+            pattern_row_id,
             file_path=str(ds_file),
             positive_count=3,
             negative_count=2,
@@ -173,9 +174,7 @@ class TestAccumulateFeedsIntoExistingDatasets:
             "New errors must be appended to the existing dataset file"
         )
 
-    def test_existing_examples_preserved(
-        self, v2_db: sqlite3.Connection, tmp_path: Path
-    ) -> None:
+    def test_existing_examples_preserved(self, v2_db: sqlite3.Connection, tmp_path: Path) -> None:
         """Accumulation must not remove or overwrite pre-existing examples."""
         pattern_row_id = _insert_pattern(v2_db, pattern_id="p-preserve-001")
 
@@ -186,7 +185,8 @@ class TestAccumulateFeedsIntoExistingDatasets:
         ]
         _write_initial_dataset_file(ds_file, examples=initial_examples)
         _insert_dataset(
-            v2_db, pattern_row_id,
+            v2_db,
+            pattern_row_id,
             file_path=str(ds_file),
             positive_count=3,
             negative_count=3,
@@ -224,15 +224,16 @@ class TestAccumulateFeedsIntoExistingDatasets:
             ],
         )
         ds_id = _insert_dataset(
-            v2_db, pattern_row_id,
+            v2_db,
+            pattern_row_id,
             file_path=str(ds_file),
             positive_count=3,
             negative_count=2,
         )
 
         new_errors = [
-            _make_error(id=20, session_id="new-20", error_text=""),    # positive
-            _make_error(id=21, session_id="new-21", error_text="Err"), # negative
+            _make_error(id=20, session_id="new-20", error_text=""),  # positive
+            _make_error(id=21, session_id="new-21", error_text="Err"),  # negative
         ]
         pattern = _make_pattern(id=pattern_row_id, pattern_id="p-dbcounts-001")
 
@@ -271,9 +272,7 @@ class TestAccumulateCreatesNewDatasets:
             "SELECT id FROM datasets WHERE pattern_id = ?",
             (pattern_row_id,),
         ).fetchone()
-        assert row is not None, (
-            "A new datasets row must be created for a pattern that had none"
-        )
+        assert row is not None, "A new datasets row must be created for a pattern that had none"
 
     def test_new_dataset_file_written_to_disk(
         self, v2_db: sqlite3.Connection, tmp_path: Path
@@ -291,9 +290,7 @@ class TestAccumulateCreatesNewDatasets:
             (pattern_row_id,),
         ).fetchone()
         assert row is not None
-        assert Path(row[0]).exists(), (
-            f"Dataset file must exist on disk at {row[0]!r}"
-        )
+        assert Path(row[0]).exists(), f"Dataset file must exist on disk at {row[0]!r}"
 
     def test_new_dataset_file_has_valid_json(
         self, v2_db: sqlite3.Connection, tmp_path: Path
@@ -332,9 +329,7 @@ class TestAccumulateCreatesNewDatasets:
             "SELECT id FROM datasets WHERE pattern_id = ?",
             (pattern_row_id,),
         ).fetchone()
-        assert row is None, (
-            "No dataset should be created when error count is below the threshold"
-        )
+        assert row is None, "No dataset should be created when error count is below the threshold"
 
 
 # ---------------------------------------------------------------------------
@@ -347,9 +342,7 @@ class TestAccumulateReturnsSummary:
 
     _REQUIRED_KEYS = frozenset({"updated_count", "created_count"})
 
-    def test_accumulate_returns_summary(
-        self, v2_db: sqlite3.Connection, tmp_path: Path
-    ) -> None:
+    def test_accumulate_returns_summary(self, v2_db: sqlite3.Connection, tmp_path: Path) -> None:
         pattern_row_id = _insert_pattern(v2_db, pattern_id="p-summary-001")
         errors = [_make_error(id=i, session_id=f"su-{i}") for i in range(6)]
         pattern = _make_pattern(id=pattern_row_id, pattern_id="p-summary-001")
@@ -370,13 +363,11 @@ class TestAccumulateReturnsSummary:
         p1_id = _insert_pattern(v2_db, pattern_id="p-sum-new-001", tool_name="Read")
         p2_id = _insert_pattern(v2_db, pattern_id="p-sum-new-002", tool_name="Bash")
 
-        errors_p1 = [
-            _make_error(id=i, session_id=f"p1-{i}", tool_name="Read")
-            for i in range(6)
-        ]
+        errors_p1 = [_make_error(id=i, session_id=f"p1-{i}", tool_name="Read") for i in range(6)]
         errors_p2 = [
-            _make_error(id=100 + i, session_id=f"p2-{i}", tool_name="Bash",
-                        error_text=f"BashErr {i}")
+            _make_error(
+                id=100 + i, session_id=f"p2-{i}", tool_name="Bash", error_text=f"BashErr {i}"
+            )
             for i in range(6)
         ]
 
@@ -407,7 +398,8 @@ class TestAccumulateReturnsSummary:
             ],
         )
         _insert_dataset(
-            v2_db, pattern_row_id,
+            v2_db,
+            pattern_row_id,
             file_path=str(ds_file),
             positive_count=3,
             negative_count=3,
@@ -421,28 +413,21 @@ class TestAccumulateReturnsSummary:
         result = accumulate(new_errors, [pattern], v2_db, dataset_dir=tmp_path)
 
         assert result["updated_count"] == 1, (
-            f"Expected updated_count=1 for the one existing dataset; "
-            f"got {result['updated_count']}"
+            f"Expected updated_count=1 for the one existing dataset; got {result['updated_count']}"
         )
         assert result["created_count"] == 0, (
             f"Expected created_count=0; got {result['created_count']}"
         )
 
-    def test_summary_counts_are_ints(
-        self, v2_db: sqlite3.Connection, tmp_path: Path
-    ) -> None:
+    def test_summary_counts_are_ints(self, v2_db: sqlite3.Connection, tmp_path: Path) -> None:
         pattern_row_id = _insert_pattern(v2_db, pattern_id="p-sum-types-001")
         errors = [_make_error(id=i, session_id=f"ty-{i}") for i in range(6)]
         pattern = _make_pattern(id=pattern_row_id, pattern_id="p-sum-types-001")
 
         result = accumulate(errors, [pattern], v2_db, dataset_dir=tmp_path)
 
-        assert isinstance(result["updated_count"], int), (
-            "updated_count must be an int"
-        )
-        assert isinstance(result["created_count"], int), (
-            "created_count must be an int"
-        )
+        assert isinstance(result["updated_count"], int), "updated_count must be an int"
+        assert isinstance(result["created_count"], int), "created_count must be an int"
 
     def test_summary_zero_when_all_below_threshold(
         self, v2_db: sqlite3.Connection, tmp_path: Path
@@ -455,9 +440,7 @@ class TestAccumulateReturnsSummary:
 
         result = accumulate(errors, [pattern], v2_db, dataset_dir=tmp_path)
 
-        assert result["created_count"] == 0, (
-            "created_count must be 0 when threshold is not met"
-        )
+        assert result["created_count"] == 0, "created_count must be 0 when threshold is not met"
         assert result["updated_count"] == 0, (
             "updated_count must be 0 when no existing dataset was touched"
         )
@@ -477,7 +460,8 @@ class TestAccumulateReturnsSummary:
             ],
         )
         _insert_dataset(
-            v2_db, existing_p_id,
+            v2_db,
+            existing_p_id,
             file_path=str(ds_file),
             positive_count=3,
             negative_count=3,
@@ -487,12 +471,10 @@ class TestAccumulateReturnsSummary:
         new_p_id = _insert_pattern(v2_db, pattern_id="p-sum-mix-new-001")
 
         errors_existing = [
-            _make_error(id=200 + i, session_id=f"mix-ex-{i}", tool_name="Read")
-            for i in range(2)
+            _make_error(id=200 + i, session_id=f"mix-ex-{i}", tool_name="Read") for i in range(2)
         ]
         errors_new = [
-            _make_error(id=300 + i, session_id=f"mix-new-{i}", tool_name="Read")
-            for i in range(6)
+            _make_error(id=300 + i, session_id=f"mix-new-{i}", tool_name="Read") for i in range(6)
         ]
 
         patterns = [
@@ -500,9 +482,7 @@ class TestAccumulateReturnsSummary:
             _make_pattern(id=new_p_id, pattern_id="p-sum-mix-new-001"),
         ]
 
-        result = accumulate(
-            errors_existing + errors_new, patterns, v2_db, dataset_dir=tmp_path
-        )
+        result = accumulate(errors_existing + errors_new, patterns, v2_db, dataset_dir=tmp_path)
 
         assert result["updated_count"] == 1, (
             f"Expected updated_count=1; got {result['updated_count']}"

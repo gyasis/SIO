@@ -20,28 +20,32 @@ from pathlib import Path
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Import helpers
 # ---------------------------------------------------------------------------
 
+
 def _import_lm_factory():
     from sio.core.dspy import lm_factory  # noqa: PLC0415
+
     return lm_factory
 
 
 def _import_get_task_lm():
     from sio.core.dspy.lm_factory import get_task_lm  # noqa: PLC0415
+
     return get_task_lm
 
 
 def _import_get_reflection_lm():
     from sio.core.dspy.lm_factory import get_reflection_lm  # noqa: PLC0415
+
     return get_reflection_lm
 
 
 def _import_get_adapter():
     from sio.core.dspy.lm_factory import get_adapter  # noqa: PLC0415
+
     return get_adapter
 
 
@@ -49,9 +53,11 @@ def _import_get_adapter():
 # 1. get_task_lm() returns dspy.LM with cache=True
 # ---------------------------------------------------------------------------
 
+
 def test_get_task_lm_returns_dspy_lm():
     """get_task_lm() must return a dspy.LM instance."""
     import dspy  # noqa: PLC0415
+
     get_task_lm = _import_get_task_lm()
     lm = get_task_lm()
     assert isinstance(lm, dspy.LM), f"Expected dspy.LM, got {type(lm)}"
@@ -70,9 +76,11 @@ def test_get_task_lm_has_cache_true():
 # 2. get_reflection_lm() returns dspy.LM with cache=False
 # ---------------------------------------------------------------------------
 
+
 def test_get_reflection_lm_returns_dspy_lm():
     """get_reflection_lm() must return a dspy.LM instance."""
     import dspy  # noqa: PLC0415
+
     get_reflection_lm = _import_get_reflection_lm()
     lm = get_reflection_lm()
     assert isinstance(lm, dspy.LM), f"Expected dspy.LM, got {type(lm)}"
@@ -91,14 +99,13 @@ def test_get_reflection_lm_has_cache_false():
 # 3. SIO_TASK_LM env override
 # ---------------------------------------------------------------------------
 
+
 def test_get_task_lm_env_override(monkeypatch):
     """SIO_TASK_LM env var overrides the default model."""
     monkeypatch.setenv("SIO_TASK_LM", "test/dummy-model")
     get_task_lm = _import_get_task_lm()
     lm = get_task_lm()
-    assert lm.model == "test/dummy-model", (
-        f"Expected model='test/dummy-model', got {lm.model!r}"
-    )
+    assert lm.model == "test/dummy-model", f"Expected model='test/dummy-model', got {lm.model!r}"
 
 
 def test_get_task_lm_default_model_without_env(monkeypatch):
@@ -116,23 +123,24 @@ def test_get_task_lm_default_model_without_env(monkeypatch):
 # 4. SIO_REFLECTION_LM env override
 # ---------------------------------------------------------------------------
 
+
 def test_get_reflection_lm_env_override(monkeypatch):
     """SIO_REFLECTION_LM env var overrides the default model."""
     monkeypatch.setenv("SIO_REFLECTION_LM", "test/big-model")
     get_reflection_lm = _import_get_reflection_lm()
     lm = get_reflection_lm()
-    assert lm.model == "test/big-model", (
-        f"Expected model='test/big-model', got {lm.model!r}"
-    )
+    assert lm.model == "test/big-model", f"Expected model='test/big-model', got {lm.model!r}"
 
 
 # ---------------------------------------------------------------------------
 # 5. get_adapter() — provider-aware
 # ---------------------------------------------------------------------------
 
+
 def test_get_adapter_openai_returns_chat_adapter_with_native_fc(monkeypatch):
     """get_adapter() for openai/* model returns ChatAdapter(use_native_function_calling=True)."""
     import dspy  # noqa: PLC0415
+
     monkeypatch.delenv("SIO_FORCE_ADAPTER", raising=False)
     monkeypatch.delenv("SIO_FORCE_NATIVE_FC", raising=False)
     get_adapter = _import_get_adapter()
@@ -153,6 +161,7 @@ def test_get_adapter_openai_returns_chat_adapter_with_native_fc(monkeypatch):
 def test_get_adapter_anthropic_returns_chat_adapter_with_native_fc(monkeypatch):
     """get_adapter() for anthropic/* model returns ChatAdapter(use_native_function_calling=True)."""
     import dspy  # noqa: PLC0415
+
     monkeypatch.delenv("SIO_FORCE_ADAPTER", raising=False)
     monkeypatch.delenv("SIO_FORCE_NATIVE_FC", raising=False)
     get_adapter = _import_get_adapter()
@@ -169,6 +178,7 @@ def test_get_adapter_anthropic_returns_chat_adapter_with_native_fc(monkeypatch):
 def test_get_adapter_ollama_returns_json_adapter_without_native_fc(monkeypatch):
     """get_adapter() for ollama/* model returns JSONAdapter(use_native_function_calling=False)."""
     import dspy  # noqa: PLC0415
+
     monkeypatch.delenv("SIO_FORCE_ADAPTER", raising=False)
     monkeypatch.delenv("SIO_FORCE_NATIVE_FC", raising=False)
     get_adapter = _import_get_adapter()
@@ -187,6 +197,7 @@ def test_get_adapter_ollama_returns_json_adapter_without_native_fc(monkeypatch):
 def test_get_adapter_unknown_provider_safe_fallback(monkeypatch):
     """get_adapter() for unknown/* model returns ChatAdapter(use_native_function_calling=False)."""
     import dspy  # noqa: PLC0415
+
     monkeypatch.delenv("SIO_FORCE_ADAPTER", raising=False)
     monkeypatch.delenv("SIO_FORCE_NATIVE_FC", raising=False)
     get_adapter = _import_get_adapter()
@@ -204,9 +215,11 @@ def test_get_adapter_unknown_provider_safe_fallback(monkeypatch):
 # 6. SIO_FORCE_ADAPTER=json override
 # ---------------------------------------------------------------------------
 
+
 def test_force_adapter_json_env_override(monkeypatch):
     """SIO_FORCE_ADAPTER=json forces JSONAdapter regardless of provider."""
     import dspy  # noqa: PLC0415
+
     monkeypatch.setenv("SIO_FORCE_ADAPTER", "json")
     monkeypatch.delenv("SIO_FORCE_NATIVE_FC", raising=False)
     get_adapter = _import_get_adapter()
@@ -224,6 +237,7 @@ def test_force_adapter_json_env_override(monkeypatch):
 def test_force_adapter_chat_env_override(monkeypatch):
     """SIO_FORCE_ADAPTER=chat forces ChatAdapter regardless of provider."""
     import dspy  # noqa: PLC0415
+
     monkeypatch.setenv("SIO_FORCE_ADAPTER", "chat")
     monkeypatch.delenv("SIO_FORCE_NATIVE_FC", raising=False)
     get_adapter = _import_get_adapter()
@@ -241,6 +255,7 @@ def test_force_adapter_chat_env_override(monkeypatch):
 # ---------------------------------------------------------------------------
 # 7. Grep-style test: zero dspy.LM( calls outside lm_factory.py in src/sio/
 # ---------------------------------------------------------------------------
+
 
 def _src_sio_root() -> Path:
     """Resolve src/sio/ relative to this test file."""

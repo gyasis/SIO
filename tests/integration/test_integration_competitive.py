@@ -210,11 +210,13 @@ def _build_realistic_jsonl_messages() -> list[dict]:
             "role": "assistant",
             "content": "Found an unused import. Removing it now.",
             "tool_name": "Edit",
-            "tool_input": json.dumps({
-                "file_path": "/tmp/config.py",
-                "old_string": "import os\n",
-                "new_string": "",
-            }),
+            "tool_input": json.dumps(
+                {
+                    "file_path": "/tmp/config.py",
+                    "old_string": "import os\n",
+                    "new_string": "",
+                }
+            ),
             "tool_output": "File updated successfully.",
             "error": None,
             "timestamp": _ts(22),
@@ -310,14 +312,16 @@ def _write_jsonl(path: Path, messages: list[dict]) -> None:
                 blocks: list[dict] = []
                 if content:
                     blocks.append({"type": "text", "text": content})
-                blocks.append({
-                    "type": "tool_use",
-                    "id": f"toolu_{id(msg)}",
-                    "name": msg["tool_name"],
-                    "input": json.loads(msg["tool_input"])
-                    if isinstance(msg.get("tool_input"), str)
-                    else (msg.get("tool_input") or {}),
-                })
+                blocks.append(
+                    {
+                        "type": "tool_use",
+                        "id": f"toolu_{id(msg)}",
+                        "name": msg["tool_name"],
+                        "input": json.loads(msg["tool_input"])
+                        if isinstance(msg.get("tool_input"), str)
+                        else (msg.get("tool_input") or {}),
+                    }
+                )
                 content_blocks = blocks
 
             # Build usage sub-object
@@ -354,9 +358,7 @@ def _write_jsonl(path: Path, messages: list[dict]) -> None:
             if wire_type == "assistant" and msg.get("tool_name"):
                 tool_use_id = f"toolu_{id(msg)}"
                 is_error = msg.get("error") is not None
-                result_content = msg.get("error") if is_error else (
-                    msg.get("tool_output") or ""
-                )
+                result_content = msg.get("error") if is_error else (msg.get("tool_output") or "")
                 result_line: dict = {
                     "type": "user",
                     "message": {
@@ -407,9 +409,7 @@ class TestMiningPipelineIntegration:
     """Verify run_mine populates session_metrics, positive_records,
     processed_sessions, and error_records tables."""
 
-    def test_run_mine_populates_all_tables(
-        self, integration_db, realistic_session_dir
-    ):
+    def test_run_mine_populates_all_tables(self, integration_db, realistic_session_dir):
         """Full mining pipeline should populate 4 tables from a single JSONL."""
         result = run_mine(
             db_conn=integration_db,
@@ -424,41 +424,23 @@ class TestMiningPipelineIntegration:
         assert result["skipped_files"] == 0
 
         # --- session_metrics table ---
-        rows = integration_db.execute(
-            "SELECT * FROM session_metrics"
-        ).fetchall()
+        rows = integration_db.execute("SELECT * FROM session_metrics").fetchall()
         assert len(rows) >= 1, "session_metrics should have at least 1 row"
 
         sm = dict(rows[0])
-        assert sm["total_input_tokens"] > 0, (
-            "total_input_tokens should be non-zero"
-        )
-        assert sm["total_output_tokens"] > 0, (
-            "total_output_tokens should be non-zero"
-        )
-        assert sm["total_cache_read_tokens"] > 0, (
-            "total_cache_read_tokens should be non-zero"
-        )
-        assert sm["total_cost_usd"] > 0, (
-            "total_cost_usd should be non-zero"
-        )
-        assert sm["cache_hit_ratio"] is not None, (
-            "cache_hit_ratio should be computed"
-        )
-        assert 0 < sm["cache_hit_ratio"] < 1, (
-            "cache_hit_ratio should be between 0 and 1"
-        )
+        assert sm["total_input_tokens"] > 0, "total_input_tokens should be non-zero"
+        assert sm["total_output_tokens"] > 0, "total_output_tokens should be non-zero"
+        assert sm["total_cache_read_tokens"] > 0, "total_cache_read_tokens should be non-zero"
+        assert sm["total_cost_usd"] > 0, "total_cost_usd should be non-zero"
+        assert sm["cache_hit_ratio"] is not None, "cache_hit_ratio should be computed"
+        assert 0 < sm["cache_hit_ratio"] < 1, "cache_hit_ratio should be between 0 and 1"
         # Wire format expands each tool-using assistant turn into
         # text + tool_use records, plus a separate tool_result user line.
         # 1 sidechain excluded. Actual parsed count = 22.
-        assert sm["message_count"] == 22, (
-            f"Expected 22 messages, got {sm['message_count']}"
-        )
+        assert sm["message_count"] == 22, f"Expected 22 messages, got {sm['message_count']}"
         assert sm["model_used"] == "claude-sonnet-4-20250514"
 
-    def test_positive_records_extracted(
-        self, integration_db, realistic_session_dir
-    ):
+    def test_positive_records_extracted(self, integration_db, realistic_session_dir):
         """Mining should extract confirmation, gratitude, and session_success
         signals from the realistic fixture."""
         run_mine(
@@ -468,9 +450,7 @@ class TestMiningPipelineIntegration:
             source_type="jsonl",
         )
 
-        rows = integration_db.execute(
-            "SELECT * FROM positive_records"
-        ).fetchall()
+        rows = integration_db.execute("SELECT * FROM positive_records").fetchall()
         assert len(rows) >= 1, (
             "positive_records should have at least 1 row "
             "(the fixture has 'yes exactly' and 'thanks' signals)"
@@ -479,13 +459,9 @@ class TestMiningPipelineIntegration:
         signal_types = {dict(r)["signal_type"] for r in rows}
         # The fixture has "yes exactly" (confirmation) and "thanks" (gratitude)
         # and the session ends positively (session_success).
-        assert len(signal_types) >= 1, (
-            f"Expected multiple signal types, got: {signal_types}"
-        )
+        assert len(signal_types) >= 1, f"Expected multiple signal types, got: {signal_types}"
 
-    def test_processed_sessions_tracked(
-        self, integration_db, realistic_session_dir
-    ):
+    def test_processed_sessions_tracked(self, integration_db, realistic_session_dir):
         """Mining should record the file in processed_sessions."""
         run_mine(
             db_conn=integration_db,
@@ -497,22 +473,16 @@ class TestMiningPipelineIntegration:
         rows = integration_db.execute(
             "SELECT * FROM processed_sessions WHERE skipped = 0"
         ).fetchall()
-        assert len(rows) >= 1, (
-            "processed_sessions should have at least 1 non-skipped row"
-        )
+        assert len(rows) >= 1, "processed_sessions should have at least 1 non-skipped row"
 
         ps = dict(rows[0])
         assert "session-integration-test.jsonl" in ps["file_path"]
-        assert ps["message_count"] >= 5, (
-            "message_count should reflect the parsed messages"
-        )
+        assert ps["message_count"] >= 5, "message_count should reflect the parsed messages"
         assert ps["tool_call_count"] >= 2, (
             "tool_call_count should reflect tool calls in the fixture"
         )
 
-    def test_error_records_extracted(
-        self, integration_db, realistic_session_dir
-    ):
+    def test_error_records_extracted(self, integration_db, realistic_session_dir):
         """Mining should extract errors from the fixture (tool failure,
         user correction, agent admission)."""
         result = run_mine(
@@ -522,16 +492,12 @@ class TestMiningPipelineIntegration:
             source_type="jsonl",
         )
 
-        rows = integration_db.execute(
-            "SELECT * FROM error_records"
-        ).fetchall()
+        rows = integration_db.execute("SELECT * FROM error_records").fetchall()
         # The fixture has at least:
         # - 1 tool_failure (ruff FileNotFoundError)
         # - 1 user_correction ("no that's wrong")
         # - 1 agent_admission ("my apologies")
-        assert len(rows) >= 1, (
-            f"error_records should have rows; result={result}"
-        )
+        assert len(rows) >= 1, f"error_records should have rows; result={result}"
 
         error_types = {dict(r)["error_type"] for r in rows}
         # The fixture produces user_correction ("no that's wrong") and
@@ -540,9 +506,7 @@ class TestMiningPipelineIntegration:
             f"Expected at least one known error type, got: {error_types}"
         )
 
-    def test_idempotent_mining(
-        self, integration_db, realistic_session_dir
-    ):
+    def test_idempotent_mining(self, integration_db, realistic_session_dir):
         """Mining the same file twice should skip on second run."""
         result1 = run_mine(
             db_conn=integration_db,
@@ -559,13 +523,9 @@ class TestMiningPipelineIntegration:
 
         assert result1["newly_mined"] >= 1
         assert result2["skipped_files"] >= 1
-        assert result2["newly_mined"] == 0, (
-            "Second run should not mine any new files"
-        )
+        assert result2["newly_mined"] == 0, "Second run should not mine any new files"
 
-    def test_session_metrics_aggregation(
-        self, integration_db, realistic_session_dir
-    ):
+    def test_session_metrics_aggregation(self, integration_db, realistic_session_dir):
         """Verify session metric aggregation math is correct."""
         run_mine(
             db_conn=integration_db,
@@ -574,11 +534,7 @@ class TestMiningPipelineIntegration:
             source_type="jsonl",
         )
 
-        sm = dict(
-            integration_db.execute(
-                "SELECT * FROM session_metrics"
-            ).fetchone()
-        )
+        sm = dict(integration_db.execute("SELECT * FROM session_metrics").fetchone())
 
         # The wire format emits metadata on each record produced by
         # _parse_real_assistant.  Assistant turns with a tool_use block
@@ -595,8 +551,7 @@ class TestMiningPipelineIntegration:
         #   = 400+300+500+360+440+400+150 = 2550
         expected_input = 2550
         assert sm["total_input_tokens"] == expected_input, (
-            f"Expected {expected_input} input tokens, "
-            f"got {sm['total_input_tokens']}"
+            f"Expected {expected_input} input tokens, got {sm['total_input_tokens']}"
         )
 
         # output_tokens:
@@ -604,8 +559,7 @@ class TestMiningPipelineIntegration:
         #   = 100+100+120+80+90+60+30 = 580
         expected_output = 580
         assert sm["total_output_tokens"] == expected_output, (
-            f"Expected {expected_output} output tokens, "
-            f"got {sm['total_output_tokens']}"
+            f"Expected {expected_output} output tokens, got {sm['total_output_tokens']}"
         )
 
         # cost_usd (same doubling for tool turns, excluding sidechain):
@@ -631,9 +585,7 @@ class TestMiningPipelineIntegration:
         assert "end_turn" in dist
         assert dist["end_turn"] >= 1
 
-    def test_correction_count_derived(
-        self, integration_db, realistic_session_dir
-    ):
+    def test_correction_count_derived(self, integration_db, realistic_session_dir):
         """Correction count should be derived from approval detection."""
         run_mine(
             db_conn=integration_db,
@@ -642,11 +594,7 @@ class TestMiningPipelineIntegration:
             source_type="jsonl",
         )
 
-        sm = dict(
-            integration_db.execute(
-                "SELECT * FROM session_metrics"
-            ).fetchone()
-        )
+        sm = dict(integration_db.execute("SELECT * FROM session_metrics").fetchone())
         # The fixture has "no that's wrong" which may be counted as a
         # rejection by the approval detector. The exact value depends on
         # the detector's thresholds, but we verify the field is populated.
@@ -691,7 +639,9 @@ class TestVelocityIntegration:
         integration_db.commit()
 
         snapshot = compute_velocity_snapshot(
-            integration_db, "unused_import", window_days=7,
+            integration_db,
+            "unused_import",
+            window_days=7,
         )
 
         assert snapshot["error_type"] == "unused_import"
@@ -732,45 +682,56 @@ class TestVelocityIntegration:
 
         # Create a pattern, suggestion, and applied_change so the velocity
         # detector can find the rule application.
-        pat_id = insert_pattern(integration_db, {
-            "pattern_id": "unused-import-pattern",
-            "description": "Unused import errors (unused_import)",
-            "tool_name": "Bash",
-            "error_count": 5,
-            "session_count": 3,
-            "first_seen": (now - timedelta(days=12)).isoformat(),
-            "last_seen": now.isoformat(),
-            "rank_score": 0.8,
-            "centroid_embedding": None,
-            "created_at": now.isoformat(),
-            "updated_at": now.isoformat(),
-        })
-        sug_id = insert_suggestion(integration_db, {
-            "pattern_id": pat_id,
-            "dataset_id": None,
-            "description": "Add rule to avoid unused_import errors",
-            "confidence": 0.85,
-            "proposed_change": "Always run ruff --fix after edits",
-            "target_file": "CLAUDE.md",
-            "change_type": "append",
-            "status": "approved",
-            "ai_explanation": None,
-            "user_note": None,
-            "created_at": (now - timedelta(days=5)).isoformat(),
-            "reviewed_at": (now - timedelta(days=5)).isoformat(),
-        })
-        insert_applied_change(integration_db, {
-            "suggestion_id": sug_id,
-            "target_file": "CLAUDE.md",
-            "diff_before": "",
-            "diff_after": "Always run ruff --fix after edits",
-            "commit_sha": "abc123",
-            "applied_at": (now - timedelta(days=5)).isoformat(),
-            "rolled_back_at": None,
-        })
+        pat_id = insert_pattern(
+            integration_db,
+            {
+                "pattern_id": "unused-import-pattern",
+                "description": "Unused import errors (unused_import)",
+                "tool_name": "Bash",
+                "error_count": 5,
+                "session_count": 3,
+                "first_seen": (now - timedelta(days=12)).isoformat(),
+                "last_seen": now.isoformat(),
+                "rank_score": 0.8,
+                "centroid_embedding": None,
+                "created_at": now.isoformat(),
+                "updated_at": now.isoformat(),
+            },
+        )
+        sug_id = insert_suggestion(
+            integration_db,
+            {
+                "pattern_id": pat_id,
+                "dataset_id": None,
+                "description": "Add rule to avoid unused_import errors",
+                "confidence": 0.85,
+                "proposed_change": "Always run ruff --fix after edits",
+                "target_file": "CLAUDE.md",
+                "change_type": "append",
+                "status": "approved",
+                "ai_explanation": None,
+                "user_note": None,
+                "created_at": (now - timedelta(days=5)).isoformat(),
+                "reviewed_at": (now - timedelta(days=5)).isoformat(),
+            },
+        )
+        insert_applied_change(
+            integration_db,
+            {
+                "suggestion_id": sug_id,
+                "target_file": "CLAUDE.md",
+                "diff_before": "",
+                "diff_after": "Always run ruff --fix after edits",
+                "commit_sha": "abc123",
+                "applied_at": (now - timedelta(days=5)).isoformat(),
+                "rolled_back_at": None,
+            },
+        )
 
         snapshot = compute_velocity_snapshot(
-            integration_db, "unused_import", window_days=7,
+            integration_db,
+            "unused_import",
+            window_days=7,
         )
 
         assert snapshot["rule_applied"] is True
@@ -847,9 +808,7 @@ class TestBudgetIntegration:
         )
 
         result = check_budget(rule_file, new_rule_lines=2, config=config)
-        assert result.cap == 20, (
-            f"Expected supplementary cap of 20, got {result.cap}"
-        )
+        assert result.cap == 20, f"Expected supplementary cap of 20, got {result.cap}"
 
     def test_count_meaningful_lines_strips_comments(self, tmp_path):
         """HTML comments should not count toward the budget."""
@@ -921,14 +880,10 @@ class TestViolationDetectorIntegration:
         rules = parse_rules(rule_file)
         rule_texts = [r.text for r in rules]
 
-        assert len(rules) >= 4, (
-            f"Expected at least 4 rules, got {len(rules)}: {rule_texts}"
-        )
+        assert len(rules) >= 4, f"Expected at least 4 rules, got {len(rules)}: {rule_texts}"
 
         # Check specific rules are detected
-        assert any("SELECT *" in r.text for r in rules), (
-            "Should detect the SELECT * rule"
-        )
+        assert any("SELECT *" in r.text for r in rules), "Should detect the SELECT * rule"
         assert any("type hints" in r.text.lower() for r in rules), (
             "Should detect the type hints rule"
         )
@@ -992,9 +947,7 @@ class TestViolationDetectorIntegration:
         # The SELECT * rule should match the first error
         # The type hints rule should match the second error
         # The third error should NOT match any rule
-        assert len(violations) >= 2, (
-            f"Expected at least 2 violations, got {len(violations)}"
-        )
+        assert len(violations) >= 2, f"Expected at least 2 violations, got {len(violations)}"
 
         violation_rules = [v.rule.text for v in violations]
         assert any("SELECT *" in r for r in violation_rules)
@@ -1066,9 +1019,7 @@ class TestViolationDetectorIntegration:
 class TestCrossComponentIntegration:
     """Verify that multiple pipeline stages work together."""
 
-    def test_mine_then_velocity(
-        self, integration_db, realistic_session_dir
-    ):
+    def test_mine_then_velocity(self, integration_db, realistic_session_dir):
         """After mining, velocity should be computable from the mined errors."""
         result = run_mine(
             db_conn=integration_db,
@@ -1086,7 +1037,9 @@ class TestCrossComponentIntegration:
 
             error_type = row[0]
             snapshot = compute_velocity_snapshot(
-                integration_db, error_type, window_days=7,
+                integration_db,
+                error_type,
+                window_days=7,
             )
 
             assert snapshot["error_count_in_window"] >= 1
@@ -1115,9 +1068,7 @@ class TestCrossComponentIntegration:
         result = check_budget(target, new_rule_lines=3, config=config)
         assert result.status == "ok"
 
-    def test_mine_then_violation_detect(
-        self, integration_db, realistic_session_dir, tmp_path
-    ):
+    def test_mine_then_violation_detect(self, integration_db, realistic_session_dir, tmp_path):
         """After mining, violations can be detected against rule files."""
         run_mine(
             db_conn=integration_db,
@@ -1136,9 +1087,7 @@ class TestCrossComponentIntegration:
         )
 
         rules = parse_rules(rule_file)
-        error_rows = integration_db.execute(
-            "SELECT * FROM error_records"
-        ).fetchall()
+        error_rows = integration_db.execute("SELECT * FROM error_records").fetchall()
         error_records = [dict(r) for r in error_rows]
 
         if error_records:
@@ -1163,9 +1112,9 @@ class TestConfigConsistency:
         custom = SIOConfig(budget_cap_primary=15, budget_cap_supplementary=8)
 
         claude_file = tmp_path / "CLAUDE.md"
-        claude_file.write_text("\n".join(
-            [f"- Rule {i}" for i in range(14)]
-        ) + "\n", encoding="utf-8")
+        claude_file.write_text(
+            "\n".join([f"- Rule {i}" for i in range(14)]) + "\n", encoding="utf-8"
+        )
 
         result = check_budget(claude_file, new_rule_lines=5, config=custom)
         assert result.cap == 15

@@ -9,6 +9,7 @@ Environment overrides:
   SIO_FORCE_ADAPTER — "json" | "chat"  (override provider detection)
   SIO_FORCE_NATIVE_FC — "0" | "1"     (override native function-calling flag)
 """
+
 from __future__ import annotations
 
 import logging
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # New contract functions (FR-041, contracts/dspy-module-api.md §1)
 # ---------------------------------------------------------------------------
+
 
 def get_task_lm() -> dspy.LM:
     """LM used for normal module forward passes. Cheap, fast, cached."""
@@ -73,6 +75,7 @@ def configure_default() -> None:
 # ---------------------------------------------------------------------------
 # Legacy factory functions (preserved for backward compatibility)
 # ---------------------------------------------------------------------------
+
 
 def create_lm(config: SIOConfig) -> dspy.LM | None:
     """Create a dspy.LM from config or auto-detected env vars.

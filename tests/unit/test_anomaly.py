@@ -38,7 +38,6 @@ def _insert_sessions(db, metric_name: str, values: list[tuple[str, float]]):
 
 
 class TestComputeMad:
-
     def test_empty_input(self):
         median, mad = compute_mad([])
         assert median == 0.0
@@ -86,7 +85,6 @@ class TestComputeMad:
 
 
 class TestDetectAnomalies:
-
     def test_flags_outlier_error_count(self, db):
         """10 normal sessions + 1 outlier with extreme error count."""
         normal = [(f"s{i}", 5.0) for i in range(10)]
@@ -143,7 +141,9 @@ class TestDetectAnomalies:
         _insert_sessions(db, "session_duration_seconds", normal + outlier)
 
         anomalous = detect_anomalies(
-            db, "session_duration_seconds", threshold_mads=3,
+            db,
+            "session_duration_seconds",
+            threshold_mads=3,
         )
         assert "s_long" in anomalous
 
@@ -154,7 +154,9 @@ class TestDetectAnomalies:
         _insert_sessions(db, "total_input_tokens", normal + outlier)
 
         anomalous = detect_anomalies(
-            db, "total_input_tokens", threshold_mads=3,
+            db,
+            "total_input_tokens",
+            threshold_mads=3,
         )
         assert "s_heavy" in anomalous
 

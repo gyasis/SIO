@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 # AI tagging — generates explanation from pattern + dataset examples
 # ---------------------------------------------------------------------------
 
+
 def ai_tag(pattern: dict, dataset: dict) -> str:
     """Generate an AI explanation string from pattern metadata and dataset examples.
 
@@ -49,6 +50,7 @@ def ai_tag(pattern: dict, dataset: dict) -> str:
 # Human tagging — records user categorization on a suggestion
 # ---------------------------------------------------------------------------
 
+
 def human_tag(
     db: sqlite3.Connection,
     suggestion_id: int,
@@ -70,8 +72,7 @@ def human_tag(
         )
     else:
         cur = db.execute(
-            "UPDATE suggestions SET ai_explanation = ?, reviewed_at = ? "
-            "WHERE id = ?",
+            "UPDATE suggestions SET ai_explanation = ?, reviewed_at = ? WHERE id = ?",
             (tag_text, now, suggestion_id),
         )
     db.commit()
@@ -81,6 +82,7 @@ def human_tag(
 # ---------------------------------------------------------------------------
 # AI tag + store — applies ai_tag and persists on the suggestion row
 # ---------------------------------------------------------------------------
+
 
 def ai_tag_suggestion(
     db: sqlite3.Connection,

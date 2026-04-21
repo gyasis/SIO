@@ -20,6 +20,7 @@ import pytest
 def _open_db(path: Path, read_only: bool = False) -> sqlite3.Connection:
     """Import and call open_db; raises ImportError if not yet implemented."""
     from sio.core.db.connect import open_db  # noqa: PLC0415
+
     return open_db(path, read_only=read_only)
 
 
@@ -70,8 +71,7 @@ def test_open_db_synchronous_is_normal(tmp_path: Path):
         row = conn.execute("PRAGMA synchronous").fetchone()
         assert row is not None
         assert int(row[0]) == 1, (
-            f"Expected synchronous=1 (NORMAL), got {row[0]!r}. "
-            "Accepted values: 1 or 'NORMAL'."
+            f"Expected synchronous=1 (NORMAL), got {row[0]!r}. Accepted values: 1 or 'NORMAL'."
         )
     finally:
         conn.close()

@@ -238,7 +238,14 @@ _ERROR_RECORDS_EXPECTED_COLUMNS = {
     "mined_at": "TEXT",
 }
 
-_ERROR_RECORDS_NOT_NULL = {"session_id", "timestamp", "source_type", "source_file", "error_text", "mined_at"}
+_ERROR_RECORDS_NOT_NULL = {
+    "session_id",
+    "timestamp",
+    "source_type",
+    "source_file",
+    "error_text",
+    "mined_at",
+}
 
 
 def test_error_records_columns(tmp_db: sqlite3.Connection) -> None:
@@ -249,8 +256,7 @@ def test_error_records_columns(tmp_db: sqlite3.Connection) -> None:
     for col_name, expected_type in _ERROR_RECORDS_EXPECTED_COLUMNS.items():
         assert col_name in col_map, f"error_records missing column '{col_name}'"
         assert col_map[col_name] == expected_type, (
-            f"error_records.{col_name}: expected type '{expected_type}', "
-            f"got '{col_map[col_name]}'"
+            f"error_records.{col_name}: expected type '{expected_type}', got '{col_map[col_name]}'"
         )
 
 
@@ -259,9 +265,7 @@ def test_error_records_not_null_constraints(tmp_db: sqlite3.Connection) -> None:
     columns = _column_info(tmp_db, "error_records")
     col_map = {c["name"]: c for c in columns}
     for col_name in _ERROR_RECORDS_NOT_NULL:
-        assert col_map[col_name]["notnull"] == 1, (
-            f"error_records.{col_name} should be NOT NULL"
-        )
+        assert col_map[col_name]["notnull"] == 1, f"error_records.{col_name} should be NOT NULL"
 
 
 def test_error_records_id_primary_key(tmp_db: sqlite3.Connection) -> None:
@@ -431,9 +435,7 @@ def test_idx_pattern_rank_is_on_rank_score(tmp_db: sqlite3.Connection) -> None:
 def test_idx_pattern_rank_ddl_contains_desc(tmp_db: sqlite3.Connection) -> None:
     """The DDL for idx_pattern_rank must specify DESC ordering on rank_score."""
     ddl = _get_index_ddl(tmp_db, "idx_pattern_rank")
-    assert "DESC" in ddl.upper(), (
-        f"idx_pattern_rank DDL missing DESC: {ddl!r}"
-    )
+    assert "DESC" in ddl.upper(), f"idx_pattern_rank DDL missing DESC: {ddl!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -451,9 +453,5 @@ def test_init_db_idempotent_v2(tmp_path) -> None:
     tables = _table_names(conn2)
     conn2.close()
 
-    assert V2_TABLES.issubset(tables), (
-        f"v2 tables missing on second init: {V2_TABLES - tables}"
-    )
-    assert V1_TABLES.issubset(tables), (
-        f"v1 tables missing on second init: {V1_TABLES - tables}"
-    )
+    assert V2_TABLES.issubset(tables), f"v2 tables missing on second init: {V2_TABLES - tables}"
+    assert V1_TABLES.issubset(tables), f"v1 tables missing on second init: {V1_TABLES - tables}"

@@ -220,15 +220,9 @@ class TestGeneratesSuggestionFromPattern:
 class TestConfidenceScoring:
     """Higher error_count and dataset quality should produce a higher confidence."""
 
-    def test_high_error_count_produces_higher_confidence(
-        self, v2_db: sqlite3.Connection
-    ) -> None:
-        low_row_id = _insert_pattern(
-            v2_db, pattern_id="pat-low", error_count=2, rank_score=0.2
-        )
-        high_row_id = _insert_pattern(
-            v2_db, pattern_id="pat-high", error_count=25, rank_score=0.9
-        )
+    def test_high_error_count_produces_higher_confidence(self, v2_db: sqlite3.Connection) -> None:
+        low_row_id = _insert_pattern(v2_db, pattern_id="pat-low", error_count=2, rank_score=0.2)
+        high_row_id = _insert_pattern(v2_db, pattern_id="pat-high", error_count=25, rank_score=0.9)
         ds_low_id = _insert_dataset(
             v2_db, low_row_id, file_path="/tmp/low.json", positive_count=1, negative_count=2
         )
@@ -242,12 +236,18 @@ class TestConfidenceScoring:
         ]
         datasets = {
             "pat-low": _make_dataset_metadata(
-                ds_low_id, low_row_id, pattern_id="pat-low",
-                positive_count=1, negative_count=2,
+                ds_low_id,
+                low_row_id,
+                pattern_id="pat-low",
+                positive_count=1,
+                negative_count=2,
             ),
             "pat-high": _make_dataset_metadata(
-                ds_high_id, high_row_id, pattern_id="pat-high",
-                positive_count=10, negative_count=20,
+                ds_high_id,
+                high_row_id,
+                pattern_id="pat-high",
+                positive_count=10,
+                negative_count=20,
             ),
         }
 
@@ -257,9 +257,7 @@ class TestConfidenceScoring:
         by_pat = {s["pattern_id"]: s for s in suggestions}
         assert by_pat[high_row_id]["confidence"] > by_pat[low_row_id]["confidence"]
 
-    def test_confidence_bounded_between_zero_and_one(
-        self, v2_db: sqlite3.Connection
-    ) -> None:
+    def test_confidence_bounded_between_zero_and_one(self, v2_db: sqlite3.Connection) -> None:
         pat_row_id = _insert_pattern(v2_db, error_count=50, rank_score=1.0)
         ds_row_id = _insert_dataset(v2_db, pat_row_id, positive_count=50, negative_count=100)
 
@@ -284,13 +282,19 @@ class TestConfidenceScoring:
 
         # Sparse dataset: just above the minimum threshold
         ds_sparse_id = _insert_dataset(
-            v2_db, sparse_row_id, file_path="/tmp/sparse.json",
-            positive_count=2, negative_count=4,
+            v2_db,
+            sparse_row_id,
+            file_path="/tmp/sparse.json",
+            positive_count=2,
+            negative_count=4,
         )
         # Rich dataset: many more examples
         ds_rich_id = _insert_dataset(
-            v2_db, rich_row_id, file_path="/tmp/rich.json",
-            positive_count=30, negative_count=60,
+            v2_db,
+            rich_row_id,
+            file_path="/tmp/rich.json",
+            positive_count=30,
+            negative_count=60,
         )
 
         patterns = [
@@ -299,12 +303,18 @@ class TestConfidenceScoring:
         ]
         datasets = {
             "pat-sparse": _make_dataset_metadata(
-                ds_sparse_id, sparse_row_id, pattern_id="pat-sparse",
-                positive_count=2, negative_count=4,
+                ds_sparse_id,
+                sparse_row_id,
+                pattern_id="pat-sparse",
+                positive_count=2,
+                negative_count=4,
             ),
             "pat-rich": _make_dataset_metadata(
-                ds_rich_id, rich_row_id, pattern_id="pat-rich",
-                positive_count=30, negative_count=60,
+                ds_rich_id,
+                rich_row_id,
+                pattern_id="pat-rich",
+                positive_count=30,
+                negative_count=60,
             ),
         }
 
@@ -442,9 +452,7 @@ class TestProposedChangeIncludesRuleText:
 
         assert len(result[0]["proposed_change"].strip()) > 0
 
-    def test_proposed_change_references_pattern_context(
-        self, v2_db: sqlite3.Connection
-    ) -> None:
+    def test_proposed_change_references_pattern_context(self, v2_db: sqlite3.Connection) -> None:
         """proposed_change should incorporate something from the pattern description
         or tool name so it reads as contextually relevant."""
         pat_row_id = _insert_pattern(
@@ -455,11 +463,13 @@ class TestProposedChangeIncludesRuleText:
         ds_row_id = _insert_dataset(v2_db, pat_row_id)
 
         result = generate_suggestions(
-            [_make_pattern_dict(
-                pat_row_id,
-                description="Repeated FileNotFoundError on Read tool",
-                tool_name="Read",
-            )],
+            [
+                _make_pattern_dict(
+                    pat_row_id,
+                    description="Repeated FileNotFoundError on Read tool",
+                    tool_name="Read",
+                )
+            ],
             {"pat-sug-001": _make_dataset_metadata(ds_row_id, pat_row_id)},
             v2_db,
         )
@@ -524,9 +534,7 @@ class TestTargetFileAssigned:
 
         assert result[0]["change_type"] in _VALID_CHANGE_TYPES
 
-    def test_all_suggestions_have_valid_change_types(
-        self, v2_db: sqlite3.Connection
-    ) -> None:
+    def test_all_suggestions_have_valid_change_types(self, v2_db: sqlite3.Connection) -> None:
         patterns: list[dict] = []
         datasets: dict[str, dict] = {}
 
@@ -554,9 +562,7 @@ class TestEmptyPatterns:
         result = generate_suggestions([], {}, v2_db)
         assert isinstance(result, list)
 
-    def test_empty_patterns_with_non_empty_datasets(
-        self, v2_db: sqlite3.Connection
-    ) -> None:
+    def test_empty_patterns_with_non_empty_datasets(self, v2_db: sqlite3.Connection) -> None:
         pat_row_id = _insert_pattern(v2_db)
         ds_row_id = _insert_dataset(v2_db, pat_row_id)
         orphan_dataset = {
@@ -585,9 +591,7 @@ class TestSkipsPatternsWithoutDatasets:
         another does not (should be skipped)."""
         matched_row_id = _insert_pattern(v2_db, pattern_id="pat-matched")
         unmatched_row_id = _insert_pattern(v2_db, pattern_id="pat-unmatched")
-        ds_row_id = _insert_dataset(
-            v2_db, matched_row_id, file_path="/tmp/matched.json"
-        )
+        ds_row_id = _insert_dataset(v2_db, matched_row_id, file_path="/tmp/matched.json")
 
         patterns = [
             _make_pattern_dict(matched_row_id, pattern_id="pat-matched"),

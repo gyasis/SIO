@@ -131,15 +131,19 @@ def load_training_data(
     ).fetchall()
 
     for row in rows:
-        data["recall"].append({
-            "inputs": {"query": row["query"], "raw_steps": row["raw_steps"][:2000]},
-            "outputs": {"runbook": row["polished_runbook"]},
-        })
+        data["recall"].append(
+            {
+                "inputs": {"query": row["query"], "raw_steps": row["raw_steps"][:2000]},
+                "outputs": {"runbook": row["polished_runbook"]},
+            }
+        )
 
     logger.info(
         "Loaded training data: routing=%d, recovery=%d, flow=%d, recall=%d",
-        len(data["routing"]), len(data["recovery"]),
-        len(data["flow"]), len(data["recall"]),
+        len(data["routing"]),
+        len(data["recovery"]),
+        len(data["flow"]),
+        len(data["recall"]),
     )
     return data
 
@@ -153,6 +157,7 @@ def _get_dspy():
     """Lazy import DSPy. Returns the module or None if not installed."""
     try:
         import dspy
+
         return dspy
     except ImportError:
         logger.warning("DSPy not installed. Run: pip install dspy-ai")
@@ -170,6 +175,7 @@ def build_signatures():
 
     class RecallRouter(dspy.Signature):
         """Given a user query about a past workflow, predict which tools were used."""
+
         user_query = dspy.InputField(desc="User question about a past workflow")
         context = dspy.InputField(desc="Available session metadata")
         tools_used = dspy.OutputField(desc="Comma-separated list of tools that were likely used")
@@ -177,12 +183,14 @@ def build_signatures():
 
     class RecallDistiller(dspy.Signature):
         """Given raw session steps and a query, produce a clean runbook."""
+
         query = dspy.InputField(desc="What the user wants to recall")
         raw_steps = dspy.InputField(desc="Raw distilled steps from the session")
         runbook = dspy.OutputField(desc="Clean 10-15 step markdown runbook")
 
     class ErrorRecovery(dspy.Signature):
         """Given an error, predict the fix."""
+
         error_message = dspy.InputField(desc="The error message or traceback")
         failed_tool = dspy.InputField(desc="Tool that failed")
         tool_input = dspy.InputField(desc="The input that caused the failure")
@@ -192,6 +200,7 @@ def build_signatures():
 
     class FlowPredictor(dspy.Signature):
         """Given current tool sequence, predict the next tool."""
+
         current_tools = dspy.InputField(desc="Tools used so far in sequence")
         current_tool_count = dspy.InputField(desc="Number of tools in current sequence")
         next_tool = dspy.OutputField(desc="Most likely next tool to use")
@@ -270,6 +279,7 @@ def train_recall_module(
         # rather than constructing dspy.LM directly.
         if model is not None:
             import os as _os  # noqa: PLC0415
+
             _os.environ.setdefault("SIO_TASK_LM", model)
         lm = get_task_lm()
         dspy.configure(lm=lm)
@@ -370,11 +380,11 @@ def train_recall_module(
             optimized = tp.compile(predictor, trainset=trainset)
 
         # Evaluate before/after
-        before_score = (
-            sum(recall_metric(ex, predictor(**ex.inputs())) for ex in valset) / len(valset)
+        before_score = sum(recall_metric(ex, predictor(**ex.inputs())) for ex in valset) / len(
+            valset
         )
-        after_score = (
-            sum(recall_metric(ex, optimized(**ex.inputs())) for ex in valset) / len(valset)
+        after_score = sum(recall_metric(ex, optimized(**ex.inputs())) for ex in valset) / len(
+            valset
         )
 
     except Exception as e:

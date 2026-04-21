@@ -153,7 +153,8 @@ def promote_to_gold(
 
 
 def get_all_for_skill(
-    conn: sqlite3.Connection, skill_name: str,
+    conn: sqlite3.Connection,
+    skill_name: str,
 ) -> list[dict]:
     """Get all gold standards for a skill."""
     rows = conn.execute(

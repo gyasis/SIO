@@ -65,9 +65,14 @@ class TestFastEmbedCache:
         assert not np.array_equal(emb_a, emb_b)
 
     def test_fastembed_model_swap_invalidates_cache(self, tmp_path):
-        backend_v1 = FastEmbedBackend(model_name="sentence-transformers/all-MiniLM-L6-v2", cache_dir=str(tmp_path))
+        backend_v1 = FastEmbedBackend(
+            model_name="sentence-transformers/all-MiniLM-L6-v2", cache_dir=str(tmp_path)
+        )
         backend_v1.encode(["seed text for cache"])
-        backend_v2 = FastEmbedBackend(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", cache_dir=str(tmp_path))
+        backend_v2 = FastEmbedBackend(
+            model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+            cache_dir=str(tmp_path),
+        )
         result = backend_v2.encode(["seed text for cache"])
         assert isinstance(result, np.ndarray)
 

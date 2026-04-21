@@ -49,9 +49,7 @@ def to_utc_iso(s: str) -> str:
     try:
         dt = datetime.fromisoformat(stripped)
     except ValueError as exc:
-        raise ValueError(
-            f"to_utc_iso() cannot parse {s!r} as ISO-8601: {exc}"
-        ) from exc
+        raise ValueError(f"to_utc_iso() cannot parse {s!r} as ISO-8601: {exc}") from exc
 
     if dt.tzinfo is None:
         # Naive datetime — interpret in local system timezone, then convert.

@@ -460,7 +460,7 @@ def _extract_real_tool_calls(lines: list[str]) -> list[dict[str, Any]]:
             error: str | None = None
 
             # Rest of line after tool name is a description/input hint
-            rest = line[m.end():].strip()
+            rest = line[m.end() :].strip()
             if rest:
                 tool_input = rest
 
@@ -514,8 +514,7 @@ def _extract_real_tool_calls(lines: list[str]) -> list[dict[str, Any]]:
                     block_content = _consume_code_block(lines, i)
                     # If it contains "Exit code" or error indicators, treat as error
                     if block_content and (
-                        "Exit code 1" in block_content
-                        or "Error" in block_content[:50]
+                        "Exit code 1" in block_content or "Error" in block_content[:50]
                     ):
                         error = block_content
                     elif block_content and tool_output is None:
@@ -525,12 +524,14 @@ def _extract_real_tool_calls(lines: list[str]) -> list[dict[str, Any]]:
 
                 i += 1
 
-            tool_calls.append({
-                "tool_name": tool_name,
-                "tool_input": tool_input,
-                "tool_output": tool_output,
-                "error": error,
-            })
+            tool_calls.append(
+                {
+                    "tool_name": tool_name,
+                    "tool_input": tool_input,
+                    "tool_output": tool_output,
+                    "error": error,
+                }
+            )
             continue
 
         i += 1

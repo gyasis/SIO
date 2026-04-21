@@ -19,10 +19,7 @@ def get_reviewable(
     Returns:
         List of invocation dicts, each with an optional 'skew_warning' key.
     """
-    query = (
-        "SELECT * FROM behavior_invocations "
-        "WHERE user_satisfied IS NULL AND platform = ?"
-    )
+    query = "SELECT * FROM behavior_invocations WHERE user_satisfied IS NULL AND platform = ?"
     params: list = [platform]
 
     if session_id:

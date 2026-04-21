@@ -27,16 +27,14 @@ class TestHealthCommand:
         """The health command should exit with code 0 on success."""
         result = runner.invoke(cli, ["health"])
         assert result.exit_code == 0, (
-            f"Expected exit code 0, got {result.exit_code}. "
-            f"Output: {result.output}"
+            f"Expected exit code 0, got {result.exit_code}. Output: {result.output}"
         )
 
     def test_health_format_json(self, runner):
         """--format json should produce valid JSON output."""
         result = runner.invoke(cli, ["health", "--format", "json"])
         assert result.exit_code == 0, (
-            f"Expected exit code 0, got {result.exit_code}. "
-            f"Output: {result.output}"
+            f"Expected exit code 0, got {result.exit_code}. Output: {result.output}"
         )
         # Output must be parseable as JSON
         parsed = json.loads(result.output)
@@ -46,17 +44,14 @@ class TestHealthCommand:
         """--skill Read should filter output to only the Read skill."""
         result = runner.invoke(cli, ["health", "--skill", "Read"])
         assert result.exit_code == 0, (
-            f"Expected exit code 0, got {result.exit_code}. "
-            f"Output: {result.output}"
+            f"Expected exit code 0, got {result.exit_code}. Output: {result.output}"
         )
         # Output should reference the filtered skill
         assert "Read" in result.output or result.output.strip() == ""
 
     def test_health_unknown_skill(self, runner):
         """Filtering by a nonexistent skill should still exit 0 (empty results)."""
-        result = runner.invoke(
-            cli, ["health", "--skill", "NonexistentSkill"]
-        )
+        result = runner.invoke(cli, ["health", "--skill", "NonexistentSkill"])
         assert result.exit_code == 0
 
     def test_sio_version(self, runner):

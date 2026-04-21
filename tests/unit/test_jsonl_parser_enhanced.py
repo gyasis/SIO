@@ -240,18 +240,12 @@ class TestTokenUsageExtraction:
 
     def test_cache_creation_tokens_extracted(self, realistic_session):
         records = parse_jsonl(realistic_session)
-        assistant_recs = [
-            r for r in records
-            if r.get("cache_creation_input_tokens") is not None
-        ]
+        assistant_recs = [r for r in records if r.get("cache_creation_input_tokens") is not None]
         assert len(assistant_recs) > 0, "No records with cache_creation_input_tokens"
 
     def test_cache_read_tokens_extracted(self, realistic_session):
         records = parse_jsonl(realistic_session)
-        assistant_recs = [
-            r for r in records
-            if r.get("cache_read_input_tokens") is not None
-        ]
+        assistant_recs = [r for r in records if r.get("cache_read_input_tokens") is not None]
         assert len(assistant_recs) > 0, "No records with cache_read_input_tokens"
 
     def test_token_values_match_source(self, realistic_session):
@@ -392,8 +386,7 @@ class TestUserMessagesHaveNoneMetadata:
         for rec in user_recs:
             for field in self.META_FIELDS:
                 assert rec.get(field) is None, (
-                    f"User message should have None for '{field}', "
-                    f"got {rec.get(field)}"
+                    f"User message should have None for '{field}', got {rec.get(field)}"
                 )
 
 
@@ -420,7 +413,9 @@ class TestBackwardCompatibilityNoUsage:
             path,
             [
                 json.dumps(
-                    _legacy_tool_use("Read", {"file_path": "/tmp/f.py"}, "content", _TS_BASE.format(0))
+                    _legacy_tool_use(
+                        "Read", {"file_path": "/tmp/f.py"}, "content", _TS_BASE.format(0)
+                    )
                 )
             ],
         )
@@ -466,7 +461,9 @@ class TestBackwardCompatibilityNoUsage:
                 )
             ),
             json.dumps(
-                _legacy_tool_use("Read", {"file_path": "/tmp/x.py"}, "contents", _TS_BASE.format(2))
+                _legacy_tool_use(
+                    "Read", {"file_path": "/tmp/x.py"}, "contents", _TS_BASE.format(2)
+                )
             ),
         ]
         path = tmp_path / "mixed.jsonl"
@@ -513,8 +510,7 @@ class TestAllRecordsHaveMetaKeys:
         for idx, rec in enumerate(records):
             missing = self.EXPECTED_KEYS - set(rec.keys())
             assert not missing, (
-                f"Record {idx} missing keys: {sorted(missing)}. "
-                f"Has: {sorted(rec.keys())}"
+                f"Record {idx} missing keys: {sorted(missing)}. Has: {sorted(rec.keys())}"
             )
 
 

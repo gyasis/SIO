@@ -33,6 +33,7 @@ from sio.suggestions.generator import generate_suggestions
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -174,7 +175,9 @@ def _build_specstory_md(errors: list[str]) -> str:
         lines += [
             f"**Tool call: {tool}**",
             "```json",
-            f'{{"command": "test_cmd_{i}"}}' if tool == "Bash" else f'{{"file_path": "/tmp/test_{i}.py"}}',
+            f'{{"command": "test_cmd_{i}"}}'
+            if tool == "Bash"
+            else f'{{"file_path": "/tmp/test_{i}.py"}}',
             "```",
             "",
             f"**{tool} output (error):**",
@@ -210,7 +213,8 @@ class TestSelfPipelineIntegration:
 
     @pytest.fixture
     def seeded_db(
-        self, db_conn: sqlite3.Connection,
+        self,
+        db_conn: sqlite3.Connection,
     ) -> tuple[sqlite3.Connection, list[int]]:
         """Seed the DB with SIO-specific error records."""
         ids = []
@@ -220,7 +224,9 @@ class TestSelfPipelineIntegration:
         return db_conn, ids
 
     def test_mine_from_specstory_files(
-        self, db_conn: sqlite3.Connection, tmp_path: Path,
+        self,
+        db_conn: sqlite3.Connection,
+        tmp_path: Path,
     ) -> None:
         """T074a: Mining from SpecStory files produces error records."""
         # Create a mock SpecStory directory with SIO-themed errors
@@ -250,7 +256,8 @@ class TestSelfPipelineIntegration:
         assert isinstance(all_records, list)
 
     def test_cluster_sio_errors(
-        self, seeded_db: tuple[sqlite3.Connection, list[int]],
+        self,
+        seeded_db: tuple[sqlite3.Connection, list[int]],
     ) -> None:
         """T074b: Clustering groups SIO errors into meaningful patterns."""
         conn, _ = seeded_db
@@ -268,8 +275,14 @@ class TestSelfPipelineIntegration:
 
         # Each pattern must have the required schema keys
         required_keys = {
-            "pattern_id", "description", "tool_name", "error_count",
-            "session_count", "first_seen", "last_seen", "rank_score",
+            "pattern_id",
+            "description",
+            "tool_name",
+            "error_count",
+            "session_count",
+            "first_seen",
+            "last_seen",
+            "rank_score",
             "error_ids",
         }
         for p in patterns:
@@ -278,7 +291,8 @@ class TestSelfPipelineIntegration:
             )
 
     def test_rank_sio_patterns(
-        self, seeded_db: tuple[sqlite3.Connection, list[int]],
+        self,
+        seeded_db: tuple[sqlite3.Connection, list[int]],
     ) -> None:
         """T074c: Ranking orders SIO patterns by importance."""
         conn, _ = seeded_db
@@ -321,7 +335,9 @@ class TestSelfPipelineIntegration:
 
             # Build dataset with min_threshold=1 so small clusters still produce output
             metadata = build_dataset(
-                p, all_errors, conn,
+                p,
+                all_errors,
+                conn,
                 dataset_dir=str(dataset_dir),
                 min_threshold=1,
             )
@@ -377,7 +393,9 @@ class TestSelfPipelineIntegration:
 
         for p in persisted_patterns:
             metadata = build_dataset(
-                p, all_errors, conn,
+                p,
+                all_errors,
+                conn,
                 dataset_dir=str(dataset_dir),
                 min_threshold=1,
             )
@@ -389,9 +407,13 @@ class TestSelfPipelineIntegration:
                     "negative_count, min_threshold, created_at, updated_at) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (
-                        p["id"], metadata["file_path"],
-                        metadata["positive_count"], metadata["negative_count"],
-                        1, now_iso, now_iso,
+                        p["id"],
+                        metadata["file_path"],
+                        metadata["positive_count"],
+                        metadata["negative_count"],
+                        1,
+                        now_iso,
+                        now_iso,
                     ),
                 )
                 conn.commit()
@@ -402,19 +424,18 @@ class TestSelfPipelineIntegration:
 
         # Step 4: Generate suggestions (template path, no LLM needed)
         suggestions = generate_suggestions(
-            persisted_patterns, datasets, conn, verbose=False,
+            persisted_patterns,
+            datasets,
+            conn,
+            verbose=False,
         )
 
         # --- Assertions ---
-        assert len(suggestions) >= 1, (
-            f"Expected at least 1 suggestion, got {len(suggestions)}"
-        )
+        assert len(suggestions) >= 1, f"Expected at least 1 suggestion, got {len(suggestions)}"
 
         for s in suggestions:
             # Every suggestion must have _using_dspy (True or False)
-            assert "_using_dspy" in s, (
-                f"Suggestion missing '_using_dspy' key: {list(s.keys())}"
-            )
+            assert "_using_dspy" in s, f"Suggestion missing '_using_dspy' key: {list(s.keys())}"
             assert isinstance(s["_using_dspy"], bool)
 
             # Required fields from the suggestion schema
@@ -464,7 +485,9 @@ class TestSelfPipelineIntegration:
         datasets: dict[str, dict] = {}
         for p in persisted:
             metadata = build_dataset(
-                p, all_errors, conn,
+                p,
+                all_errors,
+                conn,
                 dataset_dir=str(dataset_dir),
                 min_threshold=1,
             )
@@ -474,9 +497,15 @@ class TestSelfPipelineIntegration:
                     "INSERT INTO datasets (pattern_id, file_path, positive_count, "
                     "negative_count, min_threshold, created_at, updated_at) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (p["id"], metadata["file_path"],
-                     metadata["positive_count"], metadata["negative_count"],
-                     1, now_iso, now_iso),
+                    (
+                        p["id"],
+                        metadata["file_path"],
+                        metadata["positive_count"],
+                        metadata["negative_count"],
+                        1,
+                        now_iso,
+                        now_iso,
+                    ),
                 )
                 conn.commit()
                 metadata["id"] = ds_cur.lastrowid
@@ -486,8 +515,7 @@ class TestSelfPipelineIntegration:
 
         # Collect all description + proposed_change text for pattern matching
         all_text = " ".join(
-            f"{s.get('description', '')} {s.get('proposed_change', '')}"
-            for s in suggestions
+            f"{s.get('description', '')} {s.get('proposed_change', '')}" for s in suggestions
         ).lower()
 
         # The suggestions should reference at least one of the SIO tool names
@@ -533,7 +561,9 @@ class TestSelfPipelineIntegration:
         datasets: dict[str, dict] = {}
         for p in persisted:
             metadata = build_dataset(
-                p, all_errors, conn,
+                p,
+                all_errors,
+                conn,
                 dataset_dir=str(dataset_dir),
                 min_threshold=1,
             )
@@ -543,9 +573,15 @@ class TestSelfPipelineIntegration:
                     "INSERT INTO datasets (pattern_id, file_path, positive_count, "
                     "negative_count, min_threshold, created_at, updated_at) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (p["id"], metadata["file_path"],
-                     metadata["positive_count"], metadata["negative_count"],
-                     1, now_iso, now_iso),
+                    (
+                        p["id"],
+                        metadata["file_path"],
+                        metadata["positive_count"],
+                        metadata["negative_count"],
+                        1,
+                        now_iso,
+                        now_iso,
+                    ),
                 )
                 conn.commit()
                 metadata["id"] = ds_cur.lastrowid

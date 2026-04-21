@@ -57,11 +57,7 @@ class TestComputeHealth:
         # Find the Read skill entry
         read_health = None
         for entry in results:
-            skill = (
-                entry.skill_name
-                if hasattr(entry, "skill_name")
-                else entry["skill_name"]
-            )
+            skill = entry.skill_name if hasattr(entry, "skill_name") else entry["skill_name"]
             if skill == "Read":
                 read_health = entry
                 break
@@ -139,9 +135,7 @@ class TestComputeHealth:
                 },
             ],
         )
-        results = compute_health(
-            tmp_db, platform="claude-code", skill="Write"
-        )
+        results = compute_health(tmp_db, platform="claude-code", skill="Write")
         assert len(results) == 1
 
         entry = results[0]

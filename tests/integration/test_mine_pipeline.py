@@ -100,9 +100,7 @@ class TestMineSpecstoryFiles:
         row_count = v2_db.execute(
             "SELECT COUNT(*) FROM error_records WHERE source_type = 'specstory'"
         ).fetchone()[0]
-        assert row_count >= 5, (
-            f"Expected at least 5 specstory rows in DB, got {row_count}"
-        )
+        assert row_count >= 5, f"Expected at least 5 specstory rows in DB, got {row_count}"
 
     def test_mine_specstory_error_records_have_ids(
         self, v2_db, sample_specstory_file, tmp_path: Path
@@ -173,13 +171,9 @@ class TestMineJsonlFiles:
         row_count = v2_db.execute(
             "SELECT COUNT(*) FROM error_records WHERE source_type = 'jsonl'"
         ).fetchone()[0]
-        assert row_count >= 5, (
-            f"Expected at least 5 jsonl rows in DB, got {row_count}"
-        )
+        assert row_count >= 5, f"Expected at least 5 jsonl rows in DB, got {row_count}"
 
-    def test_mine_jsonl_return_dict_keys_present(
-        self, v2_db, sample_jsonl_file, tmp_path: Path
-    ):
+    def test_mine_jsonl_return_dict_keys_present(self, v2_db, sample_jsonl_file, tmp_path: Path):
         """The return dict always contains the three required top-level keys."""
         source_dir = tmp_path / "jsonl_keys"
         source_dir.mkdir()
@@ -254,12 +248,8 @@ class TestMineBothSources:
             "SELECT COUNT(*) FROM error_records WHERE source_type = 'jsonl'"
         ).fetchone()[0]
 
-        assert ss_count >= 3, (
-            f"Expected at least 3 specstory records, got {ss_count}"
-        )
-        assert jsonl_count >= 2, (
-            f"Expected at least 2 jsonl records, got {jsonl_count}"
-        )
+        assert ss_count >= 3, f"Expected at least 3 specstory records, got {ss_count}"
+        assert jsonl_count >= 2, f"Expected at least 2 jsonl records, got {jsonl_count}"
 
     def test_mine_both_error_records_list_matches_db(
         self, v2_db, sample_specstory_file, sample_jsonl_file, tmp_path: Path
@@ -290,12 +280,8 @@ class TestMineBothSources:
         assert len(returned_ids) > 0, "Expected at least one ID in error_records list"
 
         for row_id in returned_ids:
-            row = v2_db.execute(
-                "SELECT id FROM error_records WHERE id = ?", (row_id,)
-            ).fetchone()
-            assert row is not None, (
-                f"ID {row_id} in error_records but not found in DB"
-            )
+            row = v2_db.execute("SELECT id FROM error_records WHERE id = ?", (row_id,)).fetchone()
+            assert row is not None, f"ID {row_id} in error_records but not found in DB"
 
 
 # ---------------------------------------------------------------------------
@@ -306,9 +292,7 @@ class TestMineBothSources:
 class TestMineWithTimeFilter:
     """Files with modification times outside the since window are skipped."""
 
-    def test_mine_with_time_filter_recent_only(
-        self, v2_db, sample_specstory_file, tmp_path: Path
-    ):
+    def test_mine_with_time_filter_recent_only(self, v2_db, sample_specstory_file, tmp_path: Path):
         """Only files modified within the since window are processed.
 
         Three files are created. Two are back-dated to 10 days ago (outside
@@ -355,9 +339,7 @@ class TestMineWithTimeFilter:
             f"Expected only 1 recent file scanned, got {result['total_files_scanned']}"
         )
 
-    def test_mine_with_time_filter_all_old(
-        self, v2_db, sample_specstory_file, tmp_path: Path
-    ):
+    def test_mine_with_time_filter_all_old(self, v2_db, sample_specstory_file, tmp_path: Path):
         """When every file is older than the since window, nothing is processed."""
         source_dir = tmp_path / "all_old"
         source_dir.mkdir()
@@ -387,9 +369,7 @@ class TestMineWithTimeFilter:
         )
         assert result["errors_found"] == 0
 
-    def test_mine_time_filter_jsonl(
-        self, v2_db, sample_jsonl_file, tmp_path: Path
-    ):
+    def test_mine_time_filter_jsonl(self, v2_db, sample_jsonl_file, tmp_path: Path):
         """Time filtering also applies to JSONL files."""
         source_dir = tmp_path / "jsonl_time"
         source_dir.mkdir()
@@ -429,9 +409,7 @@ class TestMineWithTimeFilter:
 class TestMineStoresToDb:
     """After mining, ErrorRecord rows in the DB must have correct metadata."""
 
-    def test_mine_stores_correct_source_type(
-        self, v2_db, sample_specstory_file, tmp_path: Path
-    ):
+    def test_mine_stores_correct_source_type(self, v2_db, sample_specstory_file, tmp_path: Path):
         """source_type column in DB must match the mined file format."""
         source_dir = tmp_path / "db_meta"
         source_dir.mkdir()
@@ -451,18 +429,14 @@ class TestMineStoresToDb:
             source_type="specstory",
         )
 
-        rows = v2_db.execute(
-            "SELECT source_type FROM error_records"
-        ).fetchall()
+        rows = v2_db.execute("SELECT source_type FROM error_records").fetchall()
         assert len(rows) >= 1
         for row in rows:
             assert row["source_type"] == "specstory", (
                 f"Unexpected source_type: {row['source_type']}"
             )
 
-    def test_mine_stores_source_file_path(
-        self, v2_db, sample_specstory_file, tmp_path: Path
-    ):
+    def test_mine_stores_source_file_path(self, v2_db, sample_specstory_file, tmp_path: Path):
         """source_file column must contain the path to the source file."""
         source_dir = tmp_path / "db_path"
         source_dir.mkdir()
@@ -479,9 +453,7 @@ class TestMineStoresToDb:
             source_type="specstory",
         )
 
-        rows = v2_db.execute(
-            "SELECT source_file FROM error_records"
-        ).fetchall()
+        rows = v2_db.execute("SELECT source_file FROM error_records").fetchall()
         assert len(rows) >= 1
         # At least one row must reference the expected file.
         source_files = {row["source_file"] for row in rows}
@@ -489,14 +461,14 @@ class TestMineStoresToDb:
             f"Expected source file containing '{filename}' in {source_files}"
         )
 
-    def test_mine_stores_error_text(
-        self, v2_db, sample_specstory_file, tmp_path: Path
-    ):
+    def test_mine_stores_error_text(self, v2_db, sample_specstory_file, tmp_path: Path):
         """error_text column must contain content from the injected error string."""
         source_dir = tmp_path / "db_errtext"
         source_dir.mkdir()
 
-        injected_error = "FileNotFoundError: [Errno 2] No such file or directory: '/tmp/missing.py'"
+        injected_error = (
+            "FileNotFoundError: [Errno 2] No such file or directory: '/tmp/missing.py'"
+        )
         sample_specstory_file(
             filename=f"{_TODAY}_10-00-00Z-errtext.md",
             errors=[injected_error],
@@ -512,18 +484,14 @@ class TestMineStoresToDb:
             source_type="specstory",
         )
 
-        rows = v2_db.execute(
-            "SELECT error_text FROM error_records"
-        ).fetchall()
+        rows = v2_db.execute("SELECT error_text FROM error_records").fetchall()
         assert len(rows) >= 1
         error_texts = [row["error_text"] for row in rows]
         assert any("FileNotFoundError" in et for et in error_texts), (
             f"Expected 'FileNotFoundError' in error_text, got: {error_texts}"
         )
 
-    def test_mine_stores_tool_name(
-        self, v2_db, sample_specstory_file, tmp_path: Path
-    ):
+    def test_mine_stores_tool_name(self, v2_db, sample_specstory_file, tmp_path: Path):
         """tool_name column must be populated when the error is attributed to a tool."""
         source_dir = tmp_path / "db_toolname"
         source_dir.mkdir()
@@ -543,9 +511,7 @@ class TestMineStoresToDb:
             source_type="specstory",
         )
 
-        rows = v2_db.execute(
-            "SELECT tool_name FROM error_records"
-        ).fetchall()
+        rows = v2_db.execute("SELECT tool_name FROM error_records").fetchall()
         assert len(rows) >= 1
         # At least one row must carry a non-null tool_name.
         tool_names = [row["tool_name"] for row in rows if row["tool_name"] is not None]
@@ -553,9 +519,7 @@ class TestMineStoresToDb:
             f"Expected at least one row with a tool_name, got: {[r['tool_name'] for r in rows]}"
         )
 
-    def test_mine_stores_mined_at_timestamp(
-        self, v2_db, sample_specstory_file, tmp_path: Path
-    ):
+    def test_mine_stores_mined_at_timestamp(self, v2_db, sample_specstory_file, tmp_path: Path):
         """mined_at column must be a non-empty ISO-format string."""
         source_dir = tmp_path / "db_minedat"
         source_dir.mkdir()
@@ -575,17 +539,13 @@ class TestMineStoresToDb:
             source_type="specstory",
         )
 
-        rows = v2_db.execute(
-            "SELECT mined_at FROM error_records"
-        ).fetchall()
+        rows = v2_db.execute("SELECT mined_at FROM error_records").fetchall()
         assert len(rows) >= 1
         for row in rows:
             assert row["mined_at"] is not None
             assert len(row["mined_at"]) > 0, "mined_at must not be empty"
 
-    def test_mine_jsonl_stores_error_type(
-        self, v2_db, sample_jsonl_file, tmp_path: Path
-    ):
+    def test_mine_jsonl_stores_error_type(self, v2_db, sample_jsonl_file, tmp_path: Path):
         """error_type column must be populated for JSONL-sourced error records."""
         source_dir = tmp_path / "db_errtype"
         source_dir.mkdir()
@@ -605,9 +565,7 @@ class TestMineStoresToDb:
         ).fetchall()
         assert len(rows) >= 1
         for row in rows:
-            assert row["error_type"] is not None, (
-                "error_type must be classified, not None"
-            )
+            assert row["error_type"] is not None, "error_type must be classified, not None"
 
     def test_mine_all_required_columns_non_null(
         self, v2_db, sample_specstory_file, tmp_path: Path
@@ -634,8 +592,14 @@ class TestMineStoresToDb:
         rows = v2_db.execute("SELECT * FROM error_records").fetchall()
         assert len(rows) >= 1, "Expected at least one row after mining"
 
-        required_non_null = ("session_id", "timestamp", "source_type", "source_file",
-                              "error_text", "mined_at")
+        required_non_null = (
+            "session_id",
+            "timestamp",
+            "source_type",
+            "source_file",
+            "error_text",
+            "mined_at",
+        )
         for row in rows:
             for col in required_non_null:
                 assert row[col] is not None, (
@@ -669,9 +633,7 @@ class TestMineEmptyDirectory:
         assert result["errors_found"] == 0, (
             f"Expected 0 errors found, got {result['errors_found']}"
         )
-        assert result["error_records"] == [], (
-            f"Expected empty list, got {result['error_records']}"
-        )
+        assert result["error_records"] == [], f"Expected empty list, got {result['error_records']}"
 
     def test_mine_empty_directory_db_unchanged(self, v2_db, tmp_path: Path):
         """Mining an empty directory must not insert any rows into the DB."""
@@ -685,12 +647,8 @@ class TestMineEmptyDirectory:
             source_type="both",
         )
 
-        row_count = v2_db.execute(
-            "SELECT COUNT(*) FROM error_records"
-        ).fetchone()[0]
-        assert row_count == 0, (
-            f"Expected 0 DB rows after empty-dir mine, got {row_count}"
-        )
+        row_count = v2_db.execute("SELECT COUNT(*) FROM error_records").fetchone()[0]
+        assert row_count == 0, f"Expected 0 DB rows after empty-dir mine, got {row_count}"
 
     def test_mine_multiple_empty_directories(self, v2_db, tmp_path: Path):
         """Passing multiple empty directories still yields zero counts."""
@@ -720,7 +678,7 @@ class TestMineSkipsMalformedFiles:
     def _write_malformed_md(self, path: Path) -> None:
         """Write a file with a .md extension that is not valid SpecStory content."""
         path.write_text(
-            "\x00\x01\x02\x03binary garbage\xFF\xFE\xFD content that cannot be parsed",
+            "\x00\x01\x02\x03binary garbage\xff\xfe\xfd content that cannot be parsed",
             encoding="latin-1",
         )
 
@@ -801,9 +759,7 @@ class TestMineSkipsMalformedFiles:
             f"Expected at least 2 errors extracted, got {result['errors_found']}"
         )
 
-    def test_all_malformed_files_yields_zero_errors(
-        self, v2_db, tmp_path: Path
-    ):
+    def test_all_malformed_files_yields_zero_errors(self, v2_db, tmp_path: Path):
         """When every file is malformed, errors_found must be 0 (no crash)."""
         source_dir = tmp_path / "all_bad"
         source_dir.mkdir()
@@ -871,9 +827,7 @@ class TestMineSkipsMalformedFiles:
 class TestMineMultipleSourceDirs:
     """run_mine accepts a list of directories and aggregates across all of them."""
 
-    def test_mine_aggregates_across_two_dirs(
-        self, v2_db, sample_specstory_file, tmp_path: Path
-    ):
+    def test_mine_aggregates_across_two_dirs(self, v2_db, sample_specstory_file, tmp_path: Path):
         """Errors from multiple source directories are combined in the result."""
         dir_a = tmp_path / "dir_a"
         dir_b = tmp_path / "dir_b"
@@ -948,9 +902,7 @@ class TestMineMultipleSourceDirs:
 class TestMineProjectFilter:
     """When project is specified, it should be recorded or used to scope results."""
 
-    def test_mine_with_project_does_not_raise(
-        self, v2_db, sample_specstory_file, tmp_path: Path
-    ):
+    def test_mine_with_project_does_not_raise(self, v2_db, sample_specstory_file, tmp_path: Path):
         """Passing a project name must not cause run_mine to raise."""
         source_dir = tmp_path / "project_filter"
         source_dir.mkdir()
@@ -975,9 +927,7 @@ class TestMineProjectFilter:
         assert isinstance(result, dict)
         assert result["total_files_scanned"] >= 1
 
-    def test_mine_project_none_is_default(
-        self, v2_db, sample_specstory_file, tmp_path: Path
-    ):
+    def test_mine_project_none_is_default(self, v2_db, sample_specstory_file, tmp_path: Path):
         """Omitting project (None) must behave identically to passing project=None."""
         source_dir = tmp_path / "project_none"
         source_dir.mkdir()

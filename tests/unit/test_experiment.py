@@ -61,7 +61,6 @@ def _mock_git_failure(*args, **kwargs):
 
 
 class TestExtractSuggestionId:
-
     def test_extracts_from_branch_name(self):
         assert _extract_suggestion_id("experiment/sug-15-20260401T1430") == 15
 
@@ -78,12 +77,15 @@ class TestExtractSuggestionId:
 
 
 class TestCreateExperiment:
-
     @patch("sio.core.arena.experiment.subprocess.run", side_effect=_mock_git_success)
     @patch("sio.core.arena.experiment.os.makedirs")
     @patch("sio.core.arena.experiment.os.path.isdir", return_value=False)
     def test_creates_branch_and_updates_status(
-        self, mock_isdir, mock_makedirs, mock_run, db,
+        self,
+        mock_isdir,
+        mock_makedirs,
+        mock_run,
+        db,
     ):
         branch = create_experiment(1, db)
 
@@ -106,7 +108,6 @@ class TestCreateExperiment:
 
 
 class TestValidateExperiment:
-
     def test_all_pass_returns_true(self, db):
         context = {
             "pre": {"error_rate": 0.3, "error_types": ["a"]},
@@ -135,7 +136,10 @@ class TestValidateExperiment:
 
     def test_empty_assertions_passes(self, db):
         result = validate_experiment(
-            "experiment/sug-1-20260401", db, [], {},
+            "experiment/sug-1-20260401",
+            db,
+            [],
+            {},
         )
         assert result is True
 
@@ -146,7 +150,6 @@ class TestValidateExperiment:
 
 
 class TestPromoteExperiment:
-
     @patch("sio.core.arena.experiment.subprocess.run", side_effect=_mock_git_success)
     @patch("sio.core.arena.experiment.os.path.isdir", return_value=False)
     def test_sets_pending_approval(self, mock_isdir, mock_run, db):
@@ -178,7 +181,6 @@ class TestPromoteExperiment:
 
 
 class TestRollbackExperiment:
-
     @patch("sio.core.arena.experiment.subprocess.run", side_effect=_mock_git_success)
     @patch("sio.core.arena.experiment.os.path.isdir", return_value=False)
     def test_marks_suggestion_failed(self, mock_isdir, mock_run, db):

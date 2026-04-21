@@ -258,9 +258,7 @@ def _analyze_repeated_attempts(examples: list[dict]) -> dict[str, Any]:
         "type": "repeated_attempt",
         "count": len(repeated),
         "top_tools": tool_counts.most_common(3),
-        "error_snippets": _extract_key_phrases(
-            [e.get("error_text", "") for e in repeated]
-        ),
+        "error_snippets": _extract_key_phrases([e.get("error_text", "") for e in repeated]),
     }
 
 
@@ -273,9 +271,7 @@ def _analyze_undos(examples: list[dict]) -> dict[str, Any]:
     return {
         "type": "undo",
         "count": len(undos),
-        "undo_phrases": _extract_key_phrases(
-            [e.get("error_text", "") for e in undos]
-        ),
+        "undo_phrases": _extract_key_phrases([e.get("error_text", "") for e in undos]),
     }
 
 
@@ -342,24 +338,16 @@ def _build_tool_failure_rule(
     for s in snippets[:2]:
         lower = s.lower()
         if "not found" in lower or "no such file" in lower:
-            lines.append(
-                f"- Always check file/path existence before `{tool_name}` calls."
-            )
+            lines.append(f"- Always check file/path existence before `{tool_name}` calls.")
             break
         if "permission" in lower or "denied" in lower:
-            lines.append(
-                f"- Verify file permissions before `{tool_name}` operations."
-            )
+            lines.append(f"- Verify file permissions before `{tool_name}` operations.")
             break
         if "timeout" in lower or "timed out" in lower:
-            lines.append(
-                f"- Use shorter timeout or chunked operations with `{tool_name}`."
-            )
+            lines.append(f"- Use shorter timeout or chunked operations with `{tool_name}`.")
             break
         if "syntax" in lower or "parse" in lower:
-            lines.append(
-                f"- Validate input syntax before passing to `{tool_name}`."
-            )
+            lines.append(f"- Validate input syntax before passing to `{tool_name}`.")
             break
 
     return "\n".join(lines)
@@ -383,7 +371,7 @@ def _build_user_correction_rule(
         lines.append("**What users said**:")
         for p in phrases[:4]:
             display = p[:180] + ("..." if len(p) > 180 else "")
-            lines.append(f"- \"{display}\"")
+            lines.append(f'- "{display}"')
         lines.append("")
 
     # Derive actionable rules from correction content
@@ -408,7 +396,7 @@ def _build_user_correction_rule(
         else:
             # Use the correction text itself as the rule basis
             short = p[:100]
-            lines.append(f"- User feedback: \"{short}\" — adjust behavior accordingly.")
+            lines.append(f'- User feedback: "{short}" — adjust behavior accordingly.')
 
     return "\n".join(lines)
 
@@ -435,7 +423,7 @@ def _build_agent_admission_rule(
         lines.append("**What the agent said**:")
         for p in phrases[:4]:
             display = p[:200] + ("..." if len(p) > 200 else "")
-            lines.append(f"- \"{display}\"")
+            lines.append(f'- "{display}"')
         lines.append("")
 
     user_ctx = analysis.get("user_contexts", [])
@@ -564,7 +552,7 @@ def _build_undo_rule(
         lines.append("**What users said**:")
         for p in phrases[:3]:
             display = p[:150] + ("..." if len(p) > 150 else "")
-            lines.append(f"- \"{display}\"")
+            lines.append(f'- "{display}"')
         lines.append("")
 
     lines.append("**Prevention rules**:")
@@ -772,7 +760,10 @@ def generate_suggestions(
 
                 if mode == "auto":
                     suggestion = generate_auto_suggestion(
-                        pattern, dataset, config, verbose=verbose,
+                        pattern,
+                        dataset,
+                        config,
+                        verbose=verbose,
                     )
                     if suggestion is None:
                         _log.warning(
@@ -785,7 +776,10 @@ def generate_suggestions(
                         continue
                 elif mode == "hitl":
                     suggestion = generate_hitl_suggestion(
-                        pattern, dataset, config, db_conn,
+                        pattern,
+                        dataset,
+                        config,
+                        db_conn,
                         verbose=verbose,
                     )
                     if suggestion is None:
@@ -799,14 +793,16 @@ def generate_suggestions(
                         continue
                 else:
                     suggestion = generate_dspy_suggestion(
-                        pattern, dataset, config, verbose=verbose,
+                        pattern,
+                        dataset,
+                        config,
+                        verbose=verbose,
                     )
                     suggestions.append(suggestion)
                     continue
             except Exception as exc:  # noqa: BLE001
                 _log.warning(
-                    "DSPy generation failed for pattern %s, "
-                    "falling back to template: %s",
+                    "DSPy generation failed for pattern %s, falling back to template: %s",
                     pattern_str_id,
                     exc,
                 )

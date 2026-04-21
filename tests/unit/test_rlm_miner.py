@@ -99,9 +99,13 @@ class TestRealRLMMining:
     def test_dspy_path_invoked(self, mock_dspy, mock_corpus_search, _):
         """When DSPy is available, ChainOfThought is used."""
         # Set up mock prediction
-        mock_prediction = type("Prediction", (), {
-            "failure_analysis": "Root cause: missing file validation in Read skill.",
-        })()
+        mock_prediction = type(
+            "Prediction",
+            (),
+            {
+                "failure_analysis": "Root cause: missing file validation in Read skill.",
+            },
+        )()
         mock_module = mock_dspy.ChainOfThought.return_value
         mock_module.return_value = mock_prediction
 
@@ -126,7 +130,10 @@ class TestRealRLMMining:
     @patch("sio.core.dspy.rlm_miner._dspy_available", True)
     @patch("sio.core.dspy.rlm_miner.dspy")
     def test_dspy_failure_falls_back_to_heuristic(
-        self, mock_dspy, mock_corpus_search, _,
+        self,
+        mock_dspy,
+        mock_corpus_search,
+        _,
     ):
         """When DSPy raises an exception, fallback to heuristic analysis."""
         mock_module = mock_dspy.ChainOfThought.return_value
@@ -167,12 +174,19 @@ class TestRealRLMMining:
     @patch("sio.core.dspy.rlm_miner._dspy_available", True)
     @patch("sio.core.dspy.rlm_miner.dspy")
     def test_corpus_context_passed_to_dspy(
-        self, mock_dspy, mock_corpus_search, _,
+        self,
+        mock_dspy,
+        mock_corpus_search,
+        _,
     ):
         """Corpus search results are passed as context to the DSPy module."""
-        mock_prediction = type("Prediction", (), {
-            "failure_analysis": "Analysis based on corpus context.",
-        })()
+        mock_prediction = type(
+            "Prediction",
+            (),
+            {
+                "failure_analysis": "Analysis based on corpus context.",
+            },
+        )()
         mock_module = mock_dspy.ChainOfThought.return_value
         mock_module.return_value = mock_prediction
 

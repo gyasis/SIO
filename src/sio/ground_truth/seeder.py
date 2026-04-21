@@ -20,9 +20,7 @@ from sio.core.db.queries import insert_ground_truth
 
 def _examples(*pairs: tuple[str, str | None]) -> str:
     """Build JSON error_examples_json from (error_text, tool_name) pairs."""
-    return json.dumps(
-        [{"error_text": t, "tool_name": n} for t, n in pairs]
-    )
+    return json.dumps([{"error_text": t, "tool_name": n} for t, n in pairs])
 
 
 # ---------------------------------------------------------------------------
@@ -39,9 +37,7 @@ _SEED_ENTRIES: list[dict[str, str]] = [
             ("TimeoutError: tool execution exceeded 30s limit", "Bash"),
         ),
         "error_type": "tool_failure",
-        "pattern_summary": (
-            "Bash tool repeatedly times out on long-running commands."
-        ),
+        "pattern_summary": ("Bash tool repeatedly times out on long-running commands."),
         "target_surface": "claude_md_rule",
         "rule_title": "Add timeout guidance for long-running commands",
         "prevention_instructions": (
@@ -64,10 +60,7 @@ _SEED_ENTRIES: list[dict[str, str]] = [
             ("FileNotFoundError: /src/old_name.py", "Read"),
         ),
         "error_type": "tool_failure",
-        "pattern_summary": (
-            "Read tool fails because file paths are guessed "
-            "instead of verified."
-        ),
+        "pattern_summary": ("Read tool fails because file paths are guessed instead of verified."),
         "target_surface": "skill_update",
         "rule_title": "Verify file existence before reading",
         "prevention_instructions": (
@@ -89,10 +82,7 @@ _SEED_ENTRIES: list[dict[str, str]] = [
             ("pre-commit hook failed: mypy type errors", "Bash"),
         ),
         "error_type": "tool_failure",
-        "pattern_summary": (
-            "Git commits fail because pre-commit hooks catch "
-            "lint errors."
-        ),
+        "pattern_summary": ("Git commits fail because pre-commit hooks catch lint errors."),
         "target_surface": "hook_config",
         "rule_title": "Run linter before committing",
         "prevention_instructions": (
@@ -114,10 +104,7 @@ _SEED_ENTRIES: list[dict[str, str]] = [
             ("MCP connection refused: server down", "graphiti"),
         ),
         "error_type": "tool_failure",
-        "pattern_summary": (
-            "MCP tool calls fail due to server timeouts or "
-            "connectivity."
-        ),
+        "pattern_summary": ("MCP tool calls fail due to server timeouts or connectivity."),
         "target_surface": "mcp_config",
         "rule_title": "Increase MCP timeout and add retry",
         "prevention_instructions": (
@@ -139,10 +126,7 @@ _SEED_ENTRIES: list[dict[str, str]] = [
             ("429 Too Many Requests", "dspy.LM"),
         ),
         "error_type": "tool_failure",
-        "pattern_summary": (
-            "LLM API rate limits cause suggestion generation "
-            "failures."
-        ),
+        "pattern_summary": ("LLM API rate limits cause suggestion generation failures."),
         "target_surface": "settings_config",
         "rule_title": "Configure rate limiting and fallback model",
         "prevention_instructions": (
@@ -165,9 +149,7 @@ _SEED_ENTRIES: list[dict[str, str]] = [
             ("User correction: Use pytest not jest", None),
         ),
         "error_type": "user_correction",
-        "pattern_summary": (
-            "Agent generates code in wrong language or framework."
-        ),
+        "pattern_summary": ("Agent generates code in wrong language or framework."),
         "target_surface": "agent_profile",
         "rule_title": "Enforce project language preferences",
         "prevention_instructions": (
@@ -189,9 +171,7 @@ _SEED_ENTRIES: list[dict[str, str]] = [
             ("No such directory: /home/user/old/", "Bash"),
         ),
         "error_type": "tool_failure",
-        "pattern_summary": (
-            "Agent operates in wrong directory or project root."
-        ),
+        "pattern_summary": ("Agent operates in wrong directory or project root."),
         "target_surface": "project_config",
         "rule_title": "Pin project root in configuration",
         "prevention_instructions": (
@@ -213,10 +193,7 @@ _SEED_ENTRIES: list[dict[str, str]] = [
             ("User: revert the last edit", "Edit"),
         ),
         "error_type": "undo",
-        "pattern_summary": (
-            "User frequently undoes agent edits, suggesting "
-            "low-quality changes."
-        ),
+        "pattern_summary": ("User frequently undoes agent edits, suggesting low-quality changes."),
         "target_surface": "claude_md_rule",
         "rule_title": "Confirm before multi-file edits",
         "prevention_instructions": (
@@ -240,8 +217,7 @@ _SEED_ENTRIES: list[dict[str, str]] = [
         ),
         "error_type": "repeated_attempt",
         "pattern_summary": (
-            "Agent repeatedly searches with variations instead "
-            "of broadening strategy."
+            "Agent repeatedly searches with variations instead of broadening strategy."
         ),
         "target_surface": "skill_update",
         "rule_title": "Escalate search strategy after 2 failures",
@@ -331,9 +307,7 @@ def seed_ground_truth(
             file_path=None,
         )
         # Seeds are pre-approved
-        update_ground_truth_label(
-            conn, row_id, label="positive", source="seed"
-        )
+        update_ground_truth_label(conn, row_id, label="positive", source="seed")
         row_ids.append(row_id)
 
     return row_ids
@@ -347,9 +321,7 @@ def _ensure_pattern_exists(conn: sqlite3.Connection, pattern_id: str) -> None:
     """
     from datetime import datetime, timezone
 
-    row = conn.execute(
-        "SELECT id FROM patterns WHERE pattern_id = ?", (pattern_id,)
-    ).fetchone()
+    row = conn.execute("SELECT id FROM patterns WHERE pattern_id = ?", (pattern_id,)).fetchone()
     if row is not None:
         return
 

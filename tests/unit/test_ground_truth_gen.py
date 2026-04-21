@@ -34,8 +34,18 @@ def sample_pattern(mem_db):
         "(pattern_id, description, tool_name, error_count, session_count, "
         "first_seen, last_seen, rank_score, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ("test-pattern-001", "Bash tool times out repeatedly", "Bash",
-         5, 3, now, now, 0.5, now, now),
+        (
+            "test-pattern-001",
+            "Bash tool times out repeatedly",
+            "Bash",
+            5,
+            3,
+            now,
+            now,
+            0.5,
+            now,
+            now,
+        ),
     )
     mem_db.commit()
     return {
@@ -54,12 +64,16 @@ def sample_dataset(tmp_path):
     import json
 
     ds_file = tmp_path / "dataset.json"
-    ds_file.write_text(json.dumps({
-        "examples": [
-            {"error_text": "TimeoutError", "tool_name": "Bash"},
-            {"error_text": "TimeoutError", "tool_name": "Bash"},
-        ]
-    }))
+    ds_file.write_text(
+        json.dumps(
+            {
+                "examples": [
+                    {"error_text": "TimeoutError", "tool_name": "Bash"},
+                    {"error_text": "TimeoutError", "tool_name": "Bash"},
+                ]
+            }
+        )
+    )
     return {"id": 1, "file_path": str(ds_file)}
 
 
@@ -82,8 +96,13 @@ class TestGenerateCandidates:
     @patch("sio.core.dspy.modules.GroundTruthModule")
     @patch("sio.core.dspy.lm_factory.create_lm")
     def test_generates_n_candidates(
-        self, mock_create_lm, mock_module_cls, mem_db, fake_config,
-        sample_pattern, sample_dataset,
+        self,
+        mock_create_lm,
+        mock_module_cls,
+        mem_db,
+        fake_config,
+        sample_pattern,
+        sample_dataset,
     ):
         """Should call forward() N times and insert N rows."""
         mock_lm = MagicMock()
@@ -105,8 +124,13 @@ class TestGenerateCandidates:
     @patch("sio.core.dspy.modules.GroundTruthModule")
     @patch("sio.core.dspy.lm_factory.create_lm")
     def test_candidates_stored_as_pending_agent(
-        self, mock_create_lm, mock_module_cls, mem_db, fake_config,
-        sample_pattern, sample_dataset,
+        self,
+        mock_create_lm,
+        mock_module_cls,
+        mem_db,
+        fake_config,
+        sample_pattern,
+        sample_dataset,
     ):
         """Each candidate should have label='pending' and source='agent'."""
         mock_create_lm.return_value = MagicMock()
@@ -131,8 +155,13 @@ class TestGenerateCandidates:
     @patch("sio.core.dspy.modules.GroundTruthModule")
     @patch("sio.core.dspy.lm_factory.create_lm")
     def test_returns_row_ids(
-        self, mock_create_lm, mock_module_cls, mem_db, fake_config,
-        sample_pattern, sample_dataset,
+        self,
+        mock_create_lm,
+        mock_module_cls,
+        mem_db,
+        fake_config,
+        sample_pattern,
+        sample_dataset,
     ):
         """Returned IDs should be valid ground_truth row IDs."""
         mock_create_lm.return_value = MagicMock()
@@ -147,14 +176,17 @@ class TestGenerateCandidates:
         )
 
         for row_id in ids:
-            row = mem_db.execute(
-                "SELECT id FROM ground_truth WHERE id = ?", (row_id,)
-            ).fetchone()
+            row = mem_db.execute("SELECT id FROM ground_truth WHERE id = ?", (row_id,)).fetchone()
             assert row is not None
 
     @patch("sio.core.dspy.lm_factory.create_lm")
     def test_no_lm_returns_empty(
-        self, mock_create_lm, mem_db, fake_config, sample_pattern, sample_dataset,
+        self,
+        mock_create_lm,
+        mem_db,
+        fake_config,
+        sample_pattern,
+        sample_dataset,
     ):
         """When no LLM is available, should return empty list."""
         mock_create_lm.return_value = None
@@ -170,8 +202,13 @@ class TestGenerateCandidates:
     @patch("sio.core.dspy.modules.GroundTruthModule")
     @patch("sio.core.dspy.lm_factory.create_lm")
     def test_partial_failure_still_returns_successes(
-        self, mock_create_lm, mock_module_cls, mem_db, fake_config,
-        sample_pattern, sample_dataset,
+        self,
+        mock_create_lm,
+        mock_module_cls,
+        mem_db,
+        fake_config,
+        sample_pattern,
+        sample_dataset,
     ):
         """If one forward() call raises, other candidates still succeed."""
         mock_create_lm.return_value = MagicMock()

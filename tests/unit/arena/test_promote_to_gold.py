@@ -16,12 +16,9 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-import sqlite3
-
 import pytest
 
 from sio.core.db.schema import init_db
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -85,9 +82,7 @@ class TestPromoteToGold:
 
     def test_qualified_invocation_creates_gold_row(self, tmp_sio_db):
         """user_satisfied=1 AND correct_outcome=1 → gold row inserted."""
-        invocation_id = _insert_invocation(
-            tmp_sio_db, user_satisfied=1, correct_outcome=1
-        )
+        invocation_id = _insert_invocation(tmp_sio_db, user_satisfied=1, correct_outcome=1)
 
         from sio.core.arena.gold_standards import promote_to_gold  # noqa: PLC0415
 
@@ -102,9 +97,7 @@ class TestPromoteToGold:
 
     def test_unsatisfied_invocation_not_promoted(self, tmp_sio_db):
         """user_satisfied=0 → promote_to_gold returns None, no gold row."""
-        invocation_id = _insert_invocation(
-            tmp_sio_db, user_satisfied=0, correct_outcome=1
-        )
+        invocation_id = _insert_invocation(tmp_sio_db, user_satisfied=0, correct_outcome=1)
 
         from sio.core.arena.gold_standards import promote_to_gold  # noqa: PLC0415
 
@@ -119,9 +112,7 @@ class TestPromoteToGold:
 
     def test_incorrect_outcome_not_promoted(self, tmp_sio_db):
         """correct_outcome=0 → promote_to_gold returns None, no gold row."""
-        invocation_id = _insert_invocation(
-            tmp_sio_db, user_satisfied=1, correct_outcome=0
-        )
+        invocation_id = _insert_invocation(tmp_sio_db, user_satisfied=1, correct_outcome=0)
 
         from sio.core.arena.gold_standards import promote_to_gold  # noqa: PLC0415
 
@@ -136,9 +127,7 @@ class TestPromoteToGold:
 
     def test_promoted_row_has_dspy_example_json(self, tmp_sio_db):
         """Promoted row must have dspy_example_json populated with valid JSON."""
-        invocation_id = _insert_invocation(
-            tmp_sio_db, user_satisfied=1, correct_outcome=1
-        )
+        invocation_id = _insert_invocation(tmp_sio_db, user_satisfied=1, correct_outcome=1)
 
         from sio.core.arena.gold_standards import promote_to_gold  # noqa: PLC0415
 
@@ -149,18 +138,14 @@ class TestPromoteToGold:
             "SELECT dspy_example_json FROM gold_standards WHERE id = ?", (gold_id,)
         ).fetchone()
         assert row is not None
-        assert row["dspy_example_json"] is not None, (
-            "dspy_example_json field must be populated"
-        )
+        assert row["dspy_example_json"] is not None, "dspy_example_json field must be populated"
         # Must be valid JSON
         parsed = json.loads(row["dspy_example_json"])
         assert isinstance(parsed, dict), "dspy_example_json must parse to a dict"
 
     def test_promoted_row_has_promoted_by_auto(self, tmp_sio_db):
         """Promoted row must have promoted_by='auto'."""
-        invocation_id = _insert_invocation(
-            tmp_sio_db, user_satisfied=1, correct_outcome=1
-        )
+        invocation_id = _insert_invocation(tmp_sio_db, user_satisfied=1, correct_outcome=1)
 
         from sio.core.arena.gold_standards import promote_to_gold  # noqa: PLC0415
 
@@ -177,9 +162,7 @@ class TestPromoteToGold:
 
     def test_promote_to_gold_idempotent(self, tmp_sio_db):
         """Calling promote_to_gold twice on same invocation creates only 1 gold row."""
-        invocation_id = _insert_invocation(
-            tmp_sio_db, user_satisfied=1, correct_outcome=1
-        )
+        invocation_id = _insert_invocation(tmp_sio_db, user_satisfied=1, correct_outcome=1)
 
         from sio.core.arena.gold_standards import promote_to_gold  # noqa: PLC0415
 

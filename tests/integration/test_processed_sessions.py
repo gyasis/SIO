@@ -18,7 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -218,11 +218,16 @@ class TestReprocessAfterContentChange:
 
         # Modify file content
         with sample_session_file.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({
-                "type": "user",
-                "message": {"role": "user", "content": "One more question."},
-                "timestamp": "2026-04-01T10:01:00Z",
-            }) + "\n")
+            fh.write(
+                json.dumps(
+                    {
+                        "type": "user",
+                        "message": {"role": "user", "content": "One more question."},
+                        "timestamp": "2026-04-01T10:01:00Z",
+                    }
+                )
+                + "\n"
+            )
 
         h2 = _file_hash(sample_session_file)
         assert h1 != h2, "Hash should change after file modification"
@@ -233,11 +238,16 @@ class TestReprocessAfterContentChange:
 
         # Modify the file
         with sample_session_file.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({
-                "type": "user",
-                "message": {"role": "user", "content": "Extra message."},
-                "timestamp": "2026-04-01T10:01:00Z",
-            }) + "\n")
+            fh.write(
+                json.dumps(
+                    {
+                        "type": "user",
+                        "message": {"role": "user", "content": "Extra message."},
+                        "timestamp": "2026-04-01T10:01:00Z",
+                    }
+                )
+                + "\n"
+            )
 
         h2 = _file_hash(sample_session_file)
         # New hash should NOT be in processed_sessions
@@ -249,11 +259,16 @@ class TestReprocessAfterContentChange:
 
         # Modify the file
         with sample_session_file.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({
-                "type": "user",
-                "message": {"role": "user", "content": "Extra message."},
-                "timestamp": "2026-04-01T10:01:00Z",
-            }) + "\n")
+            fh.write(
+                json.dumps(
+                    {
+                        "type": "user",
+                        "message": {"role": "user", "content": "Extra message."},
+                        "timestamp": "2026-04-01T10:01:00Z",
+                    }
+                )
+                + "\n"
+            )
 
         h2 = _file_hash(sample_session_file)
         _mark_processed(db, sample_session_file, h2, message_count=6, tool_call_count=1)
@@ -323,22 +338,27 @@ class TestRunMineWithDedup:
 
         # Modify the file — add an error-producing message
         with sample_session_file.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({
-                "type": "assistant",
-                "message": {
-                    "role": "assistant",
-                    "content": [
-                        {"type": "text", "text": "Let me try that command."},
-                        {
-                            "type": "tool_use",
-                            "id": "toolu_bash_01",
-                            "name": "Bash",
-                            "input": {"command": "rm -rf /important"},
+            fh.write(
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "role": "assistant",
+                            "content": [
+                                {"type": "text", "text": "Let me try that command."},
+                                {
+                                    "type": "tool_use",
+                                    "id": "toolu_bash_01",
+                                    "name": "Bash",
+                                    "input": {"command": "rm -rf /important"},
+                                },
+                            ],
                         },
-                    ],
-                },
-                "timestamp": "2026-04-01T10:02:00Z",
-            }) + "\n")
+                        "timestamp": "2026-04-01T10:02:00Z",
+                    }
+                )
+                + "\n"
+            )
 
         # Second run — modified file should be re-processed
         h2 = _file_hash(sample_session_file)

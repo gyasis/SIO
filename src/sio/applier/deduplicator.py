@@ -57,18 +57,22 @@ def _parse_rule_blocks(text: str) -> list[dict]:
 
         if is_blank:
             if current_lines:
-                blocks.append({
-                    "text": "\n".join(current_lines),
-                    "start_line": start_line,
-                })
+                blocks.append(
+                    {
+                        "text": "\n".join(current_lines),
+                        "start_line": start_line,
+                    }
+                )
                 current_lines = []
             continue
 
         if is_heading and current_lines:
-            blocks.append({
-                "text": "\n".join(current_lines),
-                "start_line": start_line,
-            })
+            blocks.append(
+                {
+                    "text": "\n".join(current_lines),
+                    "start_line": start_line,
+                }
+            )
             current_lines = []
 
         if not current_lines:
@@ -76,10 +80,12 @@ def _parse_rule_blocks(text: str) -> list[dict]:
         current_lines.append(line)
 
     if current_lines:
-        blocks.append({
-            "text": "\n".join(current_lines),
-            "start_line": start_line,
-        })
+        blocks.append(
+            {
+                "text": "\n".join(current_lines),
+                "start_line": start_line,
+            }
+        )
 
     return blocks
 
@@ -87,6 +93,7 @@ def _parse_rule_blocks(text: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Cosine similarity
 # ---------------------------------------------------------------------------
+
 
 def _cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     """Return cosine similarity between two 1-D numpy vectors."""
@@ -145,11 +152,13 @@ def find_duplicates(
         text = path.read_text(encoding="utf-8")
         blocks = _parse_rule_blocks(text)
         for block in blocks:
-            all_blocks.append({
-                "text": block["text"],
-                "start_line": block["start_line"],
-                "file_path": str(path),
-            })
+            all_blocks.append(
+                {
+                    "text": block["text"],
+                    "start_line": block["start_line"],
+                    "file_path": str(path),
+                }
+            )
 
     if len(all_blocks) < 2:
         return []
@@ -164,15 +173,17 @@ def find_duplicates(
         for j in range(i + 1, len(all_blocks)):
             sim = _cosine_similarity(embeddings[i], embeddings[j])
             if sim >= threshold:
-                pairs.append(DuplicatePair(
-                    file_a=all_blocks[i]["file_path"],
-                    line_a=all_blocks[i]["start_line"],
-                    text_a=all_blocks[i]["text"],
-                    file_b=all_blocks[j]["file_path"],
-                    line_b=all_blocks[j]["start_line"],
-                    text_b=all_blocks[j]["text"],
-                    similarity=sim,
-                ))
+                pairs.append(
+                    DuplicatePair(
+                        file_a=all_blocks[i]["file_path"],
+                        line_a=all_blocks[i]["start_line"],
+                        text_a=all_blocks[i]["text"],
+                        file_b=all_blocks[j]["file_path"],
+                        line_b=all_blocks[j]["start_line"],
+                        text_b=all_blocks[j]["text"],
+                        similarity=sim,
+                    )
+                )
 
     # Sort by similarity descending.
     pairs.sort(key=lambda p: p.similarity, reverse=True)

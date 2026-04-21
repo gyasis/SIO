@@ -72,6 +72,7 @@ def run_flow_mine(
                 _get_session_state,
                 _update_session_state,
             )
+
             file_str = str(file_path)
             try:
                 current_size = file_path.stat().st_size
@@ -126,9 +127,7 @@ def run_flow_mine(
                             # Get the message-level index from the tool_seq
                             ngram_tool_indices.add(tool_seq[tool_idx]["idx"])
 
-                was_successful = (
-                    1 if ngram_tool_indices & success_indices else 0
-                )
+                was_successful = 1 if ngram_tool_indices & success_indices else 0
 
                 # BUG 2 FIX: Use the timestamp of this ngram's first tool,
                 # not the first tool in the entire session.
@@ -192,6 +191,7 @@ def query_flows(
     if since:
         # Parse "N days" style into a date
         from sio.mining.time_filter import parse_since
+
         cutoff = parse_since(since)
         if cutoff:
             where_clause = "WHERE fe.timestamp >= ?"
@@ -231,18 +231,20 @@ def query_flows(
         else:
             confidence = "LOW"
 
-        results.append({
-            "sequence": row["sequence"],
-            "flow_hash": row["flow_hash"],
-            "ngram_size": row["ngram_size"],
-            "count": count,
-            "success_count": row["success_count"],
-            "success_rate": success_rate,
-            "avg_duration": row["avg_duration"],
-            "confidence": confidence,
-            "session_count": row["session_count"],
-            "last_seen": row["last_seen"],
-        })
+        results.append(
+            {
+                "sequence": row["sequence"],
+                "flow_hash": row["flow_hash"],
+                "ngram_size": row["ngram_size"],
+                "count": count,
+                "success_count": row["success_count"],
+                "success_rate": success_rate,
+                "avg_duration": row["avg_duration"],
+                "confidence": confidence,
+                "session_count": row["session_count"],
+                "last_seen": row["last_seen"],
+            }
+        )
 
     return results
 

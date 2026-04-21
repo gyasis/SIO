@@ -41,9 +41,28 @@ def _extract_extension(tool_input: str | None) -> str:
     if m:
         ext = m.group(2).lower()
         if ext in (
-            "py", "js", "ts", "tsx", "jsx", "sql", "md", "yaml", "yml",
-            "json", "toml", "sh", "css", "html", "txt", "csv", "parquet",
-            "rs", "go", "java", "cpp", "ipynb",  # FR-026 / audit L1
+            "py",
+            "js",
+            "ts",
+            "tsx",
+            "jsx",
+            "sql",
+            "md",
+            "yaml",
+            "yml",
+            "json",
+            "toml",
+            "sh",
+            "css",
+            "html",
+            "txt",
+            "csv",
+            "parquet",
+            "rs",
+            "go",
+            "java",
+            "cpp",
+            "ipynb",  # FR-026 / audit L1
         ):
             return f".{ext}"
     return ""
@@ -60,12 +79,14 @@ def extract_tool_sequence(parsed_messages: list[dict]) -> list[dict]:
         if tool_name and msg.get("role") == "assistant":
             # Skip tool_result messages (they echo the tool name but are user role)
             ext = _extract_extension(msg.get("tool_input"))
-            sequence.append({
-                "tool": tool_name,
-                "ext": ext,
-                "timestamp": msg.get("timestamp", ""),
-                "idx": i,
-            })
+            sequence.append(
+                {
+                    "tool": tool_name,
+                    "ext": ext,
+                    "timestamp": msg.get("timestamp", ""),
+                    "idx": i,
+                }
+            )
         elif tool_name and msg.get("role") == "user" and msg.get("error"):
             # Tool results with errors — mark for context but don't add to flow
             pass
@@ -232,6 +253,7 @@ def extract_flows_from_session(
     if len(timestamps) >= 2:
         try:
             from datetime import datetime
+
             first = datetime.fromisoformat(timestamps[0].replace("Z", "+00:00"))
             last = datetime.fromisoformat(timestamps[-1].replace("Z", "+00:00"))
             duration = (last - first).total_seconds()

@@ -110,9 +110,7 @@ def autoresearch_run_once(
         ).fetchall()
     except sqlite3.OperationalError:
         # superseded_at column may not exist in minimal test schema
-        rows = conn.execute(
-            "SELECT * FROM suggestions WHERE status != 'rejected'"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM suggestions WHERE status != 'rejected'").fetchall()
 
     for row in rows:
         counts["candidates_evaluated"] += 1
@@ -161,7 +159,7 @@ def autoresearch_run_once(
         VALUES (?, ?, ?, ?, ?, ?)
         """,
         (
-            None,            # suggestion_id: NULL for aggregate row
+            None,  # suggestion_id: NULL for aggregate row
             aggregate_outcome,
             avg_metric,
             auto_approved_flag,

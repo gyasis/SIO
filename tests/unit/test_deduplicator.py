@@ -41,9 +41,7 @@ class _FakeBackend:
                     matched = True
                     break
             if not matched:
-                result.append(
-                    self._rng.random(384).astype(np.float32)
-                )
+                result.append(self._rng.random(384).astype(np.float32))
         return np.stack(result)
 
 
@@ -106,9 +104,7 @@ class TestFindDuplicates:
         embs = _make_near_identical_pair()
         fake = _FakeBackend(embs)
 
-        with patch(
-            "sio.applier.deduplicator._get_backend", return_value=fake
-        ):
+        with patch("sio.applier.deduplicator._get_backend", return_value=fake):
             pairs = find_duplicates([fa, fb], threshold=0.85)
 
         assert len(pairs) >= 1
@@ -141,9 +137,7 @@ class TestFindDuplicates:
         }
         fake = _FakeBackend(embs)
 
-        with patch(
-            "sio.applier.deduplicator._get_backend", return_value=fake
-        ):
+        with patch("sio.applier.deduplicator._get_backend", return_value=fake):
             pairs = find_duplicates([fa, fb], threshold=0.85)
 
         if actual_sim >= 0.85:
@@ -160,9 +154,7 @@ class TestFindDuplicates:
 
         fake = _FakeBackend(embs)
 
-        with patch(
-            "sio.applier.deduplicator._get_backend", return_value=fake
-        ):
+        with patch("sio.applier.deduplicator._get_backend", return_value=fake):
             pairs = find_duplicates([fa, fb], threshold=0.85)
 
         # Moderate similarity should be below 0.85 threshold.
@@ -171,18 +163,12 @@ class TestFindDuplicates:
 
     def test_finds_pairs_within_same_file(self, tmp_path: Path):
         """Duplicates within a single file are detected."""
-        content = (
-            "Never use SELECT * in queries\n"
-            "\n"
-            "Avoid SELECT star -- use explicit columns\n"
-        )
+        content = "Never use SELECT * in queries\n\nAvoid SELECT star -- use explicit columns\n"
         f = _write_md(tmp_path / "rules.md", content)
         embs = _make_near_identical_pair()
         fake = _FakeBackend(embs)
 
-        with patch(
-            "sio.applier.deduplicator._get_backend", return_value=fake
-        ):
+        with patch("sio.applier.deduplicator._get_backend", return_value=fake):
             pairs = find_duplicates([f], threshold=0.85)
 
         assert len(pairs) >= 1
@@ -192,16 +178,12 @@ class TestFindDuplicates:
         """Duplicates across three files are all detected."""
         fa = _write_md(tmp_path / "a.md", "Never use SELECT * in queries\n")
         fb = _write_md(tmp_path / "b.md", "Avoid SELECT star\n")
-        fc = _write_md(
-            tmp_path / "c.md", "Always run tests before committing\n"
-        )
+        fc = _write_md(tmp_path / "c.md", "Always run tests before committing\n")
 
         embs = _make_near_identical_pair()
         fake = _FakeBackend(embs)
 
-        with patch(
-            "sio.applier.deduplicator._get_backend", return_value=fake
-        ):
+        with patch("sio.applier.deduplicator._get_backend", return_value=fake):
             pairs = find_duplicates([fa, fb, fc], threshold=0.85)
 
         # Should find the SELECT-related pair, not a pair with "tests".
@@ -221,13 +203,7 @@ class TestFindDuplicates:
         somewhat_similar = base + rng.normal(0, 0.05, 384).astype(np.float32)
         somewhat_similar /= np.linalg.norm(somewhat_similar)
 
-        content = (
-            "Rule alpha about SQL\n"
-            "\n"
-            "Rule beta about SQL\n"
-            "\n"
-            "Rule gamma about SQL\n"
-        )
+        content = "Rule alpha about SQL\n\nRule beta about SQL\n\nRule gamma about SQL\n"
         f = _write_md(tmp_path / "rules.md", content)
         embs = {
             "Rule alpha about SQL": base,
@@ -236,9 +212,7 @@ class TestFindDuplicates:
         }
         fake = _FakeBackend(embs)
 
-        with patch(
-            "sio.applier.deduplicator._get_backend", return_value=fake
-        ):
+        with patch("sio.applier.deduplicator._get_backend", return_value=fake):
             pairs = find_duplicates([f], threshold=0.85)
 
         if len(pairs) >= 2:

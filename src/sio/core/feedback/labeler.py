@@ -33,8 +33,7 @@ def label_latest(
 
     # Find most recent invocation for this session
     row = conn.execute(
-        "SELECT id FROM behavior_invocations WHERE session_id = ? "
-        "ORDER BY timestamp DESC LIMIT 1",
+        "SELECT id FROM behavior_invocations WHERE session_id = ? ORDER BY timestamp DESC LIMIT 1",
         (session_id,),
     ).fetchone()
 

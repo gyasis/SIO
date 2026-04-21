@@ -144,9 +144,7 @@ def ten_tool_calls_eight_approved() -> list[dict]:
             messages.append(_human("yes that's correct", offset=offset))
         else:
             # Rejected
-            messages.append(
-                _human("no that's wrong, revert that change", offset=offset)
-            )
+            messages.append(_human("no that's wrong, revert that change", offset=offset))
         offset += 1
 
     # --- Bash x2 (all approved) ---
@@ -248,24 +246,18 @@ class TestApprovalDetails:
     """Verify aggregate counts are consistent (implementation does not
     return a per-call 'details' list)."""
 
-    def test_total_equals_approved_plus_rejected(
-        self, ten_tool_calls_eight_approved
-    ):
+    def test_total_equals_approved_plus_rejected(self, ten_tool_calls_eight_approved):
         result = detect_approvals(ten_tool_calls_eight_approved)
         assert result["total_tool_calls"] == result["approved"] + result["rejected"]
 
-    def test_per_tool_sums_match_totals(
-        self, ten_tool_calls_eight_approved
-    ):
+    def test_per_tool_sums_match_totals(self, ten_tool_calls_eight_approved):
         result = detect_approvals(ten_tool_calls_eight_approved)
         total_approved = sum(v["approved"] for v in result["per_tool"].values())
         total_rejected = sum(v["rejected"] for v in result["per_tool"].values())
         assert total_approved == result["approved"]
         assert total_rejected == result["rejected"]
 
-    def test_rejected_are_edit_tool(
-        self, ten_tool_calls_eight_approved
-    ):
+    def test_rejected_are_edit_tool(self, ten_tool_calls_eight_approved):
         """The 2 rejected calls should belong to the Edit tool."""
         result = detect_approvals(ten_tool_calls_eight_approved)
         assert result["per_tool"]["Edit"]["rejected"] == 2

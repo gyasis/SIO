@@ -63,8 +63,7 @@ def _insert_suggestion(
         "(description, confidence, proposed_change, target_file, "
         "change_type, status, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (description, confidence, "- Never run X", "CLAUDE.md",
-         "append", status, now),
+        (description, confidence, "- Never run X", "CLAUDE.md", "append", status, now),
     )
     db.commit()
     return cur.lastrowid
@@ -100,9 +99,16 @@ def _insert_velocity_snapshot(
         "(error_type, session_id, error_rate, error_count_in_window, "
         "window_start, window_end, rule_applied, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (error_type, "sess-1", error_rate, 5,
-         "2026-01-01T00:00:00", "2026-01-07T00:00:00",
-         rule_applied, now),
+        (
+            error_type,
+            "sess-1",
+            error_rate,
+            5,
+            "2026-01-01T00:00:00",
+            "2026-01-07T00:00:00",
+            rule_applied,
+            now,
+        ),
     )
     db.commit()
 
@@ -111,24 +117,30 @@ class TestEmptyDB:
     """When the database has no data at all."""
 
     def test_empty_db_returns_all_clear(self, db, config):
-        with patch(
-            "sio.suggestions.consultant._get_rule_file_paths",
-            return_value=[],
-        ), patch(
-            "sio.suggestions.consultant._section_budget",
-            return_value=None,
+        with (
+            patch(
+                "sio.suggestions.consultant._get_rule_file_paths",
+                return_value=[],
+            ),
+            patch(
+                "sio.suggestions.consultant._section_budget",
+                return_value=None,
+            ),
         ):
             result = build_session_briefing(db, config=config)
         assert "All clear" in result
 
     def test_empty_db_no_crash(self, db, config):
         """Ensure no exceptions on a freshly initialized empty DB."""
-        with patch(
-            "sio.suggestions.consultant._get_rule_file_paths",
-            return_value=[],
-        ), patch(
-            "sio.suggestions.consultant._section_budget",
-            return_value=None,
+        with (
+            patch(
+                "sio.suggestions.consultant._get_rule_file_paths",
+                return_value=[],
+            ),
+            patch(
+                "sio.suggestions.consultant._section_budget",
+                return_value=None,
+            ),
         ):
             result = build_session_briefing(db, config=config)
         assert isinstance(result, str)
@@ -219,12 +231,15 @@ class TestPendingSuggestions:
     def test_pending_high_confidence_shown(self, db, config):
         _insert_suggestion(db, status="pending", confidence=0.9)
 
-        with patch(
-            "sio.suggestions.consultant._get_rule_file_paths",
-            return_value=[],
-        ), patch(
-            "sio.suggestions.consultant._section_budget",
-            return_value=None,
+        with (
+            patch(
+                "sio.suggestions.consultant._get_rule_file_paths",
+                return_value=[],
+            ),
+            patch(
+                "sio.suggestions.consultant._section_budget",
+                return_value=None,
+            ),
         ):
             result = build_session_briefing(db, config=config)
 
@@ -234,12 +249,15 @@ class TestPendingSuggestions:
     def test_low_confidence_not_shown(self, db, config):
         _insert_suggestion(db, status="pending", confidence=0.3)
 
-        with patch(
-            "sio.suggestions.consultant._get_rule_file_paths",
-            return_value=[],
-        ), patch(
-            "sio.suggestions.consultant._section_budget",
-            return_value=None,
+        with (
+            patch(
+                "sio.suggestions.consultant._get_rule_file_paths",
+                return_value=[],
+            ),
+            patch(
+                "sio.suggestions.consultant._section_budget",
+                return_value=None,
+            ),
         ):
             result = build_session_briefing(db, config=config)
 
@@ -248,12 +266,15 @@ class TestPendingSuggestions:
     def test_applied_suggestions_not_shown(self, db, config):
         _insert_suggestion(db, status="applied", confidence=0.95)
 
-        with patch(
-            "sio.suggestions.consultant._get_rule_file_paths",
-            return_value=[],
-        ), patch(
-            "sio.suggestions.consultant._section_budget",
-            return_value=None,
+        with (
+            patch(
+                "sio.suggestions.consultant._get_rule_file_paths",
+                return_value=[],
+            ),
+            patch(
+                "sio.suggestions.consultant._section_budget",
+                return_value=None,
+            ),
         ):
             result = build_session_briefing(db, config=config)
 
@@ -267,12 +288,15 @@ class TestSessionStats:
         for i, count in enumerate([10, 8, 6, 4, 2]):
             _insert_session_metric(db, f"sess-{i}", count)
 
-        with patch(
-            "sio.suggestions.consultant._get_rule_file_paths",
-            return_value=[],
-        ), patch(
-            "sio.suggestions.consultant._section_budget",
-            return_value=None,
+        with (
+            patch(
+                "sio.suggestions.consultant._get_rule_file_paths",
+                return_value=[],
+            ),
+            patch(
+                "sio.suggestions.consultant._section_budget",
+                return_value=None,
+            ),
         ):
             result = build_session_briefing(db, config=config)
 
@@ -284,24 +308,33 @@ class TestDecliningRules:
 
     def test_declining_rule_shown(self, db, config):
         # Earlier snapshot: low rate
-        earlier = (
-            datetime.now(timezone.utc) - timedelta(days=5)
-        ).isoformat()
+        earlier = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
         _insert_velocity_snapshot(
-            db, "unused_import", 0.1, rule_applied=1, created_at=earlier,
+            db,
+            "unused_import",
+            0.1,
+            rule_applied=1,
+            created_at=earlier,
         )
         # Later snapshot: higher rate
         later = datetime.now(timezone.utc).isoformat()
         _insert_velocity_snapshot(
-            db, "unused_import", 0.5, rule_applied=1, created_at=later,
+            db,
+            "unused_import",
+            0.5,
+            rule_applied=1,
+            created_at=later,
         )
 
-        with patch(
-            "sio.suggestions.consultant._get_rule_file_paths",
-            return_value=[],
-        ), patch(
-            "sio.suggestions.consultant._section_budget",
-            return_value=None,
+        with (
+            patch(
+                "sio.suggestions.consultant._get_rule_file_paths",
+                return_value=[],
+            ),
+            patch(
+                "sio.suggestions.consultant._section_budget",
+                return_value=None,
+            ),
         ):
             result = build_session_briefing(db, config=config)
 
@@ -316,12 +349,15 @@ class TestCleanDB:
         """Applied suggestions, no violations, low budget = all clear."""
         _insert_suggestion(db, status="applied", confidence=0.95)
 
-        with patch(
-            "sio.suggestions.consultant._get_rule_file_paths",
-            return_value=[],
-        ), patch(
-            "sio.suggestions.consultant._section_budget",
-            return_value=None,
+        with (
+            patch(
+                "sio.suggestions.consultant._get_rule_file_paths",
+                return_value=[],
+            ),
+            patch(
+                "sio.suggestions.consultant._section_budget",
+                return_value=None,
+            ),
         ):
             result = build_session_briefing(db, config=config)
 
@@ -336,15 +372,16 @@ class TestBriefnessConstraint:
         _insert_suggestion(db, status="pending", confidence=0.85)
         _insert_session_metric(db, "sess-1", 5)
 
-        with patch(
-            "sio.suggestions.consultant._get_rule_file_paths",
-            return_value=[],
-        ), patch(
-            "sio.suggestions.consultant._section_budget",
-            return_value=None,
+        with (
+            patch(
+                "sio.suggestions.consultant._get_rule_file_paths",
+                return_value=[],
+            ),
+            patch(
+                "sio.suggestions.consultant._section_budget",
+                return_value=None,
+            ),
         ):
             result = build_session_briefing(db, config=config)
 
-        assert len(result) < 500, (
-            f"Briefing is {len(result)} chars, expected <500"
-        )
+        assert len(result) < 500, f"Briefing is {len(result)} chars, expected <500"

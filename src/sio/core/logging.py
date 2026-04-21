@@ -41,6 +41,7 @@ def setup_error_logging(
         Configured logger instance.
     """
     from sio.core.constants import DEFAULT_PLATFORM  # noqa: PLC0415
+
     if platform is None:
         platform = DEFAULT_PLATFORM
     if log_dir is None:

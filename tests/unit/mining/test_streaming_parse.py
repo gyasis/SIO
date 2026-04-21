@@ -19,7 +19,6 @@ from unittest.mock import patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -75,6 +74,7 @@ def test_iter_events_is_generator(jsonl_fixture: Path) -> None:
 
     # A generator is NOT a list — it must support __next__
     import types
+
     assert isinstance(result, types.GeneratorType), (
         "iter_events() must return a generator (lazy streaming), not a list or other iterable"
     )
@@ -89,9 +89,13 @@ def test_iter_events_does_not_call_read_text(jsonl_fixture: Path) -> None:
     """``iter_events`` must NOT call ``Path.read_text()`` (full-file load forbidden)."""
     from sio.mining.jsonl_parser import iter_events  # type: ignore[import]
 
-    with patch.object(Path, "read_text", side_effect=AssertionError(
-        "iter_events must NOT call Path.read_text() — use streaming open(path, 'rb') instead"
-    )):
+    with patch.object(
+        Path,
+        "read_text",
+        side_effect=AssertionError(
+            "iter_events must NOT call Path.read_text() — use streaming open(path, 'rb') instead"
+        ),
+    ):
         # Consume the generator — if read_text is called, AssertionError propagates
         list(iter_events(jsonl_fixture))
 
@@ -135,9 +139,7 @@ def test_iter_events_yields_tuples_with_offset(tiny_jsonl: Path) -> None:
     assert len(results) > 0, "iter_events should yield at least one result"
 
     for item in results:
-        assert isinstance(item, tuple), (
-            f"iter_events must yield tuples, got {type(item)}"
-        )
+        assert isinstance(item, tuple), f"iter_events must yield tuples, got {type(item)}"
         assert len(item) == 2, (
             f"Each yielded tuple must have exactly 2 elements (event_dict, offset), "
             f"got {len(item)}"
@@ -149,9 +151,7 @@ def test_iter_events_yields_tuples_with_offset(tiny_jsonl: Path) -> None:
         assert isinstance(offset, int), (
             f"Second element of tuple must be an int (byte offset), got {type(offset)}"
         )
-        assert offset > 0, (
-            f"Byte offset must be > 0 after any line, got {offset}"
-        )
+        assert offset > 0, f"Byte offset must be > 0 after any line, got {offset}"
 
 
 # ---------------------------------------------------------------------------

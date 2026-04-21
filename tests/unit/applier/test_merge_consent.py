@@ -19,14 +19,15 @@ Run to confirm RED before T056 (Wave 6):
 NOTE: merge_rules does not exist yet. ALL tests here are RED by design.
 T056 (Wave 6) implements the function.
 """
+
 from __future__ import annotations
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Import helpers
 # ---------------------------------------------------------------------------
+
 
 def _import_merge():
     """Import merge_rules and MergeRequiresConsent.
@@ -37,12 +38,14 @@ def _import_merge():
         MergeRequiresConsent,
         merge_rules,
     )
+
     return merge_rules, MergeRequiresConsent
 
 
 # ---------------------------------------------------------------------------
 # Tests — all RED until T056
 # ---------------------------------------------------------------------------
+
 
 class TestMergeRulesExists:
     """merge_rules and MergeRequiresConsent must be importable (T056 Wave 6)."""
@@ -66,7 +69,8 @@ class TestMergeRulesConsentGate:
     # -----------------------------------------------------------------------
 
     def test_no_consent_raises_merge_requires_consent_for_similar_rules(
-        self, fake_fastembed,
+        self,
+        fake_fastembed,
     ):
         """With merge_consent=False and similar rules, must raise MergeRequiresConsent.
 
@@ -81,7 +85,8 @@ class TestMergeRulesConsentGate:
             fn(existing, new, merge_consent=False)
 
     def test_with_consent_returns_merged_string_for_similar_rules(
-        self, fake_fastembed,
+        self,
+        fake_fastembed,
     ):
         """With merge_consent=True and similar rules, returns a non-empty merged string."""
         fn, _ = _import_merge()
@@ -97,7 +102,8 @@ class TestMergeRulesConsentGate:
         )
 
     def test_with_consent_merged_string_contains_hybrid_content(
-        self, fake_fastembed,
+        self,
+        fake_fastembed,
     ):
         """Merged string must contain content from both existing and new rules."""
         fn, _ = _import_merge()
@@ -126,6 +132,7 @@ class TestMergeRulesConsentGate:
         # Monkeypatch the internal similarity call to return 0.5
         try:
             import sio.core.applier.merger as merger_mod  # noqa: PLC0415
+
             monkeypatch.setattr(merger_mod, "_compute_similarity", lambda a, b: 0.5)
         except (ImportError, AttributeError):
             pytest.skip(
@@ -138,9 +145,7 @@ class TestMergeRulesConsentGate:
 
         # Should not raise, should return new_rule as-is
         result = fn(existing, new, merge_consent=False)
-        assert result == new, (
-            f"Dissimilar rules: expected new_rule returned as-is, got {result!r}"
-        )
+        assert result == new, f"Dissimilar rules: expected new_rule returned as-is, got {result!r}"
 
     def test_dissimilar_rules_ignores_merge_consent_flag(self, monkeypatch):
         """With dissimilar rules, merge_consent=True makes no difference."""
@@ -148,6 +153,7 @@ class TestMergeRulesConsentGate:
 
         try:
             import sio.core.applier.merger as merger_mod  # noqa: PLC0415
+
             monkeypatch.setattr(merger_mod, "_compute_similarity", lambda a, b: 0.3)
         except (ImportError, AttributeError):
             pytest.skip("merger module not yet implemented (Wave 6 T056)")
@@ -172,6 +178,7 @@ class TestMergeRulesConsentGate:
         # Simulate interactive mode via monkeypatching click.confirm
         try:
             import click  # noqa: PLC0415
+
             monkeypatch.setattr(click, "confirm", lambda msg, **kw: True)
         except ImportError:
             pytest.skip("click not available")
@@ -196,13 +203,16 @@ class TestMergeRulesConsentGate:
             )
 
     def test_click_confirm_false_raises_merge_requires_consent(
-        self, monkeypatch, fake_fastembed,
+        self,
+        monkeypatch,
+        fake_fastembed,
     ):
         """When click.confirm returns False, MergeRequiresConsent must propagate."""
         fn, MergeRequiresConsent = _import_merge()
 
         try:
             import click  # noqa: PLC0415
+
             monkeypatch.setattr(click, "confirm", lambda msg, **kw: False)
         except ImportError:
             pytest.skip("click not available")
@@ -215,6 +225,4 @@ class TestMergeRulesConsentGate:
         with pytest.raises((MergeRequiresConsent, SystemExit, Exception)):
             result = fn(existing, new, merge_consent=False)
             # If result returned without consent, that's a bug
-            assert False, (
-                f"Expected exception when consent denied, got result: {result!r}"
-            )
+            assert False, f"Expected exception when consent denied, got result: {result!r}"

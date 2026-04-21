@@ -4,12 +4,12 @@ Creates sample session files → runs mine → cluster → dataset → suggest
 → writes home file → verifies suggestions.md populated.
 """
 
-
 import pytest
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def e2e_env(tmp_path, v2_db):
@@ -100,6 +100,7 @@ def e2e_env(tmp_path, v2_db):
 # TestE2EPassivePipeline
 # =========================================================================
 
+
 class TestE2EPassivePipeline:
     """Full passive pipeline: mine → cluster → dataset → suggest → home file."""
 
@@ -119,7 +120,11 @@ class TestE2EPassivePipeline:
 
         # Step 1: Mine
         result = run_mine(
-            db, [specstory_dir], "30 days", "specstory", None,
+            db,
+            [specstory_dir],
+            "30 days",
+            "specstory",
+            None,
         )
         assert result["errors_found"] > 0
 
@@ -168,7 +173,11 @@ class TestE2EPassivePipeline:
 
         db = e2e_env["db"]
         result = run_mine(
-            db, [e2e_env["specstory_dir"]], "30 days", "specstory", None,
+            db,
+            [e2e_env["specstory_dir"]],
+            "30 days",
+            "specstory",
+            None,
         )
         count = db.execute("SELECT COUNT(*) FROM error_records").fetchone()[0]
         assert count == result["errors_found"]

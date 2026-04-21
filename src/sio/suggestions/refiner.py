@@ -18,7 +18,6 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +178,7 @@ def _try_gemini(prompt: str, system: str) -> str | None:
 # Variable extraction — deterministic pre-refinement
 # ---------------------------------------------------------------------------
 
+
 def _extract_variables(error_samples: list[str]) -> dict[str, str]:
     """Extract specific variable/parameter info from error messages.
 
@@ -190,36 +190,26 @@ def _extract_variables(error_samples: list[str]) -> dict[str, str]:
     for sample in error_samples:
         # Extract parameter name mismatches
         # Formats: "group_id\n  Unexpected keyword argument" or "'group_id' Unexpected"
-        match = re.search(
-            r"(\w+)\s+[Uu]nexpected keyword argument", sample
-        )
+        match = re.search(r"(\w+)\s+[Uu]nexpected keyword argument", sample)
         if not match:
-            match = re.search(
-                r"[Uu]nexpected keyword argument.*?['\"]?(\w+)['\"]?", sample
-            )
+            match = re.search(r"[Uu]nexpected keyword argument.*?['\"]?(\w+)['\"]?", sample)
         if match:
             variables["wrong_param"] = match.group(1)
 
         # Extract "Input should be a valid list/number/string"
         # Formats: "entity_types\n  Input should be a valid list [type=list_type, input_value=..."
-        match = re.search(
-            r"(\w+)\s+Input should be a valid (\w+)", sample
-        )
+        match = re.search(r"(\w+)\s+Input should be a valid (\w+)", sample)
         if match:
             variables["field_name"] = match.group(1)
             variables["expected_type"] = match.group(2)
         if not match:
-            match = re.search(
-                r"Input should be a valid (\w+).*?input_value=([^\]]+)", sample
-            )
+            match = re.search(r"Input should be a valid (\w+).*?input_value=([^\]]+)", sample)
             if match:
                 variables["expected_type"] = match.group(1)
                 variables["actual_value"] = match.group(2).strip("'\"")
 
         # Extract file size/token errors
-        match = re.search(
-            r"(\d+)\s*tokens?\)?\s*exceeds\s*maximum.*?(\d+)", sample
-        )
+        match = re.search(r"(\d+)\s*tokens?\)?\s*exceeds\s*maximum.*?(\d+)", sample)
         if match:
             variables["actual_tokens"] = match.group(1)
             variables["max_tokens"] = match.group(2)
@@ -239,16 +229,12 @@ def _extract_variables(error_samples: list[str]) -> dict[str, str]:
             variables["http_status"] = match.group(1)
 
         # Extract specific IDs that caused errors
-        match = re.search(
-            r"[Cc]loud [Ii][Dd]:\s*([a-f0-9-]{20,})", sample
-        )
+        match = re.search(r"[Cc]loud [Ii][Dd]:\s*([a-f0-9-]{20,})", sample)
         if match:
             variables["wrong_id"] = match.group(1)
 
         # Extract "Failed to fetch" targets
-        match = re.search(
-            r"Failed to fetch.*?for.*?:\s*(.+?)[\.\s]", sample
-        )
+        match = re.search(r"Failed to fetch.*?for.*?:\s*(.+?)[\.\s]", sample)
         if match:
             variables["failed_target"] = match.group(1).strip()
 
@@ -285,7 +271,7 @@ def _build_deterministic_refinement(
         expected = variables["expected_type"]
         parts.append(
             f"`{field}` must be a {expected}, not a string. "
-            f"WRONG: `\"{actual}\"` RIGHT: `{_guess_correct_format(actual, expected)}`"
+            f'WRONG: `"{actual}"` RIGHT: `{_guess_correct_format(actual, expected)}`'
         )
 
     if "actual_tokens" in variables and "max_tokens" in variables:
@@ -330,12 +316,14 @@ def _guess_correct_format(value: str, expected_type: str) -> str:
 
 def is_refinement_available() -> bool:
     """Check if any LLM API is available for refinement."""
-    return any([
-        os.environ.get("ANTHROPIC_API_KEY"),
-        os.environ.get("OPENAI_API_KEY"),
-        os.environ.get("GEMINI_API_KEY"),
-        os.environ.get("GOOGLE_API_KEY"),
-    ])
+    return any(
+        [
+            os.environ.get("ANTHROPIC_API_KEY"),
+            os.environ.get("OPENAI_API_KEY"),
+            os.environ.get("GEMINI_API_KEY"),
+            os.environ.get("GOOGLE_API_KEY"),
+        ]
+    )
 
 
 def refine_suggestion(
@@ -392,9 +380,7 @@ def refine_suggestion(
             logger.info("LLM refinement failed quality check, trying deterministic")
 
     # Step 3: Deterministic refinement from extracted variables
-    deterministic = _build_deterministic_refinement(
-        generic_rule, tool_name, variables
-    )
+    deterministic = _build_deterministic_refinement(generic_rule, tool_name, variables)
     if deterministic and _quality_check(deterministic, generic_rule):
         logger.info("Deterministic refinement produced usable output")
         return deterministic

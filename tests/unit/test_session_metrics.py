@@ -126,7 +126,10 @@ class TestSessionDuration:
             ),
         ]
         metrics = _compute_session_metrics(
-            messages, [], _FAKE_PATH, _FAKE_HASH,
+            messages,
+            [],
+            _FAKE_PATH,
+            _FAKE_HASH,
         )
         assert metrics["session_duration_seconds"] == pytest.approx(180.0)
 
@@ -140,7 +143,10 @@ class TestSessionDuration:
             ),
         ]
         metrics = _compute_session_metrics(
-            messages, [], _FAKE_PATH, _FAKE_HASH,
+            messages,
+            [],
+            _FAKE_PATH,
+            _FAKE_HASH,
         )
         # With only one timestamp, duration should be None (not 0)
         assert metrics["session_duration_seconds"] is None
@@ -152,7 +158,10 @@ class TestSessionDuration:
             _msg(role="assistant", content="also no ts"),
         ]
         metrics = _compute_session_metrics(
-            messages, [], _FAKE_PATH, _FAKE_HASH,
+            messages,
+            [],
+            _FAKE_PATH,
+            _FAKE_HASH,
         )
         assert metrics["session_duration_seconds"] is None
 
@@ -172,7 +181,10 @@ class TestSessionDuration:
             ),
         ]
         metrics = _compute_session_metrics(
-            messages, [], _FAKE_PATH, _FAKE_HASH,
+            messages,
+            [],
+            _FAKE_PATH,
+            _FAKE_HASH,
         )
         assert metrics["session_duration_seconds"] == pytest.approx(300.0)
 
@@ -191,7 +203,10 @@ class TestSessionDuration:
             ),
         ]
         metrics = _compute_session_metrics(
-            messages, [], _FAKE_PATH, _FAKE_HASH,
+            messages,
+            [],
+            _FAKE_PATH,
+            _FAKE_HASH,
         )
         assert metrics["session_duration_seconds"] == pytest.approx(600.0)
 
@@ -215,7 +230,10 @@ class TestCacheHitRatio:
             ),
         ]
         metrics = _compute_session_metrics(
-            messages, [], _FAKE_PATH, _FAKE_HASH,
+            messages,
+            [],
+            _FAKE_PATH,
+            _FAKE_HASH,
         )
         assert metrics["cache_hit_ratio"] == pytest.approx(0.8)
 
@@ -235,7 +253,10 @@ class TestCacheHitRatio:
         ]
         # totals: cache_read=200, input=100, ratio=200/300
         metrics = _compute_session_metrics(
-            messages, [], _FAKE_PATH, _FAKE_HASH,
+            messages,
+            [],
+            _FAKE_PATH,
+            _FAKE_HASH,
         )
         assert metrics["cache_hit_ratio"] == pytest.approx(200.0 / 300.0)
 
@@ -245,7 +266,10 @@ class TestCacheHitRatio:
             _msg(role="user", content="no tokens"),
         ]
         metrics = _compute_session_metrics(
-            messages, [], _FAKE_PATH, _FAKE_HASH,
+            messages,
+            [],
+            _FAKE_PATH,
+            _FAKE_HASH,
         )
         assert metrics["cache_hit_ratio"] is None
 
@@ -259,7 +283,10 @@ class TestCacheHitRatio:
             ),
         ]
         metrics = _compute_session_metrics(
-            messages, [], _FAKE_PATH, _FAKE_HASH,
+            messages,
+            [],
+            _FAKE_PATH,
+            _FAKE_HASH,
         )
         assert metrics["cache_hit_ratio"] == pytest.approx(0.0)
 
@@ -273,7 +300,10 @@ class TestCacheHitRatio:
             ),
         ]
         metrics = _compute_session_metrics(
-            messages, [], _FAKE_PATH, _FAKE_HASH,
+            messages,
+            [],
+            _FAKE_PATH,
+            _FAKE_HASH,
         )
         assert metrics["cache_hit_ratio"] == pytest.approx(1.0)
 
@@ -289,7 +319,10 @@ class TestAggregateCounts:
     def test_message_count(self) -> None:
         messages = [_msg(), _msg(), _msg()]
         metrics = _compute_session_metrics(
-            messages, [], _FAKE_PATH, _FAKE_HASH,
+            messages,
+            [],
+            _FAKE_PATH,
+            _FAKE_HASH,
         )
         assert metrics["message_count"] == 3
 
@@ -300,14 +333,20 @@ class TestAggregateCounts:
             _msg(role="user", content="ok"),
         ]
         metrics = _compute_session_metrics(
-            messages, [], _FAKE_PATH, _FAKE_HASH,
+            messages,
+            [],
+            _FAKE_PATH,
+            _FAKE_HASH,
         )
         assert metrics["tool_call_count"] == 2
 
     def test_error_count(self) -> None:
         errors = [{"error_text": "err1"}, {"error_text": "err2"}]
         metrics = _compute_session_metrics(
-            [_msg()], errors, _FAKE_PATH, _FAKE_HASH,
+            [_msg()],
+            errors,
+            _FAKE_PATH,
+            _FAKE_HASH,
         )
         assert metrics["error_count"] == 2
 
@@ -319,13 +358,19 @@ class TestAggregateCounts:
             _msg(),  # None
         ]
         metrics = _compute_session_metrics(
-            messages, [], _FAKE_PATH, _FAKE_HASH,
+            messages,
+            [],
+            _FAKE_PATH,
+            _FAKE_HASH,
         )
         assert metrics["sidechain_count"] == 2
 
     def test_empty_messages(self) -> None:
         metrics = _compute_session_metrics(
-            [], [], _FAKE_PATH, _FAKE_HASH,
+            [],
+            [],
+            _FAKE_PATH,
+            _FAKE_HASH,
         )
         assert metrics["message_count"] == 0
         assert metrics["tool_call_count"] == 0
@@ -360,7 +405,10 @@ class TestTokenAggregation:
             ),
         ]
         metrics = _compute_session_metrics(
-            messages, [], _FAKE_PATH, _FAKE_HASH,
+            messages,
+            [],
+            _FAKE_PATH,
+            _FAKE_HASH,
         )
         assert metrics["total_input_tokens"] == 300
         assert metrics["total_output_tokens"] == 150
@@ -375,7 +423,10 @@ class TestTokenAggregation:
             _msg(input_tokens=50, output_tokens=25),
         ]
         metrics = _compute_session_metrics(
-            messages, [], _FAKE_PATH, _FAKE_HASH,
+            messages,
+            [],
+            _FAKE_PATH,
+            _FAKE_HASH,
         )
         assert metrics["total_input_tokens"] == 50
         assert metrics["total_output_tokens"] == 25
@@ -396,14 +447,20 @@ class TestModelAndStopReason:
             _msg(model="claude-3-sonnet"),
         ]
         metrics = _compute_session_metrics(
-            messages, [], _FAKE_PATH, _FAKE_HASH,
+            messages,
+            [],
+            _FAKE_PATH,
+            _FAKE_HASH,
         )
         assert metrics["model_used"] == "claude-3-opus"
 
     def test_no_model(self) -> None:
         messages = [_msg()]
         metrics = _compute_session_metrics(
-            messages, [], _FAKE_PATH, _FAKE_HASH,
+            messages,
+            [],
+            _FAKE_PATH,
+            _FAKE_HASH,
         )
         assert metrics["model_used"] is None
 
@@ -416,7 +473,10 @@ class TestModelAndStopReason:
             _msg(stop_reason="tool_use"),
         ]
         metrics = _compute_session_metrics(
-            messages, [], _FAKE_PATH, _FAKE_HASH,
+            messages,
+            [],
+            _FAKE_PATH,
+            _FAKE_HASH,
         )
         dist = json.loads(metrics["stop_reason_distribution"])
         assert dist == {"end_turn": 2, "tool_use": 1}
@@ -424,7 +484,10 @@ class TestModelAndStopReason:
     def test_no_stop_reasons(self) -> None:
         messages = [_msg()]
         metrics = _compute_session_metrics(
-            messages, [], _FAKE_PATH, _FAKE_HASH,
+            messages,
+            [],
+            _FAKE_PATH,
+            _FAKE_HASH,
         )
         assert metrics["stop_reason_distribution"] is None
 
@@ -439,7 +502,10 @@ class TestSessionId:
 
     def test_session_id_format(self) -> None:
         metrics = _compute_session_metrics(
-            [_msg()], [], _FAKE_PATH, _FAKE_HASH,
+            [_msg()],
+            [],
+            _FAKE_PATH,
+            _FAKE_HASH,
         )
         expected = f"{_FAKE_PATH}:{_FAKE_HASH[:16]}"
         assert metrics["session_id"] == expected

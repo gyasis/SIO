@@ -29,10 +29,10 @@ from sio.scheduler.cron import get_status, install_schedule, uninstall_schedule
 # Standard cron field pattern: minute hour dom month dow command
 _CRON_LINE_RE = re.compile(
     r"^"
-    r"(@\w+|\*|[0-9,\-/]+)"      # minute (or @reboot/@daily shorthand)
-    r"(?:\s+\*|[0-9,\-/]+)*"     # remaining time fields (optional when @-form)
+    r"(@\w+|\*|[0-9,\-/]+)"  # minute (or @reboot/@daily shorthand)
+    r"(?:\s+\*|[0-9,\-/]+)*"  # remaining time fields (optional when @-form)
     r"\s+"
-    r".+"                          # command (at least one non-space char)
+    r".+"  # command (at least one non-space char)
     r"$"
 )
 
@@ -43,13 +43,13 @@ _FIVE_FIELD_CRON_RE = re.compile(
     r"\s+"
     r"(?:\*|[0-9]{1,2}(?:,[0-9]{1,2})*(?:-[0-9]{1,2})?(?:/[0-9]{1,2})?)"  # hour
     r"\s+"
-    r"(?:\*|[0-9]{1,2}(?:,[0-9]{1,2})*)"                                   # dom
+    r"(?:\*|[0-9]{1,2}(?:,[0-9]{1,2})*)"  # dom
     r"\s+"
-    r"(?:\*|[0-9]{1,2}(?:,[0-9]{1,2})*)"                                   # month
+    r"(?:\*|[0-9]{1,2}(?:,[0-9]{1,2})*)"  # month
     r"\s+"
-    r"(?:\*|[0-7](?:,[0-7])*)"                                              # dow
+    r"(?:\*|[0-7](?:,[0-7])*)"  # dow
     r"\s+"
-    r".+"                                                                    # command
+    r".+"  # command
     r"$"
 )
 
@@ -81,9 +81,7 @@ def _is_valid_cron_line(line: str) -> bool:
 def _extract_cron_lines(text: str) -> list[str]:
     """Return all non-comment, non-blank lines from *text*."""
     return [
-        line
-        for line in text.splitlines()
-        if line.strip() and not line.strip().startswith("#")
+        line for line in text.splitlines() if line.strip() and not line.strip().startswith("#")
     ]
 
 
@@ -179,9 +177,7 @@ class TestGeneratesValidCrontabEntries:
 
         assert len(written_lines) >= 1, "No cron entries were written at all"
         for line in written_lines:
-            assert _is_valid_cron_line(line), (
-                f"Cron line failed syntax check: {line!r}"
-            )
+            assert _is_valid_cron_line(line), f"Cron line failed syntax check: {line!r}"
 
     def test_install_result_has_entries_key(self) -> None:
         result = install_schedule()
@@ -192,9 +188,7 @@ class TestGeneratesValidCrontabEntries:
 class TestDailyAndWeeklySchedules:
     """Both a daily (midnight) and a weekly (Sunday) entry must be installed."""
 
-    def test_daily_entry_is_present(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_daily_entry_is_present(self, monkeypatch: pytest.MonkeyPatch) -> None:
         written_lines: list[str] = []
 
         def _capturing_run(
@@ -226,9 +220,7 @@ class TestDailyAndWeeklySchedules:
             f"No midnight/daily cron entry found in: {written_lines}"
         )
 
-    def test_weekly_entry_is_present(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_weekly_entry_is_present(self, monkeypatch: pytest.MonkeyPatch) -> None:
         written_lines: list[str] = []
 
         def _capturing_run(
@@ -303,9 +295,7 @@ class TestDailyAndWeeklySchedules:
         result = install_schedule()
         assert result.get("weekly_enabled") is True
 
-    def test_cron_command_references_sio(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_cron_command_references_sio(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Each installed cron line must invoke the sio CLI or its module."""
         written_lines: list[str] = []
 
@@ -335,17 +325,13 @@ class TestDailyAndWeeklySchedules:
         install_schedule()
 
         for line in written_lines:
-            assert "sio" in line.lower(), (
-                f"Cron entry does not reference sio: {line!r}"
-            )
+            assert "sio" in line.lower(), f"Cron entry does not reference sio: {line!r}"
 
 
 class TestIdempotentInstall:
     """Calling install_schedule twice must not duplicate cron entries."""
 
-    def test_double_install_no_duplicate_daily(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_double_install_no_duplicate_daily(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _state: dict[str, str] = {"crontab": ""}
 
         def _stateful_run(
@@ -381,9 +367,7 @@ class TestIdempotentInstall:
             f"Expected exactly 1 daily entry, found {daily_count}. Lines: {lines}"
         )
 
-    def test_double_install_no_duplicate_weekly(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_double_install_no_duplicate_weekly(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _state: dict[str, str] = {"crontab": ""}
 
         def _stateful_run(
@@ -419,9 +403,7 @@ class TestIdempotentInstall:
             f"Expected exactly 1 weekly entry, found {weekly_count}. Lines: {lines}"
         )
 
-    def test_triple_install_still_idempotent(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_triple_install_still_idempotent(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _state: dict[str, str] = {"crontab": ""}
 
         def _stateful_run(

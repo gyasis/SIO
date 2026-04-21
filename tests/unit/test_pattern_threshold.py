@@ -136,10 +136,7 @@ class TestIsOptimizationCandidate:
                 for i in range(3)
             ],
         )
-        assert (
-            is_optimization_candidate(tmp_db, skill_name="Bash", threshold=5)
-            is False
-        )
+        assert is_optimization_candidate(tmp_db, skill_name="Bash", threshold=5) is False
 
     def test_candidate_at_exact_threshold(self, tmp_db, sample_invocation):
         """Exactly meeting the threshold returns True."""
@@ -155,7 +152,4 @@ class TestIsOptimizationCandidate:
                 for i in range(5)
             ],
         )
-        assert (
-            is_optimization_candidate(tmp_db, skill_name="Bash", threshold=5)
-            is True
-        )
+        assert is_optimization_candidate(tmp_db, skill_name="Bash", threshold=5) is True

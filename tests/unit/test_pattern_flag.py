@@ -20,10 +20,14 @@ class TestFlagPatternMarksSkill:
 
     def test_flag_pattern_marks_skill(self, tmp_db, sample_invocation):
         # Insert some invocations for the skill so the DB is not empty
-        _insert_many(tmp_db, sample_invocation, [
-            {"tool_name": "Read", "platform": "claude-code"},
-            {"tool_name": "Read", "platform": "claude-code"},
-        ])
+        _insert_many(
+            tmp_db,
+            sample_invocation,
+            [
+                {"tool_name": "Read", "platform": "claude-code"},
+                {"tool_name": "Read", "platform": "claude-code"},
+            ],
+        )
         result = flag_pattern(tmp_db, skill_name="Read", note="frequent false triggers")
         assert result is True
 

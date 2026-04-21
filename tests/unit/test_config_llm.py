@@ -60,11 +60,7 @@ class TestLoadLLMSection:
     def test_load_llm_sub_section(self, tmp_path):
         config_file = tmp_path / "config.toml"
         config_file.write_text(
-            "[llm]\n"
-            'model = "openai/gpt-4o"\n'
-            "\n"
-            "[llm.sub]\n"
-            'model = "openai/gpt-4o-mini"\n'
+            '[llm]\nmodel = "openai/gpt-4o"\n\n[llm.sub]\nmodel = "openai/gpt-4o-mini"\n'
         )
         cfg = load_config(str(config_file))
         assert cfg.llm_sub_model == "openai/gpt-4o-mini"
@@ -82,22 +78,13 @@ class TestLoadLLMSection:
 
     def test_llm_temperature_override(self, tmp_path):
         config_file = tmp_path / "config.toml"
-        config_file.write_text(
-            "[llm]\n"
-            'model = "anthropic/claude-3-haiku"\n'
-            "temperature = 0.0\n"
-        )
+        config_file.write_text('[llm]\nmodel = "anthropic/claude-3-haiku"\ntemperature = 0.0\n')
         cfg = load_config(str(config_file))
         assert cfg.llm_temperature == 0.0
 
     def test_llm_section_does_not_clobber_existing_fields(self, tmp_path):
         config_file = tmp_path / "config.toml"
-        config_file.write_text(
-            "retention_days = 45\n"
-            "\n"
-            "[llm]\n"
-            'model = "openai/gpt-4o"\n'
-        )
+        config_file.write_text('retention_days = 45\n\n[llm]\nmodel = "openai/gpt-4o"\n')
         cfg = load_config(str(config_file))
         assert cfg.retention_days == 45
         assert cfg.llm_model == "openai/gpt-4o"

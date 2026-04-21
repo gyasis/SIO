@@ -18,9 +18,7 @@ from sio.core.config import SIOConfig
 # ---------------------------------------------------------------------------
 
 
-def _seed_approved_suggestion(
-    conn: sqlite3.Connection, **overrides
-) -> int:
+def _seed_approved_suggestion(conn: sqlite3.Connection, **overrides) -> int:
     """Insert one approved suggestion and return its ID."""
     defaults = {
         "pattern_id": 1,
@@ -70,9 +68,7 @@ class _FakeBackend:
                     matched = True
                     break
             if not matched:
-                result.append(
-                    self._rng.random(384).astype(np.float32)
-                )
+                result.append(self._rng.random(384).astype(np.float32))
         return np.stack(result)
 
 
@@ -108,11 +104,7 @@ class TestDeltaMerge:
     def test_merge_when_similar(self, v2_db, tmp_path: Path):
         from sio.applier.writer import apply_change
 
-        existing_content = (
-            "# Rules\n"
-            "\n"
-            "Never use SELECT * in SQL queries\n"
-        )
+        existing_content = "# Rules\n\nNever use SELECT * in SQL queries\n"
         target = tmp_path / "CLAUDE.md"
         target.write_text(existing_content)
 
@@ -315,9 +307,7 @@ class TestDeltaTypeTracking:
         target = tmp_path / "CLAUDE.md"
         target.write_text("")
 
-        sid = _seed_approved_suggestion(
-            v2_db, target_file=str(target)
-        )
+        sid = _seed_approved_suggestion(v2_db, target_file=str(target))
         result = apply_change(v2_db, sid)
 
         assert "delta_type" in result
@@ -332,9 +322,7 @@ class TestDeltaTypeTracking:
 class TestBackwardCompatibility:
     """Existing writer behavior is preserved when config is not provided."""
 
-    def test_old_tests_still_pass_without_config(
-        self, v2_db, tmp_path: Path
-    ):
+    def test_old_tests_still_pass_without_config(self, v2_db, tmp_path: Path):
         """apply_change without config behaves like the original writer."""
         from sio.applier.writer import apply_change
 
@@ -354,9 +342,7 @@ class TestBackwardCompatibility:
         assert "## New Rule" in content
         assert result["success"] is True
 
-    def test_creates_file_if_missing_without_config(
-        self, v2_db, tmp_path: Path
-    ):
+    def test_creates_file_if_missing_without_config(self, v2_db, tmp_path: Path):
         from sio.applier.writer import apply_change
 
         target = tmp_path / "CLAUDE.md"

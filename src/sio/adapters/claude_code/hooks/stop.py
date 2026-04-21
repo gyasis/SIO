@@ -10,7 +10,6 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
-from sio.core.constants import DEFAULT_PLATFORM as _DEFAULT_PLATFORM  # noqa: E402
 _DEFAULT_DB_DIR = os.path.expanduser("~/.sio/claude-code")
 _ERROR_LOG = os.path.expanduser("~/.sio/hook_errors.log")
 _SKILLS_DIR = os.path.expanduser("~/.claude/skills/learned")
@@ -47,20 +46,13 @@ def _save_pattern_as_skill(pattern: dict) -> str | None:
         return None
 
     label = pattern.get("label", "unknown-pattern")
-    safe_label = (
-        label.lower()
-        .replace(" ", "-")
-        .replace("/", "-")
-        .replace(":", "-")[:60]
-    )
+    safe_label = label.lower().replace(" ", "-").replace("/", "-").replace(":", "-")[:60]
     slug = f"pattern-{safe_label}"
 
     # Generate a full skill file from the pattern.
     # No positive examples or flow data available at stop-hook time,
     # so pass empty lists -- the generator handles this gracefully.
-    content = generate_skill_from_pattern(
-        pattern, positive_examples=[], flow_sequence=None
-    )
+    content = generate_skill_from_pattern(pattern, positive_examples=[], flow_sequence=None)
 
     return write_skill_file(content, slug, target_dir=_SKILLS_DIR)
 
@@ -94,21 +86,21 @@ def _lightweight_pattern_detection(conn, session_id: str) -> list[dict]:
 
         # Count distinct sessions with this error for cross-session strength
         session_rows = conn.execute(
-            "SELECT COUNT(DISTINCT session_id) as scnt "
-            "FROM error_records "
-            "WHERE error_text = ?",
+            "SELECT COUNT(DISTINCT session_id) as scnt FROM error_records WHERE error_text = ?",
             (row["error_text"],),
         ).fetchone()
         session_count = session_rows["scnt"] if session_rows else 1
 
-        patterns.append({
-            "label": row["error_text"][:100],
-            "tool_name": row["tool_name"],
-            "count": count,
-            "confidence": round(confidence, 3),
-            "example": row["error_text"],
-            "session_count": session_count,
-        })
+        patterns.append(
+            {
+                "label": row["error_text"][:100],
+                "tool_name": row["tool_name"],
+                "count": count,
+                "confidence": round(confidence, 3),
+                "example": row["error_text"],
+                "session_count": session_count,
+            }
+        )
 
     return patterns
 
@@ -138,15 +130,13 @@ def _do_finalize(stdin_json: str, *, conn=None) -> list[str]:
 
         # Gather session stats — tool calls from invocations, errors from error_records
         inv_row = conn.execute(
-            "SELECT COUNT(*) as total "
-            "FROM behavior_invocations WHERE session_id = ?",
+            "SELECT COUNT(*) as total FROM behavior_invocations WHERE session_id = ?",
             (session_id,),
         ).fetchone()
         tool_call_count = inv_row["total"] if inv_row else 0
 
         err_row = conn.execute(
-            "SELECT COUNT(*) as errors "
-            "FROM error_records WHERE session_id = ?",
+            "SELECT COUNT(*) as errors FROM error_records WHERE session_id = ?",
             (session_id,),
         ).fetchone()
         error_count = err_row["errors"] if err_row else 0
@@ -154,8 +144,7 @@ def _do_finalize(stdin_json: str, *, conn=None) -> list[str]:
         # Count positive signals
         try:
             pos_row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM positive_records "
-                "WHERE session_id = ?",
+                "SELECT COUNT(*) as cnt FROM positive_records WHERE session_id = ?",
                 (session_id,),
             ).fetchone()
             positive_count = pos_row["cnt"] if pos_row else 0
@@ -228,6 +217,7 @@ def handle_stop(stdin_json: str, *, conn=None) -> str:
     _session_id: str | None = None
     try:
         import json as _json  # noqa: PLC0415
+
         _session_id = _json.loads(stdin_json).get("session_id")
     except Exception:
         pass
@@ -236,6 +226,7 @@ def handle_stop(stdin_json: str, *, conn=None) -> str:
         _do_finalize(stdin_json, conn=conn)
         try:
             from sio.adapters.claude_code.hooks._heartbeat import record_success  # noqa: PLC0415
+
             record_success("stop", session_id=_session_id)
         except Exception:
             pass
@@ -244,14 +235,20 @@ def handle_stop(stdin_json: str, *, conn=None) -> str:
         try:
             _do_finalize(stdin_json, conn=conn)
             try:
-                from sio.adapters.claude_code.hooks._heartbeat import record_success  # noqa: PLC0415
+                from sio.adapters.claude_code.hooks._heartbeat import (
+                    record_success,  # noqa: PLC0415
+                )
+
                 record_success("stop", session_id=_session_id)
             except Exception:
                 pass
         except Exception as second_err:
             _log_error(f"retry failed: {first_err!r} -> {second_err!r}")
             try:
-                from sio.adapters.claude_code.hooks._heartbeat import record_failure  # noqa: PLC0415
+                from sio.adapters.claude_code.hooks._heartbeat import (
+                    record_failure,  # noqa: PLC0415
+                )
+
                 record_failure("stop", second_err)
             except Exception:
                 pass

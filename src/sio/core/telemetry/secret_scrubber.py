@@ -28,14 +28,10 @@ _KEY_VALUE_PATTERNS = [
 ]
 
 # Bearer tokens
-_BEARER_PATTERN = re.compile(
-    r"(Bearer\s+)(\S+)", re.IGNORECASE
-)
+_BEARER_PATTERN = re.compile(r"(Bearer\s+)(\S+)", re.IGNORECASE)
 
 # Connection strings with credentials: scheme://user:pass@host
-_CONN_STRING_PATTERN = re.compile(
-    r"((?:postgresql|mysql|mongodb|redis|amqp)://)([^@]+)(@\S+)"
-)
+_CONN_STRING_PATTERN = re.compile(r"((?:postgresql|mysql|mongodb|redis|amqp)://)([^@]+)(@\S+)")
 
 # Standalone AWS access key IDs (AKIA followed by 16 alphanumeric chars)
 _AWS_AKIA_PATTERN = re.compile(r"\bAKIA[0-9A-Z]{16}\b")

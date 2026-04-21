@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 # Module registry — lazy-loaded so we don't crash if Wave 9 classes not yet real
 # ---------------------------------------------------------------------------
 
+
 def _lazy_load_suggestion_generator():
     """Import SuggestionGenerator; returns the class or a forward-compat shim."""
     try:
@@ -81,9 +82,7 @@ def _lazy_load_recall_evaluator():
 
         def __init__(self) -> None:
             super().__init__()
-            self.score_pred = dspy.Predict(
-                "gold_rule, candidate_rule -> score, reasoning"
-            )
+            self.score_pred = dspy.Predict("gold_rule, candidate_rule -> score, reasoning")
 
         def forward(
             self,
@@ -98,6 +97,7 @@ def _lazy_load_recall_evaluator():
 # ---------------------------------------------------------------------------
 # Lazy-evaluated registry — classes resolved on first access
 # ---------------------------------------------------------------------------
+
 
 class _LazyModuleRegistry(dict):
     """A dict whose values are lazy-loaded on first access."""
@@ -134,6 +134,7 @@ MODULE_REGISTRY: dict[str, type] = _LazyModuleRegistry()
 # Save / Load
 # ---------------------------------------------------------------------------
 
+
 def save_compiled(program: dspy.Module, path: Path) -> None:
     """Persist a compiled DSPy module to ``path`` in JSON format.
 
@@ -169,8 +170,7 @@ def load_compiled(module_name: str, path: Path) -> dspy.Module:
     """
     if module_name not in MODULE_REGISTRY:
         raise KeyError(
-            f"Unknown module name: {module_name!r}. "
-            f"Known modules: {sorted(MODULE_REGISTRY)}"
+            f"Unknown module name: {module_name!r}. Known modules: {sorted(MODULE_REGISTRY)}"
         )
 
     path = Path(path)
@@ -188,9 +188,11 @@ def load_compiled(module_name: str, path: Path) -> dspy.Module:
         # load_state with a partial-load strategy.
         logger.debug(
             "Direct load() failed (%s); attempting partial load for '%s'",
-            exc, module_name,
+            exc,
+            module_name,
         )
         import json as _json  # noqa: PLC0415
+
         state = _json.loads(Path(path).read_text(encoding="utf-8"))
         # Try to restore whatever predictors exist in the saved state
         for name, predictor in program.named_predictors():

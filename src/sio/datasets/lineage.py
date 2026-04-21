@@ -65,8 +65,7 @@ def track_lineage(
     #   {"sessions": [...], "time_window": "2 weeks"}
     full_lineage = json.dumps({"sessions": merged, "time_window": time_window})
     db_conn.execute(
-        "UPDATE datasets SET lineage_sessions = ?, updated_at = datetime('now') "
-        "WHERE id = ?",
+        "UPDATE datasets SET lineage_sessions = ?, updated_at = datetime('now') WHERE id = ?",
         (full_lineage, dataset_id),
     )
     db_conn.commit()

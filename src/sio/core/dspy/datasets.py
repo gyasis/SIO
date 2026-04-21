@@ -46,6 +46,7 @@ _MODULE_BUILDERS: dict[str, Any] = {}  # populated after function defs
 # DB helpers
 # ---------------------------------------------------------------------------
 
+
 def _default_db_path() -> str:
     return os.environ.get(
         "SIO_DB_PATH",
@@ -77,10 +78,7 @@ def load_gold_standards(
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
-            "SELECT * FROM gold_standards "
-            "WHERE task_type = ? "
-            "ORDER BY id "
-            "LIMIT ? OFFSET ?",
+            "SELECT * FROM gold_standards WHERE task_type = ? ORDER BY id LIMIT ? OFFSET ?",
             (task_type, limit, offset),
         ).fetchall()
     except sqlite3.OperationalError as exc:
@@ -104,8 +102,9 @@ def load_gold_standards(
 
         # Normalise example_errors — may be stored as JSON array string
         raw_errors = (
-            data.get("example_errors")
-            or row["example_errors"] if "example_errors" in row.keys() else None
+            data.get("example_errors") or row["example_errors"]
+            if "example_errors" in row.keys()
+            else None
         )
         if isinstance(raw_errors, str):
             try:
@@ -129,14 +128,8 @@ def load_gold_standards(
                 data.get("rule_title")
                 or (row["expected_action"] if "expected_action" in row.keys() else "")
             ),
-            gold_rule_body=(
-                data.get("rule_body")
-                or ""
-            ),
-            gold_rule_rationale=(
-                data.get("rule_rationale")
-                or ""
-            ),
+            gold_rule_body=(data.get("rule_body") or ""),
+            gold_rule_rationale=(data.get("rule_rationale") or ""),
             gold_rule=(
                 data.get("rule_body")
                 or (row["expected_action"] if "expected_action" in row.keys() else "")
@@ -154,6 +147,7 @@ def load_gold_standards(
 # ---------------------------------------------------------------------------
 # Per-module trainset builders
 # ---------------------------------------------------------------------------
+
 
 def _build_suggestion_generator(
     limit: int = 500,
@@ -206,7 +200,7 @@ def _build_recall_evaluator(
         ex = dspy.Example(
             gold_rule=r.gold_rule,
             candidate_rule=r.candidate_rule,
-            score=1.0,       # gold pair is always a perfect match by definition
+            score=1.0,  # gold pair is always a perfect match by definition
             reasoning="Gold-standard pair from human-validated training set.",
         ).with_inputs("gold_rule", "candidate_rule")
         examples.append(ex)
@@ -244,8 +238,7 @@ def build_trainset_for(
     """
     if module_name not in _MODULE_BUILDERS:
         raise ValueError(
-            f"Unknown module name: {module_name!r}. "
-            f"Known modules: {sorted(_MODULE_BUILDERS)}"
+            f"Unknown module name: {module_name!r}. Known modules: {sorted(_MODULE_BUILDERS)}"
         )
 
     if limit == 0:

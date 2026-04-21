@@ -17,12 +17,7 @@ import json
 import os
 import sqlite3
 import tempfile
-import time
 from pathlib import Path
-from unittest.mock import patch
-
-import pytest
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -31,14 +26,16 @@ import pytest
 
 def _make_jsonl_event(idx: int) -> str:
     """Return a minimal JSONL line representing a session event."""
-    return json.dumps({
-        "type": "assistant",
-        "message": {
-            "role": "assistant",
-            "content": [{"type": "text", "text": f"Event {idx}"}],
-        },
-        "timestamp": f"2026-04-20T{idx:02d}:00:00Z",
-    })
+    return json.dumps(
+        {
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": f"Event {idx}"}],
+            },
+            "timestamp": f"2026-04-20T{idx:02d}:00:00Z",
+        }
+    )
 
 
 def _write_events(path: Path, n: int, append: bool = False) -> int:
@@ -126,8 +123,8 @@ def test_last_offset_equals_file_size_after_mine():
 
 def test_second_mine_unchanged_file_processes_zero_new_events():
     """Second mine on unchanged file must process 0 new events via byte-offset resume."""
-    from sio.mining.pipeline import _get_session_state, _update_session_state  # noqa: PLC0415
     from sio.mining.jsonl_parser import iter_events  # noqa: PLC0415
+    from sio.mining.pipeline import _get_session_state, _update_session_state  # noqa: PLC0415
 
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "sio.db"
@@ -143,9 +140,7 @@ def test_second_mine_unchanged_file_processes_zero_new_events():
             # Second mine: start_offset = file_size → no new events
             state = _get_session_state(conn, str(jsonl_path))
             events = list(iter_events(jsonl_path, start_offset=state["last_offset"]))
-            assert len(events) == 0, (
-                f"Expected 0 new events on second mine, got {len(events)}"
-            )
+            assert len(events) == 0, f"Expected 0 new events on second mine, got {len(events)}"
         finally:
             conn.close()
 
@@ -162,8 +157,8 @@ def test_append_then_mine_processes_only_new_events():
     parser normalization. We verify that: (a) full file has more events than the
     initial set and (b) byte-offset start produces > 0 new events.
     """
-    from sio.mining.pipeline import _get_session_state, _update_session_state  # noqa: PLC0415
     from sio.mining.jsonl_parser import iter_events  # noqa: PLC0415
+    from sio.mining.pipeline import _get_session_state, _update_session_state  # noqa: PLC0415
 
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "sio.db"
@@ -183,15 +178,18 @@ def test_append_then_mine_processes_only_new_events():
             # Append 5 more distinct events with unique timestamps
             with open(jsonl_path, "a", encoding="utf-8") as f:
                 import json as _json  # noqa: PLC0415
+
                 for i in range(10, 15):
-                    line = _json.dumps({
-                        "type": "assistant",
-                        "message": {
-                            "role": "assistant",
-                            "content": [{"type": "text", "text": f"Appended {i}"}],
-                        },
-                        "timestamp": f"2026-04-20T{i:02d}:00:00Z",
-                    })
+                    line = _json.dumps(
+                        {
+                            "type": "assistant",
+                            "message": {
+                                "role": "assistant",
+                                "content": [{"type": "text", "text": f"Appended {i}"}],
+                            },
+                            "timestamp": f"2026-04-20T{i:02d}:00:00Z",
+                        }
+                    )
                     f.write(line + "\n")
 
             state = _get_session_state(conn, str(jsonl_path))
@@ -219,8 +217,8 @@ def test_truncation_resets_offset_to_zero():
     """File truncation (size < last_offset) must reset offset to 0 and re-mine all."""
     from sio.mining.pipeline import (  # noqa: PLC0415
         _get_session_state,
-        _update_session_state,
         _should_reset_offset,
+        _update_session_state,
     )
 
     with tempfile.TemporaryDirectory() as tmpdir:

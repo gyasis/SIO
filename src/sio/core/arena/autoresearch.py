@@ -74,7 +74,9 @@ class AutoResearchLoop:
         active = self._txlog.active_experiment_count()
         if active >= self._config.max_experiments:
             self._txlog.append(
-                cycle, "stop", "skipped",
+                cycle,
+                "stop",
+                "skipped",
                 f"Max experiments reached ({active}/{self._config.max_experiments})",
             )
             result["skipped"] = True
@@ -136,23 +138,34 @@ class AutoResearchLoop:
 
             if not source_dirs:
                 self._txlog.append(
-                    cycle, "mine", "skipped", "No source directories found",
+                    cycle,
+                    "mine",
+                    "skipped",
+                    "No source directories found",
                 )
                 return {"errors_found": 0}
 
             mine_out = run_mine(
-                self._db, source_dirs, "7 days", "both", None,
+                self._db,
+                source_dirs,
+                "7 days",
+                "both",
+                None,
             )
             errors_found = mine_out.get("errors_found", 0)
             self._txlog.append(
-                cycle, "mine", "success",
-                f"Mined {mine_out.get('total_files_scanned', 0)} sessions, "
-                f"{errors_found} errors",
+                cycle,
+                "mine",
+                "success",
+                f"Mined {mine_out.get('total_files_scanned', 0)} sessions, {errors_found} errors",
             )
             return {"errors_found": errors_found}
         except Exception as exc:
             self._txlog.append(
-                cycle, "mine", "failure", f"Error: {exc}",
+                cycle,
+                "mine",
+                "failure",
+                f"Error: {exc}",
             )
             logger.exception("Mine step failed")
             return {"errors_found": 0}
@@ -166,19 +179,27 @@ class AutoResearchLoop:
             errors = get_error_records(self._db)
             if not errors:
                 self._txlog.append(
-                    cycle, "cluster", "skipped", "No errors to cluster",
+                    cycle,
+                    "cluster",
+                    "skipped",
+                    "No errors to cluster",
                 )
                 return {"patterns": []}
 
             patterns = cluster_errors(errors)
             self._txlog.append(
-                cycle, "cluster", "success",
+                cycle,
+                "cluster",
+                "success",
                 f"Found {len(patterns)} patterns",
             )
             return {"patterns": patterns}
         except Exception as exc:
             self._txlog.append(
-                cycle, "cluster", "failure", f"Error: {exc}",
+                cycle,
+                "cluster",
+                "failure",
+                f"Error: {exc}",
             )
             logger.exception("Cluster step failed")
             return {"patterns": []}
@@ -197,20 +218,26 @@ class AutoResearchLoop:
                 "SELECT * FROM patterns WHERE grade IN ('strong', 'established')",
             ).fetchall()
             strong = [
-                p for p in (dict(r) for r in rows)
+                p
+                for p in (dict(r) for r in rows)
                 if p.get("error_count", 0) >= self._config.min_pattern_occurrences
             ]
             total_rows = self._db.execute(
                 "SELECT COUNT(*) FROM patterns",
             ).fetchone()[0]
             self._txlog.append(
-                cycle, "grade", "success",
+                cycle,
+                "grade",
+                "success",
                 f"{len(strong)} strong patterns from {total_rows} total",
             )
             return {"strong_patterns": strong}
         except Exception as exc:
             self._txlog.append(
-                cycle, "grade", "failure", f"Error: {exc}",
+                cycle,
+                "grade",
+                "failure",
+                f"Error: {exc}",
             )
             logger.exception("Grade step failed")
             return {"strong_patterns": []}
@@ -223,7 +250,10 @@ class AutoResearchLoop:
             strong = grade_result.get("strong_patterns", [])
             if not strong:
                 self._txlog.append(
-                    cycle, "generate", "skipped", "No strong patterns",
+                    cycle,
+                    "generate",
+                    "skipped",
+                    "No strong patterns",
                 )
                 return {}
 
@@ -247,7 +277,9 @@ class AutoResearchLoop:
             suggestions = generate_suggestions([top], datasets, self._db)
             if not suggestions:
                 self._txlog.append(
-                    cycle, "generate", "skipped",
+                    cycle,
+                    "generate",
+                    "skipped",
                     "Generator produced no suggestions",
                 )
                 return {}
@@ -255,14 +287,19 @@ class AutoResearchLoop:
             sug = suggestions[0]
             sug_id = sug.get("id") or sug.get("suggestion_id")
             self._txlog.append(
-                cycle, "generate", "success",
+                cycle,
+                "generate",
+                "success",
                 f"Generated suggestion #{sug_id}",
                 suggestion_id=sug_id,
             )
             return {"suggestion_id": sug_id, "suggestion": sug}
         except Exception as exc:
             self._txlog.append(
-                cycle, "generate", "failure", f"Error: {exc}",
+                cycle,
+                "generate",
+                "failure",
+                f"Error: {exc}",
             )
             logger.exception("Generate step failed")
             return {}
@@ -291,7 +328,8 @@ class AutoResearchLoop:
 
             assertion_dict = {r.name: r.passed for r in results}
             self._txlog.append(
-                cycle, "assert",
+                cycle,
+                "assert",
                 "success" if all_passed else "failure",
                 f"Assertions: {assertion_dict}",
                 suggestion_id=sug_id,
@@ -300,7 +338,10 @@ class AutoResearchLoop:
             return {"passed": all_passed, "results": results}
         except Exception as exc:
             self._txlog.append(
-                cycle, "assert", "failure", f"Error: {exc}",
+                cycle,
+                "assert",
+                "failure",
+                f"Error: {exc}",
             )
             logger.exception("Assert step failed")
             return {"passed": False}
@@ -313,14 +354,18 @@ class AutoResearchLoop:
             sug_id = gen_result.get("suggestion_id")
             if sug_id is None:
                 self._txlog.append(
-                    cycle, "experiment_create", "skipped",
+                    cycle,
+                    "experiment_create",
+                    "skipped",
                     "No suggestion_id",
                 )
                 return {}
 
             branch = create_experiment(sug_id, self._db)
             self._txlog.append(
-                cycle, "experiment_create", "success",
+                cycle,
+                "experiment_create",
+                "success",
                 f"Created experiment branch {branch}",
                 suggestion_id=sug_id,
                 experiment_branch=branch,
@@ -328,7 +373,10 @@ class AutoResearchLoop:
             return {"branch": branch, "suggestion_id": sug_id}
         except Exception as exc:
             self._txlog.append(
-                cycle, "experiment_create", "failure", f"Error: {exc}",
+                cycle,
+                "experiment_create",
+                "failure",
+                f"Error: {exc}",
             )
             logger.exception("Experiment create failed")
             return {}
@@ -366,7 +414,9 @@ class AutoResearchLoop:
             if os.path.exists(_SENTINEL_PATH):
                 logger.info("Stop sentinel detected, exiting loop")
                 self._txlog.append(
-                    self._cycle + 1, "stop", "success",
+                    self._cycle + 1,
+                    "stop",
+                    "success",
                     "Stop sentinel found at loop start",
                 )
                 break
@@ -382,12 +432,11 @@ class AutoResearchLoop:
                 break
 
             # Sleep between cycles
-            if self._running and (
-                max_cycles is None or cycles_run < max_cycles
-            ):
+            if self._running and (max_cycles is None or cycles_run < max_cycles):
                 logger.info(
                     "Cycle %d complete. Sleeping %d minutes...",
-                    self._cycle, interval_minutes,
+                    self._cycle,
+                    interval_minutes,
                 )
                 time.sleep(interval_minutes * 60)
 

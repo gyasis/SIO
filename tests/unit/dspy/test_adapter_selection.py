@@ -20,14 +20,17 @@ from __future__ import annotations
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_adapter():
     from sio.core.dspy.lm_factory import get_adapter  # noqa: PLC0415
+
     return get_adapter
 
 
 def _make_lm(model: str):
     """Create a dspy.LM with the given model string."""
     import dspy  # noqa: PLC0415
+
     return dspy.LM(model, cache=False)
 
 
@@ -35,12 +38,14 @@ def _make_lm(model: str):
 # Provider-based selection tests
 # ---------------------------------------------------------------------------
 
+
 class TestProviderAdapterRouting:
     """get_adapter() routes correctly based on the LM model string prefix."""
 
     def test_openai_returns_chat_adapter_with_native_fc(self, monkeypatch):
         """openai/* model → ChatAdapter(use_native_function_calling=True)."""
         import dspy  # noqa: PLC0415
+
         monkeypatch.delenv("SIO_FORCE_ADAPTER", raising=False)
         monkeypatch.delenv("SIO_FORCE_NATIVE_FC", raising=False)
         get_adapter = _get_adapter()
@@ -56,6 +61,7 @@ class TestProviderAdapterRouting:
     def test_anthropic_returns_chat_adapter_with_native_fc(self, monkeypatch):
         """anthropic/* model → ChatAdapter(use_native_function_calling=True)."""
         import dspy  # noqa: PLC0415
+
         monkeypatch.delenv("SIO_FORCE_ADAPTER", raising=False)
         monkeypatch.delenv("SIO_FORCE_NATIVE_FC", raising=False)
         get_adapter = _get_adapter()
@@ -69,6 +75,7 @@ class TestProviderAdapterRouting:
     def test_azure_returns_chat_adapter_with_native_fc(self, monkeypatch):
         """azure/* model → ChatAdapter(use_native_function_calling=True)."""
         import dspy  # noqa: PLC0415
+
         monkeypatch.delenv("SIO_FORCE_ADAPTER", raising=False)
         monkeypatch.delenv("SIO_FORCE_NATIVE_FC", raising=False)
         get_adapter = _get_adapter()
@@ -82,6 +89,7 @@ class TestProviderAdapterRouting:
     def test_ollama_returns_json_adapter_without_native_fc(self, monkeypatch):
         """ollama/* model → JSONAdapter(use_native_function_calling=False)."""
         import dspy  # noqa: PLC0415
+
         monkeypatch.delenv("SIO_FORCE_ADAPTER", raising=False)
         monkeypatch.delenv("SIO_FORCE_NATIVE_FC", raising=False)
         get_adapter = _get_adapter()
@@ -97,6 +105,7 @@ class TestProviderAdapterRouting:
     def test_unknown_provider_returns_safe_fallback(self, monkeypatch):
         """unknown/* model → ChatAdapter(use_native_function_calling=False)."""
         import dspy  # noqa: PLC0415
+
         monkeypatch.delenv("SIO_FORCE_ADAPTER", raising=False)
         monkeypatch.delenv("SIO_FORCE_NATIVE_FC", raising=False)
         get_adapter = _get_adapter()
@@ -114,12 +123,14 @@ class TestProviderAdapterRouting:
 # SIO_FORCE_ADAPTER env override tests
 # ---------------------------------------------------------------------------
 
+
 class TestForceAdapterEnvOverride:
     """SIO_FORCE_ADAPTER and SIO_FORCE_NATIVE_FC env vars override provider detection."""
 
     def test_force_json_overrides_openai_provider(self, monkeypatch):
         """SIO_FORCE_ADAPTER=json → JSONAdapter even for openai/*."""
         import dspy  # noqa: PLC0415
+
         monkeypatch.setenv("SIO_FORCE_ADAPTER", "json")
         monkeypatch.delenv("SIO_FORCE_NATIVE_FC", raising=False)
         get_adapter = _get_adapter()
@@ -132,6 +143,7 @@ class TestForceAdapterEnvOverride:
     def test_force_chat_overrides_ollama_provider(self, monkeypatch):
         """SIO_FORCE_ADAPTER=chat → ChatAdapter even for ollama/*."""
         import dspy  # noqa: PLC0415
+
         monkeypatch.setenv("SIO_FORCE_ADAPTER", "chat")
         monkeypatch.delenv("SIO_FORCE_NATIVE_FC", raising=False)
         get_adapter = _get_adapter()

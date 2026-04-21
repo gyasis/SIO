@@ -6,6 +6,7 @@ import sqlite3
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _seed_pattern_and_dataset(conn: sqlite3.Connection) -> tuple[int, int]:
     cur = conn.execute(
         "INSERT INTO patterns "
@@ -45,6 +46,7 @@ def _seed_suggestion(conn, pattern_id, dataset_id, target_file):
 # TestFullPipeline
 # =========================================================================
 
+
 class TestFullPipeline:
     """End-to-end: generate → approve → apply → verify → rollback → verify."""
 
@@ -77,9 +79,7 @@ class TestFullPipeline:
         assert "## Rule: Integration" in changed_content  # new content added
 
         # Step 4: Verify suggestion status is 'applied'
-        row = v2_db.execute(
-            "SELECT status FROM suggestions WHERE id = ?", (sid,)
-        ).fetchone()
+        row = v2_db.execute("SELECT status FROM suggestions WHERE id = ?", (sid,)).fetchone()
         assert row[0] == "applied"
 
         # Step 5: Rollback
@@ -91,9 +91,7 @@ class TestFullPipeline:
         assert target.read_text() == original_content
 
         # Step 7: Verify suggestion status is 'rolled_back'
-        row = v2_db.execute(
-            "SELECT status FROM suggestions WHERE id = ?", (sid,)
-        ).fetchone()
+        row = v2_db.execute("SELECT status FROM suggestions WHERE id = ?", (sid,)).fetchone()
         assert row[0] == "rolled_back"
 
     def test_apply_without_approve_fails(self, v2_db, tmp_path):

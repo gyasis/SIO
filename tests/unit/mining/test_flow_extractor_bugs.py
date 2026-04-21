@@ -13,9 +13,6 @@ Bug 3 (L3): is_success_signal() returned True for short messages with no negativ
 
 from __future__ import annotations
 
-import pytest
-
-
 # ---------------------------------------------------------------------------
 # T088-1: compute_ngrams upper-bound inclusive (Bug 1 / FR-022 / audit M5)
 # ---------------------------------------------------------------------------
@@ -49,9 +46,7 @@ def test_indexed_ngrams_upper_bound_inclusive():
     results = indexed_ngrams(compressed, n_range=(2, 5))
 
     five_gram_results = [(ng, pos) for ng, pos in results if len(ng) == 5]
-    assert len(five_gram_results) > 0, (
-        "indexed_ngrams(n_range=(2,5)) must produce 5-grams"
-    )
+    assert len(five_gram_results) > 0, "indexed_ngrams(n_range=(2,5)) must produce 5-grams"
 
 
 # ---------------------------------------------------------------------------
@@ -124,9 +119,7 @@ def test_no_positive_marker_defaults_to_not_success():
     assert not is_success_signal("Understood."), (
         "Short neutral message 'Understood.' must NOT be success signal"
     )
-    assert not is_success_signal("Okay"), (
-        "Short neutral message 'Okay' must NOT be success signal"
-    )
+    assert not is_success_signal("Okay"), "Short neutral message 'Okay' must NOT be success signal"
 
 
 def test_explicit_positive_keyword_is_success():

@@ -9,13 +9,13 @@ Tests assert:
 Run to confirm RED before T035:
     uv run pytest tests/unit/db/test_sync_drift.py -v
 """
+
 from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # DDL helpers (mirrors test_sync.py to keep tests self-contained)
@@ -87,8 +87,7 @@ def _create_platform_db(path: Path, row_count: int) -> None:
     conn.execute(_PLATFORM_DDL)
     for i in range(row_count):
         conn.execute(
-            "INSERT INTO behavior_invocations (session_id, timestamp, tool_name) "
-            "VALUES (?, ?, ?)",
+            "INSERT INTO behavior_invocations (session_id, timestamp, tool_name) VALUES (?, ?, ?)",
             (f"sess-{i:04d}", f"2026-04-20T{(i % 60):02d}:00:00+00:00", "Read"),
         )
     conn.commit()
@@ -99,9 +98,11 @@ def _create_platform_db(path: Path, row_count: int) -> None:
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def drift_dbs(tmp_path: Path, monkeypatch):
     """Return (sio_path, plat_path) factory callable."""
+
     def _setup(canonical_count: int, platform_count: int):
         sio_path = tmp_path / "sio.db"
         plat_path = tmp_path / "claude-code" / "behavior_invocations.db"
@@ -116,7 +117,9 @@ def drift_dbs(tmp_path: Path, monkeypatch):
 
 def _reload_sync(monkeypatch=None):
     import importlib  # noqa: PLC0415
+
     import sio.core.db.sync as sync_mod  # noqa: PLC0415
+
     importlib.reload(sync_mod)
     return sync_mod
 
@@ -124,6 +127,7 @@ def _reload_sync(monkeypatch=None):
 # ---------------------------------------------------------------------------
 # 1. compute_sync_drift() returns correct dict structure
 # ---------------------------------------------------------------------------
+
 
 def test_compute_sync_drift_returns_dict(drift_dbs, monkeypatch):
     """compute_sync_drift() must return a dict keyed by platform."""
@@ -153,6 +157,7 @@ def test_compute_sync_drift_result_has_required_keys(drift_dbs, monkeypatch):
 # 2. 100/100 rows -> drift_pct == 0.0
 # ---------------------------------------------------------------------------
 
+
 def test_compute_sync_drift_zero_when_in_sync(drift_dbs, monkeypatch):
     """drift_pct must be 0.0 when canonical_count == per_platform_count."""
     drift_dbs(canonical_count=100, platform_count=100)
@@ -167,6 +172,7 @@ def test_compute_sync_drift_zero_when_in_sync(drift_dbs, monkeypatch):
 # ---------------------------------------------------------------------------
 # 3. 100 per-platform, 95 canonical -> drift_pct == 0.05
 # ---------------------------------------------------------------------------
+
 
 def test_compute_sync_drift_correct_percentage(drift_dbs, monkeypatch):
     """drift_pct == (per_platform - canonical) / per_platform."""
@@ -190,6 +196,7 @@ def test_compute_sync_drift_correct_percentage(drift_dbs, monkeypatch):
 # ---------------------------------------------------------------------------
 # 4. Missing per-platform DB -> per_platform_count == 0
 # ---------------------------------------------------------------------------
+
 
 def test_compute_sync_drift_missing_platform_db(tmp_path, monkeypatch):
     """Missing platform DB must set per_platform_count=0 and not raise."""

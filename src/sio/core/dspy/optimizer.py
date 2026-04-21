@@ -81,12 +81,14 @@ def check_quality_gates(
     from sio.core.db.queries import get_labeled_for_optimizer
 
     examples = get_labeled_for_optimizer(
-        conn, skill, platform, min_examples=0,
+        conn,
+        skill,
+        platform,
+        min_examples=0,
     )
 
     failures = [
-        e for e in examples
-        if e.get("user_satisfied") == 0 or e.get("correct_outcome") == 0
+        e for e in examples if e.get("user_satisfied") == 0 or e.get("correct_outcome") == 0
     ]
     failing_sessions = {e["session_id"] for e in failures}
     all_sessions = {e["session_id"] for e in examples}
@@ -94,8 +96,7 @@ def check_quality_gates(
     if len(examples) < min_examples:
         return OptimizationResult(
             passed=False,
-            reason=f"Need {min_examples}+ labeled examples, "
-                   f"got {len(examples)}",
+            reason=f"Need {min_examples}+ labeled examples, got {len(examples)}",
             example_count=len(examples),
             failure_count=len(failures),
             session_count=len(all_sessions),
@@ -104,8 +105,7 @@ def check_quality_gates(
     if len(failures) < min_failures:
         return OptimizationResult(
             passed=False,
-            reason=f"Need {min_failures}+ failure examples, "
-                   f"got {len(failures)}",
+            reason=f"Need {min_failures}+ failure examples, got {len(failures)}",
             example_count=len(examples),
             failure_count=len(failures),
             session_count=len(all_sessions),
@@ -114,8 +114,7 @@ def check_quality_gates(
     if len(failing_sessions) < min_sessions:
         return OptimizationResult(
             passed=False,
-            reason=f"Need failures across {min_sessions}+ sessions, "
-                   f"got {len(failing_sessions)}",
+            reason=f"Need failures across {min_sessions}+ sessions, got {len(failing_sessions)}",
             example_count=len(examples),
             failure_count=len(failures),
             session_count=len(all_sessions),
@@ -154,9 +153,7 @@ def _compute_satisfaction_rate(examples: list[dict]) -> float | None:
 
     Returns None when there are no labeled examples to compute from.
     """
-    labeled = [
-        e for e in examples if e.get("user_satisfied") is not None
-    ]
+    labeled = [e for e in examples if e.get("user_satisfied") is not None]
     if not labeled:
         return None
     satisfied = sum(1 for e in labeled if e["user_satisfied"] == 1)
@@ -198,20 +195,16 @@ def _run_dspy_optimization(
 
     lines = [f"# Optimization for skill: {skill_name}"]
     lines.append(f"# Optimizer: {optimizer}")
-    lines.append(
-        f"# Examples: {len(dataset)} "
-        f"({len(successes)} success, {len(failures)} failure)"
-    )
+    lines.append(f"# Examples: {len(dataset)} ({len(successes)} success, {len(failures)} failure)")
     lines.append("")
     lines.append("## Proposed changes:")
     lines.append("")
 
     for action, count in sorted(
-        failure_actions.items(), key=lambda x: -x[1],
+        failure_actions.items(),
+        key=lambda x: -x[1],
     ):
-        lines.append(
-            f"- Action '{action}' failed {count} times"
-        )
+        lines.append(f"- Action '{action}' failed {count} times")
 
     diff = "\n".join(lines)
     score = len(successes) / max(len(dataset), 1)
@@ -374,7 +367,7 @@ def optimize_suggestions(
             metric_after=None,
             module_id=None,
             message="No positive ground truth examples found. "
-                    "Run 'sio ground-truth review' to approve examples first.",
+            "Run 'sio ground-truth review' to approve examples first.",
         )
 
     # Configure LM
@@ -386,35 +379,42 @@ def optimize_suggestions(
     # Resolve optimizer
     resolved = _select_optimizer(optimizer, len(corpus))
     logger.info(
-        "Optimizing suggestions: optimizer=%s (resolved from '%s'), "
-        "corpus_size=%d",
-        resolved, optimizer, len(corpus),
+        "Optimizing suggestions: optimizer=%s (resolved from '%s'), corpus_size=%d",
+        resolved,
+        optimizer,
+        len(corpus),
     )
 
     # Create base module and evaluate before score
     base_module = SuggestionModule()
     metric_before = _evaluate_metric(
-        base_module, corpus, suggestion_quality_metric,
+        base_module,
+        corpus,
+        suggestion_quality_metric,
     )
 
     # Run optimization
     try:
         if resolved == "miprov2":
             optimized_module = _run_miprov2_optimization(
-                SuggestionModule(), corpus, suggestion_quality_metric,
+                SuggestionModule(),
+                corpus,
+                suggestion_quality_metric,
             )
         else:
             optimized_module = _run_bootstrap_optimization(
-                SuggestionModule(), corpus, suggestion_quality_metric,
+                SuggestionModule(),
+                corpus,
+                suggestion_quality_metric,
             )
     except Exception as exc:
-        raise OptimizationError(
-            f"DSPy {resolved} optimization failed: {exc}"
-        ) from exc
+        raise OptimizationError(f"DSPy {resolved} optimization failed: {exc}") from exc
 
     # Evaluate after score
     metric_after = _evaluate_metric(
-        optimized_module, corpus, suggestion_quality_metric,
+        optimized_module,
+        corpus,
+        suggestion_quality_metric,
     )
 
     if dry_run:
@@ -425,8 +425,7 @@ def optimize_suggestions(
             metric_before=metric_before,
             metric_after=metric_after,
             module_id=None,
-            message=f"Dry run complete. Before: {metric_before:.3f}, "
-                    f"After: {metric_after:.3f}",
+            message=f"Dry run complete. Before: {metric_before:.3f}, After: {metric_after:.3f}",
         )
 
     # Save optimized module
@@ -448,7 +447,7 @@ def optimize_suggestions(
         metric_after=metric_after,
         module_id=module_id,
         message=f"Optimization complete. Before: {metric_before:.3f}, "
-                f"After: {metric_after:.3f}. Module saved (ID: {module_id}).",
+        f"After: {metric_after:.3f}. Module saved (ID: {module_id}).",
     )
 
 
@@ -486,43 +485,40 @@ def optimize(
         stacklevel=2,
     )
     if optimizer not in _VALID_OPTIMIZERS:
-        raise ValueError(
-            f"Invalid optimizer '{optimizer}'. "
-            f"Choose from: {_VALID_OPTIMIZERS}"
-        )
+        raise ValueError(f"Invalid optimizer '{optimizer}'. Choose from: {_VALID_OPTIMIZERS}")
 
     # Quality gates
     from sio.core.db.queries import get_labeled_for_optimizer
 
     examples = get_labeled_for_optimizer(
-        conn, skill_name, platform, min_examples=0,
+        conn,
+        skill_name,
+        platform,
+        min_examples=0,
     )
 
     failures = [
-        e for e in examples
-        if e.get("user_satisfied") == 0 or e.get("correct_outcome") == 0
+        e for e in examples if e.get("user_satisfied") == 0 or e.get("correct_outcome") == 0
     ]
     failing_sessions = {e["session_id"] for e in failures}
 
     if len(examples) < _MIN_EXAMPLES:
         return {
             "status": "error",
-            "reason": f"Need {_MIN_EXAMPLES}+ labeled examples, "
-                      f"got {len(examples)}",
+            "reason": f"Need {_MIN_EXAMPLES}+ labeled examples, got {len(examples)}",
         }
 
     if len(failures) < _MIN_FAILURES:
         return {
             "status": "error",
-            "reason": f"Need {_MIN_FAILURES}+ failure examples, "
-                      f"got {len(failures)}",
+            "reason": f"Need {_MIN_FAILURES}+ failure examples, got {len(failures)}",
         }
 
     if len(failing_sessions) < _MIN_SESSIONS:
         return {
             "status": "error",
             "reason": f"Need failures across {_MIN_SESSIONS}+ sessions, "
-                      f"got {len(failing_sessions)}",
+            f"got {len(failing_sessions)}",
         }
 
     # Recency weighting (FR-027)
@@ -559,9 +555,15 @@ def optimize(
         "arena_passed, drift_score, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
         (
-            platform, skill_name, optimizer,
-            len(examples), before_rate_for_db,
-            proposed_diff, arena_passed, drift_score, now,
+            platform,
+            skill_name,
+            optimizer,
+            len(examples),
+            before_rate_for_db,
+            proposed_diff,
+            arena_passed,
+            drift_score,
+            now,
         ),
     )
     conn.commit()
@@ -596,8 +598,7 @@ def run_optimization(
         DeprecationWarning,
         stacklevel=2,
     )
-    return optimize(conn, skill_name=skill, platform=platform,
-                    optimizer=optimizer)
+    return optimize(conn, skill_name=skill, platform=platform, optimizer=optimizer)
 
 
 # ---------------------------------------------------------------------------
@@ -622,8 +623,7 @@ def _resolve_signature(module_name: str):
     cls = registry.get(module_name)
     if cls is None:
         raise UnknownOptimizer(
-            f"Unknown module '{module_name}'. "
-            f"Known modules: {list(registry.keys())}"
+            f"Unknown module '{module_name}'. Known modules: {list(registry.keys())}"
         )
     return cls
 
@@ -643,8 +643,7 @@ def _build_trainset(db_path: str, module_name: str, limit: int, offset: int = 0)
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
-            "SELECT * FROM gold_standards "
-            "ORDER BY id ASC LIMIT ? OFFSET ?",
+            "SELECT * FROM gold_standards ORDER BY id ASC LIMIT ? OFFSET ?",
             (limit, offset),
         ).fetchall()
     finally:
@@ -727,12 +726,20 @@ def _record_optimization_run(
             "task_lm, reflection_lm, is_active, active, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?)",
             (
-                module_name, module_name,
-                optimizer_name, optimizer_name,
-                artifact_path, artifact_path,
-                trainset_size, trainset_size,
-                valset_size, score, None, score,
-                task_lm, reflection_lm,
+                module_name,
+                module_name,
+                optimizer_name,
+                optimizer_name,
+                artifact_path,
+                artifact_path,
+                trainset_size,
+                trainset_size,
+                valset_size,
+                score,
+                None,
+                score,
+                task_lm,
+                reflection_lm,
                 now,
             ),
         )
@@ -761,9 +768,7 @@ def _save_artifact(compiled_program, artifact_path: str) -> None:
         Path(artifact_path).write_text(json.dumps(state, indent=2))
     except Exception:
         # Fallback: save repr so the file is always non-empty
-        Path(artifact_path).write_text(
-            json.dumps({"module": repr(compiled_program)}, indent=2)
-        )
+        Path(artifact_path).write_text(json.dumps({"module": repr(compiled_program)}, indent=2))
 
 
 def run_optimize(
@@ -826,14 +831,10 @@ def run_optimize(
     # Build trainset
     trainset = _build_trainset(db_path, module_name, limit=trainset_size, offset=0)
     if len(trainset) < _MIN_TRAINSET:
-        raise InsufficientData(
-            f"trainset has {len(trainset)} examples; need >= {_MIN_TRAINSET}"
-        )
+        raise InsufficientData(f"trainset has {len(trainset)} examples; need >= {_MIN_TRAINSET}")
 
     # Build valset (from rows after trainset)
-    valset = _build_trainset(
-        db_path, module_name, limit=valset_size, offset=trainset_size
-    )
+    valset = _build_trainset(db_path, module_name, limit=valset_size, offset=trainset_size)
     if not valset:
         # Reuse part of trainset as valset when gold corpus is small
         split = max(1, len(trainset) // 3)
@@ -880,14 +881,13 @@ def run_optimize(
                 num_threads=1,
             ).compile(program, trainset=trainset, valset=valset)
         except Exception as exc:
-            raise OptimizationError(
-                f"GEPA compile failed: {exc}"
-            ) from exc
+            raise OptimizationError(f"GEPA compile failed: {exc}") from exc
 
     elif optimizer_name == "mipro":
         # MIPROv2: "light" auto for small trainsets keeps CI fast
         try:
             from dspy.teleprompt import MIPROv2  # noqa: PLC0415
+
             mipro_optimizer = MIPROv2(
                 metric=_standard_metric,
                 auto="light",
@@ -899,9 +899,7 @@ def run_optimize(
                 valset=valset,
             )
         except Exception as exc:
-            raise OptimizationError(
-                f"MIPROv2 compile failed: {exc}"
-            ) from exc
+            raise OptimizationError(f"MIPROv2 compile failed: {exc}") from exc
 
     else:  # optimizer_name == "bootstrap"
         # BootstrapFewShot: small defaults for test compatibility with 5-10 example trainsets
@@ -915,9 +913,7 @@ def run_optimize(
             # BootstrapFewShot does not accept valset
             compiled = bootstrap_optimizer.compile(program, trainset=trainset)
         except Exception as exc:
-            raise OptimizationError(
-                f"BootstrapFewShot compile failed: {exc}"
-            ) from exc
+            raise OptimizationError(f"BootstrapFewShot compile failed: {exc}") from exc
 
     # Score compiled program on valset using dspy.Evaluate
     total, count = 0.0, 0
@@ -933,9 +929,7 @@ def run_optimize(
 
     # Save artifact
     ts = int(time.time())
-    artifact_path = str(
-        optimized_root / f"{module_name}__{optimizer_name}__{ts}.json"
-    )
+    artifact_path = str(optimized_root / f"{module_name}__{optimizer_name}__{ts}.json")
     _save_artifact(compiled, artifact_path)
 
     # Record in DB — mark prior inactive first, then insert new active row

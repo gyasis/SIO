@@ -7,27 +7,43 @@ import dspy
 
 class PatternToRule(dspy.Signature):
     """Generate a concise CLAUDE.md rule that prevents the given error pattern.
-    The rule must be actionable, file-path-safe, and <= 3 sentences."""
 
-    pattern_description: str = dspy.InputField(
-        desc="Human-readable cluster name"
-    )
-    example_errors: list[str] = dspy.InputField(
-        desc="3-5 representative error messages"
-    )
-    project_context: str = dspy.InputField(
-        desc="Short description of the project or platform"
-    )
+    The rule must be actionable, file-path-safe, and <= 3 sentences.
 
-    rule_title: str = dspy.OutputField(
-        desc="Title of the generated rule"
-    )
-    rule_body: str = dspy.OutputField(
-        desc="Rule body in Markdown, <= 3 sentences"
-    )
-    rule_rationale: str = dspy.OutputField(
-        desc="Why this rule prevents the pattern"
-    )
+    Few-shot guidance (T109, GEPA optimization target):
+    ---
+    EXAMPLE 1
+    pattern_description: "Agent retries sed -i after file wipe"
+    example_errors: ["sed -i silently emptied .env", "file truncated after sed"]
+    project_context: "WSL2 Claude Code project"
+    ---
+    rule_title: "Never use sed -i for file edits"
+    rule_body: |
+      Use the Edit tool instead of `sed -i` for all in-place file
+      modifications. The `sed -i` temp-rename pattern races with Windows
+      filesystem watchers and has silently wiped files on this WSL2 system.
+    rule_rationale: "Prevents file wipes caused by atomic-rename races in WSL2."
+    ---
+    EXAMPLE 2
+    pattern_description: "Agent batches MCP tools with Bash causing cascade failures"
+    example_errors: ["sibling tool call errored", "MCP timeout cancelled Bash"]
+    project_context: "Claude Code multi-tool pipeline"
+    ---
+    rule_title: "Never mix MCP and Bash in the same parallel batch"
+    rule_body: |
+      MCP tools and Bash must never be called in the same parallel batch.
+      If any tool in a parallel batch fails, all sibling calls are cancelled.
+      Run Bash first (sequentially), then MCP tools.
+    rule_rationale: "Prevents cascade cancellation of valid tool calls."
+    """
+
+    pattern_description: str = dspy.InputField(desc="Human-readable cluster name")
+    example_errors: list[str] = dspy.InputField(desc="3-5 representative error messages")
+    project_context: str = dspy.InputField(desc="Short description of the project or platform")
+
+    rule_title: str = dspy.OutputField(desc="Title of the generated rule")
+    rule_body: str = dspy.OutputField(desc="Rule body in Markdown, <= 3 sentences")
+    rule_rationale: str = dspy.OutputField(desc="Why this rule prevents the pattern")
 
 
 class RuleRecallScore(dspy.Signature):
@@ -40,7 +56,6 @@ class RuleRecallScore(dspy.Signature):
 
     score: float = dspy.OutputField(desc="Recall score in [0, 1]")
     reasoning: str = dspy.OutputField(desc="Brief justification")
-
 
 
 class SuggestionGenerator(dspy.Signature):
@@ -76,9 +91,7 @@ class SuggestionGenerator(dspy.Signature):
             " agent_admission, repeated_attempt, undo"
         )
     )
-    pattern_summary: str = dspy.InputField(
-        desc="Description of the recurring error pattern"
-    )
+    pattern_summary: str = dspy.InputField(desc="Description of the recurring error pattern")
     tool_input_context: str = dspy.InputField(
         desc=(
             "JSON showing what the agent sent to tools (parameters, file paths, inputs). "
@@ -93,15 +106,11 @@ class SuggestionGenerator(dspy.Signature):
             "Choose based on WHERE the root cause is — not always claude_md_rule."
         )
     )
-    rule_title: str = dspy.OutputField(
-        desc="Concise title for the improvement"
-    )
+    rule_title: str = dspy.OutputField(desc="Concise title for the improvement")
     prevention_instructions: str = dspy.OutputField(
         desc="Specific, actionable prevention/improvement text in markdown"
     )
-    rationale: str = dspy.OutputField(
-        desc="Why this improvement addresses the error pattern"
-    )
+    rationale: str = dspy.OutputField(desc="Why this improvement addresses the error pattern")
 
 
 class GroundTruthCandidate(dspy.Signature):
@@ -127,9 +136,7 @@ class GroundTruthCandidate(dspy.Signature):
             " agent_admission, repeated_attempt, undo"
         )
     )
-    pattern_summary: str = dspy.InputField(
-        desc="Description of the recurring error pattern"
-    )
+    pattern_summary: str = dspy.InputField(desc="Description of the recurring error pattern")
     tool_input_context: str = dspy.InputField(
         desc=(
             "JSON showing what the agent sent to tools (parameters, file paths, inputs). "
@@ -144,15 +151,11 @@ class GroundTruthCandidate(dspy.Signature):
             "Choose based on WHERE the root cause is — not always claude_md_rule."
         )
     )
-    rule_title: str = dspy.OutputField(
-        desc="Concise title for the improvement"
-    )
+    rule_title: str = dspy.OutputField(desc="Concise title for the improvement")
     prevention_instructions: str = dspy.OutputField(
         desc="Specific, actionable prevention/improvement text in markdown"
     )
-    rationale: str = dspy.OutputField(
-        desc="Why this improvement addresses the error pattern"
-    )
+    rationale: str = dspy.OutputField(desc="Why this improvement addresses the error pattern")
     quality_assessment: str = dspy.OutputField(
         desc="Self-assessment of this candidate's quality and completeness"
     )
@@ -166,28 +169,17 @@ class SkillGeneratorSignature(dspy.Signature):
     ordered steps, and guardrails that prevent recurrence.
     """
 
-    pattern_description: str = dspy.InputField(
-        desc="Description of the recurring error pattern"
-    )
-    error_examples: str = dspy.InputField(
-        desc="JSON array of error examples with context"
-    )
+    pattern_description: str = dspy.InputField(desc="Description of the recurring error pattern")
+    error_examples: str = dspy.InputField(desc="JSON array of error examples with context")
     positive_examples: str = dspy.InputField(
         desc="JSON array of positive signal examples showing what worked"
     )
     flow_sequence: str = dspy.InputField(
-        desc=(
-            "Comma-separated tool sequence that succeeds"
-            " (e.g., 'Read,Grep,Edit,Bash')"
-        )
+        desc=("Comma-separated tool sequence that succeeds (e.g., 'Read,Grep,Edit,Bash')")
     )
 
     trigger_conditions: str = dspy.OutputField(
         desc="When this skill should activate (e.g., 'When editing Python files')"
     )
-    ordered_steps: str = dspy.OutputField(
-        desc="Numbered markdown steps the agent should follow"
-    )
-    guardrails: str = dspy.OutputField(
-        desc="NEVER/ALWAYS rules as markdown bullet points"
-    )
+    ordered_steps: str = dspy.OutputField(desc="Numbered markdown steps the agent should follow")
+    guardrails: str = dspy.OutputField(desc="NEVER/ALWAYS rules as markdown bullet points")

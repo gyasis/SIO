@@ -35,10 +35,14 @@ def _seed_corpus(conn, count=20):
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'positive', 'seed', ?)",
             (
                 f"pat-{i}",
-                json.dumps([{
-                    "tool_name": "Read",
-                    "error_text": f"FileNotFoundError: /tmp/test{i}.py",
-                }]),
+                json.dumps(
+                    [
+                        {
+                            "tool_name": "Read",
+                            "error_text": f"FileNotFoundError: /tmp/test{i}.py",
+                        }
+                    ]
+                ),
                 "tool_failure",
                 f"Read tool fails on missing file test{i}.py",
                 "claude_md_rule",
@@ -58,7 +62,11 @@ class TestFullOptimizationCycle:
     @patch("sio.core.dspy.optimizer._run_bootstrap_optimization")
     @patch("sio.core.dspy.optimizer._evaluate_metric")
     def test_optimize_and_save_cycle(
-        self, mock_eval, mock_bootstrap, integration_db, tmp_path,
+        self,
+        mock_eval,
+        mock_bootstrap,
+        integration_db,
+        tmp_path,
     ):
         """Creates corpus, runs optimization, verifies module saved in DB."""
         _seed_corpus(integration_db, count=20)
@@ -73,7 +81,9 @@ class TestFullOptimizationCycle:
         store_dir = str(tmp_path / "optimized")
         with patch("sio.core.dspy.module_store._DEFAULT_STORE_DIR", store_dir):
             result = optimize_suggestions(
-                integration_db, optimizer="bootstrap", dry_run=False,
+                integration_db,
+                optimizer="bootstrap",
+                dry_run=False,
             )
 
         assert result.status == "success"
@@ -94,7 +104,10 @@ class TestFullOptimizationCycle:
     @patch("sio.core.dspy.optimizer._run_bootstrap_optimization")
     @patch("sio.core.dspy.optimizer._evaluate_metric")
     def test_dry_run_does_not_save(
-        self, mock_eval, mock_bootstrap, integration_db,
+        self,
+        mock_eval,
+        mock_bootstrap,
+        integration_db,
     ):
         """Dry run evaluates metrics but does not persist the module."""
         _seed_corpus(integration_db, count=15)
@@ -104,7 +117,9 @@ class TestFullOptimizationCycle:
         mock_eval.side_effect = [0.3, 0.6]
 
         result = optimize_suggestions(
-            integration_db, optimizer="bootstrap", dry_run=True,
+            integration_db,
+            optimizer="bootstrap",
+            dry_run=True,
         )
 
         assert result.status == "dry_run"
@@ -119,7 +134,11 @@ class TestFullOptimizationCycle:
     @patch("sio.core.dspy.optimizer._run_miprov2_optimization")
     @patch("sio.core.dspy.optimizer._evaluate_metric")
     def test_auto_selects_miprov2_for_large_corpus(
-        self, mock_eval, mock_miprov2, integration_db, tmp_path,
+        self,
+        mock_eval,
+        mock_miprov2,
+        integration_db,
+        tmp_path,
     ):
         """Auto-optimizer selects MIPROv2 when corpus has 50+ examples."""
         _seed_corpus(integration_db, count=55)
@@ -132,7 +151,9 @@ class TestFullOptimizationCycle:
         store_dir = str(tmp_path / "optimized")
         with patch("sio.core.dspy.module_store._DEFAULT_STORE_DIR", store_dir):
             result = optimize_suggestions(
-                integration_db, optimizer="auto", dry_run=False,
+                integration_db,
+                optimizer="auto",
+                dry_run=False,
             )
 
         assert result.optimizer_used == "miprov2"
@@ -142,7 +163,11 @@ class TestFullOptimizationCycle:
     @patch("sio.core.dspy.optimizer._run_bootstrap_optimization")
     @patch("sio.core.dspy.optimizer._evaluate_metric")
     def test_optimized_module_loaded_on_suggest(
-        self, mock_eval, mock_bootstrap, integration_db, tmp_path,
+        self,
+        mock_eval,
+        mock_bootstrap,
+        integration_db,
+        tmp_path,
     ):
         """After optimization, _load_optimized_or_default returns the saved module."""
         _seed_corpus(integration_db, count=20)
@@ -155,7 +180,9 @@ class TestFullOptimizationCycle:
         store_dir = str(tmp_path / "optimized")
         with patch("sio.core.dspy.module_store._DEFAULT_STORE_DIR", store_dir):
             result = optimize_suggestions(
-                integration_db, optimizer="bootstrap", dry_run=False,
+                integration_db,
+                optimizer="bootstrap",
+                dry_run=False,
             )
 
         assert result.status == "success"
@@ -181,7 +208,8 @@ class TestFullOptimizationCycle:
     def test_empty_corpus_returns_error(self, integration_db):
         """Returns error when no positive ground truth exists."""
         result = optimize_suggestions(
-            integration_db, optimizer="bootstrap",
+            integration_db,
+            optimizer="bootstrap",
         )
 
         assert result.status == "error"
@@ -191,7 +219,11 @@ class TestFullOptimizationCycle:
     @patch("sio.core.dspy.optimizer._run_bootstrap_optimization")
     @patch("sio.core.dspy.optimizer._evaluate_metric")
     def test_successive_optimizations_deactivate_previous(
-        self, mock_eval, mock_bootstrap, integration_db, tmp_path,
+        self,
+        mock_eval,
+        mock_bootstrap,
+        integration_db,
+        tmp_path,
     ):
         """Running optimization twice deactivates the first module."""
         _seed_corpus(integration_db, count=20)

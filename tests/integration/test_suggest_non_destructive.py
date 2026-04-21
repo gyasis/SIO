@@ -17,11 +17,8 @@ from __future__ import annotations
 import sqlite3
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 
 import pytest
-from click.testing import CliRunner
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -72,9 +69,14 @@ def seeded_db(tmp_path):
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                f"session-{i}", now, "tool_failure",
+                f"session-{i}",
+                now,
+                "tool_failure",
                 f"/tmp/fake-session-{i}.jsonl",
-                "Bash", f"Error: command failed ({i})", now, "tool_failure",
+                "Bash",
+                f"Error: command failed ({i})",
+                now,
+                "tool_failure",
             ),
         )
     conn.commit()
@@ -91,8 +93,17 @@ def seeded_db(tmp_path):
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                f"pat-old-{i}", f"Old pattern {i}", 3, 2,
-                now, now, 0.8, now, now, 1, "old",
+                f"pat-old-{i}",
+                f"Old pattern {i}",
+                3,
+                2,
+                now,
+                now,
+                0.8,
+                now,
+                now,
+                1,
+                "old",
             ),
         )
         pattern_ids.append(cur.lastrowid)
@@ -109,8 +120,15 @@ def seeded_db(tmp_path):
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                f"Suggestion {i}", 0.7, f"Add rule {i}",
-                "~/.claude/CLAUDE.md", "append", "pending", now, 1, "old",
+                f"Suggestion {i}",
+                0.7,
+                f"Add rule {i}",
+                "~/.claude/CLAUDE.md",
+                "append",
+                "pending",
+                now,
+                1,
+                "old",
             ),
         )
         suggestion_ids.append(cur.lastrowid)
@@ -138,11 +156,15 @@ def seeded_db(tmp_path):
         applied_ids.append(cur.lastrowid)
     conn.commit()
 
-    return conn, str(db_path), {
-        "pattern_ids": pattern_ids,
-        "suggestion_ids": suggestion_ids,
-        "applied_ids": applied_ids,
-    }
+    return (
+        conn,
+        str(db_path),
+        {
+            "pattern_ids": pattern_ids,
+            "suggestion_ids": suggestion_ids,
+            "applied_ids": applied_ids,
+        },
+    )
 
 
 def _get_applied_non_superseded(db_path: str) -> int:
@@ -165,7 +187,6 @@ def _simulate_fixed_suggest(db_path: str) -> None:
     touching applied_changes. This is what the actual sio suggest CLI
     now does after T047.
     """
-    import uuid  # noqa: PLC0415
 
     import sqlite3  # noqa: PLC0415
 
@@ -178,6 +199,7 @@ def _simulate_fixed_suggest(db_path: str) -> None:
         mark_stale_for_new_cycle(conn, new_cycle_id)
         # Insert at least one new pattern with new cycle_id (simulates persist step)
         from datetime import datetime, timezone  # noqa: PLC0415
+
         now = datetime.now(timezone.utc).isoformat()
         conn.execute(
             "INSERT INTO patterns "
@@ -185,8 +207,17 @@ def _simulate_fixed_suggest(db_path: str) -> None:
             "first_seen, last_seen, rank_score, created_at, updated_at, "
             "active, cycle_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                f"pat-new-{new_cycle_id[:8]}", "New pattern from suggest",
-                1, 1, now, now, 0.9, now, now, 1, new_cycle_id,
+                f"pat-new-{new_cycle_id[:8]}",
+                "New pattern from suggest",
+                1,
+                1,
+                now,
+                now,
+                0.9,
+                now,
+                now,
+                1,
+                new_cycle_id,
             ),
         )
         conn.commit()
@@ -233,9 +264,7 @@ class TestSuggestNonDestructive:
         check = sqlite3.connect(db_path)
         check.row_factory = sqlite3.Row
         try:
-            rows = check.execute(
-                "SELECT active FROM patterns WHERE cycle_id='old'"
-            ).fetchall()
+            rows = check.execute("SELECT active FROM patterns WHERE cycle_id='old'").fetchall()
         finally:
             check.close()
 
@@ -257,8 +286,7 @@ class TestSuggestNonDestructive:
         check.row_factory = sqlite3.Row
         try:
             new_active = check.execute(
-                "SELECT COUNT(*) as cnt FROM patterns "
-                "WHERE cycle_id != 'old' AND active=1"
+                "SELECT COUNT(*) as cnt FROM patterns WHERE cycle_id != 'old' AND active=1"
             ).fetchone()["cnt"]
         finally:
             check.close()
@@ -277,9 +305,7 @@ class TestSuggestNonDestructive:
         check = sqlite3.connect(db_path)
         check.row_factory = sqlite3.Row
         try:
-            rows = check.execute(
-                "SELECT active FROM suggestions WHERE cycle_id='old'"
-            ).fetchall()
+            rows = check.execute("SELECT active FROM suggestions WHERE cycle_id='old'").fetchall()
         finally:
             check.close()
 

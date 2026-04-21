@@ -74,10 +74,7 @@ def detect_anomalies(
     }
 
     if metric_name not in _ALLOWED_METRICS:
-        raise ValueError(
-            f"Unsupported metric: {metric_name}. "
-            f"Allowed: {sorted(_ALLOWED_METRICS)}"
-        )
+        raise ValueError(f"Unsupported metric: {metric_name}. Allowed: {sorted(_ALLOWED_METRICS)}")
 
     rows = db.execute(
         f"SELECT session_id, {metric_name} FROM session_metrics "  # noqa: S608
@@ -96,11 +93,7 @@ def detect_anomalies(
         # All values are the same — no anomalies possible unless
         # some deviate from the constant (handles the edge case where
         # most values are identical and one outlier exists).
-        return [
-            sid
-            for sid, val in zip(session_ids, values)
-            if val != median
-        ]
+        return [sid for sid, val in zip(session_ids, values) if val != median]
 
     anomalous: list[str] = []
     for sid, val in zip(session_ids, values):

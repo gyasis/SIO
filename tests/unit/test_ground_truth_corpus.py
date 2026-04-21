@@ -45,6 +45,7 @@ class TestLoadTrainingCorpus:
 
         assert len(corpus) == 1
         import dspy
+
         assert isinstance(corpus[0], dspy.Example)
 
     def test_with_inputs_set_correctly(self, mem_db):
@@ -69,12 +70,9 @@ class TestLoadTrainingCorpus:
 
     def test_only_positive_rows_included(self, mem_db):
         """Only positive-labeled rows should appear in corpus."""
-        _insert_gt(mem_db, label="positive", source="approved",
-                    rule_title="Good rule")
-        _insert_gt(mem_db, label="negative", source="rejected",
-                    rule_title="Bad rule")
-        _insert_gt(mem_db, label="pending", source="agent",
-                    rule_title="Pending rule")
+        _insert_gt(mem_db, label="positive", source="approved", rule_title="Good rule")
+        _insert_gt(mem_db, label="negative", source="rejected", rule_title="Bad rule")
+        _insert_gt(mem_db, label="pending", source="agent", rule_title="Pending rule")
 
         from sio.ground_truth.corpus import load_training_corpus
 
@@ -111,7 +109,9 @@ class TestLoadTrainingCorpus:
         """All positive rows should be included."""
         for i in range(5):
             _insert_gt(
-                mem_db, label="positive", source="approved",
+                mem_db,
+                label="positive",
+                source="approved",
                 rule_title=f"Rule {i}",
                 pattern_id=f"pattern-{i}",
             )

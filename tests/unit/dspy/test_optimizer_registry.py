@@ -18,9 +18,11 @@ import pytest
 # Registry structure tests — these PASS because Wave 4 T043 built the registry
 # ---------------------------------------------------------------------------
 
+
 def test_optimizer_registry_exists():
     """OPTIMIZER_REGISTRY dict must exist in optimizer.py."""
     from sio.core.dspy import optimizer as opt_module  # noqa: PLC0415
+
     assert hasattr(opt_module, "OPTIMIZER_REGISTRY") or hasattr(opt_module, "_MODULE_REGISTRY"), (
         "OPTIMIZER_REGISTRY (or _MODULE_REGISTRY) must exist in optimizer.py"
     )
@@ -33,6 +35,7 @@ def test_run_optimize_gepa_key_exists():
         UnknownOptimizer,
         run_optimize,
     )
+
     # GEPA should be recognized (may raise InsufficientData if DB is empty — that's OK)
     try:
         run_optimize(
@@ -54,6 +57,7 @@ def test_run_optimize_gepa_key_exists():
 def test_run_optimize_unknown_raises_unknown_optimizer():
     """run_optimize with an unknown optimizer_name must raise UnknownOptimizer."""
     from sio.core.dspy.optimizer import UnknownOptimizer, run_optimize  # noqa: PLC0415
+
     with pytest.raises((UnknownOptimizer, ValueError)):
         run_optimize(
             module_name="suggestion_generator",
@@ -69,6 +73,7 @@ def test_run_optimize_unknown_raises_unknown_optimizer():
 # InsufficientData and OptimizationError are both acceptable (no real DB/API).
 # ---------------------------------------------------------------------------
 
+
 def test_run_optimize_mipro_is_recognized():
     """run_optimize('mipro') must NOT raise UnknownOptimizer or NotImplementedError.
 
@@ -81,6 +86,7 @@ def test_run_optimize_mipro_is_recognized():
         UnknownOptimizer,
         run_optimize,
     )
+
     try:
         run_optimize(
             module_name="suggestion_generator",
@@ -110,6 +116,7 @@ def test_run_optimize_bootstrap_is_recognized():
         UnknownOptimizer,
         run_optimize,
     )
+
     try:
         run_optimize(
             module_name="suggestion_generator",

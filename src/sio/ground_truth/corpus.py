@@ -67,9 +67,7 @@ def promote_to_ground_truth(conn: sqlite3.Connection, suggestion_id: int) -> int
 
     from sio.core.db.queries import insert_ground_truth
 
-    row = conn.execute(
-        "SELECT * FROM suggestions WHERE id = ?", (suggestion_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM suggestions WHERE id = ?", (suggestion_id,)).fetchone()
     if row is None:
         raise ValueError(f"Suggestion {suggestion_id} not found")
 
@@ -84,11 +82,15 @@ def promote_to_ground_truth(conn: sqlite3.Connection, suggestion_id: int) -> int
 
     # Build error_examples_json from the suggestion context
     # For promoted suggestions, we store the description as the example
-    error_examples_json = json.dumps([{
-        "source": "suggestion",
-        "suggestion_id": suggestion_id,
-        "description": description,
-    }])
+    error_examples_json = json.dumps(
+        [
+            {
+                "source": "suggestion",
+                "suggestion_id": suggestion_id,
+                "description": description,
+            }
+        ]
+    )
 
     # Extract rule_title from description — try em-dash first, then double-dash
     if " \u2014 " in description:

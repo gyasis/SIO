@@ -19,9 +19,7 @@ class SuggestionModule(_Module):
 
     def __init__(self):
         if _dspy is None:
-            raise ImportError(
-                "dspy is required for SuggestionModule — pip install dspy"
-            )
+            raise ImportError("dspy is required for SuggestionModule — pip install dspy")
         super().__init__()
         from sio.core.dspy.signatures import SuggestionGenerator
 
@@ -47,9 +45,7 @@ class GroundTruthModule(_Module):
 
     def __init__(self):
         if _dspy is None:
-            raise ImportError(
-                "dspy is required for GroundTruthModule — pip install dspy"
-            )
+            raise ImportError("dspy is required for GroundTruthModule — pip install dspy")
         super().__init__()
         from sio.core.dspy.signatures import GroundTruthCandidate
 

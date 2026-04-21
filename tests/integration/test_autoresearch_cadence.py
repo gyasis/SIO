@@ -18,10 +18,8 @@ Run to confirm RED:
 from __future__ import annotations
 
 import sqlite3
-import tempfile
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -98,17 +96,15 @@ def test_autoresearch_run_once_adds_one_txlog_row_per_call(tmp_sio_db):
     This test is EXPECTED RED — sio.autoresearch.scheduler does not exist yet.
     T075 (Wave 8) creates the module.
     """
-    from sio.autoresearch.scheduler import autoresearch_run_once  # type: ignore[import]  # noqa: PLC0415
+    from sio.autoresearch.scheduler import (
+        autoresearch_run_once,  # type: ignore[import]  # noqa: PLC0415
+    )
 
-    initial_count = tmp_sio_db.execute(
-        "SELECT COUNT(*) FROM autoresearch_txlog"
-    ).fetchone()[0]
+    initial_count = tmp_sio_db.execute("SELECT COUNT(*) FROM autoresearch_txlog").fetchone()[0]
 
     for call_num in range(1, 6):
         autoresearch_run_once(tmp_sio_db)
-        new_count = tmp_sio_db.execute(
-            "SELECT COUNT(*) FROM autoresearch_txlog"
-        ).fetchone()[0]
+        new_count = tmp_sio_db.execute("SELECT COUNT(*) FROM autoresearch_txlog").fetchone()[0]
         assert new_count == initial_count + call_num, (
             f"After call {call_num}, txlog must have {initial_count + call_num} rows, "
             f"got {new_count}"
@@ -123,14 +119,15 @@ def test_autoresearch_run_once_adds_one_txlog_row_per_call(tmp_sio_db):
 def test_autoresearch_promotes_arena_passed_suggestions(tmp_sio_db):
     """Suggestions with arena_passed=1 AND metric > threshold get
     outcome='promoted' or 'pending_approval' in autoresearch_txlog."""
-    from sio.autoresearch.scheduler import autoresearch_run_once  # type: ignore[import]  # noqa: PLC0415
+    from sio.autoresearch.scheduler import (
+        autoresearch_run_once,  # type: ignore[import]  # noqa: PLC0415
+    )
 
     autoresearch_run_once(tmp_sio_db)
 
     passing_ids = [
-        r["id"] for r in tmp_sio_db.execute(
-            "SELECT id FROM suggestions WHERE arena_passed=1"
-        ).fetchall()
+        r["id"]
+        for r in tmp_sio_db.execute("SELECT id FROM suggestions WHERE arena_passed=1").fetchall()
     ]
 
     txlog_rows = tmp_sio_db.execute(
@@ -155,14 +152,15 @@ def test_autoresearch_promotes_arena_passed_suggestions(tmp_sio_db):
 
 def test_autoresearch_rejects_arena_failed_suggestions(tmp_sio_db):
     """Suggestions with arena_passed=0 must get outcome='rejected_arena'."""
-    from sio.autoresearch.scheduler import autoresearch_run_once  # type: ignore[import]  # noqa: PLC0415
+    from sio.autoresearch.scheduler import (
+        autoresearch_run_once,  # type: ignore[import]  # noqa: PLC0415
+    )
 
     autoresearch_run_once(tmp_sio_db)
 
     failing_ids = [
-        r["id"] for r in tmp_sio_db.execute(
-            "SELECT id FROM suggestions WHERE arena_passed=0"
-        ).fetchall()
+        r["id"]
+        for r in tmp_sio_db.execute("SELECT id FROM suggestions WHERE arena_passed=0").fetchall()
     ]
 
     txlog_rows = tmp_sio_db.execute(
@@ -188,7 +186,9 @@ def test_autoresearch_rejects_arena_failed_suggestions(tmp_sio_db):
 def test_autoresearch_blocks_auto_promote_by_default(tmp_sio_db):
     """Without auto_approve_above, promoted suggestions must remain 'pending_approval',
     not 'promoted' (auto-promote is gated by explicit flag)."""
-    from sio.autoresearch.scheduler import autoresearch_run_once  # type: ignore[import]  # noqa: PLC0415
+    from sio.autoresearch.scheduler import (
+        autoresearch_run_once,  # type: ignore[import]  # noqa: PLC0415
+    )
 
     # Run without auto_approve_above — default behavior blocks auto-promotion
     autoresearch_run_once(tmp_sio_db)
@@ -206,13 +206,16 @@ def test_autoresearch_blocks_auto_promote_by_default(tmp_sio_db):
 def test_autoresearch_allows_auto_promote_above_threshold(tmp_sio_db):
     """When auto_approve_above=0.9 is passed, high-metric suggestions should
     get outcome='promoted' with auto_approved=1."""
-    from sio.autoresearch.scheduler import autoresearch_run_once  # type: ignore[import]  # noqa: PLC0415
+    from sio.autoresearch.scheduler import (
+        autoresearch_run_once,  # type: ignore[import]  # noqa: PLC0415
+    )
 
     autoresearch_run_once(tmp_sio_db, auto_approve_above=0.9)
 
     # At least one of the passing suggestions has arena_score > 0.9
     high_metric_ids = [
-        r["id"] for r in tmp_sio_db.execute(
+        r["id"]
+        for r in tmp_sio_db.execute(
             "SELECT id FROM suggestions WHERE arena_passed=1 AND arena_score > 0.9"
         ).fetchall()
     ]

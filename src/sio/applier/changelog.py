@@ -35,10 +35,7 @@ def log_change(change: dict, path: str | None = None) -> None:
     sha = change.get("commit_sha", "n/a")
     desc = change.get("description", "")
 
-    entry = (
-        f"- **{now}** | Change #{cid} (Suggestion #{sid}) | "
-        f"`{target}` | SHA: {sha}"
-    )
+    entry = f"- **{now}** | Change #{cid} (Suggestion #{sid}) | `{target}` | SHA: {sha}"
     if desc:
         entry += f"\n  {desc}"
     entry += "\n"

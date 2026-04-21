@@ -132,9 +132,7 @@ class TestErrorResilience:
             platform="claude-code",
         )
 
-        assert result == -1, (
-            "log_invocation must return -1 on sqlite3 errors, never raise."
-        )
+        assert result == -1, "log_invocation must return -1 on sqlite3 errors, never raise."
 
     def test_integrity_error_returns_minus_one(self):
         # Use a closed connection to trigger an error

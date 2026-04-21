@@ -7,7 +7,8 @@ from itertools import combinations
 
 
 def is_collision(
-    sim_score: float, threshold: float = 0.85,
+    sim_score: float,
+    threshold: float = 0.85,
 ) -> bool:
     """Check if similarity score indicates a trigger collision.
 
@@ -41,17 +42,22 @@ def check_collisions(
 
     warnings = []
     for (name_a, desc_a), (name_b, desc_b) in combinations(
-        skill_descriptions.items(), 2,
+        skill_descriptions.items(),
+        2,
     ):
         similarity = SequenceMatcher(
-            None, desc_a.lower(), desc_b.lower(),
+            None,
+            desc_a.lower(),
+            desc_b.lower(),
         ).ratio()
 
         if is_collision(similarity):
-            warnings.append({
-                "skill_a": name_a,
-                "skill_b": name_b,
-                "similarity": similarity,
-            })
+            warnings.append(
+                {
+                    "skill_a": name_a,
+                    "skill_b": name_b,
+                    "similarity": similarity,
+                }
+            )
 
     return warnings

@@ -33,8 +33,7 @@ def _make_example(
     if error_texts is None:
         error_texts = ["FileNotFoundError: /tmp/missing.py"]
     examples = [
-        {"error_text": t, "tool_name": tool_name, "error_type": error_type}
-        for t in error_texts
+        {"error_text": t, "tool_name": tool_name, "error_type": error_type} for t in error_texts
     ]
     return SimpleNamespace(
         error_examples=json.dumps(examples),
@@ -116,25 +115,17 @@ class TestSpecificity:
         pred_specific = _make_pred(
             prevention_instructions="Before calling Read, verify the path exists."
         )
-        pred_generic = _make_pred(
-            prevention_instructions="Be more careful with operations."
-        )
+        pred_generic = _make_pred(prevention_instructions="Be more careful with operations.")
         score_specific = _score_specificity(example, pred_specific)
         score_generic = _score_specificity(example, pred_generic)
         assert score_specific > score_generic
 
     def test_mentions_error_text_details_higher(self):
-        example = _make_example(
-            error_texts=["FileNotFoundError: /tmp/missing.py"]
-        )
+        example = _make_example(error_texts=["FileNotFoundError: /tmp/missing.py"])
         pred_with_details = _make_pred(
-            prevention_instructions=(
-                "Handle FileNotFoundError by checking path existence first."
-            )
+            prevention_instructions=("Handle FileNotFoundError by checking path existence first.")
         )
-        pred_no_details = _make_pred(
-            prevention_instructions="Try harder next time."
-        )
+        pred_no_details = _make_pred(prevention_instructions="Try harder next time.")
         assert _score_specificity(example, pred_with_details) > _score_specificity(
             example, pred_no_details
         )
@@ -144,9 +135,7 @@ class TestSpecificity:
             tool_name="Bash",
             error_texts=["Permission denied: /etc/shadow"],
         )
-        pred = _make_pred(
-            prevention_instructions="Be careful when running commands."
-        )
+        pred = _make_pred(prevention_instructions="Be careful when running commands.")
         score = _score_specificity(example, pred)
         # Generic instructions should score low
         assert score < 0.5
@@ -185,9 +174,7 @@ class TestActionability:
         assert score > 0.7
 
     def test_vague_instructions_low(self):
-        pred = _make_pred(
-            prevention_instructions="Be careful. Try harder. Think about it."
-        )
+        pred = _make_pred(prevention_instructions="Be careful. Try harder. Think about it.")
         score = _score_actionability(pred)
         assert score < 0.3
 
@@ -210,12 +197,8 @@ class TestActionability:
         assert _score_actionability(pred_with_paths) > _score_actionability(pred_no_paths)
 
     def test_backtick_code_boosts_score(self):
-        pred_with_code = _make_pred(
-            prevention_instructions="Use `git status` to check changes."
-        )
-        pred_no_code = _make_pred(
-            prevention_instructions="Use git status to check changes."
-        )
+        pred_with_code = _make_pred(prevention_instructions="Use `git status` to check changes.")
+        pred_no_code = _make_pred(prevention_instructions="Use git status to check changes.")
         assert _score_actionability(pred_with_code) > _score_actionability(pred_no_code)
 
     def test_empty_instructions_zero(self):
@@ -399,7 +382,8 @@ class TestWeightedCombination:
     def test_terrible_all_axes(self):
         """Wrong surface + vague instructions + no specifics -> low score."""
         example = _make_example(
-            error_type="undo", tool_name="Bash",
+            error_type="undo",
+            tool_name="Bash",
             error_texts=["User undid last action"],
         )
         pred = _make_pred(

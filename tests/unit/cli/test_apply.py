@@ -21,6 +21,7 @@ from sio.cli.main import cli
 # T058-1: --no-backup exits 1 with BackupRequired message
 # ---------------------------------------------------------------------------
 
+
 def test_apply_no_backup_exits_1():
     """sio apply --no-backup must exit with code 1 and mention BackupRequired."""
     runner = CliRunner()
@@ -54,6 +55,7 @@ def test_apply_no_backup_with_suggestion_id_exits_1():
 # ---------------------------------------------------------------------------
 # T058-2: --rollback works without suggestion_id
 # ---------------------------------------------------------------------------
+
 
 def test_apply_rollback_works_without_suggestion_id():
     """sio apply --rollback 1 does not require suggestion_id argument."""
@@ -111,6 +113,7 @@ def test_apply_rollback_works_without_suggestion_id():
 # T058-3: --merge flag is accepted and propagated
 # ---------------------------------------------------------------------------
 
+
 def test_apply_merge_flag_accepted():
     """sio apply --merge must be accepted by the CLI (not rejected as unknown option)."""
     runner = CliRunner()
@@ -123,8 +126,7 @@ def test_apply_merge_flag_accepted():
     )
     # Should exit 1 due to --no-backup, NOT 2 (Click "no such option" error)
     assert result.exit_code == 1, (
-        f"Expected exit 1 from --no-backup guard, got {result.exit_code}. "
-        f"Output: {result.output}"
+        f"Expected exit 1 from --no-backup guard, got {result.exit_code}. Output: {result.output}"
     )
     # Confirm it's not a Click "no such option" error
     assert "no such option" not in (result.output or "").lower(), (

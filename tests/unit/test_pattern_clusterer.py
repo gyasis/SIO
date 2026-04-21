@@ -54,10 +54,7 @@ def _make_error(
 
 def _make_errors(texts: list[str], *, base_session: str = "session-001") -> list[dict]:
     """Build a list of error records from a list of text strings."""
-    return [
-        _make_error(text, id=i + 1, session_id=base_session)
-        for i, text in enumerate(texts)
-    ]
+    return [_make_error(text, id=i + 1, session_id=base_session) for i, text in enumerate(texts)]
 
 
 # ---------------------------------------------------------------------------
@@ -321,8 +318,16 @@ class TestSessionCount:
             _make_error("File not found: /tmp/a.py", id=1, session_id="session-001"),
             _make_error("File not found: /tmp/b.py", id=2, session_id="session-002"),
             # Cluster B — 1 session
-            _make_error("CommandTimeoutError: tool execution exceeded 30s limit", id=3, session_id="session-001"),
-            _make_error("CommandTimeoutError: command timed out after 60 seconds", id=4, session_id="session-001"),
+            _make_error(
+                "CommandTimeoutError: tool execution exceeded 30s limit",
+                id=3,
+                session_id="session-001",
+            ),
+            _make_error(
+                "CommandTimeoutError: command timed out after 60 seconds",
+                id=4,
+                session_id="session-001",
+            ),
         ]
         patterns = cluster_errors(errors)
         assert len(patterns) == 2

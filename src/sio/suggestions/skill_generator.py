@@ -99,9 +99,7 @@ def _extract_trigger_conditions(
     if "duplicate" in desc_lower or "already exists" in desc_lower:
         conditions.append("The target resource may already exist")
     if "retry" in desc_lower or "repeated" in desc_lower:
-        conditions.append(
-            "You have already attempted this operation once and it failed"
-        )
+        conditions.append("You have already attempted this operation once and it failed")
 
     # Triggers from positive examples (what context preceded success)
     seen_contexts: set[str] = set()
@@ -200,9 +198,7 @@ def _build_guardrails(pattern: dict[str, Any]) -> list[str]:
 
     # Permission errors
     if "permission" in description or "denied" in description:
-        guardrails.append(
-            f"ALWAYS check file permissions before `{tool_name}` operations."
-        )
+        guardrails.append(f"ALWAYS check file permissions before `{tool_name}` operations.")
 
     # Timeout / long-running
     if "timeout" in description or "timed out" in description:
@@ -213,9 +209,7 @@ def _build_guardrails(pattern: dict[str, Any]) -> list[str]:
 
     # Syntax / parse errors
     if "syntax" in description or "parse" in description:
-        guardrails.append(
-            f"ALWAYS validate input syntax before passing to `{tool_name}`."
-        )
+        guardrails.append(f"ALWAYS validate input syntax before passing to `{tool_name}`.")
 
     # Retry / repeated attempt
     if "retry" in description or "repeated" in description:
@@ -227,38 +221,27 @@ def _build_guardrails(pattern: dict[str, Any]) -> list[str]:
     # Duplicate / conflict
     if "duplicate" in description or "already exists" in description:
         guardrails.append(
-            f"ALWAYS check for existing resources before creating new ones "
-            f"via `{tool_name}`."
+            f"ALWAYS check for existing resources before creating new ones via `{tool_name}`."
         )
 
     # Multiple occurrences / uniqueness
     if "multiple" in description or "ambiguous" in description:
         guardrails.append(
-            "NEVER assume string uniqueness. Verify via search before "
-            "targeted replacements."
+            "NEVER assume string uniqueness. Verify via search before targeted replacements."
         )
 
     # Overwrite / destructive
     if "overwrite" in description or "undo" in description or "revert" in description:
-        guardrails.append(
-            "NEVER overwrite files without reading current content first."
-        )
-        guardrails.append(
-            "ALWAYS prefer incremental edits over full file rewrites."
-        )
+        guardrails.append("NEVER overwrite files without reading current content first.")
+        guardrails.append("ALWAYS prefer incremental edits over full file rewrites.")
 
     # Generic fallback if no specific guardrails matched
     if not guardrails:
+        guardrails.append(f"ALWAYS verify preconditions before calling `{tool_name}`.")
         guardrails.append(
-            f"ALWAYS verify preconditions before calling `{tool_name}`."
+            f"NEVER retry `{tool_name}` more than twice without changing your approach."
         )
-        guardrails.append(
-            f"NEVER retry `{tool_name}` more than twice without "
-            "changing your approach."
-        )
-        guardrails.append(
-            "ALWAYS check tool output for errors before proceeding."
-        )
+        guardrails.append("ALWAYS check tool output for errors before proceeding.")
 
     return guardrails
 
@@ -419,8 +402,7 @@ def generate_skill_from_flow(
 
     if not goals_seen:
         sections.append(
-            "- The current task involves reading, searching, editing, "
-            "and verifying code"
+            "- The current task involves reading, searching, editing, and verifying code"
         )
     sections.append("")
 
@@ -437,18 +419,10 @@ def generate_skill_from_flow(
     # Guardrails
     sections.append("## Guardrails")
     sections.append("")
-    sections.append(
-        "- ALWAYS follow the steps in order. Skipping steps reduces reliability."
-    )
-    sections.append(
-        "- NEVER skip the verification step at the end of the sequence."
-    )
-    if any(t.rstrip("+") in ("Edit", "Write", "edit_file", "write_file")
-           for t in flow_ngram):
-        sections.append(
-            "- ALWAYS read the target file before editing. "
-            "Never edit blindly."
-        )
+    sections.append("- ALWAYS follow the steps in order. Skipping steps reduces reliability.")
+    sections.append("- NEVER skip the verification step at the end of the sequence.")
+    if any(t.rstrip("+") in ("Edit", "Write", "edit_file", "write_file") for t in flow_ngram):
+        sections.append("- ALWAYS read the target file before editing. Never edit blindly.")
     if any(t.rstrip("+") == "Bash" for t in flow_ngram):
         sections.append(
             "- ALWAYS check command exit codes. A silent Bash failure "

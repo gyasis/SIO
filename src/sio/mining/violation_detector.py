@@ -59,11 +59,11 @@ _IMPERATIVE_PATTERNS: list[re.Pattern[str]] = [
 
 # Lines that start as markdown headings, blank, or HTML comments — skip these.
 _SKIP_LINE_PATTERNS: list[re.Pattern[str]] = [
-    re.compile(r"^\s*$"),                   # blank
-    re.compile(r"^\s*#+\s"),                # heading
-    re.compile(r"^\s*<!--"),                # HTML comment start
-    re.compile(r"^\s*-->"),                 # HTML comment end
-    re.compile(r"^\s*```"),                 # code fence
+    re.compile(r"^\s*$"),  # blank
+    re.compile(r"^\s*#+\s"),  # heading
+    re.compile(r"^\s*<!--"),  # HTML comment start
+    re.compile(r"^\s*-->"),  # HTML comment end
+    re.compile(r"^\s*```"),  # code fence
 ]
 
 
@@ -93,19 +93,104 @@ def _clean_rule_text(line: str) -> str:
 # ---------------------------------------------------------------------------
 
 # Common stop words and markdown artifacts to exclude from keyword extraction.
-_STOP_WORDS: frozenset[str] = frozenset({
-    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "will", "would", "shall",
-    "should", "may", "might", "can", "could", "must", "need", "not",
-    "never", "always", "and", "or", "but", "if", "then", "else", "when",
-    "where", "what", "which", "who", "how", "that", "this", "it", "its",
-    "in", "on", "at", "to", "for", "of", "with", "by", "from", "as",
-    "into", "through", "during", "before", "after", "above", "below",
-    "up", "down", "out", "off", "over", "under", "again", "further",
-    "than", "too", "very", "just", "about", "all", "any", "each",
-    "every", "both", "few", "more", "most", "other", "some", "such",
-    "no", "nor", "only", "same", "so", "also", "use", "using",
-})
+_STOP_WORDS: frozenset[str] = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "shall",
+        "should",
+        "may",
+        "might",
+        "can",
+        "could",
+        "must",
+        "need",
+        "not",
+        "never",
+        "always",
+        "and",
+        "or",
+        "but",
+        "if",
+        "then",
+        "else",
+        "when",
+        "where",
+        "what",
+        "which",
+        "who",
+        "how",
+        "that",
+        "this",
+        "it",
+        "its",
+        "in",
+        "on",
+        "at",
+        "to",
+        "for",
+        "of",
+        "with",
+        "by",
+        "from",
+        "as",
+        "into",
+        "through",
+        "during",
+        "before",
+        "after",
+        "above",
+        "below",
+        "up",
+        "down",
+        "out",
+        "off",
+        "over",
+        "under",
+        "again",
+        "further",
+        "than",
+        "too",
+        "very",
+        "just",
+        "about",
+        "all",
+        "any",
+        "each",
+        "every",
+        "both",
+        "few",
+        "more",
+        "most",
+        "other",
+        "some",
+        "such",
+        "no",
+        "nor",
+        "only",
+        "same",
+        "so",
+        "also",
+        "use",
+        "using",
+    }
+)
 
 
 def _extract_key_terms(rule_text: str) -> list[str]:
@@ -207,11 +292,13 @@ def parse_rules(file_path: str | Path) -> list[Rule]:
         if _has_imperative(line):
             cleaned = _clean_rule_text(line)
             if cleaned:
-                rules.append(Rule(
-                    text=cleaned,
-                    file_path=str(path),
-                    line_number=line_num,
-                ))
+                rules.append(
+                    Rule(
+                        text=cleaned,
+                        file_path=str(path),
+                        line_number=line_num,
+                    )
+                )
 
     return rules
 
@@ -256,8 +343,14 @@ def detect_violations(
     for error in error_records:
         # Build a combined searchable text from all relevant error fields.
         searchable_parts: list[str] = []
-        for field in ("error_text", "user_message", "context_before",
-                       "context_after", "tool_input", "tool_output"):
+        for field in (
+            "error_text",
+            "user_message",
+            "context_before",
+            "context_after",
+            "tool_input",
+            "tool_output",
+        ):
             val = error.get(field)
             if val:
                 searchable_parts.append(str(val))
@@ -277,9 +370,9 @@ def detect_violations(
                 # (e.g. "import" matching "important").
                 # For terms with special chars (like * or --), fall back
                 # to plain substring matching since \b won't work reliably.
-                if re.fullmatch(r'\w+', term_lower):
+                if re.fullmatch(r"\w+", term_lower):
                     if re.search(
-                        r'\b' + re.escape(term_lower) + r'\b',
+                        r"\b" + re.escape(term_lower) + r"\b",
                         searchable_lower,
                     ):
                         matched = True
@@ -290,12 +383,14 @@ def detect_violations(
                         break
 
             if matched:
-                violations.append(Violation(
-                    rule=rule,
-                    error_record=error,
-                    match_type="keyword",
-                    confidence=1.0,
-                ))
+                violations.append(
+                    Violation(
+                        rule=rule,
+                        error_record=error,
+                        match_type="keyword",
+                        confidence=1.0,
+                    )
+                )
 
     # Sort by frequency (most violated rules first), then by recency.
     # Count violations per rule text.
@@ -377,12 +472,14 @@ def get_violation_report(
 
     # 4. Build summary.
     violated_rule_texts: set[str] = set()
-    rule_stats: dict[str, dict[str, Any]] = defaultdict(lambda: {
-        "count": 0,
-        "last_seen": "",
-        "sessions": set(),
-        "rule": None,
-    })
+    rule_stats: dict[str, dict[str, Any]] = defaultdict(
+        lambda: {
+            "count": 0,
+            "last_seen": "",
+            "sessions": set(),
+            "rule": None,
+        }
+    )
 
     for v in violations:
         violated_rule_texts.add(v.rule.text)
@@ -410,14 +507,16 @@ def get_violation_report(
     # Build violation summary sorted by count desc, then recency.
     summary_list: list[dict[str, Any]] = []
     for rule_text, stats in rule_stats.items():
-        summary_list.append({
-            "rule_text": rule_text,
-            "file_path": stats["rule"].file_path if stats["rule"] else "",
-            "line_number": stats["rule"].line_number if stats["rule"] else 0,
-            "count": stats["count"],
-            "last_seen": stats["last_seen"],
-            "sessions": len(stats["sessions"]),
-        })
+        summary_list.append(
+            {
+                "rule_text": rule_text,
+                "file_path": stats["rule"].file_path if stats["rule"] else "",
+                "line_number": stats["rule"].line_number if stats["rule"] else 0,
+                "count": stats["count"],
+                "last_seen": stats["last_seen"],
+                "sessions": len(stats["sessions"]),
+            }
+        )
 
     summary_list.sort(key=lambda s: (-s["count"], s["last_seen"]), reverse=False)
     # The above sorts by count desc (because of -count), then last_seen asc.
@@ -427,17 +526,19 @@ def get_violation_report(
     # Build violation dicts for JSON output.
     violation_dicts: list[dict[str, Any]] = []
     for v in violations:
-        violation_dicts.append({
-            "rule_text": v.rule.text,
-            "rule_file": v.rule.file_path,
-            "rule_line": v.rule.line_number,
-            "error_text": v.error_record.get("error_text", ""),
-            "error_type": v.error_record.get("error_type", ""),
-            "session_id": v.error_record.get("session_id", ""),
-            "timestamp": v.error_record.get("timestamp", ""),
-            "match_type": v.match_type,
-            "confidence": v.confidence,
-        })
+        violation_dicts.append(
+            {
+                "rule_text": v.rule.text,
+                "rule_file": v.rule.file_path,
+                "rule_line": v.rule.line_number,
+                "error_text": v.error_record.get("error_text", ""),
+                "error_type": v.error_record.get("error_type", ""),
+                "session_id": v.error_record.get("session_id", ""),
+                "timestamp": v.error_record.get("timestamp", ""),
+                "match_type": v.match_type,
+                "confidence": v.confidence,
+            }
+        )
 
     return {
         "violations": violation_dicts,

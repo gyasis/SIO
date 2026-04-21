@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
 
 
 def _is_failed(msg: dict) -> bool:
@@ -30,7 +29,11 @@ def _is_failed(msg: dict) -> bool:
     # Check for common error patterns in tool output
     output = msg.get("tool_output") or msg.get("content") or ""
     if isinstance(output, str) and len(output) < 500:
-        if re.search(r"\b(Error|Exception|FAILED|Permission denied|not found|No such file)\b", output, re.IGNORECASE):
+        if re.search(
+            r"\b(Error|Exception|FAILED|Permission denied|not found|No such file)\b",
+            output,
+            re.IGNORECASE,
+        ):
             return True
     return False
 
@@ -58,10 +61,12 @@ def _is_retry(msg: dict, prev_msg: dict | None) -> bool:
 def _is_undo_message(msg: dict) -> bool:
     """Check if a user message is requesting an undo/revert."""
     content = (msg.get("content") or "").lower()
-    return bool(re.search(
-        r"\b(undo|revert|rollback|go back|restore|put it back|that.s wrong)\b",
-        content,
-    ))
+    return bool(
+        re.search(
+            r"\b(undo|revert|rollback|go back|restore|put it back|that.s wrong)\b",
+            content,
+        )
+    )
 
 
 def _extract_step_summary(msg: dict) -> str:
@@ -228,17 +233,23 @@ def distill_session(parsed_messages: list[dict]) -> dict:
         else:
             output_preview = output
 
-        steps.append({
-            "step_num": step_i + 1,
-            "tool": msg.get("tool_name", "unknown"),
-            "summary": summary,
-            "tool_input": (msg.get("tool_input") or "")[:500],
-            "tool_output_preview": output_preview[:200] if isinstance(output_preview, str) else "",
-            "timestamp": msg.get("timestamp", ""),
-            "phase": phase,
-        })
+        steps.append(
+            {
+                "step_num": step_i + 1,
+                "tool": msg.get("tool_name", "unknown"),
+                "summary": summary,
+                "tool_input": (msg.get("tool_input") or "")[:500],
+                "tool_output_preview": output_preview[:200]
+                if isinstance(output_preview, str)
+                else "",
+                "timestamp": msg.get("timestamp", ""),
+                "phase": phase,
+            }
+        )
 
-    total_tool_calls = sum(1 for m in parsed_messages if m.get("tool_name") and m.get("role") == "assistant")
+    total_tool_calls = sum(
+        1 for m in parsed_messages if m.get("tool_name") and m.get("role") == "assistant"
+    )
 
     return {
         "steps": steps,
@@ -272,15 +283,21 @@ def format_playbook(distilled: dict, title: str = "Session Playbook") -> str:
 
     # Stats
     stats = distilled["stats"]
-    lines.append(f"**Session Stats:** {stats['total_tool_calls']} tool calls → "
-                 f"{stats['winning_steps']} winning steps "
-                 f"({stats['compression_ratio']:.0%} compression). "
-                 f"Filtered out {stats['failed_calls']} failures, {stats['retries']} retries.")
+    lines.append(
+        f"**Session Stats:** {stats['total_tool_calls']} tool calls → "
+        f"{stats['winning_steps']} winning steps "
+        f"({stats['compression_ratio']:.0%} compression). "
+        f"Filtered out {stats['failed_calls']} failures, {stats['retries']} retries."
+    )
     lines.append("")
 
     # Steps by phase
     current_phase = None
-    phase_labels = {"explore": "Phase 1: Exploration", "implement": "Phase 2: Implementation", "verify": "Phase 3: Verification"}
+    phase_labels = {
+        "explore": "Phase 1: Exploration",
+        "implement": "Phase 2: Implementation",
+        "verify": "Phase 3: Verification",
+    }
 
     for step in distilled["steps"]:
         if step["phase"] != current_phase:
@@ -296,9 +313,9 @@ def format_playbook(distilled: dict, title: str = "Session Playbook") -> str:
                 params = json.loads(step["tool_input"])
                 cmd = params.get("command", "")
                 if cmd and len(cmd) < 200:
-                    lines.append(f"   ```bash")
+                    lines.append("   ```bash")
                     lines.append(f"   {cmd}")
-                    lines.append(f"   ```")
+                    lines.append("   ```")
             except (json.JSONDecodeError, TypeError):
                 pass
 

@@ -56,9 +56,11 @@ def register(name: str):
 
     Returns the function unchanged so it can also be called directly.
     """
+
     def decorator(fn):
         METRIC_REGISTRY[name] = fn
         return fn
+
     return decorator
 
 
@@ -106,6 +108,7 @@ def embedding_similarity(gold: Any, pred: Any, trace: Any = None) -> float:
     # Lazy import so tests can stub with fake_fastembed fixture
     try:
         from fastembed import TextEmbedding  # type: ignore[import]
+
         embedder = TextEmbedding()
         vecs = list(embedder.embed([gold_text, pred_text]))
     except (ImportError, Exception):
@@ -113,6 +116,7 @@ def embedding_similarity(gold: Any, pred: Any, trace: Any = None) -> float:
         return _text_overlap(gold_text, pred_text)
 
     import numpy as np
+
     g_vec = np.array(vecs[0], dtype=np.float32)
     p_vec = np.array(vecs[1], dtype=np.float32)
 
@@ -175,7 +179,9 @@ def llm_judge_recall(gold: Any, pred: Any, trace: Any = None) -> float:
     # Lazy init the judge predictor
     if _JUDGE_PREDICTOR is None:
         import dspy  # type: ignore[import]
+
         from sio.core.dspy.signatures import RuleRecallScore  # noqa: PLC0415
+
         _JUDGE_PREDICTOR = dspy.Predict(RuleRecallScore)
 
     result = _JUDGE_PREDICTOR(gold_rule=gold_text, candidate_rule=pred_text)
@@ -191,10 +197,21 @@ def llm_judge_recall(gold: Any, pred: Any, trace: Any = None) -> float:
 # Constants (suggestion_quality_metric below)
 # ---------------------------------------------------------------------------
 
-_ACTION_VERBS: frozenset[str] = frozenset({
-    "run", "check", "verify", "add", "remove", "configure",
-    "set", "use", "install", "create", "delete",
-})
+_ACTION_VERBS: frozenset[str] = frozenset(
+    {
+        "run",
+        "check",
+        "verify",
+        "add",
+        "remove",
+        "configure",
+        "set",
+        "use",
+        "install",
+        "create",
+        "delete",
+    }
+)
 
 # Mapping from error_type -> set of expected target surfaces
 _ERROR_TYPE_SURFACE_MAP: dict[str, frozenset[str]] = {
@@ -424,7 +441,9 @@ def _get_tool_name_from_example(example: Any) -> str:
 
 
 def suggestion_quality_metric(
-    example: Any, pred: Any, trace: Any = None,
+    example: Any,
+    pred: Any,
+    trace: Any = None,
 ) -> float | bool:
     """Score a DSPy suggestion on specificity, actionability, and surface accuracy.
 

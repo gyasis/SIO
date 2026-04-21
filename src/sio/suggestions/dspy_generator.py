@@ -100,6 +100,7 @@ def _load_optimized_or_default(config: Any) -> Any:
 
     return SuggestionModule()
 
+
 # ---------------------------------------------------------------------------
 # T026: Input sanitization
 # ---------------------------------------------------------------------------
@@ -160,9 +161,7 @@ _AGGRESSIVE_FILTER_PATTERNS: list[re.Pattern[str]] = [
     # Multi-line stack traces (Traceback ... raise)
     re.compile(r"Traceback \(most recent call last\):.*?(?=\\n[A-Z])", re.DOTALL),
     # Full exception chains ("During handling of...")
-    re.compile(
-        r"During handling of the above exception.*?(?=\\n[A-Z]|$)", re.DOTALL
-    ),
+    re.compile(r"During handling of the above exception.*?(?=\\n[A-Z]|$)", re.DOTALL),
     # Raw file paths with user directories
     re.compile(r"/home/[a-z]+/[^\s\"']{20,}"),
     # Node.js stack traces
@@ -478,19 +477,11 @@ def generate_dspy_suggestion(
             raise RuntimeError(f"DSPy call failed: {exc}") from exc
 
         # Retry with aggressive sanitization — strip stack traces, paths, etc.
-        logger.info(
-            "Azure content filter triggered — retrying with aggressive sanitization"
-        )
+        logger.info("Azure content filter triggered — retrying with aggressive sanitization")
         examples_json_clean = json.dumps(examples[:10], default=str)
-        examples_json_clean = _sanitize_examples(
-            examples_json_clean, aggressive=True
-        )
-        examples_json_clean = _truncate_fields(
-            examples_json_clean, max_chars=3000
-        )
-        tool_input_clean = _sanitize_examples(
-            tool_input_context, aggressive=True
-        )
+        examples_json_clean = _sanitize_examples(examples_json_clean, aggressive=True)
+        examples_json_clean = _truncate_fields(examples_json_clean, max_chars=3000)
+        tool_input_clean = _sanitize_examples(tool_input_context, aggressive=True)
         tool_input_clean = _truncate_fields(tool_input_clean, max_chars=2000)
 
         try:
@@ -527,8 +518,7 @@ def generate_dspy_suggestion(
     # --- T027: Verbose trace logging (outputs) ---
     if verbose:
         logger.info(
-            "DSPy output — target_surface=%s, rule_title=%s, "
-            "reasoning_trace=%s",
+            "DSPy output — target_surface=%s, rule_title=%s, reasoning_trace=%s",
             target_surface,
             rule_title,
             (reasoning_trace[:300] if reasoning_trace else "(none)"),
@@ -537,7 +527,10 @@ def generate_dspy_suggestion(
     # --- Build suggestion dict ---
     target_file = _SURFACE_TARGET_MAP.get(target_surface, "CLAUDE.md")
     proposed_change = _format_proposed_change(
-        rule_title, prevention_instructions, target_surface, rationale,
+        rule_title,
+        prevention_instructions,
+        target_surface,
+        rationale,
     )
     pattern_confidence = score_confidence(pattern, dataset)
 
@@ -564,10 +557,7 @@ def generate_dspy_suggestion(
     # Build description consistent with template generator
     tool_name = pattern.get("tool_name") or "unknown tool"
     error_count = int(pattern.get("error_count") or 0)
-    description = (
-        f"[DSPy] {rule_title} — {tool_name}: "
-        f"{error_count} error(s) detected."
-    )
+    description = f"[DSPy] {rule_title} — {tool_name}: {error_count} error(s) detected."
 
     return {
         "pattern_id": int(pattern["id"]),
@@ -593,10 +583,15 @@ def generate_dspy_suggestion(
 # ---------------------------------------------------------------------------
 
 _LOW_IMPACT_SURFACES: frozenset[str] = frozenset({"claude_md_rule", "agent_profile"})
-_HIGH_IMPACT_SURFACES: frozenset[str] = frozenset({
-    "hook_config", "mcp_config", "settings_config",
-    "project_config", "skill_update",
-})
+_HIGH_IMPACT_SURFACES: frozenset[str] = frozenset(
+    {
+        "hook_config",
+        "mcp_config",
+        "settings_config",
+        "project_config",
+        "skill_update",
+    }
+)
 _AUTO_CONFIDENCE_THRESHOLD: float = 0.8
 
 
@@ -625,10 +620,7 @@ def _select_mode(
     str
         Either ``"auto"`` or ``"hitl"``.
     """
-    if (
-        confidence >= _AUTO_CONFIDENCE_THRESHOLD
-        and target_surface in _LOW_IMPACT_SURFACES
-    ):
+    if confidence >= _AUTO_CONFIDENCE_THRESHOLD and target_surface in _LOW_IMPACT_SURFACES:
         return "auto"
     return "hitl"
 
@@ -669,7 +661,10 @@ def generate_auto_suggestion(
     """
     try:
         suggestion = generate_dspy_suggestion(
-            pattern, dataset, config, verbose=verbose,
+            pattern,
+            dataset,
+            config,
+            verbose=verbose,
         )
     except Exception:
         logger.warning(
@@ -751,7 +746,10 @@ def generate_hitl_suggestion(
     # ---- Stage 2: Generate suggestion via DSPy ----
     try:
         suggestion = generate_dspy_suggestion(
-            pattern, dataset, config, verbose=verbose,
+            pattern,
+            dataset,
+            config,
+            verbose=verbose,
         )
     except Exception:
         logger.warning(
@@ -773,9 +771,7 @@ def generate_hitl_suggestion(
         return None
 
     # ---- Stage 4: Final approval ----
-    response = input_fn(
-        f"Approve suggestion '{suggestion['rule_title']}'? [y/n] "
-    )
+    response = input_fn(f"Approve suggestion '{suggestion['rule_title']}'? [y/n] ")
     if response.strip().lower() != "y":
         logger.info("HITL: user rejected final approval")
         return None
@@ -823,9 +819,7 @@ def build_dataset_analysis_summary(
     examples = _load_dataset_examples(dataset)
 
     # Extract date range
-    timestamps = [
-        e.get("timestamp", "") for e in examples if e.get("timestamp")
-    ]
+    timestamps = [e.get("timestamp", "") for e in examples if e.get("timestamp")]
     if timestamps:
         sorted_ts = sorted(timestamps)
         date_range = {"earliest": sorted_ts[0], "latest": sorted_ts[-1]}
@@ -896,6 +890,17 @@ class SuggestionGenerator(dspy.Module):
         The metric key used by the optimizer registry to evaluate this module.
     generate:
         ``dspy.ChainOfThought(PatternToRule)`` — the core predictor.
+
+    Instrumentation (T108, FR-029)
+    --------------------------------
+    Each ``forward()`` call records per-run counters in the returned
+    ``dspy.Prediction`` as the field ``instrumentation_json`` (a JSON string).
+    The JSON object contains:
+
+    - ``backtrack_count``:  number of DSPy assertion backtracks triggered
+    - ``forward_count``:    always 1 per forward() invocation
+    - ``rejection_reasons``: dict mapping stage name → reason string or None
+      (stages: ``format_valid``, ``no_phi``)
     """
 
     DEFAULT_METRIC: str = "llm_judge_recall"
@@ -924,15 +929,44 @@ class SuggestionGenerator(dspy.Module):
         Returns
         -------
         dspy.Prediction
-            Prediction with ``rule_title``, ``rule_body``, ``rule_rationale``.
+            Prediction with ``rule_title``, ``rule_body``, ``rule_rationale``,
+            and ``instrumentation_json`` (JSON string, T108/FR-029).
         """
+        import json
+
+        instrumentation: dict = {
+            "forward_count": 1,
+            "backtrack_count": 0,
+            "rejection_reasons": {
+                "format_valid": None,
+                "no_phi": None,
+            },
+        }
+
         pred = self.generate(
             pattern_description=pattern_description,
             example_errors=example_errors,
             project_context=project_context,
         )
-        assert_rule_format(pred)
-        assert_no_phi(pred)
+
+        # Stage 1: assert_rule_format — capture rejection reason on failure.
+        try:
+            assert_rule_format(pred)
+        except Exception as exc:  # noqa: BLE001
+            instrumentation["rejection_reasons"]["format_valid"] = str(exc)
+            instrumentation["backtrack_count"] += 1
+            raise
+
+        # Stage 2: assert_no_phi — capture rejection reason on failure.
+        try:
+            assert_no_phi(pred)
+        except Exception as exc:  # noqa: BLE001
+            instrumentation["rejection_reasons"]["no_phi"] = str(exc)
+            instrumentation["backtrack_count"] += 1
+            raise
+
+        # Attach instrumentation to the prediction as a JSON string.
+        pred.instrumentation_json = json.dumps(instrumentation)
         return pred
 
 

@@ -123,9 +123,7 @@ class TestSuggestionModuleContract:
 
         sig = inspect.signature(SuggestionModule.forward)
         # Exclude 'self' from parameter names
-        actual_params = {
-            name for name in sig.parameters if name != "self"
-        }
+        actual_params = {name for name in sig.parameters if name != "self"}
 
         assert expected_params == actual_params, (
             f"SuggestionModule.forward() parameters mismatch with Signature inputs.\n"
@@ -175,6 +173,5 @@ class TestTargetSurfaceContract:
 
         for surface in self.EXPECTED_SURFACES:
             assert surface in desc, (
-                f"target_surface description is missing '{surface}'.\n"
-                f"  Full desc: {desc!r}"
+                f"target_surface description is missing '{surface}'.\n  Full desc: {desc!r}"
             )

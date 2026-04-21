@@ -15,17 +15,16 @@ Invariants per data-model.md §2.7:
 Run to confirm RED before T049:
     uv run pytest tests/unit/db/test_superseded.py -v
 """
+
 from __future__ import annotations
 
 import sqlite3
 from datetime import datetime, timezone
 
-import pytest
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -63,7 +62,7 @@ def _insert_applied(conn, n: int = 3) -> list[int]:
             "INSERT INTO applied_changes "
             "(target_file, diff_before, diff_after, applied_at, superseded_at) "
             "VALUES (?, ?, ?, ?, ?)",
-            (f"~/.claude/CLAUDE.md", f"before-{i}", f"after-{i}", now, None),
+            ("~/.claude/CLAUDE.md", f"before-{i}", f"after-{i}", now, None),
         )
         ids.append(cur.lastrowid)
     conn.commit()
@@ -74,17 +73,20 @@ def _insert_applied(conn, n: int = 3) -> list[int]:
 # Import helpers
 # ---------------------------------------------------------------------------
 
+
 def _import_fns():
     from sio.core.db.queries import (  # noqa: PLC0415
         list_active_applied_changes,
         mark_superseded,
     )
+
     return list_active_applied_changes, mark_superseded
 
 
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestListActiveAppliedChanges:
     """list_active_applied_changes returns only rows with superseded_at IS NULL."""
@@ -224,6 +226,7 @@ class TestMarkSuperseded:
         ).fetchone()["superseded_at"]
 
         import time
+
         time.sleep(0.01)  # tiny delay to ensure timestamps differ if rewritten
 
         mark_fn(conn, ids[0], by_id=None)

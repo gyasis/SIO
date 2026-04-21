@@ -12,14 +12,10 @@ Run to confirm RED before T087 impl:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sqlite3
 import tempfile
 from pathlib import Path
-
-import pytest
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -28,21 +24,23 @@ import pytest
 
 def _make_event(tool_name: str, idx: int) -> str:
     """Return a minimal JSONL event dict with a tool call."""
-    return json.dumps({
-        "type": "assistant",
-        "message": {
-            "role": "assistant",
-            "content": [
-                {
-                    "type": "tool_use",
-                    "name": tool_name,
-                    "id": f"tool_{idx}",
-                    "input": {"path": f"/tmp/file_{idx}.py"},
-                }
-            ],
-        },
-        "timestamp": f"2026-04-20T{idx % 24:02d}:00:00Z",
-    })
+    return json.dumps(
+        {
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": tool_name,
+                        "id": f"tool_{idx}",
+                        "input": {"path": f"/tmp/file_{idx}.py"},
+                    }
+                ],
+            },
+            "timestamp": f"2026-04-20T{idx % 24:02d}:00:00Z",
+        }
+    )
 
 
 def _open_db(db_path: Path) -> sqlite3.Connection:
@@ -94,11 +92,16 @@ def _write_flow_jsonl(path: Path, n_tools: int) -> None:
             f.write(_make_event(tools[i % len(tools)], i) + "\n")
     # Add a success signal
     with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps({
-            "type": "user",
-            "message": {"role": "user", "content": [{"type": "text", "text": "perfect"}]},
-            "timestamp": "2026-04-20T12:30:00Z",
-        }) + "\n")
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": [{"type": "text", "text": "perfect"}]},
+                    "timestamp": "2026-04-20T12:30:00Z",
+                }
+            )
+            + "\n"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -216,8 +219,6 @@ def test_processed_sessions_updated_after_mine():
                 "SELECT COUNT(*) FROM processed_sessions WHERE file_path = ?",
                 (str(jsonl_path),),
             ).fetchone()[0]
-            assert ps_count >= 1, (
-                "processed_sessions must have a row for the mined file"
-            )
+            assert ps_count >= 1, "processed_sessions must have a row for the mined file"
         finally:
             conn.close()

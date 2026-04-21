@@ -40,6 +40,7 @@ def _load_migrate_004():
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def seeded_db(tmp_path: Path) -> Path:
     """Create a minimal SIO-style DB with the pre-migration schema."""
@@ -170,6 +171,7 @@ def seeded_db(tmp_path: Path) -> Path:
 # 1. Module must exist (red: ImportError expected until T015)
 # ---------------------------------------------------------------------------
 
+
 def test_migrate_004_module_importable():
     """scripts/migrate_004.py must be importable as a module."""
     _load_migrate_004()
@@ -178,6 +180,7 @@ def test_migrate_004_module_importable():
 # ---------------------------------------------------------------------------
 # 2. migrate() function must exist with correct signature
 # ---------------------------------------------------------------------------
+
 
 def test_migrate_004_has_migrate_function(seeded_db: Path):
     """migrate_004 must expose a migrate(db_path) function."""
@@ -190,6 +193,7 @@ def test_migrate_004_has_migrate_function(seeded_db: Path):
 # 3. Idempotency — calling migrate twice is safe
 # ---------------------------------------------------------------------------
 
+
 def test_migrate_004_idempotent(seeded_db: Path):
     """Calling migrate(db_path) twice must not raise and must not add duplicates."""
     mod = _load_migrate_004()
@@ -197,9 +201,7 @@ def test_migrate_004_idempotent(seeded_db: Path):
     mod.migrate(seeded_db)  # second call must be safe
 
     conn = sqlite3.connect(str(seeded_db))
-    count = conn.execute(
-        "SELECT COUNT(*) FROM schema_version WHERE version=2"
-    ).fetchone()[0]
+    count = conn.execute("SELECT COUNT(*) FROM schema_version WHERE version=2").fetchone()[0]
     conn.close()
     assert count == 1, (
         f"Expected exactly 1 schema_version row with version=2 after double migrate; got {count}"
@@ -233,15 +235,15 @@ def test_migrate_004_statements_are_additive():
     # Find SQL string literals (multi-line triple-quoted or single-line)
     # We check for forbidden keywords in the whole source as a conservative check
     matches = list(_FORBIDDEN_PATTERNS.finditer(source))
-    assert not matches, (
-        "migrate_004.py contains destructive SQL statement(s): "
-        + ", ".join(m.group() for m in matches)
+    assert not matches, "migrate_004.py contains destructive SQL statement(s): " + ", ".join(
+        m.group() for m in matches
     )
 
 
 # ---------------------------------------------------------------------------
 # 5. Post-migration: required schema_version table
 # ---------------------------------------------------------------------------
+
 
 def test_migrate_004_schema_version_table_exists(seeded_db: Path):
     """After migration, schema_version table must exist."""
@@ -260,24 +262,28 @@ def test_migrate_004_schema_version_table_exists(seeded_db: Path):
 # 6. Post-migration: required new columns exist
 # ---------------------------------------------------------------------------
 
+
 def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
     info = conn.execute(f"PRAGMA table_info({table})").fetchall()
     return any(row[1] == column for row in info)
 
 
-@pytest.mark.parametrize("table,column", [
-    ("patterns", "centroid_model_version"),
-    ("processed_sessions", "last_offset"),
-    ("error_records", "parent_session_id"),
-    ("flow_events", "parent_session_id"),
-    ("applied_changes", "superseded_at"),
-    ("patterns", "active"),
-    ("datasets", "active"),
-    ("pattern_errors", "active"),
-    ("suggestions", "active"),
-    ("optimized_modules", "optimizer_name"),
-    ("ground_truth", "remapped_from_pattern_id"),
-])
+@pytest.mark.parametrize(
+    "table,column",
+    [
+        ("patterns", "centroid_model_version"),
+        ("processed_sessions", "last_offset"),
+        ("error_records", "parent_session_id"),
+        ("flow_events", "parent_session_id"),
+        ("applied_changes", "superseded_at"),
+        ("patterns", "active"),
+        ("datasets", "active"),
+        ("pattern_errors", "active"),
+        ("suggestions", "active"),
+        ("optimized_modules", "optimizer_name"),
+        ("ground_truth", "remapped_from_pattern_id"),
+    ],
+)
 def test_migrate_004_new_columns_exist(seeded_db: Path, table: str, column: str):
     """After migration, each required new column must exist."""
     mod = _load_migrate_004()
@@ -293,6 +299,7 @@ def test_migrate_004_new_columns_exist(seeded_db: Path, table: str, column: str)
 # 7. Post-migration: required indexes exist
 # ---------------------------------------------------------------------------
 
+
 def _index_exists(conn: sqlite3.Connection, index_name: str) -> bool:
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
@@ -301,13 +308,16 @@ def _index_exists(conn: sqlite3.Connection, index_name: str) -> bool:
     return row is not None
 
 
-@pytest.mark.parametrize("index_name", [
-    "ix_bi_identity",
-    "ix_bi_platform_timestamp",
-    "ix_er_user_msg",
-    "ix_er_error_text",
-    "ix_fe_identity",
-])
+@pytest.mark.parametrize(
+    "index_name",
+    [
+        "ix_bi_identity",
+        "ix_bi_platform_timestamp",
+        "ix_er_user_msg",
+        "ix_er_error_text",
+        "ix_fe_identity",
+    ],
+)
 def test_migrate_004_indexes_exist(seeded_db: Path, index_name: str):
     """After migration, each required index must exist."""
     mod = _load_migrate_004()

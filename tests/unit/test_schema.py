@@ -38,15 +38,25 @@ def _index_names(conn):
 
 def _column_info(conn, table):
     rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
-    return [{"cid": r[0], "name": r[1], "type": r[2], "notnull": r[3], "dflt_value": r[4], "pk": r[5]} for r in rows]
+    return [
+        {"cid": r[0], "name": r[1], "type": r[2], "notnull": r[3], "dflt_value": r[4], "pk": r[5]}
+        for r in rows
+    ]
 
 
 class TestTablesCreated:
-    EXPECTED_TABLES = {"behavior_invocations", "optimization_runs", "gold_standards", "platform_config"}
+    EXPECTED_TABLES = {
+        "behavior_invocations",
+        "optimization_runs",
+        "gold_standards",
+        "platform_config",
+    }
 
     def test_tables_created(self, conn):
         tables = _table_names(conn)
-        assert self.EXPECTED_TABLES.issubset(tables), f"Missing tables: {self.EXPECTED_TABLES - tables}"
+        assert self.EXPECTED_TABLES.issubset(tables), (
+            f"Missing tables: {self.EXPECTED_TABLES - tables}"
+        )
 
 
 class TestPragmas:
@@ -64,22 +74,43 @@ class TestPragmas:
 
 
 class TestIndexes:
-    EXPECTED_INDEXES = {"idx_session", "idx_platform_behavior", "idx_satisfaction", "idx_timestamp"}
+    EXPECTED_INDEXES = {
+        "idx_session",
+        "idx_platform_behavior",
+        "idx_satisfaction",
+        "idx_timestamp",
+    }
 
     def test_indexes_exist(self, conn):
         indexes = _index_names(conn)
-        assert self.EXPECTED_INDEXES.issubset(indexes), f"Missing indexes: {self.EXPECTED_INDEXES - indexes}"
+        assert self.EXPECTED_INDEXES.issubset(indexes), (
+            f"Missing indexes: {self.EXPECTED_INDEXES - indexes}"
+        )
 
 
 class TestBehaviorInvocationsColumns:
     EXPECTED_COLUMNS = {
-        "id": "INTEGER", "session_id": "TEXT", "timestamp": "TEXT", "platform": "TEXT",
-        "user_message": "TEXT", "behavior_type": "TEXT", "actual_action": "TEXT",
-        "expected_action": "TEXT", "activated": "INTEGER", "correct_action": "INTEGER",
-        "correct_outcome": "INTEGER", "user_satisfied": "INTEGER", "user_note": "TEXT",
-        "passive_signal": "TEXT", "history_file": "TEXT", "line_start": "INTEGER",
-        "line_end": "INTEGER", "token_count": "INTEGER", "latency_ms": "INTEGER",
-        "labeled_by": "TEXT", "labeled_at": "TEXT",
+        "id": "INTEGER",
+        "session_id": "TEXT",
+        "timestamp": "TEXT",
+        "platform": "TEXT",
+        "user_message": "TEXT",
+        "behavior_type": "TEXT",
+        "actual_action": "TEXT",
+        "expected_action": "TEXT",
+        "activated": "INTEGER",
+        "correct_action": "INTEGER",
+        "correct_outcome": "INTEGER",
+        "user_satisfied": "INTEGER",
+        "user_note": "TEXT",
+        "passive_signal": "TEXT",
+        "history_file": "TEXT",
+        "line_start": "INTEGER",
+        "line_end": "INTEGER",
+        "token_count": "INTEGER",
+        "latency_ms": "INTEGER",
+        "labeled_by": "TEXT",
+        "labeled_at": "TEXT",
     }
 
     def test_behavior_invocations_columns(self, conn):
@@ -132,7 +163,10 @@ class TestCheckConstraints:
             "VALUES (?, '2026-01-01T00:00:00Z', 'claude', 'hello', ?)",
             (f"sess-{btype}", btype),
         )
-        row = conn.execute("SELECT behavior_type FROM behavior_invocations WHERE session_id = ?", (f"sess-{btype}",)).fetchone()
+        row = conn.execute(
+            "SELECT behavior_type FROM behavior_invocations WHERE session_id = ?",
+            (f"sess-{btype}",),
+        ).fetchone()
         assert row[0] == btype
 
 
@@ -154,9 +188,17 @@ class TestGroundTruthTable:
     def _gt_vals(self, surface="claude_md_rule", label="pending", source="seed"):
         """Return a tuple of valid values for ground_truth INSERT."""
         return (
-            "pat-1", '["example error"]', "tool_error", "Tool fails on X",
-            surface, "Fix X", "Do Y instead", "Because Z",
-            label, source, "2026-01-01T00:00:00Z",
+            "pat-1",
+            '["example error"]',
+            "tool_error",
+            "Tool fails on X",
+            surface,
+            "Fix X",
+            "Do Y instead",
+            "Because Z",
+            label,
+            source,
+            "2026-01-01T00:00:00Z",
         )
 
     def test_ground_truth_table_exists(self, conn):
@@ -164,15 +206,19 @@ class TestGroundTruthTable:
         assert "ground_truth" in tables, f"Missing 'ground_truth' table. Found: {sorted(tables)}"
 
     VALID_TARGET_SURFACES = (
-        "claude_md_rule", "skill_update", "hook_config",
-        "mcp_config", "settings_config", "agent_profile", "project_config",
+        "claude_md_rule",
+        "skill_update",
+        "hook_config",
+        "mcp_config",
+        "settings_config",
+        "agent_profile",
+        "project_config",
     )
 
     @pytest.mark.parametrize("surface", VALID_TARGET_SURFACES)
     def test_ground_truth_target_surface_accepts_valid(self, conn, surface):
         conn.execute(
-            f"INSERT INTO ground_truth ({self._GT_COLS}) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            f"INSERT INTO ground_truth ({self._GT_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             self._gt_vals(surface=surface),
         )
         row = conn.execute(
@@ -195,8 +241,7 @@ class TestGroundTruthTable:
     @pytest.mark.parametrize("label", VALID_LABELS)
     def test_ground_truth_label_accepts_valid(self, conn, label):
         conn.execute(
-            f"INSERT INTO ground_truth ({self._GT_COLS}) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            f"INSERT INTO ground_truth ({self._GT_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             self._gt_vals(label=label),
         )
 
@@ -214,8 +259,7 @@ class TestGroundTruthTable:
     @pytest.mark.parametrize("source", VALID_SOURCES)
     def test_ground_truth_source_accepts_valid(self, conn, source):
         conn.execute(
-            f"INSERT INTO ground_truth ({self._GT_COLS}) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            f"INSERT INTO ground_truth ({self._GT_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             self._gt_vals(source=source),
         )
 

@@ -53,7 +53,6 @@ def clean_sentinel():
 
 
 class TestStopSentinel:
-
     def test_stop_writes_sentinel(self, loop):
         loop.stop()
         assert os.path.exists(_SENTINEL_PATH)
@@ -83,7 +82,6 @@ class TestStopSentinel:
 
 
 class TestSafetyLimits:
-
     def test_skips_when_max_experiments_reached(self, loop, db):
         txlog = TxLog(db)
         # Simulate 3 active experiments
@@ -102,14 +100,16 @@ class TestSafetyLimits:
     def test_does_not_skip_when_experiments_below_max(self, loop, db):
         txlog = TxLog(db)
         # 2 active + 1 promoted = only 2 active
-        txlog.append(1, "experiment_create", "success",
-                      experiment_branch="experiment/sug-1-20260401")
-        txlog.append(2, "experiment_create", "success",
-                      experiment_branch="experiment/sug-2-20260401")
-        txlog.append(3, "experiment_create", "success",
-                      experiment_branch="experiment/sug-3-20260401")
-        txlog.append(3, "promote", "success",
-                      experiment_branch="experiment/sug-3-20260401")
+        txlog.append(
+            1, "experiment_create", "success", experiment_branch="experiment/sug-1-20260401"
+        )
+        txlog.append(
+            2, "experiment_create", "success", experiment_branch="experiment/sug-2-20260401"
+        )
+        txlog.append(
+            3, "experiment_create", "success", experiment_branch="experiment/sug-3-20260401"
+        )
+        txlog.append(3, "promote", "success", experiment_branch="experiment/sug-3-20260401")
 
         # Only 2 active now, max is 3
         result = loop.run_cycle()
@@ -123,7 +123,6 @@ class TestSafetyLimits:
 
 
 class TestTxLogIntegration:
-
     def test_cycle_logs_mine_action(self, loop, db):
         """Even if mine finds nothing, it should be logged."""
         with patch(
@@ -153,7 +152,6 @@ class TestTxLogIntegration:
 
 
 class TestSingleCycle:
-
     def _setup_mocks(self, loop):
         """Patch all pipeline steps to succeed."""
         loop._step_mine = MagicMock(return_value={"errors_found": 5})
@@ -183,7 +181,12 @@ class TestSingleCycle:
         assert len(result["actions"]) == 6
         action_names = [a[0] for a in result["actions"]]
         assert action_names == [
-            "mine", "cluster", "grade", "generate", "assert", "experiment_create",
+            "mine",
+            "cluster",
+            "grade",
+            "generate",
+            "assert",
+            "experiment_create",
         ]
 
     def test_cycle_stops_at_mine_if_no_errors(self, loop):
@@ -212,7 +215,6 @@ class TestSingleCycle:
 
 
 class TestStartStop:
-
     def test_start_with_max_cycles(self, loop):
         """Loop respects max_cycles."""
         call_count = 0

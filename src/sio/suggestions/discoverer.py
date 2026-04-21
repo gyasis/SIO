@@ -215,10 +215,15 @@ def discover_skill_candidates(
         # Classify and score
         tool_counter: Counter = Counter({tool_name: total_errors})
         skill_type = _classify_candidate(
-            tool_counter, matching_flows, repo_count, total_errors,
+            tool_counter,
+            matching_flows,
+            repo_count,
+            total_errors,
         )
         confidence = _compute_confidence(
-            total_errors, total_sessions, best_flow_rate,
+            total_errors,
+            total_sessions,
+            best_flow_rate,
         )
 
         top_exts = [ext for ext, _ in ext_counter.most_common(3)]
@@ -235,17 +240,19 @@ def discover_skill_candidates(
             f"{total_sessions} sessions{ext_note}{flow_note}"
         )
 
-        candidates.append({
-            "description": description,
-            "pattern_ids": pattern_ids,
-            "flow_hashes": matching_flows,
-            "suggested_skill_type": skill_type,
-            "confidence": confidence,
-            "error_count": total_errors,
-            "session_count": total_sessions,
-            "tool_name": tool_name,
-            "extensions": top_exts,
-        })
+        candidates.append(
+            {
+                "description": description,
+                "pattern_ids": pattern_ids,
+                "flow_hashes": matching_flows,
+                "suggested_skill_type": skill_type,
+                "confidence": confidence,
+                "error_count": total_errors,
+                "session_count": total_sessions,
+                "tool_name": tool_name,
+                "extensions": top_exts,
+            }
+        )
 
     # ---------------------------------------------------------------
     # Step 4: Add flow-only candidates (workflow sequences not yet
@@ -262,23 +269,27 @@ def discover_skill_candidates(
             continue
 
         confidence = _compute_confidence(
-            fdata["count"], fdata["session_count"], fdata["success_rate"],
+            fdata["count"],
+            fdata["session_count"],
+            fdata["success_rate"],
         )
 
-        candidates.append({
-            "description": (
-                f"Workflow: {fdata['sequence']} "
-                f"({fdata['count']} times, {fdata['success_rate']:.0f}% success)"
-            ),
-            "pattern_ids": [],
-            "flow_hashes": [fhash],
-            "suggested_skill_type": "workflow-sequence",
-            "confidence": confidence,
-            "error_count": 0,
-            "session_count": fdata["session_count"],
-            "tool_name": None,
-            "extensions": [],
-        })
+        candidates.append(
+            {
+                "description": (
+                    f"Workflow: {fdata['sequence']} "
+                    f"({fdata['count']} times, {fdata['success_rate']:.0f}% success)"
+                ),
+                "pattern_ids": [],
+                "flow_hashes": [fhash],
+                "suggested_skill_type": "workflow-sequence",
+                "confidence": confidence,
+                "error_count": 0,
+                "session_count": fdata["session_count"],
+                "tool_name": None,
+                "extensions": [],
+            }
+        )
 
     # Sort by confidence descending
     candidates.sort(key=lambda c: c["confidence"], reverse=True)

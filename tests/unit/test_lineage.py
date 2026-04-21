@@ -72,9 +72,7 @@ def _insert_dataset(
 class TestTracksContributingSessions:
     """track_lineage must persist the contributing sessions list."""
 
-    def test_tracks_contributing_sessions(
-        self, v2_db: sqlite3.Connection
-    ) -> None:
+    def test_tracks_contributing_sessions(self, v2_db: sqlite3.Connection) -> None:
         pattern_row_id = _insert_pattern(v2_db, pattern_id="p-lin-sess-001")
         dataset_id = _insert_dataset(v2_db, pattern_row_id)
 
@@ -88,9 +86,7 @@ class TestTracksContributingSessions:
             f"Expected sessions {sessions!r}, got {lineage['sessions']!r}"
         )
 
-    def test_single_session_tracked(
-        self, v2_db: sqlite3.Connection
-    ) -> None:
+    def test_single_session_tracked(self, v2_db: sqlite3.Connection) -> None:
         pattern_row_id = _insert_pattern(v2_db, pattern_id="p-lin-single-001")
         dataset_id = _insert_dataset(v2_db, pattern_row_id, file_path="/tmp/ds2.json")
 
@@ -102,14 +98,10 @@ class TestTracksContributingSessions:
             f"Expected ['only-session'], got {lineage['sessions']!r}"
         )
 
-    def test_empty_sessions_list_tracked(
-        self, v2_db: sqlite3.Connection
-    ) -> None:
+    def test_empty_sessions_list_tracked(self, v2_db: sqlite3.Connection) -> None:
         """track_lineage with an empty sessions list must not raise."""
         pattern_row_id = _insert_pattern(v2_db, pattern_id="p-lin-empty-001")
-        dataset_id = _insert_dataset(
-            v2_db, pattern_row_id, file_path="/tmp/ds_empty.json"
-        )
+        dataset_id = _insert_dataset(v2_db, pattern_row_id, file_path="/tmp/ds_empty.json")
 
         # Must not raise even with an empty list.
         track_lineage(dataset_id, [], "1 week", v2_db)
@@ -126,28 +118,20 @@ class TestTracksContributingSessions:
 class TestTracksTimeWindow:
     """track_lineage must persist the time_window string."""
 
-    def test_tracks_time_window(
-        self, v2_db: sqlite3.Connection
-    ) -> None:
+    def test_tracks_time_window(self, v2_db: sqlite3.Connection) -> None:
         pattern_row_id = _insert_pattern(v2_db, pattern_id="p-lin-tw-001")
-        dataset_id = _insert_dataset(
-            v2_db, pattern_row_id, file_path="/tmp/ds_tw.json"
-        )
+        dataset_id = _insert_dataset(v2_db, pattern_row_id, file_path="/tmp/ds_tw.json")
 
         track_lineage(dataset_id, ["sess-x"], "2 weeks", v2_db)
 
         lineage = get_lineage(dataset_id, v2_db)
 
-        assert "time_window" in lineage, (
-            "get_lineage must return a dict with 'time_window'"
-        )
+        assert "time_window" in lineage, "get_lineage must return a dict with 'time_window'"
         assert lineage["time_window"] == "2 weeks", (
             f"Expected time_window='2 weeks', got {lineage['time_window']!r}"
         )
 
-    def test_varied_time_window_strings(
-        self, v2_db: sqlite3.Connection
-    ) -> None:
+    def test_varied_time_window_strings(self, v2_db: sqlite3.Connection) -> None:
         """Arbitrary time_window strings must round-trip without modification."""
         _insert_pattern(v2_db, pattern_id="p-lin-twv-001")
 
@@ -166,21 +150,15 @@ class TestTracksTimeWindow:
                 f"time_window '{window}' did not round-trip; got {result['time_window']!r}"
             )
 
-    def test_get_lineage_includes_dataset_id(
-        self, v2_db: sqlite3.Connection
-    ) -> None:
+    def test_get_lineage_includes_dataset_id(self, v2_db: sqlite3.Connection) -> None:
         pattern_row_id = _insert_pattern(v2_db, pattern_id="p-lin-dsid-001")
-        dataset_id = _insert_dataset(
-            v2_db, pattern_row_id, file_path="/tmp/ds_dsid.json"
-        )
+        dataset_id = _insert_dataset(v2_db, pattern_row_id, file_path="/tmp/ds_dsid.json")
 
         track_lineage(dataset_id, ["sess-1"], "1 month", v2_db)
 
         lineage = get_lineage(dataset_id, v2_db)
 
-        assert "dataset_id" in lineage, (
-            "get_lineage result must include 'dataset_id'"
-        )
+        assert "dataset_id" in lineage, "get_lineage result must include 'dataset_id'"
         assert lineage["dataset_id"] == dataset_id
 
 
@@ -192,13 +170,9 @@ class TestTracksTimeWindow:
 class TestLineagePersistsAcrossUpdates:
     """Calling track_lineage twice must accumulate all sessions (no overwrite)."""
 
-    def test_lineage_persists_across_updates(
-        self, v2_db: sqlite3.Connection
-    ) -> None:
+    def test_lineage_persists_across_updates(self, v2_db: sqlite3.Connection) -> None:
         pattern_row_id = _insert_pattern(v2_db, pattern_id="p-lin-accum-001")
-        dataset_id = _insert_dataset(
-            v2_db, pattern_row_id, file_path="/tmp/ds_accum.json"
-        )
+        dataset_id = _insert_dataset(v2_db, pattern_row_id, file_path="/tmp/ds_accum.json")
 
         initial_sessions = ["alpha", "beta"]
         track_lineage(dataset_id, initial_sessions, "1 week", v2_db)
@@ -210,18 +184,13 @@ class TestLineagePersistsAcrossUpdates:
 
         all_expected = set(initial_sessions) | set(additional_sessions)
         assert set(lineage["sessions"]) == all_expected, (
-            f"Expected all sessions {all_expected!r}; "
-            f"got {set(lineage['sessions'])!r}"
+            f"Expected all sessions {all_expected!r}; got {set(lineage['sessions'])!r}"
         )
 
-    def test_no_duplicate_sessions_after_re_track(
-        self, v2_db: sqlite3.Connection
-    ) -> None:
+    def test_no_duplicate_sessions_after_re_track(self, v2_db: sqlite3.Connection) -> None:
         """Tracking the same sessions twice must not produce duplicates."""
         pattern_row_id = _insert_pattern(v2_db, pattern_id="p-lin-dedup-001")
-        dataset_id = _insert_dataset(
-            v2_db, pattern_row_id, file_path="/tmp/ds_dedup.json"
-        )
+        dataset_id = _insert_dataset(v2_db, pattern_row_id, file_path="/tmp/ds_dedup.json")
 
         sessions = ["alpha", "beta"]
         track_lineage(dataset_id, sessions, "2 weeks", v2_db)
@@ -234,14 +203,10 @@ class TestLineagePersistsAcrossUpdates:
             "Duplicate session IDs must not appear in lineage"
         )
 
-    def test_track_twice_time_window_updated(
-        self, v2_db: sqlite3.Connection
-    ) -> None:
+    def test_track_twice_time_window_updated(self, v2_db: sqlite3.Connection) -> None:
         """The most recent time_window must be reflected after re-tracking."""
         pattern_row_id = _insert_pattern(v2_db, pattern_id="p-lin-tw-update-001")
-        dataset_id = _insert_dataset(
-            v2_db, pattern_row_id, file_path="/tmp/ds_twupdate.json"
-        )
+        dataset_id = _insert_dataset(v2_db, pattern_row_id, file_path="/tmp/ds_twupdate.json")
 
         track_lineage(dataset_id, ["s1"], "1 week", v2_db)
         track_lineage(dataset_id, ["s2"], "3 weeks", v2_db)
@@ -253,11 +218,7 @@ class TestLineagePersistsAcrossUpdates:
             f"Expected updated time_window '3 weeks', got {lineage['time_window']!r}"
         )
 
-    def test_get_lineage_unknown_dataset_returns_none(
-        self, v2_db: sqlite3.Connection
-    ) -> None:
+    def test_get_lineage_unknown_dataset_returns_none(self, v2_db: sqlite3.Connection) -> None:
         """get_lineage on a dataset_id that was never tracked must return None."""
         result = get_lineage(999_999, v2_db)
-        assert result is None, (
-            f"Expected None for unknown dataset_id; got {result!r}"
-        )
+        assert result is None, f"Expected None for unknown dataset_id; got {result!r}"

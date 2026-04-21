@@ -46,8 +46,10 @@ def post_metrics_regressed():
     return {
         "error_rate": 0.30,
         "error_types": [
-            "tool_failure", "user_correction",
-            "repeated_attempt", "new_unknown_error",
+            "tool_failure",
+            "user_correction",
+            "repeated_attempt",
+            "new_unknown_error",
         ],
     }
 
@@ -67,7 +69,6 @@ def fake_config():
 
 
 class TestErrorRateDecreased:
-
     def test_passes_when_rate_drops(self, pre_metrics, post_metrics_improved):
         r = error_rate_decreased(pre_metrics, post_metrics_improved)
         assert r.passed is True
@@ -94,7 +95,6 @@ class TestErrorRateDecreased:
 
 
 class TestNoNewRegressions:
-
     def test_passes_when_no_new_types(self, pre_metrics, post_metrics_improved):
         r = no_new_regressions(pre_metrics, post_metrics_improved)
         assert r.passed is True
@@ -121,7 +121,6 @@ class TestNoNewRegressions:
 
 
 class TestConfidenceAboveThreshold:
-
     def test_passes_when_above(self):
         r = confidence_above_threshold({"confidence": 0.85}, threshold=0.7)
         assert r.passed is True
@@ -149,7 +148,6 @@ class TestConfidenceAboveThreshold:
 
 
 class TestBudgetWithinLimits:
-
     def test_passes_when_under_budget(self, fake_config):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
             f.write("\n".join(["line"] * 50))
@@ -186,7 +184,6 @@ class TestBudgetWithinLimits:
 
 
 class TestNoCollisions:
-
     def test_passes_when_unique(self):
         sug = {"proposed_change": "Always use explicit column lists"}
         existing = [{"proposed_change": "Run ruff check after editing"}]
@@ -219,16 +216,19 @@ class TestNoCollisions:
 
 
 class TestRunAssertions:
-
     def test_runs_multiple_assertions(
-        self, pre_metrics, post_metrics_improved, fake_config,
+        self,
+        pre_metrics,
+        post_metrics_improved,
+        fake_config,
     ):
         context = {
             "pre": pre_metrics,
             "post": post_metrics_improved,
         }
         results = run_assertions(
-            ["error_rate_decreased", "no_new_regressions"], context,
+            ["error_rate_decreased", "no_new_regressions"],
+            context,
         )
         assert len(results) == 2
         assert all(isinstance(r, AssertionResult) for r in results)
@@ -243,8 +243,10 @@ class TestRunAssertions:
     def test_custom_assertion_callable(self):
         def my_check(ctx):
             return AssertionResult(
-                passed=True, name="my_check",
-                actual_value=1.0, threshold=0.0,
+                passed=True,
+                name="my_check",
+                actual_value=1.0,
+                threshold=0.0,
             )
 
         results = run_assertions(["my_check"], {"my_check": my_check})

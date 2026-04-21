@@ -31,6 +31,7 @@ import pytest
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def tmp_sio_db():
     """Create a minimal sio.db with 5 gold_standards rows."""
@@ -81,6 +82,7 @@ def tmp_sio_db():
 # Tests
 # ---------------------------------------------------------------------------
 
+
 def test_trainset_examples_are_dspy_examples(tmp_sio_db):
     """All training examples loaded from gold_standards must be dspy.Example
     instances with .with_inputs(...) declared (SC-020).
@@ -91,18 +93,14 @@ def test_trainset_examples_are_dspy_examples(tmp_sio_db):
 
     assert len(examples) == 5, f"Expected 5 examples, got {len(examples)}"
     for i, ex in enumerate(examples):
-        assert isinstance(ex, dspy.Example), (
-            f"Example {i} must be a dspy.Example, got {type(ex)}"
-        )
+        assert isinstance(ex, dspy.Example), f"Example {i} must be a dspy.Example, got {type(ex)}"
         # Verify .with_inputs() was called — dspy.Example stores input keys
         assert hasattr(ex, "_input_keys") or hasattr(ex, "inputs"), (
             f"Example {i} must have inputs declared via .with_inputs()"
         )
         try:
             input_keys = ex.inputs()
-            assert len(input_keys) > 0, (
-                f"Example {i} must have at least one input key declared"
-            )
+            assert len(input_keys) > 0, f"Example {i} must have at least one input key declared"
         except (AttributeError, TypeError):
             pytest.fail(f"Example {i}: .inputs() must be callable (with_inputs not called)")
 
@@ -172,9 +170,7 @@ def test_gepa_run_optimize_result_shape(tmp_sio_db):
     assert "score" in result, f"Result must have 'score' key, got: {result}"
     assert "optimizer" in result, f"Result must have 'optimizer' key, got: {result}"
     assert result["optimizer"] == "gepa"
-    assert Path(result["artifact"]).exists(), (
-        f"Artifact file must exist at {result['artifact']}"
-    )
+    assert Path(result["artifact"]).exists(), f"Artifact file must exist at {result['artifact']}"
 
 
 def test_gepa_artifact_is_valid_json(tmp_sio_db):

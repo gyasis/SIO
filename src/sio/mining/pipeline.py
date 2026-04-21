@@ -86,8 +86,10 @@ def _dedup_by_error_type_priority(
     Records with no user_message or no session_id are kept unconditionally
     (they cannot be grouped).
     """
-    # First pass: find highest priority per (session_id, user_message).
-    best: dict[tuple[str, str], tuple[int, int]] = {}  # key -> (priority, index)
+    # First pass: find highest priority per (session_id, user_message, error_type).
+    # Dedup is WITHIN-TYPE only: tool_failure and user_correction sharing the same
+    # (session_id, user_message) are preserved as distinct rows (FR-020, L2).
+    best: dict[tuple[str, str, str], tuple[int, int]] = {}  # key -> (priority, index)
     ungrouped: list[int] = []
 
     for idx, rec in enumerate(error_records):
@@ -96,8 +98,8 @@ def _dedup_by_error_type_priority(
         if not sid or not umsg:
             ungrouped.append(idx)
             continue
-        key = (sid, umsg)
         etype = rec.get("error_type") or ""
+        key = (sid, umsg, etype)  # include error_type to keep cross-type rows
         priority = _ERROR_TYPE_PRIORITY.get(etype, -1)
         prev = best.get(key)
         if prev is None or priority > prev[0]:
@@ -134,8 +136,28 @@ def _is_cross_format_duplicate(
 # ---------------------------------------------------------------------------
 
 
-def _file_hash(file_path: Path) -> str:
-    """Compute SHA-256 hex digest of a file's contents."""
+_ONE_GB = 1_073_741_824  # 1 GiB in bytes (FR-027)
+
+
+def _file_hash(file_path: Path) -> str | None:
+    """Compute SHA-256 hex digest of a file's contents.
+
+    Returns None and emits a WARNING log when the file exceeds 1 GB
+    (FR-027), to avoid blocking the pipeline on pathological inputs.
+    """
+    try:
+        size = file_path.stat().st_size
+    except OSError:
+        size = 0
+
+    if size > _ONE_GB:
+        logger.warning(
+            "Skipping file too large for hashing (> 1 GB): %s (%d bytes)",
+            file_path,
+            size,
+        )
+        return None
+
     h = hashlib.sha256()
     with open(file_path, "rb") as f:
         for chunk in iter(lambda: f.read(8192), b""):
@@ -210,10 +232,7 @@ def _pre_scan_file(
         # during full parsing where the error is logged properly.
         return True, 0, 0
 
-    passes = (
-        estimated_messages >= min_messages
-        and estimated_tool_calls >= min_tool_calls
-    )
+    passes = estimated_messages >= min_messages and estimated_tool_calls >= min_tool_calls
     return passes, estimated_messages, estimated_tool_calls
 
 
@@ -264,8 +283,15 @@ def _mark_processed(
         "(file_path, file_hash, message_count, tool_call_count, skipped, mined_at, "
         "is_subagent, parent_session_id) "
         "VALUES (?, ?, ?, ?, 0, ?, ?, ?)",
-        (str(file_path), file_hash, message_count, tool_call_count, now,
-         is_subagent, parent_session_id),
+        (
+            str(file_path),
+            file_hash,
+            message_count,
+            tool_call_count,
+            now,
+            is_subagent,
+            parent_session_id,
+        ),
     )
     conn.commit()
 
@@ -627,32 +653,29 @@ def _compute_session_metrics(
 
     # --- Token aggregation (skip None values) ---
     total_input_tokens = sum(
-        m.get("input_tokens") or 0 for m in messages
-        if m.get("input_tokens") is not None
+        m.get("input_tokens") or 0 for m in messages if m.get("input_tokens") is not None
     )
     total_output_tokens = sum(
-        m.get("output_tokens") or 0 for m in messages
-        if m.get("output_tokens") is not None
+        m.get("output_tokens") or 0 for m in messages if m.get("output_tokens") is not None
     )
     total_cache_read_tokens = sum(
-        m.get("cache_read_input_tokens") or 0 for m in messages
+        m.get("cache_read_input_tokens") or 0
+        for m in messages
         if m.get("cache_read_input_tokens") is not None
     )
     total_cache_create_tokens = sum(
-        m.get("cache_creation_input_tokens") or 0 for m in messages
+        m.get("cache_creation_input_tokens") or 0
+        for m in messages
         if m.get("cache_creation_input_tokens") is not None
     )
 
     # --- Cache hit ratio ---
     denom = total_cache_read_tokens + total_input_tokens
-    cache_hit_ratio = (
-        total_cache_read_tokens / denom if denom > 0 else None
-    )
+    cache_hit_ratio = total_cache_read_tokens / denom if denom > 0 else None
 
     # --- Cost ---
     total_cost_usd = sum(
-        m.get("cost_usd") or 0.0 for m in messages
-        if m.get("cost_usd") is not None
+        m.get("cost_usd") or 0.0 for m in messages if m.get("cost_usd") is not None
     )
 
     # --- Session duration (first timestamp to last timestamp) ---
@@ -680,9 +703,7 @@ def _compute_session_metrics(
         sr = m.get("stop_reason")
         if sr is not None:
             stop_reasons[sr] += 1
-    stop_reason_distribution = (
-        json.dumps(dict(stop_reasons)) if stop_reasons else None
-    )
+    stop_reason_distribution = json.dumps(dict(stop_reasons)) if stop_reasons else None
 
     # --- Model used (most common) ---
     model_counts: Counter[str] = Counter()
@@ -690,9 +711,7 @@ def _compute_session_metrics(
         model = m.get("model")
         if model is not None:
             model_counts[model] += 1
-    model_used = (
-        model_counts.most_common(1)[0][0] if model_counts else None
-    )
+    model_used = model_counts.most_common(1)[0][0] if model_counts else None
 
     now = datetime.now(timezone.utc).isoformat()
 
@@ -806,7 +825,8 @@ def run_mine(
         if _is_already_processed(db_conn, file_path, fhash):
             logger.info(
                 "Skipping already-processed file: %s (hash=%s)",
-                file_path, fhash[:12],
+                file_path,
+                fhash[:12],
             )
             skipped_files += 1
             continue
@@ -815,18 +835,25 @@ def run_mine(
         passes, est_msgs, est_tools = _pre_scan_file(file_path)
         if not passes:
             logger.debug(
-                "Skipping file below thresholds "
-                "(messages=%d, tool_calls=%d): %s",
-                est_msgs, est_tools, file_path,
+                "Skipping file below thresholds (messages=%d, tool_calls=%d): %s",
+                est_msgs,
+                est_tools,
+                file_path,
             )
             try:
                 _mark_skipped(
-                    db_conn, file_path, fhash, est_msgs, est_tools,
+                    db_conn,
+                    file_path,
+                    fhash,
+                    est_msgs,
+                    est_tools,
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "Failed to record skipped session for %s: %s: %s",
-                    file_path, type(exc).__name__, exc,
+                    file_path,
+                    type(exc).__name__,
+                    exc,
                 )
             skipped_files += 1
             continue
@@ -840,16 +867,17 @@ def run_mine(
         file_parent_session_id: str | None = subagent_info["parent_session_id"]
 
         try:
-            error_records, parsed_messages, message_count, tool_call_count = (
-                _process_file(
-                    file_path, source_label,
-                    exclude_sidechains=exclude_sidechains,
-                )
+            error_records, parsed_messages, message_count, tool_call_count = _process_file(
+                file_path,
+                source_label,
+                exclude_sidechains=exclude_sidechains,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "Skipping %s due to exception: %s: %s",
-                file_path, type(exc).__name__, exc,
+                file_path,
+                type(exc).__name__,
+                exc,
             )
             error_files += 1
             continue
@@ -884,7 +912,9 @@ def run_mine(
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "Failed to insert error record from %s: %s: %s",
-                    file_path, type(exc).__name__, exc,
+                    file_path,
+                    type(exc).__name__,
+                    exc,
                 )
 
         # --- 4c. Positive signals, approvals, sentiment (T026) -----------
@@ -911,7 +941,9 @@ def run_mine(
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "Positive signal extraction failed for %s: %s: %s",
-                file_path, type(exc).__name__, exc,
+                file_path,
+                type(exc).__name__,
+                exc,
             )
 
         # -- Approval detection --
@@ -921,7 +953,9 @@ def run_mine(
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "Approval detection failed for %s: %s: %s",
-                file_path, type(exc).__name__, exc,
+                file_path,
+                type(exc).__name__,
+                exc,
             )
 
         # -- Sentiment scoring --
@@ -939,18 +973,20 @@ def run_mine(
             if sentiment_scores:
                 avg_sentiment = sum(sentiment_scores) / len(sentiment_scores)
                 frustration_detected = detect_frustration_escalation(
-                    sentiment_scores, user_texts,
+                    sentiment_scores,
+                    user_texts,
                 )
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "Sentiment scoring failed for %s: %s: %s",
-                file_path, type(exc).__name__, exc,
+                file_path,
+                type(exc).__name__,
+                exc,
             )
 
         if frustration_detected:
             logger.info(
-                "Frustration escalation detected in session "
-                "(avg_sentiment=%.2f): %s",
+                "Frustration escalation detected in session (avg_sentiment=%.2f): %s",
                 avg_sentiment if avg_sentiment is not None else 0.0,
                 file_path,
             )
@@ -962,7 +998,10 @@ def run_mine(
         # --- 4d. Compute and insert session metrics -----------------------
         try:
             metrics = _compute_session_metrics(
-                parsed_messages, error_records, file_path, fhash,
+                parsed_messages,
+                error_records,
+                file_path,
+                fhash,
             )
             # Patch in signals computed by T026 extractors
             metrics["positive_signal_count"] = positive_signal_count
@@ -972,20 +1011,28 @@ def run_mine(
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "Failed to insert session metrics for %s: %s: %s",
-                file_path, type(exc).__name__, exc,
+                file_path,
+                type(exc).__name__,
+                exc,
             )
 
         # --- 4e. Mark file as processed ------------------------------------
         try:
             _mark_processed(
-                db_conn, file_path, fhash, message_count, tool_call_count,
+                db_conn,
+                file_path,
+                fhash,
+                message_count,
+                tool_call_count,
                 is_subagent=file_is_subagent,
                 parent_session_id=file_parent_session_id,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "Failed to record processed session for %s: %s: %s",
-                file_path, type(exc).__name__, exc,
+                file_path,
+                type(exc).__name__,
+                exc,
             )
 
     # --- 5. Return summary -------------------------------------------------

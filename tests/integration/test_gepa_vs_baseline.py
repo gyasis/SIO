@@ -30,6 +30,7 @@ import pytest
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def tmp_sio_db_10():
     """Create a minimal sio.db with 10 gold_standards rows for GEPA training."""
@@ -93,6 +94,7 @@ def tmp_sio_db_10():
 # Helper — deterministic mock LM
 # ---------------------------------------------------------------------------
 
+
 def _make_deterministic_mock_lm(rule_body: str = "Always use absolute paths."):
     """Return a mock LM that always produces a valid rule_body."""
     mock_lm = MagicMock()
@@ -122,6 +124,7 @@ def _score_module_on_valset(module, valset: list) -> float:
 # ---------------------------------------------------------------------------
 # T063: Baseline vs GEPA comparison
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.skip(
     reason=(

@@ -6,6 +6,7 @@ import sqlite3
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _seed_applied_change(
     conn: sqlite3.Connection,
     target_file: str,
@@ -35,17 +36,22 @@ def _seed_applied_change(
 # TestRollback
 # =========================================================================
 
+
 class TestRollback:
     """rollback_change() restores file to diff_before state."""
 
     def test_restores_file_content(self, v2_db, tmp_path):
         from sio.applier.rollback import rollback_change
+
         target = tmp_path / "CLAUDE.md"
         original = "# Original\n"
         modified = "# Original\n\n## Added Rule\n"
         target.write_text(modified)
         _, cid = _seed_applied_change(
-            v2_db, str(target), diff_before=original, diff_after=modified,
+            v2_db,
+            str(target),
+            diff_before=original,
+            diff_after=modified,
         )
         result = rollback_change(v2_db, cid)
         assert result["success"] is True
@@ -53,6 +59,7 @@ class TestRollback:
 
     def test_marks_rolled_back_at(self, v2_db, tmp_path):
         from sio.applier.rollback import rollback_change
+
         target = tmp_path / "CLAUDE.md"
         target.write_text("# Original\n\n## New Rule\nContent.\n")
         _, cid = _seed_applied_change(v2_db, str(target))
@@ -64,22 +71,23 @@ class TestRollback:
 
     def test_updates_suggestion_status(self, v2_db, tmp_path):
         from sio.applier.rollback import rollback_change
+
         target = tmp_path / "CLAUDE.md"
         target.write_text("# Original\n\n## New Rule\nContent.\n")
         sid, cid = _seed_applied_change(v2_db, str(target))
         rollback_change(v2_db, cid)
-        row = v2_db.execute(
-            "SELECT status FROM suggestions WHERE id = ?", (sid,)
-        ).fetchone()
+        row = v2_db.execute("SELECT status FROM suggestions WHERE id = ?", (sid,)).fetchone()
         assert row[0] == "rolled_back"
 
     def test_nonexistent_change_returns_error(self, v2_db):
         from sio.applier.rollback import rollback_change
+
         result = rollback_change(v2_db, 9999)
         assert result["success"] is False
 
     def test_already_rolled_back_returns_error(self, v2_db, tmp_path):
         from sio.applier.rollback import rollback_change
+
         target = tmp_path / "CLAUDE.md"
         target.write_text("# Original\n\n## New Rule\nContent.\n")
         _, cid = _seed_applied_change(v2_db, str(target))
@@ -93,11 +101,13 @@ class TestRollback:
 # TestRollbackLogging
 # =========================================================================
 
+
 class TestRollbackLogging:
     """rollback_change() returns metadata about the rollback."""
 
     def test_returns_target_file(self, v2_db, tmp_path):
         from sio.applier.rollback import rollback_change
+
         target = tmp_path / "CLAUDE.md"
         target.write_text("# Original\n\n## New Rule\nContent.\n")
         _, cid = _seed_applied_change(v2_db, str(target))
@@ -106,6 +116,7 @@ class TestRollbackLogging:
 
     def test_returns_change_id(self, v2_db, tmp_path):
         from sio.applier.rollback import rollback_change
+
         target = tmp_path / "CLAUDE.md"
         target.write_text("# Original\n\n## New Rule\nContent.\n")
         _, cid = _seed_applied_change(v2_db, str(target))

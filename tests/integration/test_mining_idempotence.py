@@ -13,14 +13,9 @@ Run:
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 import tempfile
-from datetime import datetime, timezone
 from pathlib import Path
-
-import pytest
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -100,6 +95,7 @@ CREATE TABLE IF NOT EXISTS applied_changes (
 
 def _open_db(db_path: Path) -> sqlite3.Connection:
     from sio.core.db.connect import open_db  # noqa: PLC0415
+
     conn = open_db(db_path)
     conn.executescript(MIGRATION_SCRIPT)
     conn.commit()
@@ -112,27 +108,37 @@ def _make_jsonl_session(tmpdir: Path, session_name: str, n_tools: int) -> Path:
     path = tmpdir / f"{session_name}.jsonl"
     with open(path, "w", encoding="utf-8") as f:
         for i in range(n_tools):
-            f.write(json.dumps({
-                "type": "assistant",
-                "message": {
-                    "role": "assistant",
-                    "content": [
-                        {
-                            "type": "tool_use",
-                            "name": tools[i % len(tools)],
-                            "id": f"tool_{i}",
-                            "input": {"path": f"/tmp/{session_name}_{i}.py"},
-                        }
-                    ],
-                },
-                "timestamp": f"2026-04-20T{i % 24:02d}:00:00Z",
-            }) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "role": "assistant",
+                            "content": [
+                                {
+                                    "type": "tool_use",
+                                    "name": tools[i % len(tools)],
+                                    "id": f"tool_{i}",
+                                    "input": {"path": f"/tmp/{session_name}_{i}.py"},
+                                }
+                            ],
+                        },
+                        "timestamp": f"2026-04-20T{i % 24:02d}:00:00Z",
+                    }
+                )
+                + "\n"
+            )
         # Success signal
-        f.write(json.dumps({
-            "type": "user",
-            "message": {"role": "user", "content": [{"type": "text", "text": "perfect"}]},
-            "timestamp": "2026-04-20T12:59:00Z",
-        }) + "\n")
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": [{"type": "text", "text": "perfect"}]},
+                    "timestamp": "2026-04-20T12:59:00Z",
+                }
+            )
+            + "\n"
+        )
     return path
 
 
@@ -189,14 +195,19 @@ def test_mining_idempotence_full_corpus():
 
             # Append one event to first session
             with open(sessions[0], "a", encoding="utf-8") as f:
-                f.write(json.dumps({
-                    "type": "user",
-                    "message": {
-                        "role": "user",
-                        "content": [{"type": "text", "text": "add one more thing please"}],
-                    },
-                    "timestamp": "2026-04-20T23:00:00Z",
-                }) + "\n")
+                f.write(
+                    json.dumps(
+                        {
+                            "type": "user",
+                            "message": {
+                                "role": "user",
+                                "content": [{"type": "text", "text": "add one more thing please"}],
+                            },
+                            "timestamp": "2026-04-20T23:00:00Z",
+                        }
+                    )
+                    + "\n"
+                )
 
             # Third mine — modified file gets re-processed
             run_mine(conn, [corpus_dir], since="7d", source_type="jsonl")

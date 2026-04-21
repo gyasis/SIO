@@ -42,17 +42,19 @@ def _make_labeled_failures(factory, *, n_sessions=3, n_per_session=4):
     records = []
     for s in range(n_sessions):
         for i in range(n_per_session):
-            records.append({
-                "session_id": f"sess-{s}",
-                "behavior_type": "skill",
-                "actual_action": "Read",
-                "correct_outcome": 0,
-                "correct_action": 0,
-                "user_satisfied": 0,
-                "labeled_by": "human",
-                "labeled_at": (now - timedelta(hours=s * 10 + i)).isoformat(),
-                "timestamp": (now - timedelta(hours=s * 10 + i)).isoformat(),
-            })
+            records.append(
+                {
+                    "session_id": f"sess-{s}",
+                    "behavior_type": "skill",
+                    "actual_action": "Read",
+                    "correct_outcome": 0,
+                    "correct_action": 0,
+                    "user_satisfied": 0,
+                    "labeled_by": "human",
+                    "labeled_at": (now - timedelta(hours=s * 10 + i)).isoformat(),
+                    "timestamp": (now - timedelta(hours=s * 10 + i)).isoformat(),
+                }
+            )
     return records
 
 
@@ -170,9 +172,7 @@ class TestOptimizerSelection:
 
         with patch("sio.core.dspy.optimizer._run_dspy_optimization") as mock_opt:
             mock_opt.return_value = {"proposed_diff": "--- a\n+++ b\n", "score": 0.8}
-            result = optimize(
-                tmp_db, skill_name="Read", optimizer=optimizer_name
-            )
+            result = optimize(tmp_db, skill_name="Read", optimizer=optimizer_name)
 
         # Should not error on optimizer name
         if result["status"] == "error":
@@ -195,9 +195,7 @@ class TestAtomicRollback:
         records = _make_labeled_failures(sample_invocation)
         _insert_many(tmp_db, sample_invocation, records)
 
-        runs_before = tmp_db.execute(
-            "SELECT COUNT(*) FROM optimization_runs"
-        ).fetchone()[0]
+        runs_before = tmp_db.execute("SELECT COUNT(*) FROM optimization_runs").fetchone()[0]
 
         with patch("sio.core.dspy.optimizer._run_dspy_optimization") as mock_opt:
             mock_opt.side_effect = RuntimeError("DSPy internal error")
@@ -205,9 +203,7 @@ class TestAtomicRollback:
             with pytest.raises((RuntimeError, OptimizationError)):
                 optimize(tmp_db, skill_name="Read", optimizer="bootstrap")
 
-        runs_after = tmp_db.execute(
-            "SELECT COUNT(*) FROM optimization_runs"
-        ).fetchone()[0]
+        runs_after = tmp_db.execute("SELECT COUNT(*) FROM optimization_runs").fetchone()[0]
 
         assert runs_after == runs_before, (
             "optimization_runs should be unchanged after a failed optimization"
@@ -223,22 +219,26 @@ class TestRecencyWeighting:
         records = []
         # Old examples (30 days ago)
         for i in range(5):
-            records.append({
-                "session_id": f"sess-old-{i}",
-                "correct_outcome": 0,
-                "labeled_by": "human",
-                "labeled_at": (now - timedelta(days=30)).isoformat(),
-                "timestamp": (now - timedelta(days=30)).isoformat(),
-            })
+            records.append(
+                {
+                    "session_id": f"sess-old-{i}",
+                    "correct_outcome": 0,
+                    "labeled_by": "human",
+                    "labeled_at": (now - timedelta(days=30)).isoformat(),
+                    "timestamp": (now - timedelta(days=30)).isoformat(),
+                }
+            )
         # Recent examples (1 day ago)
         for i in range(5):
-            records.append({
-                "session_id": f"sess-new-{i}",
-                "correct_outcome": 0,
-                "labeled_by": "human",
-                "labeled_at": (now - timedelta(days=1)).isoformat(),
-                "timestamp": (now - timedelta(days=1)).isoformat(),
-            })
+            records.append(
+                {
+                    "session_id": f"sess-new-{i}",
+                    "correct_outcome": 0,
+                    "labeled_by": "human",
+                    "labeled_at": (now - timedelta(days=1)).isoformat(),
+                    "timestamp": (now - timedelta(days=1)).isoformat(),
+                }
+            )
         _insert_many(tmp_db, sample_invocation, records)
 
         with patch("sio.core.dspy.optimizer._run_dspy_optimization") as mock_opt:
@@ -251,12 +251,8 @@ class TestRecencyWeighting:
             dataset = call_kwargs[0][0] if call_kwargs[0] else call_kwargs[1].get("dataset")
 
             # Recent examples should have higher weights
-            recent_weights = [
-                ex["weight"] for ex in dataset if "new" in ex.get("session_id", "")
-            ]
-            old_weights = [
-                ex["weight"] for ex in dataset if "old" in ex.get("session_id", "")
-            ]
+            recent_weights = [ex["weight"] for ex in dataset if "new" in ex.get("session_id", "")]
+            old_weights = [ex["weight"] for ex in dataset if "old" in ex.get("session_id", "")]
 
             assert all(r > o for r, o in zip(recent_weights, old_weights)), (
                 "Recent examples must have higher weight than old examples"
@@ -299,7 +295,10 @@ class TestDSPyOptimizationReplacement:
     @patch("sio.core.dspy.optimizer._run_bootstrap_optimization")
     @patch("sio.core.dspy.optimizer._evaluate_metric")
     def test_bootstrap_compile_called_with_correct_args(
-        self, mock_eval, mock_bootstrap, tmp_db,
+        self,
+        mock_eval,
+        mock_bootstrap,
+        tmp_db,
     ):
         """BootstrapFewShot path is called with SuggestionModule and corpus."""
         self._seed_ground_truth(tmp_db, count=15)
@@ -326,7 +325,11 @@ class TestDSPyOptimizationReplacement:
     @patch("sio.core.dspy.optimizer._evaluate_metric")
     @patch("sio.core.dspy.module_store.save_module")
     def test_optimized_module_saved_on_non_dry_run(
-        self, mock_save, mock_eval, mock_bootstrap, tmp_db,
+        self,
+        mock_save,
+        mock_eval,
+        mock_bootstrap,
+        tmp_db,
     ):
         """When not dry_run, the optimized module is saved via module_store."""
         self._seed_ground_truth(tmp_db, count=15)
@@ -350,7 +353,9 @@ class TestDSPyOptimizationReplacement:
 
     @patch("sio.core.dspy.optimizer._run_bootstrap_optimization")
     def test_optimization_error_on_compile_failure(
-        self, mock_bootstrap, tmp_db,
+        self,
+        mock_bootstrap,
+        tmp_db,
     ):
         """OptimizationError raised when DSPy compile fails."""
         self._seed_ground_truth(tmp_db, count=15)
@@ -396,7 +401,10 @@ class TestAutoOptimizerSelection:
     @patch("sio.core.dspy.optimizer._run_miprov2_optimization")
     @patch("sio.core.dspy.optimizer._evaluate_metric")
     def test_auto_selects_miprov2_with_enough_examples(
-        self, mock_eval, mock_miprov2, tmp_db,
+        self,
+        mock_eval,
+        mock_miprov2,
+        tmp_db,
     ):
         """optimize_suggestions(optimizer='auto') with 50+ examples uses MIPROv2."""
         import json
@@ -435,7 +443,10 @@ class TestAutoOptimizerSelection:
     @patch("sio.core.dspy.optimizer._run_bootstrap_optimization")
     @patch("sio.core.dspy.optimizer._evaluate_metric")
     def test_auto_selects_bootstrap_with_few_examples(
-        self, mock_eval, mock_bootstrap, tmp_db,
+        self,
+        mock_eval,
+        mock_bootstrap,
+        tmp_db,
     ):
         """optimize_suggestions(optimizer='auto') with <50 examples uses bootstrap."""
         import json
@@ -482,7 +493,11 @@ class TestModulePersistence:
     @patch("sio.core.dspy.optimizer._run_bootstrap_optimization")
     @patch("sio.core.dspy.optimizer._evaluate_metric")
     def test_module_saved_to_disk(
-        self, mock_eval, mock_bootstrap, tmp_db, tmp_path,
+        self,
+        mock_eval,
+        mock_bootstrap,
+        tmp_db,
+        tmp_path,
     ):
         """Optimized module is saved to the store directory."""
         import json
@@ -527,7 +542,11 @@ class TestModulePersistence:
     @patch("sio.core.dspy.optimizer._run_bootstrap_optimization")
     @patch("sio.core.dspy.optimizer._evaluate_metric")
     def test_module_record_in_db(
-        self, mock_eval, mock_bootstrap, tmp_db, tmp_path,
+        self,
+        mock_eval,
+        mock_bootstrap,
+        tmp_db,
+        tmp_path,
     ):
         """A record is created in optimized_modules table after save."""
         import json
@@ -566,9 +585,7 @@ class TestModulePersistence:
         assert result.status == "success"
 
         # Verify DB has the record
-        row = tmp_db.execute(
-            "SELECT * FROM optimized_modules WHERE is_active = 1"
-        ).fetchone()
+        row = tmp_db.execute("SELECT * FROM optimized_modules WHERE is_active = 1").fetchone()
         assert row is not None
         assert dict(row)["module_type"] == "suggestion"
         assert dict(row)["optimizer_used"] == "bootstrap"
@@ -585,16 +602,22 @@ class TestModulePersistence:
             "(module_type, optimizer_used, file_path, training_count, "
             "metric_before, metric_after, is_active, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
-            ("suggestion", "bootstrap", "/tmp/old.json", 10, 0.3, 0.5,
-             (now - timedelta(hours=1)).isoformat()),
+            (
+                "suggestion",
+                "bootstrap",
+                "/tmp/old.json",
+                10,
+                0.3,
+                0.5,
+                (now - timedelta(hours=1)).isoformat(),
+            ),
         )
         tmp_db.execute(
             "INSERT INTO optimized_modules "
             "(module_type, optimizer_used, file_path, training_count, "
             "metric_before, metric_after, is_active, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
-            ("suggestion", "miprov2", "/tmp/new.json", 50, 0.4, 0.8,
-             now.isoformat()),
+            ("suggestion", "miprov2", "/tmp/new.json", 50, 0.4, 0.8, now.isoformat()),
         )
         tmp_db.commit()
 
@@ -616,7 +639,10 @@ class TestOptimizedModuleLoading:
     @patch("sio.core.dspy.module_store.get_active_module")
     @patch("sio.suggestions.dspy_generator.os.path.exists")
     def test_loads_optimized_when_available(
-        self, mock_exists, mock_get_active, mock_load,
+        self,
+        mock_exists,
+        mock_get_active,
+        mock_load,
     ):
         """_load_optimized_or_default returns optimized module when DB has one."""
         from sio.suggestions.dspy_generator import _load_optimized_or_default

@@ -50,8 +50,7 @@ def _section_violations(db: sqlite3.Connection) -> str | None:
     lines = ["## Recent Violations"]
     for item in summary[:3]:
         lines.append(
-            f"- **{item['rule_text'][:60]}** ({item['count']}x, "
-            f"{item['sessions']} sessions)"
+            f"- **{item['rule_text'][:60]}** ({item['count']}x, {item['sessions']} sessions)"
         )
     return "\n".join(lines)
 
@@ -156,8 +155,7 @@ def _section_session_stats(db: sqlite3.Connection) -> str | None:
     """Return error count trend from last 5 sessions, or None."""
     try:
         rows = db.execute(
-            "SELECT session_id, error_count FROM session_metrics "
-            "ORDER BY mined_at DESC LIMIT 5"
+            "SELECT session_id, error_count FROM session_metrics ORDER BY mined_at DESC LIMIT 5"
         ).fetchall()
     except sqlite3.OperationalError:
         return None

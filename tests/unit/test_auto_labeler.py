@@ -38,15 +38,9 @@ class TestErrorToolCall:
             error="file not found",
         )
 
-        assert result["activated"] == 1, (
-            "Tool still activated (produced output)"
-        )
-        assert result["correct_action"] == 0, (
-            "Action was not correct because there was an error"
-        )
-        assert result["correct_outcome"] == 0, (
-            "Outcome was not correct because there was an error"
-        )
+        assert result["activated"] == 1, "Tool still activated (produced output)"
+        assert result["correct_action"] == 0, "Action was not correct because there was an error"
+        assert result["correct_outcome"] == 0, "Outcome was not correct because there was an error"
 
 
 class TestEmptyOutput:
@@ -63,12 +57,8 @@ class TestEmptyOutput:
         assert result["activated"] == 1, (
             "Empty string is still 'activated' (tool ran and returned)"
         )
-        assert result["correct_action"] == 1, (
-            "No error means action was correct"
-        )
-        assert result["correct_outcome"] == 0, (
-            "Empty output means outcome is not correct"
-        )
+        assert result["correct_action"] == 1, "No error means action was correct"
+        assert result["correct_outcome"] == 0, "Empty output means outcome is not correct"
 
 
 class TestNoneOutput:
@@ -82,15 +72,9 @@ class TestNoneOutput:
             error=None,
         )
 
-        assert result["activated"] == 0, (
-            "None output means the tool did not activate"
-        )
-        assert result["correct_action"] == 1, (
-            "No error means action was technically correct"
-        )
-        assert result["correct_outcome"] == 0, (
-            "None output means no correct outcome"
-        )
+        assert result["activated"] == 0, "None output means the tool did not activate"
+        assert result["correct_action"] == 1, "No error means action was technically correct"
+        assert result["correct_outcome"] == 0, "None output means no correct outcome"
 
 
 class TestReturnType:

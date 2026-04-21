@@ -96,14 +96,12 @@ def generate_candidates(
         for _field_name in _fallback_fields:
             if getattr(result, _field_name, _sentinel) is _sentinel:
                 logger.warning(
-                    "DSPy result missing field '%s' for candidate %d; "
-                    "using fallback value",
-                    _field_name, i,
+                    "DSPy result missing field '%s' for candidate %d; using fallback value",
+                    _field_name,
+                    i,
                 )
 
-        target_surface = _normalize_surface(
-            getattr(result, "target_surface", "claude_md_rule")
-        )
+        target_surface = _normalize_surface(getattr(result, "target_surface", "claude_md_rule"))
         rule_title = getattr(result, "rule_title", "Improvement suggestion")
         prevention_instructions = getattr(
             result, "prevention_instructions", "Review the error pattern."
@@ -140,10 +138,17 @@ def generate_candidates(
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-_VALID_SURFACES = frozenset({
-    "claude_md_rule", "skill_update", "hook_config",
-    "mcp_config", "settings_config", "agent_profile", "project_config",
-})
+_VALID_SURFACES = frozenset(
+    {
+        "claude_md_rule",
+        "skill_update",
+        "hook_config",
+        "mcp_config",
+        "settings_config",
+        "agent_profile",
+        "project_config",
+    }
+)
 
 
 def _normalize_surface(raw_surface: str) -> str:
@@ -154,7 +159,10 @@ def _normalize_surface(raw_surface: str) -> str:
     if cleaned in _VALID_SURFACES:
         return cleaned
     matches = difflib.get_close_matches(
-        cleaned, sorted(_VALID_SURFACES), n=1, cutoff=0.6,
+        cleaned,
+        sorted(_VALID_SURFACES),
+        n=1,
+        cutoff=0.6,
     )
     if matches:
         return matches[0]

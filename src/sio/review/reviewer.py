@@ -22,17 +22,14 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
 def review_pending(db: sqlite3.Connection) -> list[dict]:
     """Load all suggestions with status='pending', ordered by confidence DESC."""
     rows = db.execute(
-        "SELECT * FROM suggestions WHERE status = 'pending' "
-        "ORDER BY confidence DESC"
+        "SELECT * FROM suggestions WHERE status = 'pending' ORDER BY confidence DESC"
     ).fetchall()
     return [_row_to_dict(r) for r in rows]
 
 
 def get_suggestion(db: sqlite3.Connection, id: int) -> dict | None:
     """Retrieve a single suggestion by ID."""
-    row = db.execute(
-        "SELECT * FROM suggestions WHERE id = ?", (id,)
-    ).fetchone()
+    row = db.execute("SELECT * FROM suggestions WHERE id = ?", (id,)).fetchone()
     return _row_to_dict(row) if row else None
 
 
@@ -46,8 +43,7 @@ def _update_status(
     now = datetime.now(timezone.utc).isoformat()
     if note is not None:
         cur = db.execute(
-            "UPDATE suggestions SET status = ?, user_note = ?, reviewed_at = ? "
-            "WHERE id = ?",
+            "UPDATE suggestions SET status = ?, user_note = ?, reviewed_at = ? WHERE id = ?",
             (status, note, now, id),
         )
     else:

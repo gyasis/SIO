@@ -149,7 +149,7 @@ def _session_id_from_source(source_file: str) -> str:
     # SpecStory pattern: anything after the first "Z-"
     z_idx = stem.find("Z-")
     if z_idx != -1:
-        return stem[z_idx + 2:]
+        return stem[z_idx + 2 :]
     return stem
 
 
@@ -183,15 +183,10 @@ def _build_record(
 ) -> dict[str, Any]:
     """Assemble a complete ErrorRecord dict from component parts."""
     context_before: str | None = _content_of(messages[idx - 1]) if idx > 0 else None
-    context_after: str | None = (
-        _content_of(messages[idx + 1]) if idx < len(messages) - 1 else None
-    )
+    context_after: str | None = _content_of(messages[idx + 1]) if idx < len(messages) - 1 else None
 
     # Prefer session_id embedded in the message; fall back to filename derivation.
-    session_id: str = (
-        msg.get("session_id")
-        or _session_id_from_source(source_file)
-    )
+    session_id: str = msg.get("session_id") or _session_id_from_source(source_file)
 
     timestamp: str = msg.get("timestamp") or _now_iso()
 

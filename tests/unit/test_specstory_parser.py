@@ -335,7 +335,9 @@ class TestExtractToolCalls:
 
         tc = next(b for b in result if b["role"] == "assistant")["tool_calls"][0]
         assert tc["tool_input"] is not None
-        parsed = json.loads(tc["tool_input"]) if isinstance(tc["tool_input"], str) else tc["tool_input"]
+        parsed = (
+            json.loads(tc["tool_input"]) if isinstance(tc["tool_input"], str) else tc["tool_input"]
+        )
         assert parsed["file_path"] == "/home/user/project/main.py"
 
     def test_tool_output_is_populated(self, tmp_path: Path) -> None:
@@ -653,9 +655,7 @@ class TestHandleMalformedMarkdown:
     def test_partial_results_on_truncated_file(self, tmp_path: Path) -> None:
         """A file with one complete and one truncated block returns at least the complete one."""
         raw = (
-            "**Human:** Good question.\n\n"
-            "---\n\n"
-            "**Assistant:** I will"
+            "**Human:** Good question.\n\n---\n\n**Assistant:** I will"
             # Truncated — no closing newline or further content
         )
         path = tmp_path / "2026-02-25_10-00-00Z-truncated.md"

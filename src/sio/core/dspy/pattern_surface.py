@@ -53,14 +53,16 @@ def surface_patterns(
         if len(sessions) < min_count:
             continue
 
-        results.append({
-            "skill_name": r["skill_name"],
-            "description": (
-                f"Skill '{r['skill_name']}' has {r['fail_count']} "
-                f"failures across {len(sessions)} sessions"
-            ),
-            "count": r["fail_count"],
-            "affected_sessions": sessions,
-        })
+        results.append(
+            {
+                "skill_name": r["skill_name"],
+                "description": (
+                    f"Skill '{r['skill_name']}' has {r['fail_count']} "
+                    f"failures across {len(sessions)} sessions"
+                ),
+                "count": r["fail_count"],
+                "affected_sessions": sessions,
+            }
+        )
 
     return results

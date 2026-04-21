@@ -225,6 +225,10 @@ CREATE TABLE IF NOT EXISTS processed_sessions (
     tool_call_count INTEGER NOT NULL,
     skipped INTEGER NOT NULL DEFAULT 0,
     mined_at TEXT NOT NULL,
+    is_subagent INTEGER NOT NULL DEFAULT 0,
+    parent_session_id TEXT,
+    last_offset INTEGER NOT NULL DEFAULT 0,
+    last_mtime REAL,
     UNIQUE(file_path, file_hash)
 )
 """
@@ -340,8 +344,10 @@ CREATE TABLE IF NOT EXISTS optimized_modules (
 
 _INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_session ON behavior_invocations(session_id)",
-    ("CREATE INDEX IF NOT EXISTS idx_platform_behavior "
-     "ON behavior_invocations(platform, behavior_type)"),
+    (
+        "CREATE INDEX IF NOT EXISTS idx_platform_behavior "
+        "ON behavior_invocations(platform, behavior_type)"
+    ),
     "CREATE INDEX IF NOT EXISTS idx_satisfaction ON behavior_invocations(user_satisfied)",
     "CREATE INDEX IF NOT EXISTS idx_timestamp ON behavior_invocations(timestamp)",
     # v2 indexes
@@ -374,8 +380,7 @@ _INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_pr_tool ON positive_records(tool_name)",
     # velocity_snapshots indexes
     "CREATE INDEX IF NOT EXISTS idx_vs_type ON velocity_snapshots(error_type)",
-    ("CREATE INDEX IF NOT EXISTS idx_vs_window "
-     "ON velocity_snapshots(window_start, window_end)"),
+    ("CREATE INDEX IF NOT EXISTS idx_vs_window ON velocity_snapshots(window_start, window_end)"),
     # autoresearch_txlog indexes
     "CREATE INDEX IF NOT EXISTS idx_tx_cycle ON autoresearch_txlog(cycle_number)",
     "CREATE INDEX IF NOT EXISTS idx_tx_action ON autoresearch_txlog(action)",
@@ -535,9 +540,7 @@ def ensure_schema_version(conn: sqlite3.Connection) -> None:
 
     conn.execute(_SCHEMA_VERSION_DDL)
     conn.commit()
-    existing = conn.execute(
-        "SELECT version FROM schema_version WHERE version=1"
-    ).fetchone()
+    existing = conn.execute("SELECT version FROM schema_version WHERE version=1").fetchone()
     if existing is None:
         conn.execute(
             "INSERT INTO schema_version (version, applied_at, status, description) "

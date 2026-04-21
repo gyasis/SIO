@@ -79,9 +79,7 @@ class TestWritesValidMarkdown:
         assert len(_read(target).strip()) > 0
 
     def test_output_contains_suggestion_description(self, tmp_path: Path) -> None:
-        suggestion = _make_suggestion(
-            description="Always verify file paths before reading."
-        )
+        suggestion = _make_suggestion(description="Always verify file paths before reading.")
         target = tmp_path / "suggestions.md"
         write_suggestions([suggestion], str(target))
         assert "Always verify file paths before reading." in _read(target)
@@ -196,9 +194,7 @@ class TestRankedSections:
         content = _read(target).lower()
         assert "medium" in content
 
-    def test_three_tier_output_has_all_sections_when_all_present(
-        self, tmp_path: Path
-    ) -> None:
+    def test_three_tier_output_has_all_sections_when_all_present(self, tmp_path: Path) -> None:
         suggestions = [
             _make_suggestion(id=1, confidence=0.95),
             _make_suggestion(id=2, confidence=0.55),
@@ -238,16 +234,10 @@ class TestIncludesApproveReject:
         content = _read(target)
         for suggestion in suggestions:
             sid = suggestion["id"]
-            assert f"sio approve {sid}" in content, (
-                f"approve command missing for id={sid}"
-            )
-            assert f"sio reject {sid}" in content, (
-                f"reject command missing for id={sid}"
-            )
+            assert f"sio approve {sid}" in content, f"approve command missing for id={sid}"
+            assert f"sio reject {sid}" in content, f"reject command missing for id={sid}"
 
-    def test_approve_command_appears_in_code_block_or_inline_code(
-        self, tmp_path: Path
-    ) -> None:
+    def test_approve_command_appears_in_code_block_or_inline_code(self, tmp_path: Path) -> None:
         """Commands should be formatted as code so they are copy-pasteable."""
         suggestion = _make_suggestion(id=5)
         target = tmp_path / "suggestions.md"
@@ -289,9 +279,7 @@ class TestHandlesEmptySuggestions:
         # A heading character must be present somewhere.
         assert "#" in content
 
-    def test_empty_list_does_not_contain_approve_reject(
-        self, tmp_path: Path
-    ) -> None:
+    def test_empty_list_does_not_contain_approve_reject(self, tmp_path: Path) -> None:
         """No approve/reject commands in the file when there are no suggestions."""
         target = tmp_path / "suggestions.md"
         write_suggestions([], str(target))

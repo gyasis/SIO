@@ -47,13 +47,7 @@ class TestInstaller:
         claude_dir = tmp_path / ".claude"
         claude_dir.mkdir(parents=True)
         settings = claude_dir / "settings.json"
-        existing = {
-            "hooks": {
-                "PostToolUse": [
-                    {"type": "command", "command": "existing-hook"}
-                ]
-            }
-        }
+        existing = {"hooks": {"PostToolUse": [{"type": "command", "command": "existing-hook"}]}}
         settings.write_text(json.dumps(existing))
 
         install(

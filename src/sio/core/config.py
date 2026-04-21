@@ -81,19 +81,39 @@ def load_config(path: str | None = None) -> SIOConfig:
         raise ValueError(f"Invalid config file {path}: {e}") from e
 
     # Warn about unrecognized top-level keys
-    _KNOWN_TOP_KEYS = frozenset({
-        "embedding_backend", "embedding_model", "embedding_api_url",
-        "embedding_api_key", "retention_days", "min_examples",
-        "min_failures", "min_sessions", "pattern_threshold", "optimizer",
-        "drift_threshold", "collision_threshold", "similarity_threshold",
-        "min_pattern_occurrences", "min_dataset_examples", "daily_enabled",
-        "weekly_enabled", "stale_days", "llm",
-        # competitive enhancement keys
-        "budget_cap_primary", "budget_cap_supplementary",
-        "decay_floor", "decay_fresh_days", "decay_stale_days",
-        "validation_window_sessions", "autoresearch_interval_minutes",
-        "max_experiments", "dedup_threshold",
-    })
+    _KNOWN_TOP_KEYS = frozenset(
+        {
+            "embedding_backend",
+            "embedding_model",
+            "embedding_api_url",
+            "embedding_api_key",
+            "retention_days",
+            "min_examples",
+            "min_failures",
+            "min_sessions",
+            "pattern_threshold",
+            "optimizer",
+            "drift_threshold",
+            "collision_threshold",
+            "similarity_threshold",
+            "min_pattern_occurrences",
+            "min_dataset_examples",
+            "daily_enabled",
+            "weekly_enabled",
+            "stale_days",
+            "llm",
+            # competitive enhancement keys
+            "budget_cap_primary",
+            "budget_cap_supplementary",
+            "decay_floor",
+            "decay_fresh_days",
+            "decay_stale_days",
+            "validation_window_sessions",
+            "autoresearch_interval_minutes",
+            "max_experiments",
+            "dedup_threshold",
+        }
+    )
     unknown_keys = set(data.keys()) - _KNOWN_TOP_KEYS
     if unknown_keys:
         logger.warning(
@@ -118,34 +138,42 @@ def load_config(path: str | None = None) -> SIOConfig:
         optimizer=data.get("optimizer", _DEFAULTS.optimizer),
         drift_threshold=data.get("drift_threshold", _DEFAULTS.drift_threshold),
         collision_threshold=data.get(
-            "collision_threshold", _DEFAULTS.collision_threshold,
+            "collision_threshold",
+            _DEFAULTS.collision_threshold,
         ),
         # v2 keys
         similarity_threshold=data.get(
-            "similarity_threshold", _DEFAULTS.similarity_threshold,
+            "similarity_threshold",
+            _DEFAULTS.similarity_threshold,
         ),
         min_pattern_occurrences=data.get(
-            "min_pattern_occurrences", _DEFAULTS.min_pattern_occurrences,
+            "min_pattern_occurrences",
+            _DEFAULTS.min_pattern_occurrences,
         ),
         min_dataset_examples=data.get(
-            "min_dataset_examples", _DEFAULTS.min_dataset_examples,
+            "min_dataset_examples",
+            _DEFAULTS.min_dataset_examples,
         ),
         daily_enabled=data.get("daily_enabled", _DEFAULTS.daily_enabled),
         weekly_enabled=data.get("weekly_enabled", _DEFAULTS.weekly_enabled),
         stale_days=data.get("stale_days", _DEFAULTS.stale_days),
         # competitive enhancement keys
         budget_cap_primary=data.get(
-            "budget_cap_primary", _DEFAULTS.budget_cap_primary,
+            "budget_cap_primary",
+            _DEFAULTS.budget_cap_primary,
         ),
         budget_cap_supplementary=data.get(
-            "budget_cap_supplementary", _DEFAULTS.budget_cap_supplementary,
+            "budget_cap_supplementary",
+            _DEFAULTS.budget_cap_supplementary,
         ),
         decay_floor=data.get("decay_floor", _DEFAULTS.decay_floor),
         decay_fresh_days=data.get(
-            "decay_fresh_days", _DEFAULTS.decay_fresh_days,
+            "decay_fresh_days",
+            _DEFAULTS.decay_fresh_days,
         ),
         decay_stale_days=data.get(
-            "decay_stale_days", _DEFAULTS.decay_stale_days,
+            "decay_stale_days",
+            _DEFAULTS.decay_stale_days,
         ),
         validation_window_sessions=data.get(
             "validation_window_sessions",
@@ -156,10 +184,12 @@ def load_config(path: str | None = None) -> SIOConfig:
             _DEFAULTS.autoresearch_interval_minutes,
         ),
         max_experiments=data.get(
-            "max_experiments", _DEFAULTS.max_experiments,
+            "max_experiments",
+            _DEFAULTS.max_experiments,
         ),
         dedup_threshold=data.get(
-            "dedup_threshold", _DEFAULTS.dedup_threshold,
+            "dedup_threshold",
+            _DEFAULTS.dedup_threshold,
         ),
         # [llm] keys
         llm_model=llm_section.get("model", _DEFAULTS.llm_model),

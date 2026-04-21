@@ -42,7 +42,7 @@ def _make_pattern(
         "tool_name": tool_name,
         "error_count": error_count,
         "session_count": session_count,
-        "first_seen": last_seen,   # simplified: first_seen == last_seen for most tests
+        "first_seen": last_seen,  # simplified: first_seen == last_seen for most tests
         "last_seen": last_seen,
         "rank_score": rank_score,
         "error_ids": error_ids if error_ids is not None else list(range(error_count)),
@@ -59,7 +59,7 @@ class TestFrequencyAffectsRanking:
 
     def test_high_count_beats_low_count_same_recency(self):
         patterns = [
-            _make_pattern(pattern_id="low",  error_count=2,  days_ago=1.0),
+            _make_pattern(pattern_id="low", error_count=2, days_ago=1.0),
             _make_pattern(pattern_id="high", error_count=10, days_ago=1.0),
         ]
         ranked = rank_patterns(patterns)
@@ -67,9 +67,9 @@ class TestFrequencyAffectsRanking:
 
     def test_frequency_ordering_preserved_across_three_patterns(self):
         patterns = [
-            _make_pattern(pattern_id="small",  error_count=1,  days_ago=0.5),
-            _make_pattern(pattern_id="medium", error_count=5,  days_ago=0.5),
-            _make_pattern(pattern_id="large",  error_count=20, days_ago=0.5),
+            _make_pattern(pattern_id="small", error_count=1, days_ago=0.5),
+            _make_pattern(pattern_id="medium", error_count=5, days_ago=0.5),
+            _make_pattern(pattern_id="large", error_count=20, days_ago=0.5),
         ]
         ranked = rank_patterns(patterns)
         ids = [p["pattern_id"] for p in ranked]
@@ -89,7 +89,7 @@ class TestRecencyAffectsRanking:
 
     def test_recent_beats_old_same_count(self):
         patterns = [
-            _make_pattern(pattern_id="old",    error_count=5, days_ago=30.0),
+            _make_pattern(pattern_id="old", error_count=5, days_ago=30.0),
             _make_pattern(pattern_id="recent", error_count=5, days_ago=0.5),
         ]
         ranked = rank_patterns(patterns)
@@ -109,8 +109,8 @@ class TestRecencyAffectsRanking:
     def test_very_old_pattern_ranked_last(self):
         patterns = [
             _make_pattern(pattern_id="ancient", error_count=4, days_ago=365.0),
-            _make_pattern(pattern_id="today",   error_count=4, days_ago=0.0),
-            _make_pattern(pattern_id="week",    error_count=4, days_ago=7.0),
+            _make_pattern(pattern_id="today", error_count=4, days_ago=0.0),
+            _make_pattern(pattern_id="week", error_count=4, days_ago=7.0),
         ]
         ranked = rank_patterns(patterns)
         assert ranked[-1]["pattern_id"] == "ancient"
@@ -121,7 +121,7 @@ class TestRecentFrequentHighest:
 
     def test_recent_frequent_beats_old_frequent(self):
         patterns = [
-            _make_pattern(pattern_id="old-heavy",    error_count=20, days_ago=60.0),
+            _make_pattern(pattern_id="old-heavy", error_count=20, days_ago=60.0),
             _make_pattern(pattern_id="recent-heavy", error_count=20, days_ago=0.5),
         ]
         ranked = rank_patterns(patterns)
@@ -129,8 +129,8 @@ class TestRecentFrequentHighest:
 
     def test_recent_frequent_beats_recent_infrequent(self):
         patterns = [
-            _make_pattern(pattern_id="recent-light",  error_count=2,  days_ago=0.5),
-            _make_pattern(pattern_id="recent-heavy",  error_count=20, days_ago=0.5),
+            _make_pattern(pattern_id="recent-light", error_count=2, days_ago=0.5),
+            _make_pattern(pattern_id="recent-heavy", error_count=20, days_ago=0.5),
         ]
         ranked = rank_patterns(patterns)
         assert ranked[0]["pattern_id"] == "recent-heavy"
@@ -138,9 +138,9 @@ class TestRecentFrequentHighest:
     def test_recent_frequent_top_of_four(self):
         """Recent + frequent beats every combination of stale/low-count."""
         patterns = [
-            _make_pattern(pattern_id="old-light",    error_count=2,  days_ago=30.0),
-            _make_pattern(pattern_id="old-heavy",    error_count=20, days_ago=30.0),
-            _make_pattern(pattern_id="recent-light", error_count=2,  days_ago=0.5),
+            _make_pattern(pattern_id="old-light", error_count=2, days_ago=30.0),
+            _make_pattern(pattern_id="old-heavy", error_count=20, days_ago=30.0),
+            _make_pattern(pattern_id="recent-light", error_count=2, days_ago=0.5),
             _make_pattern(pattern_id="recent-heavy", error_count=20, days_ago=0.5),
         ]
         ranked = rank_patterns(patterns)
@@ -149,9 +149,9 @@ class TestRecentFrequentHighest:
     def test_recent_frequent_top_score(self):
         """The winner's rank_score must be strictly greater than all others."""
         patterns = [
-            _make_pattern(pattern_id="old-light",    error_count=2,  days_ago=30.0),
-            _make_pattern(pattern_id="old-heavy",    error_count=20, days_ago=30.0),
-            _make_pattern(pattern_id="recent-light", error_count=2,  days_ago=0.5),
+            _make_pattern(pattern_id="old-light", error_count=2, days_ago=30.0),
+            _make_pattern(pattern_id="old-heavy", error_count=20, days_ago=30.0),
+            _make_pattern(pattern_id="recent-light", error_count=2, days_ago=0.5),
             _make_pattern(pattern_id="recent-heavy", error_count=20, days_ago=0.5),
         ]
         ranked = rank_patterns(patterns)
@@ -167,8 +167,8 @@ class TestTiesBrokenByRecency:
 
     def test_same_count_more_recent_wins(self):
         patterns = [
-            _make_pattern(pattern_id="older",  error_count=8, days_ago=14.0),
-            _make_pattern(pattern_id="newer",  error_count=8, days_ago=1.0),
+            _make_pattern(pattern_id="older", error_count=8, days_ago=14.0),
+            _make_pattern(pattern_id="newer", error_count=8, days_ago=1.0),
         ]
         ranked = rank_patterns(patterns)
         assert ranked[0]["pattern_id"] == "newer"
@@ -187,7 +187,7 @@ class TestTiesBrokenByRecency:
     def test_same_count_today_vs_yesterday(self):
         patterns = [
             _make_pattern(pattern_id="yesterday", error_count=3, days_ago=1.0),
-            _make_pattern(pattern_id="today",     error_count=3, days_ago=0.0),
+            _make_pattern(pattern_id="today", error_count=3, days_ago=0.0),
         ]
         ranked = rank_patterns(patterns)
         assert ranked[0]["pattern_id"] == "today"
@@ -255,10 +255,7 @@ class TestRankScoreAssigned:
     def test_all_pattern_ids_preserved(self):
         """No pattern is lost or duplicated during ranking."""
         ids_in = {f"p{i}" for i in range(6)}
-        patterns = [
-            _make_pattern(pattern_id=pid, error_count=2, days_ago=1.0)
-            for pid in ids_in
-        ]
+        patterns = [_make_pattern(pattern_id=pid, error_count=2, days_ago=1.0) for pid in ids_in]
         ranked = rank_patterns(patterns)
         ids_out = {p["pattern_id"] for p in ranked}
         assert ids_in == ids_out

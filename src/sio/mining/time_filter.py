@@ -138,7 +138,10 @@ def parse_since(since: str) -> datetime:
 
     if text == "yesterday":
         return (now - timedelta(days=1)).replace(
-            hour=0, minute=0, second=0, microsecond=0,
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
         )
 
     if text == "last week":

@@ -19,6 +19,7 @@ runners due to unpredictable signal delivery timing. We use monkeypatch here
 to simulate the failure path deterministically. The limitation is documented
 in comments below. Wave 6 will add SIGKILL subprocess tests tagged @slow.
 """
+
 from __future__ import annotations
 
 import os
@@ -26,14 +27,15 @@ from pathlib import Path
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _setup_target(tmp_path: Path, monkeypatch) -> Path:
     """Create an allowed target under tmp_path, patching the allowlist."""
     from sio.core.applier.writer import ALLOWLIST_ROOTS  # noqa: PLC0415
+
     monkeypatch.setattr(
         "sio.core.applier.writer.ALLOWLIST_ROOTS",
         ALLOWLIST_ROOTS + [tmp_path],
@@ -46,12 +48,14 @@ def _setup_target(tmp_path: Path, monkeypatch) -> Path:
 # 1. Happy path
 # ---------------------------------------------------------------------------
 
+
 class TestAtomicWriteHappyPath:
     """atomic_write creates backup and correct target content."""
 
     def test_new_content_written_to_target(self, tmp_path, monkeypatch):
         """Target file contains new_content after atomic_write."""
         from sio.core.applier.writer import atomic_write  # noqa: PLC0415
+
         target = _setup_target(tmp_path, monkeypatch)
         target.write_text("ORIGINAL", encoding="utf-8")
 
@@ -61,6 +65,7 @@ class TestAtomicWriteHappyPath:
     def test_backup_file_created(self, tmp_path, monkeypatch):
         """atomic_write returns a Path to a backup (.bak) file that exists."""
         from sio.core.applier.writer import atomic_write  # noqa: PLC0415
+
         target = _setup_target(tmp_path, monkeypatch)
         target.write_text("ORIGINAL", encoding="utf-8")
 
@@ -72,6 +77,7 @@ class TestAtomicWriteHappyPath:
     def test_backup_contains_original_content(self, tmp_path, monkeypatch):
         """Backup file contains the pre-write content."""
         from sio.core.applier.writer import atomic_write  # noqa: PLC0415
+
         target = _setup_target(tmp_path, monkeypatch)
         original = "ORIGINAL CONTENT TO BACKUP"
         target.write_text(original, encoding="utf-8")
@@ -82,6 +88,7 @@ class TestAtomicWriteHappyPath:
     def test_no_backup_when_target_did_not_exist(self, tmp_path, monkeypatch):
         """When target doesn't exist before write, backup_path returned is target itself."""
         from sio.core.applier.writer import atomic_write  # noqa: PLC0415
+
         target = _setup_target(tmp_path, monkeypatch)
         # target does NOT exist yet
 
@@ -93,6 +100,7 @@ class TestAtomicWriteHappyPath:
 # ---------------------------------------------------------------------------
 # 2. Crash-during-write simulation
 # ---------------------------------------------------------------------------
+
 
 class TestCrashDuringWrite:
     """Target file remains unchanged when os.replace raises OSError.
@@ -106,6 +114,7 @@ class TestCrashDuringWrite:
     def test_target_unchanged_on_os_replace_failure(self, tmp_path, monkeypatch):
         """Target file must be ORIGINAL (not empty/partial) when os.replace fails."""
         from sio.core.applier import writer  # noqa: PLC0415
+
         target = _setup_target(tmp_path, monkeypatch)
         original = "ORIGINAL CONTENT - MUST NOT CHANGE"
         target.write_text(original, encoding="utf-8")
@@ -123,13 +132,12 @@ class TestCrashDuringWrite:
 
         # Target must still have original content
         current = target.read_text(encoding="utf-8")
-        assert current == original, (
-            f"Target must remain ORIGINAL after crash. Got: {current!r}"
-        )
+        assert current == original, f"Target must remain ORIGINAL after crash. Got: {current!r}"
 
     def test_tmp_file_cleaned_up_on_os_replace_failure(self, tmp_path, monkeypatch):
         """Tmp file must be cleaned up when os.replace fails."""
         from sio.core.applier import writer  # noqa: PLC0415
+
         target = _setup_target(tmp_path, monkeypatch)
         target.write_text("ORIGINAL", encoding="utf-8")
 
@@ -149,6 +157,7 @@ class TestCrashDuringWrite:
 # ---------------------------------------------------------------------------
 # 3. Size-integrity failure
 # ---------------------------------------------------------------------------
+
 
 class TestSizeIntegrityFailure:
     """WriteIntegrityError is raised and backup is restored when post-write size check fails.
@@ -174,6 +183,7 @@ class TestSizeIntegrityFailure:
         """
         from sio.core.applier import writer  # noqa: PLC0415
         from sio.core.applier.writer import WriteIntegrityError  # noqa: PLC0415
+
         target = _setup_target(tmp_path, monkeypatch)
         original = "ORIGINAL"
         target.write_text(original, encoding="utf-8")
@@ -201,6 +211,7 @@ class TestSizeIntegrityFailure:
         """Target file is restored from backup when WriteIntegrityError is raised."""
         from sio.core.applier import writer  # noqa: PLC0415
         from sio.core.applier.writer import WriteIntegrityError  # noqa: PLC0415
+
         target = _setup_target(tmp_path, monkeypatch)
         original = "ORIGINAL CONTENT PRESERVED"
         target.write_text(original, encoding="utf-8")
@@ -230,16 +241,19 @@ class TestSizeIntegrityFailure:
 # 4. Backup retention — keep=10
 # ---------------------------------------------------------------------------
 
+
 class TestBackupRetention:
     """After 12 atomic_write calls on the same target, exactly 10 .bak files remain."""
 
     def test_exactly_10_backups_retained_after_12_writes(self, tmp_path, monkeypatch):
         """Backup retention prunes to 10 most recent .bak files."""
         from sio.core.applier.writer import atomic_write  # noqa: PLC0415
+
         target = _setup_target(tmp_path, monkeypatch)
         target.write_text("v0", encoding="utf-8")
 
         import time
+
         for i in range(12):
             time.sleep(0.02)  # ensure distinct mtime-based ordering
             atomic_write(target, f"v{i + 1}")
@@ -261,7 +275,5 @@ class TestBackupRetention:
             bak_files_for_target = list(tmp_path.rglob("*.bak"))
 
         count = len(bak_files_for_target)
-        assert count <= 10, (
-            f"Backup retention must keep at most 10 .bak files, found {count}"
-        )
+        assert count <= 10, f"Backup retention must keep at most 10 .bak files, found {count}"
         assert count > 0, "At least some backups must exist after 12 writes"

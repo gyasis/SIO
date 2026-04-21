@@ -206,7 +206,11 @@ class TestDSPyFallbackLogging:
     @patch("sio.core.dspy.modules.GroundTruthModule")
     @patch("sio.core.dspy.lm_factory.create_lm")
     def test_missing_quality_assessment_gets_fallback_marker(
-        self, mock_create_lm, mock_module_cls, mem_db, _insert_pattern,
+        self,
+        mock_create_lm,
+        mock_module_cls,
+        mem_db,
+        _insert_pattern,
     ):
         """When DSPy omits quality_assessment, it should be set to FALLBACK string."""
 
@@ -227,9 +231,12 @@ class TestDSPyFallbackLogging:
         config = SIOConfig(llm_model="test/model")
         dataset = {"id": 1, "file_path": ""}
         pattern = {
-            "id": 1, "pattern_id": "pat-1",
-            "description": "Test", "tool_name": "Bash",
-            "error_count": 1, "error_type": "tool_failure",
+            "id": 1,
+            "pattern_id": "pat-1",
+            "description": "Test",
+            "tool_name": "Bash",
+            "error_count": 1,
+            "error_type": "tool_failure",
         }
 
         ids = generate_candidates(pattern, dataset, mem_db, config, n_candidates=1)

@@ -6,27 +6,41 @@ import json
 
 # Schema definitions from hook-contracts.md
 POST_TOOL_USE_INPUT_REQUIRED = {
-    "session_id": (str,), "tool_name": (str,), "tool_input": (dict,), "tool_output": (str,),
+    "session_id": (str,),
+    "tool_name": (str,),
+    "tool_input": (dict,),
+    "tool_output": (str,),
 }
 POST_TOOL_USE_INPUT_NULLABLE = {
-    "error": (str, type(None)), "user_message": (str, type(None)),
+    "error": (str, type(None)),
+    "user_message": (str, type(None)),
 }
 PRE_TOOL_USE_INPUT_REQUIRED = {
-    "session_id": (str,), "tool_name": (str,), "tool_input": (dict,),
+    "session_id": (str,),
+    "tool_name": (str,),
+    "tool_input": (dict,),
 }
 NOTIFICATION_INPUT_REQUIRED = {"session_id": (str,), "message": (str,)}
 HOOK_OUTPUT_ACTIONS = {"allow", "block", "modify"}
 
 # Sample payloads
 POST_TOOL_USE_INPUT_SAMPLE = {
-    "session_id": "abc-123-def", "tool_name": "Read",
-    "tool_input": {"file_path": "/path/to/file"}, "tool_output": "file contents...",
-    "error": None, "user_message": "Read the config file at /path/to/file",
+    "session_id": "abc-123-def",
+    "tool_name": "Read",
+    "tool_input": {"file_path": "/path/to/file"},
+    "tool_output": "file contents...",
+    "error": None,
+    "user_message": "Read the config file at /path/to/file",
 }
 PRE_TOOL_USE_INPUT_SAMPLE = {
-    "session_id": "abc-123-def", "tool_name": "WebSearch", "tool_input": {"query": "DSPy documentation"},
+    "session_id": "abc-123-def",
+    "tool_name": "WebSearch",
+    "tool_input": {"query": "DSPy documentation"},
 }
-NOTIFICATION_INPUT_SAMPLE = {"session_id": "abc-123-def", "message": "-- should have used gemini_research"}
+NOTIFICATION_INPUT_SAMPLE = {
+    "session_id": "abc-123-def",
+    "message": "-- should have used gemini_research",
+}
 
 
 def _validate_required(payload, required):
@@ -94,9 +108,31 @@ class TestNotificationOutputSchema:
 
 class TestPostToolUseNullableFields:
     def test_post_tool_use_error_field_nullable(self):
-        assert _validate_nullable({**POST_TOOL_USE_INPUT_SAMPLE, "error": None}, POST_TOOL_USE_INPUT_NULLABLE) == []
-        assert _validate_nullable({**POST_TOOL_USE_INPUT_SAMPLE, "error": "file not found"}, POST_TOOL_USE_INPUT_NULLABLE) == []
+        assert (
+            _validate_nullable(
+                {**POST_TOOL_USE_INPUT_SAMPLE, "error": None}, POST_TOOL_USE_INPUT_NULLABLE
+            )
+            == []
+        )
+        assert (
+            _validate_nullable(
+                {**POST_TOOL_USE_INPUT_SAMPLE, "error": "file not found"},
+                POST_TOOL_USE_INPUT_NULLABLE,
+            )
+            == []
+        )
 
     def test_post_tool_use_user_message_nullable(self):
-        assert _validate_nullable({**POST_TOOL_USE_INPUT_SAMPLE, "user_message": None}, POST_TOOL_USE_INPUT_NULLABLE) == []
-        assert _validate_nullable({**POST_TOOL_USE_INPUT_SAMPLE, "user_message": "[UNAVAILABLE]"}, POST_TOOL_USE_INPUT_NULLABLE) == []
+        assert (
+            _validate_nullable(
+                {**POST_TOOL_USE_INPUT_SAMPLE, "user_message": None}, POST_TOOL_USE_INPUT_NULLABLE
+            )
+            == []
+        )
+        assert (
+            _validate_nullable(
+                {**POST_TOOL_USE_INPUT_SAMPLE, "user_message": "[UNAVAILABLE]"},
+                POST_TOOL_USE_INPUT_NULLABLE,
+            )
+            == []
+        )

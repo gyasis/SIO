@@ -46,7 +46,8 @@ class TestPromoteToGold:
         conn, ids = seeded_db
         gold_id = promote_to_gold(conn, ids[0])
         row = conn.execute(
-            "SELECT * FROM gold_standards WHERE id = ?", (gold_id,),
+            "SELECT * FROM gold_standards WHERE id = ?",
+            (gold_id,),
         ).fetchone()
         assert row is not None
         assert row["invocation_id"] == ids[0]
@@ -55,7 +56,8 @@ class TestPromoteToGold:
         conn, ids = seeded_db
         gold_id = promote_to_gold(conn, ids[0])
         row = conn.execute(
-            "SELECT * FROM gold_standards WHERE id = ?", (gold_id,),
+            "SELECT * FROM gold_standards WHERE id = ?",
+            (gold_id,),
         ).fetchone()
         assert row["skill_name"] == "Read"
         assert row["platform"] == "claude-code"

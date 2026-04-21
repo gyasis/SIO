@@ -114,7 +114,9 @@ class TestFilterByDays:
     def test_boundary_file_included(self, tmp_path: Path) -> None:
         """A file whose mtime is exactly at the cut-off boundary is included."""
         # Shift slightly inside the window to avoid sub-second race conditions.
-        boundary = _make_plain_file(tmp_path, "boundary.txt", timedelta(days=3) - timedelta(seconds=5))
+        boundary = _make_plain_file(
+            tmp_path, "boundary.txt", timedelta(days=3) - timedelta(seconds=5)
+        )
 
         result = filter_files([boundary], "3 days")
 
@@ -209,9 +211,7 @@ class TestFilterByCustomRange:
 
     def test_exactly_30_days_boundary(self, tmp_path: Path) -> None:
         """A file 30 days - 5 seconds old is included (at boundary)."""
-        f = _make_plain_file(
-            tmp_path, "boundary.txt", timedelta(days=30) - timedelta(seconds=5)
-        )
+        f = _make_plain_file(tmp_path, "boundary.txt", timedelta(days=30) - timedelta(seconds=5))
 
         result = filter_files([f], "30 days")
 
@@ -243,10 +243,7 @@ class TestEmptyResult:
 
     def test_all_old_returns_empty(self, tmp_path: Path) -> None:
         """All files older than window → empty result."""
-        files = [
-            _make_plain_file(tmp_path, f"f{i}.txt", timedelta(days=10 + i))
-            for i in range(5)
-        ]
+        files = [_make_plain_file(tmp_path, f"f{i}.txt", timedelta(days=10 + i)) for i in range(5)]
 
         result = filter_files(files, "3 days")
 
@@ -462,9 +459,7 @@ class TestFilenameTimestamp:
             "2026-01-15_23-59-59Z-edge-case.md",
         ],
     )
-    def test_various_valid_specstory_filenames_parsed(
-        self, tmp_path: Path, filename: str
-    ) -> None:
+    def test_various_valid_specstory_filenames_parsed(self, tmp_path: Path, filename: str) -> None:
         """Any SpecStory-formatted filename is correctly parsed without error."""
         p = tmp_path / filename
         p.write_text("content")
@@ -499,8 +494,16 @@ class TestEmptyInput:
     def test_empty_input_with_various_since_strings(self) -> None:
         """Empty input is handled consistently regardless of the since string."""
         for since in (
-            "1 day", "3 days", "1 week", "2 weeks", "30 days",
-            "2 months", "6 hours", "30min", "yesterday", "3 days ago",
+            "1 day",
+            "3 days",
+            "1 week",
+            "2 weeks",
+            "30 days",
+            "2 months",
+            "6 hours",
+            "30min",
+            "yesterday",
+            "3 days ago",
         ):
             result = filter_files([], since)
             assert result == [], f"Expected empty list for since={since!r}, got {result}"
@@ -589,7 +592,10 @@ class TestParseSinceNaturalLanguage:
         """'yesterday' produces midnight of the previous day."""
         result = parse_since("yesterday")
         expected = (_now() - timedelta(days=1)).replace(
-            hour=0, minute=0, second=0, microsecond=0,
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
         )
         diff = abs((result - expected).total_seconds())
         assert diff < 2

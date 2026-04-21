@@ -56,9 +56,9 @@ def _compute_decay_multiplier(
     if config is None:
         config = load_config()
 
-    fresh_days = config.decay_fresh_days   # default 14
-    stale_days = config.decay_stale_days   # default 28
-    floor = config.decay_floor             # default 0.3
+    fresh_days = config.decay_fresh_days  # default 14
+    stale_days = config.decay_stale_days  # default 28
+    floor = config.decay_floor  # default 0.3
 
     # Parse last_seen — handle both date-only and datetime strings
     try:

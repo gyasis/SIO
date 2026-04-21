@@ -67,17 +67,19 @@ def compute_health(
         rate = sat / total_labeled if total_labeled > 0 else None
         flagged = rate is not None and rate < 0.5
 
-        results.append(SkillHealth(
-            platform=r["platform"],
-            skill_name=r["skill_name"],
-            total_invocations=r["total_invocations"],
-            satisfied_count=sat,
-            unsatisfied_count=unsat,
-            unlabeled_count=r["unlabeled_count"],
-            false_trigger_count=r["false_trigger_count"],
-            missed_trigger_count=r["missed_trigger_count"],
-            satisfaction_rate=rate,
-            flagged=flagged,
-        ))
+        results.append(
+            SkillHealth(
+                platform=r["platform"],
+                skill_name=r["skill_name"],
+                total_invocations=r["total_invocations"],
+                satisfied_count=sat,
+                unsatisfied_count=unsat,
+                unlabeled_count=r["unlabeled_count"],
+                false_trigger_count=r["false_trigger_count"],
+                missed_trigger_count=r["missed_trigger_count"],
+                satisfaction_rate=rate,
+                flagged=flagged,
+            )
+        )
 
     return results

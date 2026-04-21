@@ -10,7 +10,6 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
-from sio.core.constants import DEFAULT_PLATFORM as _DEFAULT_PLATFORM  # noqa: E402
 _ERROR_LOG = os.path.expanduser("~/.sio/hook_errors.log")
 _SESSION_STATE_PATH = os.path.expanduser("~/.sio/session_state.json")
 
@@ -18,14 +17,34 @@ _ALLOW = json.dumps({"action": "allow"})
 
 # Correction/undo keywords — reused from passive_signals and sentiment_scorer
 _CORRECTION_PREFIXES = (
-    "no,", "no ", "actually,", "actually ", "instead,", "instead ",
-    "wait,", "wait ", "stop,", "stop ", "that's wrong", "that is wrong",
-    "not what i", "don't do", "do not do", "undo ", "revert ",
+    "no,",
+    "no ",
+    "actually,",
+    "actually ",
+    "instead,",
+    "instead ",
+    "wait,",
+    "wait ",
+    "stop,",
+    "stop ",
+    "that's wrong",
+    "that is wrong",
+    "not what i",
+    "don't do",
+    "do not do",
+    "undo ",
+    "revert ",
 )
 
 _UNDO_KEYWORDS = (
-    "undo", "revert", "rollback", "roll back", "go back",
-    "restore", "put it back", "change it back",
+    "undo",
+    "revert",
+    "rollback",
+    "roll back",
+    "go back",
+    "restore",
+    "put it back",
+    "change it back",
 )
 
 
@@ -106,13 +125,16 @@ def _do_analyze(stdin_json: str, *, state_path: str | None = None) -> None:
         state = {}
 
     sessions = state.setdefault("sessions", {})
-    sess = sessions.setdefault(session_id, {
-        "correction_count": 0,
-        "undo_count": 0,
-        "negative_streak": 0,
-        "frustration_logged": False,
-        "recent_scores": [],
-    })
+    sess = sessions.setdefault(
+        session_id,
+        {
+            "correction_count": 0,
+            "undo_count": 0,
+            "negative_streak": 0,
+            "frustration_logged": False,
+            "recent_scores": [],
+        },
+    )
 
     # Detect correction or undo
     signal = _detect_correction_or_undo(user_message)
@@ -196,6 +218,7 @@ def handle_user_prompt_submit(
         _do_analyze(stdin_json, state_path=state_path)
         try:
             from sio.adapters.claude_code.hooks._heartbeat import record_success  # noqa: PLC0415
+
             record_success("user_prompt_submit", session_id=_session_id)
         except Exception:
             pass
@@ -204,14 +227,20 @@ def handle_user_prompt_submit(
         try:
             _do_analyze(stdin_json, state_path=state_path)
             try:
-                from sio.adapters.claude_code.hooks._heartbeat import record_success  # noqa: PLC0415
+                from sio.adapters.claude_code.hooks._heartbeat import (
+                    record_success,  # noqa: PLC0415
+                )
+
                 record_success("user_prompt_submit", session_id=_session_id)
             except Exception:
                 pass
         except Exception as second_err:
             _log_error(f"retry failed: {first_err!r} -> {second_err!r}")
             try:
-                from sio.adapters.claude_code.hooks._heartbeat import record_failure  # noqa: PLC0415
+                from sio.adapters.claude_code.hooks._heartbeat import (
+                    record_failure,  # noqa: PLC0415
+                )
+
                 record_failure("user_prompt_submit", second_err)
             except Exception:
                 pass

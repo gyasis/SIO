@@ -279,9 +279,15 @@ class TestGetPromotableFlows:
 
         flow = result[0]
         expected_keys = {
-            "flow_hash", "sequence", "ngram_size", "count",
-            "success_count", "success_rate", "avg_duration",
-            "session_count", "last_seen",
+            "flow_hash",
+            "sequence",
+            "ngram_size",
+            "count",
+            "success_count",
+            "success_rate",
+            "avg_duration",
+            "session_count",
+            "last_seen",
         }
         assert expected_keys.issubset(flow.keys())
 

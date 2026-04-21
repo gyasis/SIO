@@ -152,9 +152,17 @@ class TestGradePatternPrecedence:
 # ---------------------------------------------------------------------------
 
 
-def _insert_pattern(db, *, pattern_id: str, error_count: int, session_count: int,
-                    first_seen_days_ago: float = 0, last_seen_days_ago: float = 0,
-                    rank_score: float = 0.8, grade: str | None = None) -> int:
+def _insert_pattern(
+    db,
+    *,
+    pattern_id: str,
+    error_count: int,
+    session_count: int,
+    first_seen_days_ago: float = 0,
+    last_seen_days_ago: float = 0,
+    rank_score: float = 0.8,
+    grade: str | None = None,
+) -> int:
     """Insert a pattern row and return its id."""
     now = datetime.now(timezone.utc).isoformat()
     first_seen = _ts(first_seen_days_ago)
@@ -188,7 +196,11 @@ class TestRunGrading:
     def test_grades_updated_in_db(self, db) -> None:
         """run_grading should write new grade values to the patterns table."""
         pid = _insert_pattern(
-            db, pattern_id="p1", error_count=3, session_count=3, grade=None,
+            db,
+            pattern_id="p1",
+            error_count=3,
+            session_count=3,
+            grade=None,
         )
         changes = run_grading(db, config=_FRESH_CFG)
         assert len(changes) >= 1
@@ -199,17 +211,24 @@ class TestRunGrading:
     def test_no_change_when_grade_matches(self, db) -> None:
         """If the existing grade matches the computed grade, no change is recorded."""
         _insert_pattern(
-            db, pattern_id="p2", error_count=3, session_count=3, grade="strong",
+            db,
+            pattern_id="p2",
+            error_count=3,
+            session_count=3,
+            grade="strong",
         )
         changes = run_grading(db, config=_FRESH_CFG)
         # Should have no changes since it was already 'strong'
-        assert all(c["new_grade"] != "strong" or c["old_grade"] != "strong"
-                    for c in changes)
+        assert all(c["new_grade"] != "strong" or c["old_grade"] != "strong" for c in changes)
 
     def test_returns_old_and_new_grade(self, db) -> None:
         """Each change dict should have pattern_id, old_grade, new_grade."""
         _insert_pattern(
-            db, pattern_id="p3", error_count=2, session_count=2, grade=None,
+            db,
+            pattern_id="p3",
+            error_count=2,
+            session_count=2,
+            grade=None,
         )
         changes = run_grading(db, config=_FRESH_CFG)
         change = next(c for c in changes if c["new_grade"] == "emerging")
@@ -221,11 +240,19 @@ class TestRunGrading:
     def test_multiple_patterns_graded(self, db) -> None:
         """Multiple patterns should all be graded in a single run."""
         _insert_pattern(
-            db, pattern_id="pa", error_count=2, session_count=2, grade=None,
+            db,
+            pattern_id="pa",
+            error_count=2,
+            session_count=2,
+            grade=None,
         )
         _insert_pattern(
-            db, pattern_id="pb", error_count=5, session_count=5,
-            first_seen_days_ago=10, grade=None,
+            db,
+            pattern_id="pb",
+            error_count=5,
+            session_count=5,
+            first_seen_days_ago=10,
+            grade=None,
         )
         changes = run_grading(db, config=_FRESH_CFG)
         assert len(changes) == 2
@@ -244,7 +271,10 @@ class TestAutoGenerateSuggestions:
 
     def test_creates_suggestion_for_strong_pattern(self, db) -> None:
         pid = _insert_pattern(
-            db, pattern_id="s1", error_count=3, session_count=3,
+            db,
+            pattern_id="s1",
+            error_count=3,
+            session_count=3,
         )
         strong_patterns = [
             {
@@ -259,9 +289,7 @@ class TestAutoGenerateSuggestions:
         assert count == 1
 
         # Verify suggestion exists in DB
-        rows = db.execute(
-            "SELECT * FROM suggestions WHERE pattern_id = ?", (pid,)
-        ).fetchall()
+        rows = db.execute("SELECT * FROM suggestions WHERE pattern_id = ?", (pid,)).fetchall()
         assert len(rows) == 1
         assert rows[0]["status"] == "pending"
         assert rows[0]["confidence"] > 0
@@ -269,7 +297,10 @@ class TestAutoGenerateSuggestions:
     def test_no_duplicate_suggestions(self, db) -> None:
         """Calling auto_generate_suggestions twice should not create duplicates."""
         pid = _insert_pattern(
-            db, pattern_id="s2", error_count=3, session_count=3,
+            db,
+            pattern_id="s2",
+            error_count=3,
+            session_count=3,
         )
         strong = [
             {
@@ -286,9 +317,7 @@ class TestAutoGenerateSuggestions:
         assert count2 == 0
 
         # Still only 1 suggestion
-        rows = db.execute(
-            "SELECT * FROM suggestions WHERE pattern_id = ?", (pid,)
-        ).fetchall()
+        rows = db.execute("SELECT * FROM suggestions WHERE pattern_id = ?", (pid,)).fetchall()
         assert len(rows) == 1
 
     def test_empty_list_returns_zero(self, db) -> None:
@@ -298,10 +327,16 @@ class TestAutoGenerateSuggestions:
     def test_multiple_strong_patterns(self, db) -> None:
         """Multiple strong patterns each get a suggestion."""
         pid1 = _insert_pattern(
-            db, pattern_id="m1", error_count=3, session_count=3,
+            db,
+            pattern_id="m1",
+            error_count=3,
+            session_count=3,
         )
         pid2 = _insert_pattern(
-            db, pattern_id="m2", error_count=4, session_count=4,
+            db,
+            pattern_id="m2",
+            error_count=4,
+            session_count=4,
         )
         strong = [
             {
@@ -325,7 +360,11 @@ class TestAutoGenerateSuggestions:
     def test_already_strong_with_existing_suggestion(self, db) -> None:
         """A pattern that was already strong and has a suggestion should not get another."""
         pid = _insert_pattern(
-            db, pattern_id="ex1", error_count=3, session_count=3, grade="strong",
+            db,
+            pattern_id="ex1",
+            error_count=3,
+            session_count=3,
+            grade="strong",
         )
         # Manually insert a suggestion for this pattern
         now = datetime.now(timezone.utc).isoformat()
@@ -334,8 +373,16 @@ class TestAutoGenerateSuggestions:
             "(pattern_id, description, confidence, proposed_change, "
             "target_file, change_type, status, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (pid, "Existing suggestion", 0.7, "Do something", "CLAUDE.md",
-             "claude_md_rule", "pending", now),
+            (
+                pid,
+                "Existing suggestion",
+                0.7,
+                "Do something",
+                "CLAUDE.md",
+                "claude_md_rule",
+                "pending",
+                now,
+            ),
         )
         db.commit()
 
@@ -354,7 +401,10 @@ class TestAutoGenerateSuggestions:
     def test_suggestion_fields_populated(self, db) -> None:
         """Verify all required suggestion fields are populated."""
         pid = _insert_pattern(
-            db, pattern_id="f1", error_count=5, session_count=5,
+            db,
+            pattern_id="f1",
+            error_count=5,
+            session_count=5,
         )
         strong = [
             {
@@ -367,9 +417,7 @@ class TestAutoGenerateSuggestions:
         ]
         auto_generate_suggestions(db, strong)
 
-        row = db.execute(
-            "SELECT * FROM suggestions WHERE pattern_id = ?", (pid,)
-        ).fetchone()
+        row = db.execute("SELECT * FROM suggestions WHERE pattern_id = ?", (pid,)).fetchone()
         assert row is not None
         assert row["change_type"] == "claude_md_rule"
         assert row["target_file"] == "CLAUDE.md"

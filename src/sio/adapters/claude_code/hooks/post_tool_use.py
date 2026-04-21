@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 logger = logging.getLogger(__name__)
 
 from sio.core.constants import DEFAULT_PLATFORM as _DEFAULT_PLATFORM  # noqa: E402
+
 _DEFAULT_DB_DIR = os.path.expanduser("~/.sio/claude-code")
 
 
@@ -76,6 +77,7 @@ def handle_post_tool_use(stdin_json: str, *, conn=None) -> str:
         logger.exception("PostToolUse hook error — continuing silently")
         try:
             from sio.adapters.claude_code.hooks._heartbeat import record_failure  # noqa: PLC0415
+
             record_failure("post_tool_use", exc)
         except Exception:
             pass
@@ -114,8 +116,7 @@ def _detect_passive_signals(conn, session_id, user_message):
             if len(rows) >= 2:
                 prev_id = rows[1]["id"]
                 conn.execute(
-                    "UPDATE behavior_invocations SET passive_signal = ? "
-                    "WHERE id = ?",
+                    "UPDATE behavior_invocations SET passive_signal = ? WHERE id = ?",
                     (signal, prev_id),
                 )
                 conn.commit()

@@ -23,6 +23,7 @@ from sio.core.config import SIOConfig, load_config
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _write_toml(tmp_path, content: str):
     """Write *content* to a temp config.toml and return its str path."""
     cfg = tmp_path / "config.toml"
@@ -131,9 +132,7 @@ class TestLoadV2ConfigFromToml:
         path = _write_toml(
             tmp_path,
             # Only v1 content — no v2 keys at all
-            'embedding_backend = "fastembed"\n'
-            "retention_days = 30\n"
-            "min_examples = 15\n",
+            'embedding_backend = "fastembed"\nretention_days = 30\nmin_examples = 15\n',
         )
         cfg = load_config(path)
 

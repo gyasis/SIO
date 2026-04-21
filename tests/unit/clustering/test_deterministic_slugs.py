@@ -21,7 +21,6 @@ import re
 import numpy as np
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # fake_fastembed fixture — deterministic embeddings for test isolation
 # ---------------------------------------------------------------------------
@@ -130,9 +129,8 @@ def test_slug_stable_across_reversed_input():
     """Reversing input order must not change the set of pattern_ids."""
     from sio.clustering.pattern_clusterer import cluster_errors  # noqa: PLC0415
 
-    errors = (
-        _make_errors(_TOOL_FAILURE_TEXTS, base_id=0)
-        + _make_errors(_PARSE_ERROR_TEXTS, base_id=10)
+    errors = _make_errors(_TOOL_FAILURE_TEXTS, base_id=0) + _make_errors(
+        _PARSE_ERROR_TEXTS, base_id=10
     )
     errors_rev = list(reversed(errors))
 
@@ -187,9 +185,8 @@ def test_existing_cluster_slug_stable_on_new_error():
     """Adding one new error must not change slugs of existing clusters."""
     from sio.clustering.pattern_clusterer import cluster_errors  # noqa: PLC0415
 
-    base_errors = (
-        _make_errors(_TOOL_FAILURE_TEXTS, base_id=0)
-        + _make_errors(_PARSE_ERROR_TEXTS, base_id=10)
+    base_errors = _make_errors(_TOOL_FAILURE_TEXTS, base_id=0) + _make_errors(
+        _PARSE_ERROR_TEXTS, base_id=10
     )
     new_error = [
         {
@@ -236,8 +233,7 @@ def test_slug_format_matches_regex():
     for p in patterns:
         slug = p["pattern_id"]
         assert SLUG_RE.match(slug), (
-            f"Slug {slug!r} does not match expected format "
-            f"'^[a-z_]+_[0-9a-f]{{10}}$'"
+            f"Slug {slug!r} does not match expected format '^[a-z_]+_[0-9a-f]{{10}}$'"
         )
 
 

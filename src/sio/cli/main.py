@@ -113,7 +113,10 @@ def review(platform, session, limit):
 
     with _db_conn(db_path) as conn:
         items = get_reviewable(
-            conn, platform, session_id=session, limit=limit,
+            conn,
+            platform,
+            session_id=session,
+            limit=limit,
         )
 
         if not items:
@@ -141,7 +144,10 @@ def review(platform, session, limit):
             if choice in ("++", "--"):
                 note = click.prompt("  Note (optional)", default="", type=str)
                 apply_label(
-                    conn, item["id"], choice, note or None,
+                    conn,
+                    item["id"],
+                    choice,
+                    note or None,
                 )
                 labeled += 1
             click.echo()
@@ -162,8 +168,7 @@ def review(platform, session, limit):
 def optimize(skill_name, platform, optimizer, dry_run):
     """Run prompt optimization for a skill."""
     click.echo(
-        "\u26a0\ufe0f  'sio optimize' is deprecated."
-        " Use 'sio optimize-suggestions' instead.",
+        "\u26a0\ufe0f  'sio optimize' is deprecated. Use 'sio optimize-suggestions' instead.",
         err=True,
     )
     from sio.core.dspy.optimizer import optimize as run_opt
@@ -174,8 +179,11 @@ def optimize(skill_name, platform, optimizer, dry_run):
 
     with _db_conn(db_path) as conn:
         result = run_opt(
-            conn, skill_name=skill_name, platform=platform,
-            optimizer=optimizer, dry_run=dry_run,
+            conn,
+            skill_name=skill_name,
+            platform=platform,
+            optimizer=optimizer,
+            dry_run=dry_run,
         )
 
         if result["status"] == "error":
@@ -238,14 +246,19 @@ def install(platform, auto_detect):
 @click.option("--days", default=90, help="Purge records older than N days.")
 @click.option("--dry-run", is_flag=True, help="Show count without deleting.")
 @click.option(
-    "--behavior-only", is_flag=True, default=False,
+    "--behavior-only",
+    is_flag=True,
+    default=False,
     help=(
         "Also purge behavior_invocations rows from sio.db AND the per-platform DB "
         "(in addition to the default error_records / flow_events purge)."
     ),
 )
 @click.option(
-    "--yes", "-y", is_flag=True, default=False,
+    "--yes",
+    "-y",
+    is_flag=True,
+    default=False,
     help="Skip confirmation prompt.",
 )
 def purge(platform, days, dry_run, behavior_only, yes):
@@ -270,8 +283,8 @@ def purge(platform, days, dry_run, behavior_only, yes):
     )
 
     if not dry_run and not yes:
-        target_desc = (
-            "error_records, flow_events" + (", behavior_invocations" if behavior_only else "")
+        target_desc = "error_records, flow_events" + (
+            ", behavior_invocations" if behavior_only else ""
         )
         confirmed = click.confirm(
             f"Purge {target_desc} older than {days} days from {sio_db_path}?",
@@ -291,16 +304,14 @@ def purge(platform, days, dry_run, behavior_only, yes):
         if dry_run:
             try:
                 n_errors = conn.execute(
-                    "SELECT COUNT(*) FROM error_records "
-                    "WHERE mined_at < datetime('now', ?)",
+                    "SELECT COUNT(*) FROM error_records WHERE mined_at < datetime('now', ?)",
                     (f"-{days} days",),
                 ).fetchone()[0]
             except Exception:
                 n_errors = 0
             try:
                 n_flows = conn.execute(
-                    "SELECT COUNT(*) FROM flow_events "
-                    "WHERE mined_at < datetime('now', ?)",
+                    "SELECT COUNT(*) FROM flow_events WHERE mined_at < datetime('now', ?)",
                     (f"-{days} days",),
                 ).fetchone()[0]
             except Exception:
@@ -379,7 +390,8 @@ def purge(platform, days, dry_run, behavior_only, yes):
 @cli.command()
 @click.option("--platform", default=DEFAULT_PLATFORM, help="Platform filter.")
 @click.option(
-    "--format", "fmt",
+    "--format",
+    "fmt",
     type=click.Choice(["json", "csv"]),
     default="json",
     help="Export format.",
@@ -430,7 +442,8 @@ def export(platform, fmt, output):
 
 @cli.command()
 @click.option(
-    "--since", required=True,
+    "--since",
+    required=True,
     help=(
         'Time window: "3 days", "2 weeks", "1 month",'
         ' "6h", "yesterday", "3 days ago", "2026-01-15".'
@@ -476,7 +489,11 @@ def mine(since, project, source, exclude_sidechains):
 
     with _db_conn(db_path) as conn:
         result = run_mine(
-            conn, source_dirs, since, source, project,
+            conn,
+            source_dirs,
+            since,
+            source,
+            project,
             exclude_sidechains=exclude_sidechains,
         )
 
@@ -502,7 +519,8 @@ def mine(since, project, source, exclude_sidechains):
 
     table.add_row("Sessions found", str(total_scanned))
     table.add_row(
-        "Already processed (skipped)", str(skipped),
+        "Already processed (skipped)",
+        str(skipped),
     )
     table.add_row("Newly mined", str(newly_mined))
     table.add_row(
@@ -522,20 +540,26 @@ def mine(since, project, source, exclude_sidechains):
 
 @cli.command()
 @click.option(
-    "--since", default="14 days",
+    "--since",
+    default="14 days",
     help='Time window: "7 days", "14 days", "30 days".',
 )
 @click.option("--project", default=None, help="Filter by project name.")
 @click.option(
-    "--min-count", default=3, type=int,
+    "--min-count",
+    default=3,
+    type=int,
     help="Minimum occurrence count to show a flow.",
 )
 @click.option(
-    "--limit", default=20, type=int,
+    "--limit",
+    default=20,
+    type=int,
     help="Maximum number of flows to display.",
 )
 @click.option(
-    "--mine-first/--no-mine", default=True,
+    "--mine-first/--no-mine",
+    default=True,
     help="Mine flow data before querying (default: yes).",
 )
 def flows(since, project, min_count, limit, mine_first):
@@ -644,15 +668,20 @@ def flows(since, project, min_count, limit, mine_first):
 @cli.command()
 @click.argument("session_path", required=False, default=None)
 @click.option(
-    "--latest", is_flag=True, default=False,
+    "--latest",
+    is_flag=True,
+    default=False,
     help="Distill the most recent JSONL session.",
 )
 @click.option(
-    "--output", "-o", default=None,
+    "--output",
+    "-o",
+    default=None,
     help="Save playbook to file (default: print to stdout).",
 )
 @click.option(
-    "--project", default=None,
+    "--project",
+    default=None,
     help="Filter latest session by project name.",
 )
 def distill(session_path, latest, output, project):
@@ -743,19 +772,24 @@ def distill(session_path, latest, output, project):
 @cli.command()
 @click.argument("query")
 @click.option(
-    "--session", default=None,
+    "--session",
+    default=None,
     help="Path to specific JSONL session. Default: latest.",
 )
 @click.option(
-    "--project", default=None,
+    "--project",
+    default=None,
     help="Filter latest session by project name.",
 )
 @click.option(
-    "--polish/--no-polish", default=False,
+    "--polish/--no-polish",
+    default=False,
     help="Use Gemini to polish into a clean runbook (costs ~$0.02).",
 )
 @click.option(
-    "--output", "-o", default=None,
+    "--output",
+    "-o",
+    default=None,
     help="Save runbook to file.",
 )
 def recall(query, session, project, polish, output):
@@ -835,8 +869,7 @@ def recall(query, session, project, polish, output):
         # For CLI, we output the prompt. The /sio-recall skill will call Gemini directly.
         runbook = format_recall_output(filtered, struggles)
         runbook += (
-            "\n\n---\n*Gemini polish prompt saved."
-            " Use /sio-recall skill for auto-polish.*\n"
+            "\n\n---\n*Gemini polish prompt saved. Use /sio-recall skill for auto-polish.*\n"
         )
     else:
         runbook = format_recall_output(filtered, struggles)
@@ -853,15 +886,23 @@ def recall(query, session, project, polish, output):
 
 @cli.command()
 @click.option(
-    "--type", "error_type", default=None,
-    type=click.Choice([
-        "tool_failure", "user_correction",
-        "repeated_attempt", "undo", "agent_admission",
-    ]),
+    "--type",
+    "error_type",
+    default=None,
+    type=click.Choice(
+        [
+            "tool_failure",
+            "user_correction",
+            "repeated_attempt",
+            "undo",
+            "agent_admission",
+        ]
+    ),
     help="Filter by error type.",
 )
 @click.option(
-    "--project", default=None,
+    "--project",
+    default=None,
     help="Filter by project name (substring match on source path).",
 )
 def patterns(error_type, project):
@@ -897,9 +938,7 @@ def patterns(error_type, project):
     ranked = rank_patterns(clustered)
 
     title = (
-        f"Error Patterns — {error_type}"
-        if error_type
-        else "Error Patterns (ranked by importance)"
+        f"Error Patterns — {error_type}" if error_type else "Error Patterns (ranked by importance)"
     )
     console = Console()
     table = Table(title=title)
@@ -925,27 +964,40 @@ def patterns(error_type, project):
 
 @cli.command()
 @click.option(
-    "--type", "error_type", default=None,
-    type=click.Choice([
-        "tool_failure", "user_correction",
-        "repeated_attempt", "undo", "agent_admission",
-    ]),
+    "--type",
+    "error_type",
+    default=None,
+    type=click.Choice(
+        [
+            "tool_failure",
+            "user_correction",
+            "repeated_attempt",
+            "undo",
+            "agent_admission",
+        ]
+    ),
     help="Filter by error type.",
 )
 @click.option("--limit", "-n", default=20, help="Max errors to show.")
 @click.option(
-    "--grep", "-g", "grep_term", default=None,
+    "--grep",
+    "-g",
+    "grep_term",
+    default=None,
     help=(
         "Search content for keyword(s). Comma-separated"
         " for OR logic (e.g. 'placeholder,hardcoded,stub')."
     ),
 )
 @click.option(
-    "--project", default=None,
+    "--project",
+    default=None,
     help="Filter by project name (substring match on source path).",
 )
 @click.option(
-    "--exclude-type", "exclude_types", default=None,
+    "--exclude-type",
+    "exclude_types",
+    default=None,
     help="Exclude error types. Comma-separated (e.g. 'repeated_attempt,tool_failure').",
 )
 def errors(error_type, limit, grep_term, project, exclude_types):
@@ -1198,15 +1250,12 @@ def inspect(pattern_id):
 
     # Session timeline
     sorted_ts = sorted(timestamps) if timestamps else []
-    session_info = (
-        f"Sessions: {len(session_ids)} unique\n"
-        f"Errors: {len(errors)} total\n"
-    )
+    session_info = f"Sessions: {len(session_ids)} unique\nErrors: {len(errors)} total\n"
     if sorted_ts:
         session_info += f"Date range: {sorted_ts[0]} to {sorted_ts[-1]}"
     else:
-        first = pattern.get('first_seen', '?')
-        last = pattern.get('last_seen', '?')
+        first = pattern.get("first_seen", "?")
+        last = pattern.get("last_seen", "?")
         session_info += f"Date range: {first} to {last}"
     console.print(Panel(session_info, title="Session Timeline"))
     console.print()
@@ -1241,8 +1290,12 @@ def inspect(pattern_id):
 
     # Coverage gaps per surface type
     all_surfaces = {
-        "claude_md_rule", "skill_update", "hook_config",
-        "mcp_config", "settings_config", "agent_profile",
+        "claude_md_rule",
+        "skill_update",
+        "hook_config",
+        "mcp_config",
+        "settings_config",
+        "agent_profile",
         "project_config",
     }
     covered_surfaces = set(gt_surface_counts.keys())
@@ -1254,27 +1307,39 @@ def inspect(pattern_id):
         if surface in covered_surfaces:
             cnt = gt_surface_counts[surface]
             coverage_table.add_row(
-                surface, f"[green]covered ({cnt})[/green]",
+                surface,
+                f"[green]covered ({cnt})[/green]",
             )
         else:
             coverage_table.add_row(
-                surface, "[yellow]no ground truth[/yellow]",
+                surface,
+                "[yellow]no ground truth[/yellow]",
             )
     console.print(coverage_table)
 
 
 @cli.command()
 @click.option(
-    "--type", "error_type", default=None,
-    type=click.Choice([
-        "tool_failure", "user_correction",
-        "repeated_attempt", "undo", "agent_admission",
-    ]),
+    "--type",
+    "error_type",
+    default=None,
+    type=click.Choice(
+        [
+            "tool_failure",
+            "user_correction",
+            "repeated_attempt",
+            "undo",
+            "agent_admission",
+        ]
+    ),
     help="Only analyze errors of this type.",
 )
 @click.option("--min-examples", default=3, help="Min examples to build a dataset.")
 @click.option(
-    "--grep", "-g", "grep_term", default=None,
+    "--grep",
+    "-g",
+    "grep_term",
+    default=None,
     help=(
         "Filter errors by keyword(s) in content."
         " Comma-separated for OR logic"
@@ -1282,40 +1347,60 @@ def inspect(pattern_id):
     ),
 )
 @click.option(
-    "--verbose", "-v", is_flag=True, default=False,
+    "--verbose",
+    "-v",
+    is_flag=True,
+    default=False,
     help="Enable verbose DSPy trace logging.",
 )
 @click.option(
-    "--auto", "auto_mode", is_flag=True, default=False,
+    "--auto",
+    "auto_mode",
+    is_flag=True,
+    default=False,
     help="Force automated mode for all patterns (skip interactive review).",
 )
 @click.option(
-    "--analyze", "analyze_mode", is_flag=True, default=False,
+    "--analyze",
+    "analyze_mode",
+    is_flag=True,
+    default=False,
     help="Force HITL (human-in-the-loop) mode for all patterns.",
 )
 @click.option(
-    "--project", default=None,
+    "--project",
+    default=None,
     help="Filter by project name (substring match on source path).",
 )
 @click.option(
-    "--exclude-type", "exclude_types", default=None,
+    "--exclude-type",
+    "exclude_types",
+    default=None,
     help="Exclude error types. Comma-separated (e.g. 'repeated_attempt,tool_failure').",
 )
 @click.option(
-    "--preview", is_flag=True, default=False,
+    "--preview",
+    is_flag=True,
+    default=False,
     help="Preview: filter + cluster + show pattern groupings, then stop. No generation.",
 )
 def suggest(
-    error_type, min_examples, grep_term, verbose,
-    auto_mode, analyze_mode, project, exclude_types, preview,
+    error_type,
+    min_examples,
+    grep_term,
+    verbose,
+    auto_mode,
+    analyze_mode,
+    project,
+    exclude_types,
+    preview,
 ):
     """Run the full pipeline: cluster -> persist -> dataset -> suggestions."""
+    import uuid
     from datetime import datetime, timezone
 
     from rich.console import Console
     from rich.table import Table
-
-    import uuid
 
     from sio.clustering.pattern_clusterer import cluster_errors
     from sio.clustering.ranker import rank_patterns
@@ -1344,8 +1429,7 @@ def suggest(
         if not all_errors:
             filter_hint = f" for project '{project}'" if project else ""
             click.echo(
-                f"No errors mined yet{filter_hint}."
-                " Run 'sio mine --since \"7 days\"' first."
+                f"No errors mined yet{filter_hint}. Run 'sio mine --since \"7 days\"' first."
             )
             return
 
@@ -1359,8 +1443,7 @@ def suggest(
         if exclude_types:
             excluded = {t.strip().lower() for t in exclude_types.split(",")}
             errors_to_cluster = [
-                e for e in errors_to_cluster
-                if (e.get("error_type") or "").lower() not in excluded
+                e for e in errors_to_cluster if (e.get("error_type") or "").lower() not in excluded
             ]
 
         # Apply content grep filter — comma-separated terms use OR logic
@@ -1371,8 +1454,10 @@ def suggest(
 
             def _matches_any_term(e: dict) -> bool:
                 searchable = (
-                    "error_text", "user_message",
-                    "context_before", "context_after",
+                    "error_text",
+                    "user_message",
+                    "context_before",
+                    "context_after",
                     "source_file",
                 )
                 for field in searchable:
@@ -1406,8 +1491,7 @@ def suggest(
         if grep_term:
             filter_msg = f" matching '{grep_term}'"
         console.print(
-            f"[bold]Step 1:[/bold] Clustering"
-            f" {len(errors_to_cluster)} errors{filter_msg}..."
+            f"[bold]Step 1:[/bold] Clustering {len(errors_to_cluster)} errors{filter_msg}..."
         )
 
         # 2. Cluster and rank
@@ -1470,33 +1554,57 @@ def suggest(
             patterns_csv = os.path.join(preview_dir, "patterns_preview.csv")
             with open(patterns_csv, "w", newline="") as f:
                 writer = csv.writer(f)
-                writer.writerow([
-                    "rank", "pattern_id", "description",
-                    "error_count", "session_count", "rank_score",
-                ])
+                writer.writerow(
+                    [
+                        "rank",
+                        "pattern_id",
+                        "description",
+                        "error_count",
+                        "session_count",
+                        "rank_score",
+                    ]
+                )
                 for i, p in enumerate(ranked, 1):
-                    writer.writerow([
-                        i, p.get("pattern_id", ""), p.get("description", "")[:120],
-                        p.get("error_count", 0), p.get("session_count", 0),
-                        f"{p.get('rank_score', 0):.2f}",
-                    ])
+                    writer.writerow(
+                        [
+                            i,
+                            p.get("pattern_id", ""),
+                            p.get("description", "")[:120],
+                            p.get("error_count", 0),
+                            p.get("session_count", 0),
+                            f"{p.get('rank_score', 0):.2f}",
+                        ]
+                    )
 
             # Export filtered errors dataset
             errors_csv = os.path.join(preview_dir, "errors_preview.csv")
             with open(errors_csv, "w", newline="") as f:
                 writer = csv.writer(f)
-                writer.writerow([
-                    "id", "error_type", "error_text",
-                    "tool_name", "session_id", "timestamp",
-                    "source_file", "user_message",
-                ])
+                writer.writerow(
+                    [
+                        "id",
+                        "error_type",
+                        "error_text",
+                        "tool_name",
+                        "session_id",
+                        "timestamp",
+                        "source_file",
+                        "user_message",
+                    ]
+                )
                 for e in errors_to_cluster:
-                    writer.writerow([
-                        e.get("id", ""), e.get("error_type", ""),
-                        (e.get("error_text") or "")[:200], e.get("tool_name", ""),
-                        e.get("session_id", ""), e.get("timestamp", ""),
-                        e.get("source_file", ""), (e.get("user_message") or "")[:200],
-                    ])
+                    writer.writerow(
+                        [
+                            e.get("id", ""),
+                            e.get("error_type", ""),
+                            (e.get("error_text") or "")[:200],
+                            e.get("tool_name", ""),
+                            e.get("session_id", ""),
+                            e.get("timestamp", ""),
+                            e.get("source_file", ""),
+                            (e.get("user_message") or "")[:200],
+                        ]
+                    )
 
             console.print("[bold]Exported for analysis:[/bold]")
             console.print(f"  Patterns: {patterns_csv}")
@@ -1504,8 +1612,7 @@ def suggest(
             console.print()
             console.print("[dim]To generate suggestions, re-run without --preview.[/dim]")
             console.print(
-                "[dim]To refine, adjust --grep, --type,"
-                " --exclude-type and re-run --preview.[/dim]"
+                "[dim]To refine, adjust --grep, --type, --exclude-type and re-run --preview.[/dim]"
             )
             return
 
@@ -1554,9 +1661,14 @@ def suggest(
                     "negative_count, min_threshold, created_at, updated_at, cycle_id) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     (
-                        p["id"], metadata["file_path"],
-                        metadata["positive_count"], metadata["negative_count"],
-                        min_examples, now_iso, now_iso, cycle_id,
+                        p["id"],
+                        metadata["file_path"],
+                        metadata["positive_count"],
+                        metadata["negative_count"],
+                        min_examples,
+                        now_iso,
+                        now_iso,
+                        cycle_id,
                     ),
                 )
                 conn.commit()
@@ -1575,7 +1687,11 @@ def suggest(
             mode = "hitl"
 
         suggestions = generate_suggestions(
-            persisted_patterns, datasets, conn, verbose=verbose, mode=mode,
+            persisted_patterns,
+            datasets,
+            conn,
+            verbose=verbose,
+            mode=mode,
         )
 
         # Insert new cycle's suggestions — stale ones already deactivated in step 2 (FR-003)
@@ -1585,9 +1701,16 @@ def suggest(
                 "confidence, proposed_change, target_file, change_type, status, "
                 "created_at, cycle_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    s["pattern_id"], s["dataset_id"], s["description"],
-                    s["confidence"], s["proposed_change"], s["target_file"],
-                    s["change_type"], "pending", now_iso, cycle_id,
+                    s["pattern_id"],
+                    s["dataset_id"],
+                    s["description"],
+                    s["confidence"],
+                    s["proposed_change"],
+                    s["target_file"],
+                    s["change_type"],
+                    "pending",
+                    now_iso,
+                    cycle_id,
                 ),
             )
         conn.commit()
@@ -1606,9 +1729,7 @@ def suggest(
             table.add_column("Source")
 
             for i, s in enumerate(suggestions, 1):
-                source_label = (
-                    "[DSPy]" if s.get("_using_dspy") else "[Template]"
-                )
+                source_label = "[DSPy]" if s.get("_using_dspy") else "[Template]"
                 table.add_row(
                     str(i),
                     s["description"][:50],
@@ -1736,27 +1857,41 @@ def reject(suggestion_id, note):
 @cli.command("apply")
 @click.argument("suggestion_id", type=int, required=False, default=None)
 @click.option(
-    "--experiment", is_flag=True, default=False,
+    "--experiment",
+    is_flag=True,
+    default=False,
     help="Apply on experiment branch instead of main.",
 )
 @click.option(
-    "--force", is_flag=True, default=False,
+    "--force",
+    is_flag=True,
+    default=False,
     help="Skip budget check (not recommended).",
 )
 @click.option(
-    "--rollback", "rollback_id", type=int, default=None,
+    "--rollback",
+    "rollback_id",
+    type=int,
+    default=None,
     help="Roll back an applied change by its ID (from applied_changes table).",
 )
 @click.option(
-    "--merge", is_flag=True, default=False,
+    "--merge",
+    is_flag=True,
+    default=False,
     help="Explicit consent to merge with a similar existing rule (FR-024).",
 )
 @click.option(
-    "--yes", "-y", is_flag=True, default=False,
+    "--yes",
+    "-y",
+    is_flag=True,
+    default=False,
     help="Skip interactive confirmation prompt.",
 )
 @click.option(
-    "--no-backup", is_flag=True, default=False,
+    "--no-backup",
+    is_flag=True,
+    default=False,
     help="[NOT SUPPORTED] Backups are required for safety; this flag is rejected.",
 )
 def apply_suggestion(suggestion_id, experiment, force, rollback_id, merge, yes, no_backup):
@@ -1779,7 +1914,6 @@ def apply_suggestion(suggestion_id, experiment, force, rollback_id, merge, yes, 
     """
     # Reject --no-backup immediately (FR-004, BackupRequired)
     if no_backup:
-        from sio.core.applier.writer import BackupRequired  # noqa: PLC0415
         click.echo(
             "Error: --no-backup is not supported. "
             "Backups are required for safe rollback (BackupRequired).",
@@ -1793,13 +1927,11 @@ def apply_suggestion(suggestion_id, experiment, force, rollback_id, merge, yes, 
             BackupMissingError,
             rollback_applied_change,
         )
+
         db_path = os.path.expanduser("~/.sio/sio.db")
         try:
             result = rollback_applied_change(rollback_id, db_path=db_path)
-            click.echo(
-                f"Rolled back applied change {rollback_id}: "
-                f"restored {result['target']}"
-            )
+            click.echo(f"Rolled back applied change {rollback_id}: restored {result['target']}")
             raise SystemExit(0)
         except ValueError as exc:
             click.echo(f"Rollback failed: {exc}")
@@ -1840,7 +1972,10 @@ def apply_suggestion(suggestion_id, experiment, force, rollback_id, merge, yes, 
 
     with _db_conn(db_path) as conn:
         result = apply_change(
-            conn, suggestion_id, config=config, force=force,
+            conn,
+            suggestion_id,
+            config=config,
+            force=force,
         )
 
     if result["success"]:
@@ -1855,20 +1990,13 @@ def apply_suggestion(suggestion_id, experiment, force, rollback_id, merge, yes, 
 
         delta_type = result.get("delta_type", "append")
         if delta_type == "merge":
-            click.echo(
-                "  Action: merge (similar to existing rule)"
-            )
+            click.echo("  Action: merge (similar to existing rule)")
         else:
             click.echo(f"  Action: {delta_type}")
 
-        click.echo(
-            f"Applied suggestion {suggestion_id} "
-            f"to {result['target_file']}"
-        )
+        click.echo(f"Applied suggestion {suggestion_id} to {result['target_file']}")
         cid = result["change_id"]
-        click.echo(
-            f"Change ID: {cid} (use 'sio rollback {cid}' to undo)"
-        )
+        click.echo(f"Change ID: {cid} (use 'sio rollback {cid}' to undo)")
     else:
         reason = result.get("reason", "unknown")
         budget_msg = result.get("budget_message", "")
@@ -1877,9 +2005,7 @@ def apply_suggestion(suggestion_id, experiment, force, rollback_id, merge, yes, 
         if budget_msg:
             click.echo(f"  Budget: {budget_msg}")
         if consolidation:
-            click.echo(
-                "  Consolidation attempted: no candidates found"
-            )
+            click.echo("  Consolidation attempted: no candidates found")
 
         click.echo(f"Apply failed: {reason}")
         raise SystemExit(1)
@@ -2013,8 +2139,11 @@ def config_show():
     env_table.add_column("Variable", style="bold")
     env_table.add_column("Status")
     env_vars = [
-        "AZURE_OPENAI_API_KEY", "ANTHROPIC_API_KEY",
-        "OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT", "OLLAMA_HOST",
+        "AZURE_OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "AZURE_OPENAI_ENDPOINT",
+        "OLLAMA_HOST",
     ]
     for var in env_vars:
         val = os.environ.get(var, "")
@@ -2056,7 +2185,7 @@ def config_test():
         console.print("  export OPENAI_API_KEY=...")
         console.print()
         console.print("Or configure explicitly in ~/.sio/config.toml:")
-        console.print('  [llm]')
+        console.print("  [llm]")
         console.print('  model = "openai/gpt-4o"')
         console.print('  api_key_env = "OPENAI_API_KEY"')
         raise SystemExit(1)
@@ -2110,8 +2239,12 @@ def schedule_install():
 
 
 @schedule.command("run")
-@click.option("--mode", default="daily", type=click.Choice(["daily", "weekly"]),
-              help="Analysis mode: daily (24h) or weekly (7d).")
+@click.option(
+    "--mode",
+    default="daily",
+    type=click.Choice(["daily", "weekly"]),
+    help="Analysis mode: daily (24h) or weekly (7d).",
+)
 def schedule_run(mode):
     """Run passive analysis pipeline (invoked by cron)."""
     from sio.scheduler.runner import run_analysis
@@ -2155,6 +2288,7 @@ def sio_status(plain: bool = False):
     try:
         from rich.console import Console  # noqa: PLC0415
         from rich.table import Table  # noqa: PLC0415
+
         _rich_available = True
     except ImportError:
         _rich_available = False
@@ -2168,6 +2302,7 @@ def sio_status(plain: bool = False):
     # § 1: HOOKS — from hook_health.json via sio.cli.status.hook_health_rows()
     # -------------------------------------------------------------------
     from sio.cli.status import hook_health_rows  # noqa: PLC0415
+
     hook_rows = hook_health_rows()
 
     _STATE_ICONS = {
@@ -2194,6 +2329,7 @@ def sio_status(plain: bool = False):
     if db_exists:
         try:
             from sio.core.db.schema import init_db  # noqa: PLC0415
+
             conn = init_db(db_path_str)
             try:
                 # § 2: Mining
@@ -2210,9 +2346,10 @@ def sio_status(plain: bool = False):
                 except Exception:
                     mining_data["flow_events"] = "n/a"
                 try:
-                    mining_data["last_mined_at"] = conn.execute(
-                        "SELECT MAX(mined_at) FROM processed_sessions"
-                    ).fetchone()[0] or "never"
+                    mining_data["last_mined_at"] = (
+                        conn.execute("SELECT MAX(mined_at) FROM processed_sessions").fetchone()[0]
+                        or "never"
+                    )
                 except Exception:
                     mining_data["last_mined_at"] = "n/a"
 
@@ -2268,16 +2405,18 @@ def sio_status(plain: bool = False):
                 except Exception:
                     audit_data["autoresearch_24h"] = "n/a"
                 try:
-                    audit_data["autoresearch_last"] = conn.execute(
-                        "SELECT MAX(fired_at) FROM autoresearch_txlog"
-                    ).fetchone()[0] or "never"
+                    audit_data["autoresearch_last"] = (
+                        conn.execute("SELECT MAX(fired_at) FROM autoresearch_txlog").fetchone()[0]
+                        or "never"
+                    )
                 except Exception:
                     audit_data["autoresearch_last"] = "n/a"
 
                 # § 5: Database
                 try:
                     schema_row = conn.execute(
-                        "SELECT version, status FROM schema_version ORDER BY applied_at DESC LIMIT 1"
+                        "SELECT version, status FROM schema_version"
+                        " ORDER BY applied_at DESC LIMIT 1"
                     ).fetchone()
                     db_data["schema_version"] = schema_row[0] if schema_row else "unknown"
                     db_data["schema_status"] = schema_row[1] if schema_row else "unknown"
@@ -2303,6 +2442,7 @@ def sio_status(plain: bool = False):
         # § 3 sync-drift (T096)
         try:
             from sio.core.db.sync import compute_sync_drift  # noqa: PLC0415
+
             sync_drift_data = compute_sync_drift()
             for platform, drift in sync_drift_data.items():
                 if drift.get("drift_pct", 0.0) >= 0.05:
@@ -2360,18 +2500,28 @@ def sio_status(plain: bool = False):
                 str(mining_data.get("behavior_invocations", "n/a")),
             )
         train_table.add_row("gold_standards", str(training_data.get("gold_standards", "n/a")))
-        train_table.add_row("optimized_modules", str(training_data.get("optimized_modules", "n/a")))
+        train_table.add_row(
+            "optimized_modules", str(training_data.get("optimized_modules", "n/a"))
+        )
         train_table.add_row("active_module", str(training_data.get("active_module", "n/a")))
-        train_table.add_row("optimization_runs", str(training_data.get("optimization_runs", "n/a")))
+        train_table.add_row(
+            "optimization_runs", str(training_data.get("optimization_runs", "n/a"))
+        )
         console.print(train_table)
 
         # — Section 4: Audit —
         audit_table = Table(title="Audit", show_header=True, header_style="bold")
         audit_table.add_column("Metric", style="cyan")
         audit_table.add_column("Value")
-        audit_table.add_row("applied_changes (active)", str(audit_data.get("applied_active", "n/a")))
-        audit_table.add_row("autoresearch_txlog (24h)", str(audit_data.get("autoresearch_24h", "n/a")))
-        audit_table.add_row("autoresearch last fired", str(audit_data.get("autoresearch_last", "n/a")))
+        audit_table.add_row(
+            "applied_changes (active)", str(audit_data.get("applied_active", "n/a"))
+        )
+        audit_table.add_row(
+            "autoresearch_txlog (24h)", str(audit_data.get("autoresearch_24h", "n/a"))
+        )
+        audit_table.add_row(
+            "autoresearch last fired", str(audit_data.get("autoresearch_last", "n/a"))
+        )
         console.print(audit_table)
 
         # — Section 5: Database —
@@ -2383,8 +2533,7 @@ def sio_status(plain: bool = False):
         schema_v = db_data.get("schema_version", "n/a")
         schema_s = db_data.get("schema_status", "n/a")
         schema_display = (
-            f"[red]{schema_v} ({schema_s})[/red]" if schema_err
-            else f"{schema_v} ({schema_s})"
+            f"[red]{schema_v} ({schema_s})[/red]" if schema_err else f"{schema_v} ({schema_s})"
         )
         db_table.add_row("schema_version", schema_display)
         db_table.add_row("exists", "[green]yes[/green]" if db_exists else "[red]no[/red]")
@@ -2409,7 +2558,7 @@ def sio_status(plain: bool = False):
             click.echo(
                 f"  behavior_invocations (sio.db) {drift.get('canonical_count', 0)} "
                 f"<-> {platform}: {drift.get('per_platform_count', 0)} "
-                f"({drift.get('drift_pct', 0.0)*100:.1f}% drift)"
+                f"({drift.get('drift_pct', 0.0) * 100:.1f}% drift)"
             )
         for k, v in training_data.items():
             click.echo(f"  {k}: {v}")
@@ -2526,13 +2675,16 @@ def gt_generate(candidates, pattern_id):
             dataset = dict(ds_row) if ds_row else {"id": 0, "file_path": ""}
 
             ids = generate_candidates(
-                pattern, dataset, conn, config, n_candidates=candidates,
+                pattern,
+                dataset,
+                conn,
+                config,
+                n_candidates=candidates,
             )
             total_ids.extend(ids)
 
     click.echo(
-        f"Generated {len(total_ids)} ground truth candidates "
-        f"from {len(patterns)} patterns."
+        f"Generated {len(total_ids)} ground truth candidates from {len(patterns)} patterns."
     )
 
 
@@ -2564,14 +2716,16 @@ def gt_review(surface):
         for i, entry in enumerate(pending, 1):
             # Display entry details
             console.print()
-            console.print(Panel(
-                f"[bold]Pattern:[/bold] {entry.get('pattern_summary', '')[:120]}\n\n"
-                f"[bold]Surface:[/bold] {entry.get('target_surface', '')}\n"
-                f"[bold]Rule:[/bold] {entry.get('rule_title', '')}\n\n"
-                f"[bold]Prevention:[/bold]\n{entry.get('prevention_instructions', '')}\n\n"
-                f"[bold]Rationale:[/bold] {entry.get('rationale', '')}",
-                title=f"Ground Truth {i}/{len(pending)} (ID: {entry['id']})",
-            ))
+            console.print(
+                Panel(
+                    f"[bold]Pattern:[/bold] {entry.get('pattern_summary', '')[:120]}\n\n"
+                    f"[bold]Surface:[/bold] {entry.get('target_surface', '')}\n"
+                    f"[bold]Rule:[/bold] {entry.get('rule_title', '')}\n\n"
+                    f"[bold]Prevention:[/bold]\n{entry.get('prevention_instructions', '')}\n\n"
+                    f"[bold]Rationale:[/bold] {entry.get('rationale', '')}",
+                    title=f"Ground Truth {i}/{len(pending)} (ID: {entry['id']})",
+                )
+            )
 
             choice = click.prompt(
                 "  [a]pprove / [r]eject / [e]dit / [s]kip / [q]uit",
@@ -2693,14 +2847,16 @@ def optimize_suggestions_cmd(optimizer, dry_run):
     console = Console()
 
     console.print(
-        f"\n[bold]Optimizing suggestions[/bold] "
-        f"(optimizer={optimizer}, dry_run={dry_run})\n"
+        f"\n[bold]Optimizing suggestions[/bold] (optimizer={optimizer}, dry_run={dry_run})\n"
     )
 
     with _db_conn(db_path) as conn:
         try:
             result = optimize_suggestions(
-                conn, optimizer=optimizer, dry_run=dry_run, config=config,
+                conn,
+                optimizer=optimizer,
+                dry_run=dry_run,
+                config=config,
             )
         except OptimizationError as exc:
             console.print(f"[red]Optimization failed:[/red] {exc}")
@@ -2747,11 +2903,13 @@ def optimize_suggestions_cmd(optimizer, dry_run):
         if dry_run:
             console.print("[yellow][dry-run] No changes saved.[/yellow]")
         else:
-            console.print(Panel(
-                result.message,
-                title="Result",
-                style="green" if result.status == "success" else "yellow",
-            ))
+            console.print(
+                Panel(
+                    result.message,
+                    title="Result",
+                    style="green" if result.status == "success" else "yellow",
+                )
+            )
 
             # Approval prompt
             choice = click.prompt(
@@ -2788,11 +2946,13 @@ def _display_optimization_diff(console, conn, result):
             if len(demos_text) > 3000:
                 demos_text = demos_text[:3000] + "\n... (truncated)"
 
-            console.print(Panel(
-                Syntax(demos_text, "json", theme="monokai"),
-                title="Optimized Module (few-shot examples)",
-                subtitle=f"File: {active['file_path']}",
-            ))
+            console.print(
+                Panel(
+                    Syntax(demos_text, "json", theme="monokai"),
+                    title="Optimized Module (few-shot examples)",
+                    subtitle=f"File: {active['file_path']}",
+                )
+            )
     except Exception:
         # Non-critical display — don't crash
         pass
@@ -2909,17 +3069,21 @@ def optimize_cmd(module_name, optimizer_name, trainset_size, valset_size, dry_ru
     help="Dataset type to export.",
 )
 @click.option(
-    "--since", default="14 days",
+    "--since",
+    default="14 days",
     help='Time window: "7 days", "14 days", "30 days".',
 )
 @click.option(
-    "--format", "fmt",
+    "--format",
+    "fmt",
     type=click.Choice(["jsonl", "parquet"]),
     default="jsonl",
     help="Output format.",
 )
 @click.option(
-    "--output", "-o", default=None,
+    "--output",
+    "-o",
+    default=None,
     help="Output file path (default: ~/.sio/datasets/<task>_<date>.<fmt>).",
 )
 def export_dataset(task, since, fmt, output):
@@ -3013,11 +3177,14 @@ def export_dataset(task, since, fmt, output):
     help="DSPy optimizer (bootstrap for <50 examples, gepa for 50+).",
 )
 @click.option(
-    "--model", default=None,
+    "--model",
+    default=None,
     help="LLM model for training (default: DSPY_MODEL env or gpt-4o-mini).",
 )
 @click.option(
-    "--max-examples", default=200, type=int,
+    "--max-examples",
+    default=200,
+    type=int,
     help="Maximum training examples per task.",
 )
 def train(task, optimizer, model, max_examples):
@@ -3162,6 +3329,7 @@ def collect_recall(query, session, project, runbook, label):
 
     # Store in DB
     from datetime import datetime, timezone
+
     now = datetime.now(timezone.utc).isoformat()
 
     with _db_conn(db_path) as conn:
@@ -3197,21 +3365,27 @@ def collect_recall(query, session, project, runbook, label):
 
 @cli.command()
 @click.option(
-    "--error-type", default=None,
+    "--error-type",
+    default=None,
     help="Filter to specific error type.",
 )
 @click.option(
-    "--window", default=7, type=int,
+    "--window",
+    default=7,
+    type=int,
     help="Rolling window in days (default: 7).",
 )
 @click.option(
-    "--format", "fmt",
+    "--format",
+    "fmt",
     type=click.Choice(["table", "json"]),
     default="table",
     help="Output format (default: table).",
 )
 @click.option(
-    "--skills", is_flag=True, default=False,
+    "--skills",
+    is_flag=True,
+    default=False,
     help="Show per-skill effectiveness metrics.",
 )
 def velocity(error_type, window, fmt, skills):
@@ -3241,15 +3415,12 @@ def velocity(error_type, window, fmt, skills):
             error_types = [error_type]
         else:
             rows = conn.execute(
-                "SELECT DISTINCT error_type FROM error_records "
-                "WHERE error_type IS NOT NULL"
+                "SELECT DISTINCT error_type FROM error_records WHERE error_type IS NOT NULL"
             ).fetchall()
             error_types = [r[0] for r in rows]
 
         if not error_types:
-            click.echo(
-                "No error records found. Run 'sio mine --since \"7 days\"' first."
-            )
+            click.echo("No error records found. Run 'sio mine --since \"7 days\"' first.")
             return
 
         # Compute fresh snapshots for each error type
@@ -3345,18 +3516,12 @@ def velocity(error_type, window, fmt, skills):
 
     except ImportError:
         # Fallback without Rich
-        click.echo(
-            f"\nLearning Velocity Report ({window}-day rolling window)\n"
-        )
-        click.echo(
-            f"{'Error Type':<25} {'Rate':>6} {'Count':>6} {'Rule Applied':>14}"
-        )
+        click.echo(f"\nLearning Velocity Report ({window}-day rolling window)\n")
+        click.echo(f"{'Error Type':<25} {'Rate':>6} {'Count':>6} {'Rule Applied':>14}")
         click.echo("-" * 55)
         for snap in snapshots:
             rule_str = (
-                f"#{snap.get('rule_suggestion_id', '?')}"
-                if snap["rule_applied"]
-                else "none"
+                f"#{snap.get('rule_suggestion_id', '?')}" if snap["rule_applied"] else "none"
             )
             click.echo(
                 f"{snap['error_type']:<25} "
@@ -3374,8 +3539,7 @@ def velocity(error_type, window, fmt, skills):
 
         if not skill_metrics:
             click.echo(
-                "\nNo skill effectiveness data. "
-                "Promote flows to skills and track velocity first."
+                "\nNo skill effectiveness data. Promote flows to skills and track velocity first."
             )
         else:
             if fmt == "json":
@@ -3402,16 +3566,8 @@ def velocity(error_type, window, fmt, skills):
                         # Show just the filename
                         short_path = path.split("/")[-1] if "/" in path else path
                         error_type_str = sm["target_error_type"] or "unknown"
-                        pre = (
-                            f"{sm['pre_rate']:.3f}"
-                            if sm["pre_rate"] is not None
-                            else "N/A"
-                        )
-                        post = (
-                            f"{sm['post_rate']:.3f}"
-                            if sm["post_rate"] is not None
-                            else "N/A"
-                        )
+                        pre = f"{sm['pre_rate']:.3f}" if sm["pre_rate"] is not None else "N/A"
+                        post = f"{sm['post_rate']:.3f}" if sm["post_rate"] is not None else "N/A"
                         imp = sm["improvement_pct"]
                         if imp is not None:
                             if imp > 0:
@@ -3461,11 +3617,13 @@ def velocity(error_type, window, fmt, skills):
 
 @cli.command()
 @click.option(
-    "--since", default=None,
+    "--since",
+    default=None,
     help="Filter errors after this date (ISO-8601).",
 )
 @click.option(
-    "--format", "fmt",
+    "--format",
+    "fmt",
     type=click.Choice(["table", "json"]),
     default="table",
     help="Output format.",
@@ -3577,16 +3735,13 @@ def violations(since, fmt):
         compliant = report["compliant_rules"]
         if compliant > 0:
             console.print()
-            console.print(
-                f"No violations: {compliant} rules fully complied with"
-            )
+            console.print(f"No violations: {compliant} rules fully complied with")
 
         if not summary:
             console.print()
             console.print("[green]All rules are being followed.[/green]")
             console.print(
-                f"  Checked {report['total_rules']} rules"
-                f" across {len(rule_file_paths)} files"
+                f"  Checked {report['total_rules']} rules across {len(rule_file_paths)} files"
             )
 
         # Show which files were scanned.
@@ -3600,9 +3755,7 @@ def violations(since, fmt):
         summary = report["violation_summary"]
         if summary:
             click.echo("\nRule Violation Report\n")
-            click.echo(
-                f"{'#':>3}  {'Rule':<50} {'Count':>5} {'Last':>10} {'Sessions':>8}"
-            )
+            click.echo(f"{'#':>3}  {'Rule':<50} {'Count':>5} {'Last':>10} {'Sessions':>8}")
             click.echo("-" * 80)
             for i, s in enumerate(summary, 1):
                 click.echo(
@@ -3614,15 +3767,10 @@ def violations(since, fmt):
 
         compliant = report["compliant_rules"]
         if compliant > 0:
-            click.echo(
-                f"\nNo violations: {compliant} rules fully complied with"
-            )
+            click.echo(f"\nNo violations: {compliant} rules fully complied with")
 
         if not summary:
-            click.echo(
-                f"\nAll rules are being followed."
-                f" Checked {report['total_rules']} rules."
-            )
+            click.echo(f"\nAll rules are being followed. Checked {report['total_rules']} rules.")
 
 
 # ---------------------------------------------------------------------------
@@ -3632,7 +3780,9 @@ def violations(since, fmt):
 
 @cli.command()
 @click.option(
-    "--file", "file_path", default=None,
+    "--file",
+    "file_path",
+    default=None,
     help="Check specific file only.",
 )
 def budget(file_path):
@@ -3684,10 +3834,7 @@ def budget(file_path):
                     files_to_check.append(md_file)
 
         project_claude_md = Path.cwd() / "CLAUDE.md"
-        if (
-            project_claude_md.exists()
-            and project_claude_md not in files_to_check
-        ):
+        if project_claude_md.exists() and project_claude_md not in files_to_check:
             files_to_check.append(project_claude_md)
 
         project_rules_dir = Path.cwd() / "rules"
@@ -3761,15 +3908,22 @@ def budget(file_path):
 
 @cli.command()
 @click.option(
-    "--threshold", default=0.85, type=float,
+    "--threshold",
+    default=0.85,
+    type=float,
     help="Similarity threshold (default: 0.85).",
 )
 @click.option(
-    "--dry-run", is_flag=True, default=False,
+    "--dry-run",
+    is_flag=True,
+    default=False,
     help="Show proposals without applying.",
 )
 @click.option(
-    "--auto", "auto_apply", is_flag=True, default=False,
+    "--auto",
+    "auto_apply",
+    is_flag=True,
+    default=False,
     help="Apply all proposals without confirmation.",
 )
 def dedupe(threshold, dry_run, auto_apply):
@@ -3814,10 +3968,7 @@ def dedupe(threshold, dry_run, auto_apply):
             file_paths.append(str(md_file))
 
     project_claude_md = Path.cwd() / "CLAUDE.md"
-    if (
-        project_claude_md.exists()
-        and str(project_claude_md) not in file_paths
-    ):
+    if project_claude_md.exists() and str(project_claude_md) not in file_paths:
         file_paths.append(str(project_claude_md))
 
     project_rules_dir = Path.cwd() / "rules"
@@ -3830,46 +3981,30 @@ def dedupe(threshold, dry_run, auto_apply):
         click.echo("No instruction files found to scan.")
         return
 
-    console.print(
-        f"Scanning {len(file_paths)} files "
-        f"(threshold: {threshold:.2f})..."
-    )
+    console.print(f"Scanning {len(file_paths)} files (threshold: {threshold:.2f})...")
 
     pairs: list[DuplicatePair] = find_duplicates(file_paths, threshold)
 
     if not pairs:
-        console.print(
-            "\n[green]No duplicates found above "
-            f"threshold {threshold:.2f}.[/green]"
-        )
+        console.print(f"\n[green]No duplicates found above threshold {threshold:.2f}.[/green]")
         return
 
-    console.print(
-        f"\n[bold]Duplicate Rule Analysis "
-        f"(threshold: {threshold:.2f})[/bold]\n"
-    )
+    console.print(f"\n[bold]Duplicate Rule Analysis (threshold: {threshold:.2f})[/bold]\n")
 
     applied_count = 0
     for i, pair in enumerate(pairs, 1):
         # Show the pair
-        console.print(
-            f"[bold]Pair {i}[/bold] "
-            f"(similarity: {pair.similarity:.2f}):"
-        )
+        console.print(f"[bold]Pair {i}[/bold] (similarity: {pair.similarity:.2f}):")
 
         # Abbreviate file paths for display
         try:
-            display_a = str(
-                Path(pair.file_a).relative_to(Path.home())
-            )
+            display_a = str(Path(pair.file_a).relative_to(Path.home()))
             display_a = "~/" + display_a
         except ValueError:
             display_a = pair.file_a
 
         try:
-            display_b = str(
-                Path(pair.file_b).relative_to(Path.home())
-            )
+            display_b = str(Path(pair.file_b).relative_to(Path.home()))
             display_b = "~/" + display_b
         except ValueError:
             display_b = pair.file_b
@@ -3877,20 +4012,12 @@ def dedupe(threshold, dry_run, auto_apply):
         text_a_short = pair.text_a[:80].replace("\n", " ")
         text_b_short = pair.text_b[:80].replace("\n", " ")
 
-        console.print(
-            f'  A: "{text_a_short}" '
-            f"({display_a}:{pair.line_a})"
-        )
-        console.print(
-            f'  B: "{text_b_short}" '
-            f"({display_b}:{pair.line_b})"
-        )
+        console.print(f'  A: "{text_a_short}" ({display_a}:{pair.line_a})')
+        console.print(f'  B: "{text_b_short}" ({display_b}:{pair.line_b})')
 
         merged = propose_merge(pair)
         merged_short = merged[:100].replace("\n", " ")
-        console.print(
-            f'  Proposed merge: "{merged_short}"'
-        )
+        console.print(f'  Proposed merge: "{merged_short}"')
 
         if dry_run:
             console.print("  [dim][dry-run] Skipped.[/dim]")
@@ -3932,10 +4059,7 @@ def dedupe(threshold, dry_run, auto_apply):
         for fp in affected_files:
             trigger_consolidation(fp, config)
 
-        console.print(
-            f"[green]Consolidated {applied_count} "
-            f"duplicate pair(s).[/green]"
-        )
+        console.print(f"[green]Consolidated {applied_count} duplicate pair(s).[/green]")
     elif dry_run:
         console.print(
             f"[yellow]{len(pairs)} duplicate pair(s) found. "
@@ -3956,15 +4080,21 @@ def autoresearch():
 
 @autoresearch.command("start")
 @click.option(
-    "--interval", default=30, type=int,
+    "--interval",
+    default=30,
+    type=int,
     help="Minutes between cycles (default: 30).",
 )
 @click.option(
-    "--max-cycles", default=None, type=int,
+    "--max-cycles",
+    default=None,
+    type=int,
     help="Stop after N cycles (default: unlimited).",
 )
 @click.option(
-    "--max-experiments", default=3, type=int,
+    "--max-experiments",
+    default=3,
+    type=int,
     help="Max concurrent experiments (default: 3).",
 )
 @click.option("--dry-run", is_flag=True, help="Run pipeline but don't create experiments.")
@@ -3980,8 +4110,7 @@ def autoresearch_start(interval, max_cycles, max_experiments, dry_run):
     config.max_experiments = max_experiments
 
     click.echo(
-        f"AutoResearch Loop started "
-        f"(interval: {interval}m, max experiments: {max_experiments})"
+        f"AutoResearch Loop started (interval: {interval}m, max experiments: {max_experiments})"
     )
 
     with _db_conn(db_path) as conn:
@@ -4028,12 +4157,10 @@ def autoresearch_status():
 
     cycles = set(e.get("cycle_number") for e in entries)
     promoted = sum(
-        1 for e in entries
-        if e.get("action") == "promote" and e.get("status") == "success"
+        1 for e in entries if e.get("action") == "promote" and e.get("status") == "success"
     )
     rolled_back = sum(
-        1 for e in entries
-        if e.get("action") == "rollback" and e.get("status") == "success"
+        1 for e in entries if e.get("action") == "rollback" and e.get("status") == "success"
     )
 
     click.echo("AutoResearch Status")
@@ -4052,15 +4179,21 @@ def autoresearch_status():
 @cli.command()
 @click.option("--html", "html_flag", is_flag=True, help="Generate HTML report.")
 @click.option(
-    "--output", "-o", default=None,
+    "--output",
+    "-o",
+    default=None,
     help="Output file path (default: ~/.sio/reports/report-YYYYMMDD.html).",
 )
 @click.option(
-    "--days", default=30, type=int,
+    "--days",
+    default=30,
+    type=int,
     help="Lookback period in days (default: 30).",
 )
 @click.option(
-    "--open", "open_flag", is_flag=True,
+    "--open",
+    "open_flag",
+    is_flag=True,
     help="Open report in browser after generation.",
 )
 def report(html_flag, output, days, open_flag):
@@ -4087,7 +4220,10 @@ def report(html_flag, output, days, open_flag):
 
 
 def _report_html(
-    db_path: str, output: str | None, days: int, open_flag: bool,
+    db_path: str,
+    output: str | None,
+    days: int,
+    open_flag: bool,
 ) -> None:
     """Generate and write an HTML report."""
     from datetime import datetime as _dt
@@ -4124,9 +4260,7 @@ def _report_terminal(db_path: str, days: int) -> None:
     from datetime import timedelta, timezone
 
     with _db_conn(db_path) as conn:
-        cutoff = (
-            _dt.now(timezone.utc) - timedelta(days=days)
-        ).isoformat()
+        cutoff = (_dt.now(timezone.utc) - timedelta(days=days)).isoformat()
 
         # Session metrics summary
         metrics = conn.execute(
@@ -4146,8 +4280,7 @@ def _report_terminal(db_path: str, days: int) -> None:
 
         # Suggestion count
         suggestion_count = conn.execute(
-            "SELECT COUNT(*) FROM suggestions "
-            "WHERE status IN ('pending', 'approved')",
+            "SELECT COUNT(*) FROM suggestions WHERE status IN ('pending', 'approved')",
         ).fetchone()[0]
 
     try:
@@ -4169,7 +4302,8 @@ def _report_terminal(db_path: str, days: int) -> None:
         table.add_row("Total cost", f"${metrics[2]:.2f}")
         table.add_row("Total errors", str(metrics[3]))
         table.add_row(
-            "Avg cache efficiency", f"{metrics[4] * 100:.1f}%",
+            "Avg cache efficiency",
+            f"{metrics[4] * 100:.1f}%",
         )
         table.add_row("Patterns discovered", str(pattern_count))
         table.add_row("Pending suggestions", str(suggestion_count))
@@ -4178,8 +4312,7 @@ def _report_terminal(db_path: str, days: int) -> None:
         console.print(table)
         console.print()
         console.print(
-            "[dim]Use --html for a full interactive report"
-            " with charts.[/dim]",
+            "[dim]Use --html for a full interactive report with charts.[/dim]",
         )
 
     except ImportError:
@@ -4220,10 +4353,7 @@ def promote_flow(flow_hash):
         result = promote_flow_to_skill(conn, flow_hash)
 
     if result is None:
-        click.echo(
-            f"Could not promote flow '{flow_hash}'. "
-            "Flow not found or insufficient data."
-        )
+        click.echo(f"Could not promote flow '{flow_hash}'. Flow not found or insufficient data.")
         raise SystemExit(1)
 
     click.echo(f"Skill generated: {result}")
@@ -4236,11 +4366,13 @@ def promote_flow(flow_hash):
 
 @cli.command()
 @click.option(
-    "--repo", default=".",
+    "--repo",
+    default=".",
     help="Repository path for repo-specific pattern detection.",
 )
 @click.option(
-    "--format", "fmt",
+    "--format",
+    "fmt",
     type=click.Choice(["table", "json"]),
     default="table",
     help="Output format (default: table).",
@@ -4328,8 +4460,7 @@ def discover(repo, fmt):
     except ImportError:
         click.echo("\nSkill Candidates:\n")
         click.echo(
-            f"{'#':>3}  {'Description':<55} {'Type':<20} "
-            f"{'Errors':>6} {'Sess':>5} {'Conf':>6}"
+            f"{'#':>3}  {'Description':<55} {'Type':<20} {'Errors':>6} {'Sess':>5} {'Conf':>6}"
         )
         click.echo("-" * 100)
         for i, c in enumerate(candidates, 1):
@@ -4395,17 +4526,13 @@ def db_migrate(db_path):
         Path(__file__).parents[4] / "scripts",  # editable install
         Path.cwd() / "scripts",
     ]
-    scripts_dir = next(
-        (p for p in project_candidates if p.is_dir()), None
-    )
+    scripts_dir = next((p for p in project_candidates if p.is_dir()), None)
     if scripts_dir is None:
         click.echo("No scripts/ directory found — nothing to migrate.")
         conn.close()
         return
 
-    migration_scripts = sorted(
-        _glob.glob(str(scripts_dir / "migrate_*.py"))
-    )
+    migration_scripts = sorted(_glob.glob(str(scripts_dir / "migrate_*.py")))
     if not migration_scripts:
         click.echo("No migration scripts found.")
         conn.close()
@@ -4441,8 +4568,6 @@ def db_repair(db_path, yes):
     """
     import sqlite3 as _sqlite3
 
-    from sio.core.db.schema import PartialMigrationError
-
     conn = _sqlite3.connect(db_path)
     try:
         rows = conn.execute(
@@ -4463,17 +4588,13 @@ def db_repair(db_path, yes):
         click.echo(f"  version={version}: {desc!r}")
 
     if not yes:
-        confirmed = click.confirm(
-            "Mark all as 'failed'? This allows SIO to start again."
-        )
+        confirmed = click.confirm("Mark all as 'failed'? This allows SIO to start again.")
         if not confirmed:
             click.echo("Repair cancelled.")
             conn.close()
             return
 
-    conn.execute(
-        "UPDATE schema_version SET status='failed' WHERE status='applying'"
-    )
+    conn.execute("UPDATE schema_version SET status='failed' WHERE status='applying'")
     conn.commit()
     conn.close()
     click.echo(f"Marked {len(rows)} migration(s) as 'failed'. SIO can now start.")

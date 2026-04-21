@@ -53,28 +53,13 @@ class TestCountMeaningfulLines:
         assert count_meaningful_lines(f) == 2
 
     def test_excludes_multiline_html_comments(self, tmp_path: Path):
-        content = (
-            "Line before\n"
-            "<!--\n"
-            "This entire\n"
-            "block is\n"
-            "a comment\n"
-            "-->\n"
-            "Line after\n"
-        )
+        content = "Line before\n<!--\nThis entire\nblock is\na comment\n-->\nLine after\n"
         f = _write_md(tmp_path / "rules.md", content)
         assert count_meaningful_lines(f) == 2
 
     def test_mixed_blanks_and_comments(self, tmp_path: Path):
         content = (
-            "# Title\n"
-            "\n"
-            "Real rule one\n"
-            "<!-- comment -->\n"
-            "\n"
-            "Real rule two\n"
-            "   \n"
-            "Real rule three\n"
+            "# Title\n\nReal rule one\n<!-- comment -->\n\nReal rule two\n   \nReal rule three\n"
         )
         f = _write_md(tmp_path / "rules.md", content)
         assert count_meaningful_lines(f) == 4  # Title + 3 rules
@@ -249,20 +234,14 @@ class TestTriggerConsolidation:
         assert "Always run tests before committing" in new_content
 
     def test_no_merge_when_blocks_dissimilar(self, tmp_path: Path):
-        content = (
-            "Never use SELECT *\n"
-            "\n"
-            "Always run tests before committing\n"
-        )
+        content = "Never use SELECT *\n\nAlways run tests before committing\n"
         f = _write_md(tmp_path / "CLAUDE.md", content)
         config = SIOConfig(dedup_threshold=0.99)  # Very high threshold
 
         rng = np.random.default_rng(42)
         embs = {
             "Never use SELECT *": rng.random(384).astype(np.float32),
-            "Always run tests before committing": rng.random(384).astype(
-                np.float32
-            ),
+            "Always run tests before committing": rng.random(384).astype(np.float32),
         }
         fake = _FakeBackend(embs)
 
@@ -303,9 +282,7 @@ class TestConsolidationTriggersAndBlocking:
         assert result.current_lines == 95
         assert "exceeds cap" in result.message
 
-    def test_blocked_when_consolidation_finds_no_candidates(
-        self, tmp_path: Path
-    ):
+    def test_blocked_when_consolidation_finds_no_candidates(self, tmp_path: Path):
         """File at 100 lines, consolidation fails -> effectively blocked.
 
         We simulate consolidation returning False (no merges found),
@@ -320,10 +297,7 @@ class TestConsolidationTriggersAndBlocking:
 
         # Consolidation with very high threshold should find nothing.
         rng = np.random.default_rng(42)
-        embs = {
-            f"Unique rule {i}": rng.random(384).astype(np.float32)
-            for i in range(100)
-        }
+        embs = {f"Unique rule {i}": rng.random(384).astype(np.float32) for i in range(100)}
         fake = _FakeBackend(embs)
 
         with patch("sio.applier.budget._get_backend", return_value=fake):

@@ -48,10 +48,7 @@ def detect_undo(
     undo_actions = ("git checkout", "git revert", "git reset", "git restore")
     current_action = (current["actual_action"] or "").lower()
     current_message = (current["user_message"] or "").lower()
-    if not any(
-        undo in current_action or undo in current_message
-        for undo in undo_actions
-    ):
+    if not any(undo in current_action or undo in current_message for undo in undo_actions):
         return False
 
     # Check time window (30 seconds)

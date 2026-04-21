@@ -101,9 +101,7 @@ def _update(
                 h["last_session_id"] = session_id
         else:
             h["last_error"] = now
-            h["last_error_message"] = (
-                f"{type(error).__name__}: {error}"
-            )
+            h["last_error_message"] = f"{type(error).__name__}: {error}"
             h["consecutive_failures"] = h.get("consecutive_failures", 0) + 1
 
         # Top-level updated_at

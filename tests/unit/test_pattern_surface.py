@@ -72,9 +72,7 @@ class TestSurfacePatternsOutput:
 
         if patterns:
             total_count = sum(p["count"] for p in patterns)
-            assert total_count >= 4, (
-                "Total pattern count should account for all failures"
-            )
+            assert total_count >= 4, "Total pattern count should account for all failures"
 
     def test_affected_sessions_are_distinct(self, tmp_db, sample_invocation):
         """affected_sessions contains unique session IDs only."""
@@ -172,9 +170,7 @@ class TestPatternThresholdFiltering:
         )
         patterns = surface_patterns(tmp_db, skill_name="Read", min_count=3)
 
-        assert patterns == [], (
-            "Patterns with count below min_count should be excluded"
-        )
+        assert patterns == [], "Patterns with count below min_count should be excluded"
 
     def test_at_threshold_included(self, tmp_db, sample_invocation):
         """Patterns with exactly min_count occurrences are included."""
@@ -195,9 +191,7 @@ class TestPatternThresholdFiltering:
         )
         patterns = surface_patterns(tmp_db, skill_name="Read", min_count=3)
 
-        assert len(patterns) >= 1, (
-            "Patterns at exactly min_count should be included"
-        )
+        assert len(patterns) >= 1, "Patterns at exactly min_count should be included"
 
     def test_custom_threshold(self, tmp_db, sample_invocation):
         """min_count parameter controls the filtering threshold."""
@@ -266,7 +260,8 @@ class TestPatternSummaryContent:
                     "labeled_at": datetime.now(timezone.utc).isoformat(),
                 }
                 for i in range(4)
-            ] + [
+            ]
+            + [
                 {
                     "session_id": f"sess-bash-{i}",
                     "behavior_type": "skill",

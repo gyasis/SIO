@@ -91,6 +91,7 @@ class _InstrumentedModule:
         # Only patch if dspy.Assert actually exists; otherwise run module directly
         try:
             import dspy as _dspy  # noqa: PLC0415
+
             if hasattr(_dspy, "Assert"):
                 with _mock.patch("dspy.Assert", side_effect=_counting_assert):
                     result = self._module(*args, **kwargs)
@@ -107,6 +108,7 @@ def _get_dspy_assert():
     """Return the real dspy.Assert function, or None if DSPy unavailable or lacks it."""
     try:
         import dspy  # noqa: PLC0415
+
         return getattr(dspy, "Assert", None)
     except ImportError:
         return None

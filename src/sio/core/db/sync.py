@@ -7,6 +7,7 @@ Environment overrides (used in tests):
   SIO_DB_PATH          — override canonical DB path
   SIO_PLATFORM_DB_PATH — override per-platform DB path (claude-code only)
 """
+
 from __future__ import annotations
 
 import os
@@ -19,6 +20,7 @@ from sio.core.db.connect import open_db
 # ---------------------------------------------------------------------------
 # Path resolution (honours env overrides for testing)
 # ---------------------------------------------------------------------------
+
 
 def _sio_db_path() -> Path:
     env = os.environ.get("SIO_DB_PATH")
@@ -42,6 +44,7 @@ PLATFORM_DBS = {
 # ---------------------------------------------------------------------------
 # Sync helpers
 # ---------------------------------------------------------------------------
+
 
 def _rebuild_paths() -> tuple[Path, dict[str, Path]]:
     """Re-evaluate path constants; called after env-var mutation in tests."""
@@ -73,15 +76,9 @@ def sync_behavior_invocations(since_timestamp: str | None = None) -> dict[str, i
                 continue
 
             alias = f"p_{platform.replace('-', '_')}"
-            sio_conn.execute(
-                f"ATTACH DATABASE '{platform_db}' AS {alias}"
-            )
+            sio_conn.execute(f"ATTACH DATABASE '{platform_db}' AS {alias}")
             try:
-                where = (
-                    f" WHERE timestamp >= '{since_timestamp}'"
-                    if since_timestamp
-                    else ""
-                )
+                where = f" WHERE timestamp >= '{since_timestamp}'" if since_timestamp else ""
                 cursor = sio_conn.execute(
                     f"""
                     INSERT OR IGNORE INTO behavior_invocations
@@ -106,6 +103,7 @@ def sync_behavior_invocations(since_timestamp: str | None = None) -> dict[str, i
 # ---------------------------------------------------------------------------
 # Drift computation (supports sio status SC-009)
 # ---------------------------------------------------------------------------
+
 
 def compute_sync_drift() -> dict[str, dict]:
     """Compute sync drift between per-platform DBs and the canonical sio.db.
@@ -151,9 +149,7 @@ def compute_sync_drift() -> dict[str, dict]:
         try:
             conn = sqlite3.connect(str(db_path))
             conn.execute("PRAGMA journal_mode=WAL")
-            row = conn.execute(
-                "SELECT COUNT(*) FROM behavior_invocations"
-            ).fetchone()
+            row = conn.execute("SELECT COUNT(*) FROM behavior_invocations").fetchone()
             conn.close()
             per_platform = row[0] if row else 0
         except Exception:

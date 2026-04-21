@@ -99,7 +99,15 @@ class TestParseLineByLine:
 
     def test_all_returned_dicts_have_required_keys(self, tmp_path: Path) -> None:
         """Every returned dict exposes the full seven-key schema."""
-        required_keys = {"role", "content", "tool_name", "tool_input", "tool_output", "error", "timestamp"}
+        required_keys = {
+            "role",
+            "content",
+            "tool_name",
+            "tool_input",
+            "tool_output",
+            "error",
+            "timestamp",
+        }
         wire_objects = [
             _human("Hello", _TS_BASE.format(0)),
             _assistant("Hi", _TS_BASE.format(1)),
@@ -152,7 +160,13 @@ class TestExtractToolMetadata:
         path = tmp_path / "session.jsonl"
         _write_lines(
             path,
-            [json.dumps(_tool_use("Read", {"file_path": "/tmp/foo.py"}, "file body", _TS_BASE.format(0)))],
+            [
+                json.dumps(
+                    _tool_use(
+                        "Read", {"file_path": "/tmp/foo.py"}, "file body", _TS_BASE.format(0)
+                    )
+                )
+            ],
         )
 
         result = parse_jsonl(path)
@@ -182,7 +196,11 @@ class TestExtractToolMetadata:
         path = tmp_path / "session.jsonl"
         _write_lines(
             path,
-            [json.dumps(_tool_use("Bash", {"command": "ls"}, "main.py\nutils.py", _TS_BASE.format(0)))],
+            [
+                json.dumps(
+                    _tool_use("Bash", {"command": "ls"}, "main.py\nutils.py", _TS_BASE.format(0))
+                )
+            ],
         )
 
         result = parse_jsonl(path)
@@ -250,7 +268,11 @@ class TestExtractErrors:
         path = tmp_path / "session.jsonl"
         _write_lines(
             path,
-            [json.dumps(_tool_use("Read", {"file_path": "/ok.py"}, "content", _TS_BASE.format(0)))],
+            [
+                json.dumps(
+                    _tool_use("Read", {"file_path": "/ok.py"}, "content", _TS_BASE.format(0))
+                )
+            ],
         )
 
         result = parse_jsonl(path)

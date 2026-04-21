@@ -21,20 +21,28 @@ from click.testing import CliRunner
 
 def _mock_db_conn(conn):
     """Return a callable that mimics _db_conn(db_path) context manager."""
+
     @contextmanager
     def _inner(_db_path=None):
         yield conn
+
     return _inner
+
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
 
 _LOW_IMPACT_SURFACES = frozenset({"claude_md_rule", "agent_profile"})
-_HIGH_IMPACT_SURFACES = frozenset({
-    "hook_config", "mcp_config", "settings_config",
-    "project_config", "skill_update",
-})
+_HIGH_IMPACT_SURFACES = frozenset(
+    {
+        "hook_config",
+        "mcp_config",
+        "settings_config",
+        "project_config",
+        "skill_update",
+    }
+)
 
 
 @pytest.fixture()
@@ -102,6 +110,7 @@ def mock_config():
 def in_memory_db():
     """In-memory SQLite DB with SIO schema."""
     from sio.core.db.schema import init_db
+
     conn = init_db(":memory:")
     return conn
 
@@ -183,7 +192,11 @@ class TestAutoMode:
 
     @patch("sio.suggestions.dspy_generator.generate_dspy_suggestion")
     def test_auto_generates_suggestion_dict(
-        self, mock_gen, sample_pattern, sample_dataset, mock_config,
+        self,
+        mock_gen,
+        sample_pattern,
+        sample_dataset,
+        mock_config,
     ):
         """Auto mode returns a suggestion dict with mode='auto' and status='auto_approved'."""
         from sio.suggestions.dspy_generator import generate_auto_suggestion
@@ -206,7 +219,9 @@ class TestAutoMode:
         }
 
         result = generate_auto_suggestion(
-            sample_pattern, sample_dataset, mock_config,
+            sample_pattern,
+            sample_dataset,
+            mock_config,
         )
 
         assert result is not None
@@ -217,7 +232,11 @@ class TestAutoMode:
 
     @patch("sio.suggestions.dspy_generator.generate_dspy_suggestion")
     def test_auto_falls_back_on_dspy_error(
-        self, mock_gen, sample_pattern, sample_dataset, mock_config,
+        self,
+        mock_gen,
+        sample_pattern,
+        sample_dataset,
+        mock_config,
     ):
         """If DSPy generation raises, auto mode returns None."""
         from sio.suggestions.dspy_generator import generate_auto_suggestion
@@ -225,7 +244,9 @@ class TestAutoMode:
         mock_gen.side_effect = RuntimeError("LLM unavailable")
 
         result = generate_auto_suggestion(
-            sample_pattern, sample_dataset, mock_config,
+            sample_pattern,
+            sample_dataset,
+            mock_config,
         )
         assert result is None
 
@@ -240,7 +261,12 @@ class TestHITLFlow:
 
     @patch("sio.suggestions.dspy_generator.generate_dspy_suggestion")
     def test_hitl_approve_flow(
-        self, mock_gen, sample_pattern, sample_dataset, mock_config, in_memory_db,
+        self,
+        mock_gen,
+        sample_pattern,
+        sample_dataset,
+        mock_config,
+        in_memory_db,
     ):
         """HITL flow with all 'y' approvals returns a suggestion dict."""
         from sio.suggestions.dspy_generator import generate_hitl_suggestion
@@ -282,7 +308,12 @@ class TestHITLFlow:
 
     @patch("sio.suggestions.dspy_generator.generate_dspy_suggestion")
     def test_hitl_reject_at_dataset_summary(
-        self, mock_gen, sample_pattern, sample_dataset, mock_config, in_memory_db,
+        self,
+        mock_gen,
+        sample_pattern,
+        sample_dataset,
+        mock_config,
+        in_memory_db,
     ):
         """User rejects at dataset summary stage => returns None."""
         from sio.suggestions.dspy_generator import generate_hitl_suggestion
@@ -303,7 +334,12 @@ class TestHITLFlow:
 
     @patch("sio.suggestions.dspy_generator.generate_dspy_suggestion")
     def test_hitl_reject_at_suggestion_review(
-        self, mock_gen, sample_pattern, sample_dataset, mock_config, in_memory_db,
+        self,
+        mock_gen,
+        sample_pattern,
+        sample_dataset,
+        mock_config,
+        in_memory_db,
     ):
         """User approves dataset but rejects suggestion => returns None."""
         from sio.suggestions.dspy_generator import generate_hitl_suggestion
@@ -339,7 +375,12 @@ class TestHITLFlow:
 
     @patch("sio.suggestions.dspy_generator.generate_dspy_suggestion")
     def test_hitl_dspy_failure_returns_none(
-        self, mock_gen, sample_pattern, sample_dataset, mock_config, in_memory_db,
+        self,
+        mock_gen,
+        sample_pattern,
+        sample_dataset,
+        mock_config,
+        in_memory_db,
     ):
         """If DSPy generation fails during HITL, returns None gracefully."""
         from sio.suggestions.dspy_generator import generate_hitl_suggestion
@@ -380,7 +421,9 @@ class TestDatasetInspect:
             (pattern_id_slug, "Read tool fails", "Read", 12, 4, now, now, 0.85, now, now),
         )
         conn.commit()
-        pat_row_id = conn.execute("SELECT id FROM patterns WHERE pattern_id = ?", (pattern_id_slug,)).fetchone()[0]
+        pat_row_id = conn.execute(
+            "SELECT id FROM patterns WHERE pattern_id = ?", (pattern_id_slug,)
+        ).fetchone()[0]
 
         # Insert error records
         for i in range(5):
@@ -390,8 +433,15 @@ class TestDatasetInspect:
                 "tool_name, error_text, user_message, error_type, mined_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    f"sess-{i:03d}", now, "specstory", f"file-{i}.md",
-                    "Read", f"Error #{i}", f"User msg #{i}", etype, now,
+                    f"sess-{i:03d}",
+                    now,
+                    "specstory",
+                    f"file-{i}.md",
+                    "Read",
+                    f"Error #{i}",
+                    f"User msg #{i}",
+                    etype,
+                    now,
                 ),
             )
         conn.commit()
@@ -420,9 +470,17 @@ class TestDatasetInspect:
                 "pattern_summary, target_surface, rule_title, prevention_instructions, "
                 "rationale, label, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    pattern_id_slug, "[]", "tool_failure",
-                    "Read tool errors", "claude_md_rule", "Fix Read",
-                    "Check paths", "Errors seen", label, "agent", now,
+                    pattern_id_slug,
+                    "[]",
+                    "tool_failure",
+                    "Read tool errors",
+                    "claude_md_rule",
+                    "Fix Read",
+                    "Check paths",
+                    "Errors seen",
+                    label,
+                    "agent",
+                    now,
                 ),
             )
         conn.commit()
@@ -436,8 +494,10 @@ class TestDatasetInspect:
         pattern_slug = self._setup_db_with_data(in_memory_db)
 
         runner = CliRunner()
-        with patch("sio.cli.main._db_conn", _mock_db_conn(in_memory_db)), \
-             patch("os.path.exists", return_value=True):
+        with (
+            patch("sio.cli.main._db_conn", _mock_db_conn(in_memory_db)),
+            patch("os.path.exists", return_value=True),
+        ):
             result = runner.invoke(cli, ["datasets", "inspect", pattern_slug])
 
         assert result.exit_code == 0, f"CLI error: {result.output}"
@@ -452,8 +512,10 @@ class TestDatasetInspect:
         pattern_slug = self._setup_db_with_data(in_memory_db)
 
         runner = CliRunner()
-        with patch("sio.cli.main._db_conn", _mock_db_conn(in_memory_db)), \
-             patch("os.path.exists", return_value=True):
+        with (
+            patch("sio.cli.main._db_conn", _mock_db_conn(in_memory_db)),
+            patch("os.path.exists", return_value=True),
+        ):
             result = runner.invoke(cli, ["datasets", "inspect", pattern_slug])
 
         assert result.exit_code == 0, f"CLI error: {result.output}"
@@ -464,8 +526,10 @@ class TestDatasetInspect:
         from sio.cli.main import cli
 
         runner = CliRunner()
-        with patch("sio.cli.main._db_conn", _mock_db_conn(in_memory_db)), \
-             patch("os.path.exists", return_value=True):
+        with (
+            patch("sio.cli.main._db_conn", _mock_db_conn(in_memory_db)),
+            patch("os.path.exists", return_value=True),
+        ):
             result = runner.invoke(cli, ["datasets", "inspect", "nonexistent-pattern"])
 
         assert result.exit_code == 0
@@ -478,8 +542,10 @@ class TestDatasetInspect:
         pattern_slug = self._setup_db_with_data(in_memory_db)
 
         runner = CliRunner()
-        with patch("sio.cli.main._db_conn", _mock_db_conn(in_memory_db)), \
-             patch("os.path.exists", return_value=True):
+        with (
+            patch("sio.cli.main._db_conn", _mock_db_conn(in_memory_db)),
+            patch("os.path.exists", return_value=True),
+        ):
             result = runner.invoke(cli, ["datasets", "inspect", pattern_slug])
 
         assert result.exit_code == 0, f"CLI error: {result.output}"
@@ -493,8 +559,10 @@ class TestDatasetInspect:
         pattern_slug = self._setup_db_with_data(in_memory_db)
 
         runner = CliRunner()
-        with patch("sio.cli.main._db_conn", _mock_db_conn(in_memory_db)), \
-             patch("os.path.exists", return_value=True):
+        with (
+            patch("sio.cli.main._db_conn", _mock_db_conn(in_memory_db)),
+            patch("os.path.exists", return_value=True),
+        ):
             result = runner.invoke(cli, ["datasets", "inspect", pattern_slug])
 
         assert result.exit_code == 0, f"CLI error: {result.output}"

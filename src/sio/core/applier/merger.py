@@ -31,6 +31,7 @@ _MERGE_THRESHOLD = 0.90
 # Exception
 # ---------------------------------------------------------------------------
 
+
 class MergeRequiresConsent(Exception):
     """Raised when two rules are similar but ``merge_consent`` was not granted.
 
@@ -53,6 +54,7 @@ class MergeRequiresConsent(Exception):
 # ---------------------------------------------------------------------------
 # Similarity computation (lightweight — no fastembed import required for tests)
 # ---------------------------------------------------------------------------
+
 
 def _tokenize(text: str) -> set[str]:
     """Return a bag-of-words set (lowercased, alpha-only tokens)."""
@@ -90,12 +92,14 @@ def _fastembed_similarity(text_a: str, text_b: str) -> float:
     # Try the project embedder first (also covered by fake_fastembed fixture)
     try:
         from sio.core.clustering.embedder import embed_texts  # noqa: PLC0415
+
         vecs = embed_texts([text_a, text_b])
         va, vb = np.array(vecs[0]), np.array(vecs[1])
     except (ImportError, AttributeError, Exception):
         # Fall back to direct fastembed
         try:
             from fastembed import TextEmbedding  # noqa: PLC0415
+
             model = TextEmbedding()
             vecs = list(model.embed([text_a, text_b]))
             va, vb = np.array(vecs[0]), np.array(vecs[1])
@@ -112,12 +116,14 @@ def _fastembed_similarity(text_a: str, text_b: str) -> float:
 # Merge logic
 # ---------------------------------------------------------------------------
 
+
 def _do_merge(existing_rule: str, new_rule: str) -> str:
     """Produce a hybrid rule string from two similar rules.
 
     Strategy: concatenate with a separator, dedup sentences, normalise.
     This is a simple baseline; Wave 10 may upgrade to LLM-assisted merge.
     """
+
     # Split into sentences and deduplicate while preserving order
     def _sentences(text: str) -> list[str]:
         parts = re.split(r"(?<=[.!?])\s+", text.strip())
@@ -164,7 +170,9 @@ def merge_rules(
     sim = _compute_similarity(existing_rule, new_rule)
     logger.debug(
         "merge_rules similarity=%.3f threshold=%.3f consent=%s",
-        sim, _MERGE_THRESHOLD, merge_consent,
+        sim,
+        _MERGE_THRESHOLD,
+        merge_consent,
     )
 
     # Below threshold — no merge needed; return new rule verbatim
@@ -178,6 +186,7 @@ def merge_rules(
     if interactive:
         try:
             import click  # noqa: PLC0415
+
             confirmed = click.confirm(
                 f"The new rule is {sim:.0%} similar to an existing rule. Merge them?",
                 default=False,

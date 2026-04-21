@@ -46,8 +46,7 @@ def save_module(
 
     # Deactivate previous and insert new in a single transaction
     conn.execute(
-        "UPDATE optimized_modules SET is_active = 0 "
-        "WHERE module_type = ? AND is_active = 1",
+        "UPDATE optimized_modules SET is_active = 0 WHERE module_type = ? AND is_active = 1",
         (module_type,),
     )
     cursor = conn.execute(
@@ -55,8 +54,15 @@ def save_module(
         "(module_type, optimizer_used, file_path, training_count, "
         "metric_before, metric_after, is_active, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
-        (module_type, optimizer_used, file_path, training_count,
-         metric_before, metric_after, now.isoformat()),
+        (
+            module_type,
+            optimizer_used,
+            file_path,
+            training_count,
+            metric_before,
+            metric_after,
+            now.isoformat(),
+        ),
     )
     conn.commit()  # single commit for both operations
     return cursor.lastrowid
@@ -104,8 +110,7 @@ def deactivate_previous(conn: sqlite3.Connection, module_type: str) -> None:
         module_type: The module type to deactivate.
     """
     conn.execute(
-        "UPDATE optimized_modules SET is_active = 0 "
-        "WHERE module_type = ? AND is_active = 1",
+        "UPDATE optimized_modules SET is_active = 0 WHERE module_type = ? AND is_active = 1",
         (module_type,),
     )
     conn.commit()

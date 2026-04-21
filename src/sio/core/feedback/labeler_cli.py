@@ -14,7 +14,9 @@ def main():
     parser = argparse.ArgumentParser(description="Label latest invocation")
     parser.add_argument("--session", required=True, help="Session ID")
     parser.add_argument(
-        "--signal", required=True, choices=["++", "--"],
+        "--signal",
+        required=True,
+        choices=["++", "--"],
         help="Satisfaction signal",
     )
     parser.add_argument("--note", default=None, help="Optional note")

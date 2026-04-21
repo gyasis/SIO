@@ -309,7 +309,9 @@ def sample_specstory_file(tmp_path: Path):
             lines += [
                 f"**Tool call: {tool_label}**",
                 "```json",
-                '{"command": "some_failing_command"}' if tool_label == "Bash" else '{"file_path": "/tmp/missing.py"}',
+                '{"command": "some_failing_command"}'
+                if tool_label == "Bash"
+                else '{"file_path": "/tmp/missing.py"}',
                 "```",
                 "",
                 f"**{tool_label} output (error):**",
@@ -561,6 +563,7 @@ def tmp_platform_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         from sio.core.db.schema import create_platform_schema
+
         create_platform_schema(path)
     except (ImportError, AttributeError):
         # create_platform_schema not yet implemented; just create an empty WAL DB.
@@ -617,6 +620,7 @@ def fake_fastembed(monkeypatch: pytest.MonkeyPatch) -> None:
     ):
         try:
             import importlib
+
             mod = importlib.import_module(module_path)
             monkeypatch.setattr(mod, "embed_texts", _fake_embed)
         except (ImportError, AttributeError):
@@ -625,6 +629,7 @@ def fake_fastembed(monkeypatch: pytest.MonkeyPatch) -> None:
     # Patch merger similarity so tests get cosine=1.0 (all-ones → identical)
     try:
         import importlib
+
         merger_mod = importlib.import_module("sio.core.applier.merger")
         monkeypatch.setattr(merger_mod, "_compute_similarity", lambda a, b: 1.0)
     except (ImportError, AttributeError):
@@ -641,6 +646,7 @@ def freeze_utc_now(monkeypatch: pytest.MonkeyPatch) -> str:
 
     try:
         import sio.core.util.time as _time_mod
+
         monkeypatch.setattr(_time_mod, "utc_now_iso", lambda: FROZEN)
     except ImportError:
         pass  # Module not yet implemented; fixture is a no-op in that case.

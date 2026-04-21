@@ -31,15 +31,11 @@ def approve(conn: sqlite3.Connection, gt_id: int, note: str | None = None) -> bo
         True if the row existed and was updated.
     """
     # Check row exists
-    row = conn.execute(
-        "SELECT id FROM ground_truth WHERE id = ?", (gt_id,)
-    ).fetchone()
+    row = conn.execute("SELECT id FROM ground_truth WHERE id = ?", (gt_id,)).fetchone()
     if row is None:
         return False
 
-    update_ground_truth_label(
-        conn, gt_id, label="positive", source="approved", user_note=note
-    )
+    update_ground_truth_label(conn, gt_id, label="positive", source="approved", user_note=note)
     return True
 
 
@@ -56,15 +52,11 @@ def reject(conn: sqlite3.Connection, gt_id: int, note: str | None = None) -> boo
     Returns:
         True if the row existed and was updated.
     """
-    row = conn.execute(
-        "SELECT id FROM ground_truth WHERE id = ?", (gt_id,)
-    ).fetchone()
+    row = conn.execute("SELECT id FROM ground_truth WHERE id = ?", (gt_id,)).fetchone()
     if row is None:
         return False
 
-    update_ground_truth_label(
-        conn, gt_id, label="negative", source="rejected", user_note=note
-    )
+    update_ground_truth_label(conn, gt_id, label="negative", source="rejected", user_note=note)
     return True
 
 
@@ -87,9 +79,7 @@ def edit(conn: sqlite3.Connection, gt_id: int, new_content: dict) -> int:
     Raises:
         ValueError: If the original row does not exist.
     """
-    row = conn.execute(
-        "SELECT * FROM ground_truth WHERE id = ?", (gt_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM ground_truth WHERE id = ?", (gt_id,)).fetchone()
     if row is None:
         raise ValueError(f"Ground truth row {gt_id} not found")
 

@@ -20,29 +20,33 @@ from pathlib import Path
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Import helpers
 # ---------------------------------------------------------------------------
 
+
 def _import_heartbeat():
     from sio.adapters.claude_code.hooks import _heartbeat  # noqa: PLC0415
+
     return _heartbeat
 
 
 def _import_record_success():
     from sio.adapters.claude_code.hooks._heartbeat import record_success  # noqa: PLC0415
+
     return record_success
 
 
 def _import_record_failure():
     from sio.adapters.claude_code.hooks._heartbeat import record_failure  # noqa: PLC0415
+
     return record_failure
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def health_file(tmp_path: Path, monkeypatch) -> Path:
@@ -56,6 +60,7 @@ def health_file(tmp_path: Path, monkeypatch) -> Path:
 # ---------------------------------------------------------------------------
 # 1. record_success — increments counter, sets last_success, resets failures
 # ---------------------------------------------------------------------------
+
 
 def test_record_success_increments_total_invocations(health_file: Path):
     """record_success increments total_invocations on each call."""
@@ -103,6 +108,7 @@ def test_record_success_resets_consecutive_failures(health_file: Path):
 # 2. record_failure — increments consecutive_failures, records error message
 # ---------------------------------------------------------------------------
 
+
 def test_record_failure_increments_consecutive_failures(health_file: Path):
     """record_failure increments consecutive_failures on each call."""
     record_failure = _import_record_failure()
@@ -143,6 +149,7 @@ def test_record_failure_sets_last_error_timestamp(health_file: Path):
 # 3. Three consecutive failures → consecutive_failures == 3
 # ---------------------------------------------------------------------------
 
+
 def test_three_consecutive_failures(health_file: Path):
     """After 3 consecutive record_failure calls, consecutive_failures == 3."""
     record_failure = _import_record_failure()
@@ -157,6 +164,7 @@ def test_three_consecutive_failures(health_file: Path):
 # ---------------------------------------------------------------------------
 # 4. Success after failures → consecutive_failures resets to 0
 # ---------------------------------------------------------------------------
+
 
 def test_success_after_failures_resets_counter(health_file: Path):
     """Success after failures resets consecutive_failures to 0 exactly."""
@@ -175,6 +183,7 @@ def test_success_after_failures_resets_counter(health_file: Path):
 # 5. total_invocations monotonic across success + failure calls
 # ---------------------------------------------------------------------------
 
+
 def test_total_invocations_monotonic(health_file: Path):
     """total_invocations increments on both success and failure calls."""
     record_success = _import_record_success()
@@ -192,6 +201,7 @@ def test_total_invocations_monotonic(health_file: Path):
 # 6. schema_version: 1 in output JSON
 # ---------------------------------------------------------------------------
 
+
 def test_schema_version_in_output(health_file: Path):
     """The output JSON must contain schema_version == 1."""
     record_success = _import_record_success()
@@ -207,6 +217,7 @@ def test_schema_version_in_output(health_file: Path):
 # 7. updated_at is set at top level
 # ---------------------------------------------------------------------------
 
+
 def test_updated_at_present(health_file: Path):
     """The output JSON must contain a top-level updated_at field."""
     record_success = _import_record_success()
@@ -220,9 +231,8 @@ def test_updated_at_present(health_file: Path):
 # 8. Atomic write: crash during _update leaves previous valid JSON intact
 # ---------------------------------------------------------------------------
 
-def test_atomic_write_crash_leaves_previous_valid_json(
-    health_file: Path, monkeypatch
-):
+
+def test_atomic_write_crash_leaves_previous_valid_json(health_file: Path, monkeypatch):
     """If os.replace crashes mid-write, the previous valid JSON is still readable."""
     record_success = _import_record_success()
 
@@ -254,6 +264,7 @@ def test_atomic_write_crash_leaves_previous_valid_json(
 # ---------------------------------------------------------------------------
 # 9. Multiple hook types tracked independently
 # ---------------------------------------------------------------------------
+
 
 def test_multiple_hook_types_tracked_independently(health_file: Path):
     """Different hook names are tracked in separate hook entries."""

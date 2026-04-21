@@ -25,7 +25,9 @@ _ALLOWED_ROOTS: list[Path] = [
 
 
 def _validate_target_path(
-    path: Path, *, extra_roots: tuple[Path, ...] = (),
+    path: Path,
+    *,
+    extra_roots: tuple[Path, ...] = (),
 ) -> str | None:
     """Return an error message if path is outside allowed roots or cwd."""
     resolved = path.resolve()
@@ -67,20 +69,24 @@ def _parse_rule_blocks(text: str) -> list[dict]:
 
         if is_blank:
             if current_lines:
-                blocks.append({
-                    "text": "\n".join(current_lines),
-                    "start_line": start_line,
-                    "end_line": i - 1,
-                })
+                blocks.append(
+                    {
+                        "text": "\n".join(current_lines),
+                        "start_line": start_line,
+                        "end_line": i - 1,
+                    }
+                )
                 current_lines = []
             continue
 
         if is_heading and current_lines:
-            blocks.append({
-                "text": "\n".join(current_lines),
-                "start_line": start_line,
-                "end_line": i - 1,
-            })
+            blocks.append(
+                {
+                    "text": "\n".join(current_lines),
+                    "start_line": start_line,
+                    "end_line": i - 1,
+                }
+            )
             current_lines = []
 
         if not current_lines:
@@ -88,11 +94,13 @@ def _parse_rule_blocks(text: str) -> list[dict]:
         current_lines.append(line)
 
     if current_lines:
-        blocks.append({
-            "text": "\n".join(current_lines),
-            "start_line": start_line,
-            "end_line": len(lines) - 1,
-        })
+        blocks.append(
+            {
+                "text": "\n".join(current_lines),
+                "start_line": start_line,
+                "end_line": len(lines) - 1,
+            }
+        )
 
     return blocks
 
@@ -148,10 +156,7 @@ def _merge_texts(existing: str, proposed: str) -> str:
         base, other = proposed, existing
 
     base_lines_set = set(ln.strip() for ln in base.splitlines())
-    extra = [
-        ln for ln in other.splitlines()
-        if ln.strip() and ln.strip() not in base_lines_set
-    ]
+    extra = [ln for ln in other.splitlines() if ln.strip() and ln.strip() not in base_lines_set]
     if extra:
         return base + "\n" + "\n".join(extra)
     return base
@@ -187,9 +192,7 @@ def apply_change(
     if config is None:
         config = load_config()
 
-    row = db.execute(
-        "SELECT * FROM suggestions WHERE id = ?", (suggestion_id,)
-    ).fetchone()
+    row = db.execute("SELECT * FROM suggestions WHERE id = ?", (suggestion_id,)).fetchone()
 
     if row is None:
         return {"success": False, "reason": "Suggestion not found"}
@@ -199,10 +202,7 @@ def apply_change(
     if suggestion["status"] not in ("approved", "auto_approved"):
         return {
             "success": False,
-            "reason": (
-                f"Suggestion is not approved "
-                f"(status: {suggestion['status']})"
-            ),
+            "reason": (f"Suggestion is not approved (status: {suggestion['status']})"),
         }
 
     target_path = Path(suggestion["target_file"])
@@ -216,11 +216,11 @@ def apply_change(
     # ---------------------------------------------------------------
     # Budget check (T040): verify file has room before writing
     # ---------------------------------------------------------------
-    new_rule_lines = sum(
-        1 for line in proposed_change.splitlines() if line.strip()
-    )
+    new_rule_lines = sum(1 for line in proposed_change.splitlines() if line.strip())
     budget_result: BudgetResult = check_budget(
-        target_path, new_rule_lines, config,
+        target_path,
+        new_rule_lines,
+        config,
     )
     consolidation_triggered = False
 
@@ -244,7 +244,9 @@ def apply_change(
         if merged:
             # Re-check after consolidation
             budget_result = check_budget(
-                target_path, new_rule_lines, config,
+                target_path,
+                new_rule_lines,
+                config,
             )
 
         if budget_result.status in ("consolidate", "blocked"):
@@ -276,7 +278,9 @@ def apply_change(
     if diff_before.strip() and config is not None:
         existing_blocks = _parse_rule_blocks(diff_before)
         merge_result = _find_best_merge_target(
-            proposed_change, existing_blocks, similarity_threshold,
+            proposed_change,
+            existing_blocks,
+            similarity_threshold,
         )
 
         if merge_result is not None:
@@ -287,9 +291,9 @@ def apply_change(
             # Replace the target block in the original content.
             lines = diff_before.splitlines()
             new_lines = (
-                lines[:target_block["start_line"]]
+                lines[: target_block["start_line"]]
                 + merged_text.splitlines()
-                + lines[target_block["end_line"] + 1:]
+                + lines[target_block["end_line"] + 1 :]
             )
             diff_after = "\n".join(new_lines)
             if not diff_after.endswith("\n"):
@@ -327,8 +331,7 @@ def apply_change(
         "(suggestion_id, target_file, diff_before, diff_after, "
         "applied_at, delta_type) "
         "VALUES (?, ?, ?, ?, ?, ?)",
-        (suggestion_id, str(target_path), diff_before, diff_after,
-         now, delta_type),
+        (suggestion_id, str(target_path), diff_before, diff_after, now, delta_type),
     )
     change_id = cur.lastrowid
 

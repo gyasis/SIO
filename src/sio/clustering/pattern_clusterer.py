@@ -147,9 +147,7 @@ def _unpack_centroid(blob: bytes) -> tuple[np.ndarray, bytes]:
     model_hash = blob[4:12]
     expected_size = 12 + dim * 4
     if len(blob) != expected_size:
-        raise ValueError(
-            f"BLOB size mismatch: expected {expected_size}, got {len(blob)}"
-        )
+        raise ValueError(f"BLOB size mismatch: expected {expected_size}, got {len(blob)}")
     vec = np.frombuffer(blob[12:], dtype=np.float32).copy()
     return vec, model_hash
 
@@ -174,9 +172,7 @@ def _top_error_type_term(members: list[dict]) -> str:
     Returns a slug-safe token using only ``[a-z0-9_]``.
     """
     # Try error_type first
-    types: list[str] = [
-        e.get("error_type", "") or "" for e in members
-    ]
+    types: list[str] = [e.get("error_type", "") or "" for e in members]
     counter: Counter[str] = Counter(t for t in types if t)
     if counter:
         top = counter.most_common(1)[0][0]
@@ -344,9 +340,7 @@ def _store_centroid(
             "WHERE pattern_id = ?",
             (blob, model_version, pattern_id),
         )
-        if db_conn.execute(
-            "SELECT changes()"
-        ).fetchone()[0] == 0:
+        if db_conn.execute("SELECT changes()").fetchone()[0] == 0:
             # Pattern not yet in DB — insert a minimal stub so the BLOB is stored.
             db_conn.execute(
                 "INSERT OR IGNORE INTO patterns "
@@ -410,7 +404,7 @@ def cluster_errors(
     # ---- Step 1: sort for deterministic input ordering -------------------
     sorted_errors = sorted(
         errors,
-        key=lambda e: (e.get("id") if e.get("id") is not None else float("inf")),
+        key=lambda e: e.get("id") if e.get("id") is not None else float("inf"),
     )
 
     # ---- Step 2: load stored centroids from DB (centroid reuse, T102) ----
@@ -469,9 +463,7 @@ def cluster_errors(
             # Merge into existing cluster and update centroid (incremental mean).
             clusters[best_cluster].append(i)
             n = len(clusters[best_cluster])
-            centroids[best_cluster] = (
-                centroids[best_cluster] * (n - 1) + vec
-            ) / n
+            centroids[best_cluster] = (centroids[best_cluster] * (n - 1) + vec) / n
         else:
             # Seed a new cluster.
             centroids.append(vec.copy())
@@ -495,9 +487,7 @@ def cluster_errors(
         tool_name: str | None = _most_common(tool_names)
 
         # Timestamps — sort lexicographically (ISO-8601 is sortable as str).
-        timestamps: list[str] = [
-            e["timestamp"] for e in member_errors if e.get("timestamp")
-        ]
+        timestamps: list[str] = [e["timestamp"] for e in member_errors if e.get("timestamp")]
         timestamps_sorted = sorted(timestamps)
         first_seen: str = timestamps_sorted[0] if timestamps_sorted else ""
         last_seen: str = timestamps_sorted[-1] if timestamps_sorted else ""

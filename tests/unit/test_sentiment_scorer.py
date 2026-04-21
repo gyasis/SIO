@@ -73,8 +73,7 @@ def _extract_human_scores_and_texts(
     """Extract human messages from a conversation, score them, and return
     parallel lists of (scores, texts) suitable for detect_frustration_escalation."""
     texts = [
-        m["content"] for m in messages
-        if m.get("role") in ("human", "user") and m.get("content")
+        m["content"] for m in messages if m.get("role") in ("human", "user") and m.get("content")
     ]
     scores = [score_sentiment(t) for t in texts]
     return scores, texts
@@ -104,9 +103,7 @@ class TestScoreSentimentRange:
     def test_score_within_bounds(self, message: str):
         """Every message must score within [-1.0, +1.0]."""
         score = score_sentiment(message)
-        assert -1.0 <= score <= 1.0, (
-            f"Score {score} out of bounds for message: {message!r}"
-        )
+        assert -1.0 <= score <= 1.0, f"Score {score} out of bounds for message: {message!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -132,9 +129,7 @@ class TestPositiveMessages:
     )
     def test_positive_message_scores_positive(self, message: str):
         score = score_sentiment(message)
-        assert score > 0, (
-            f"Expected positive score for {message!r}, got {score}"
-        )
+        assert score > 0, f"Expected positive score for {message!r}, got {score}"
 
 
 # ---------------------------------------------------------------------------
@@ -160,9 +155,7 @@ class TestNegativeMessages:
     )
     def test_negative_message_scores_negative(self, message: str):
         score = score_sentiment(message)
-        assert score < 0, (
-            f"Expected negative score for {message!r}, got {score}"
-        )
+        assert score < 0, f"Expected negative score for {message!r}, got {score}"
 
 
 # ---------------------------------------------------------------------------

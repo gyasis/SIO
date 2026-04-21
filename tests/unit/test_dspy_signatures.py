@@ -17,18 +17,14 @@ class TestSuggestionGeneratorSignature:
         # DSPy Signatures expose fields via .input_fields (dict of InputField)
         input_names = set(SuggestionGenerator.input_fields.keys())
         expected = {"error_examples", "error_type", "pattern_summary"}
-        assert expected.issubset(input_names), (
-            f"Missing input fields: {expected - input_names}"
-        )
+        assert expected.issubset(input_names), f"Missing input fields: {expected - input_names}"
 
     def test_suggestion_generator_has_output_fields(self):
         from sio.core.dspy.signatures import SuggestionGenerator
 
         output_names = set(SuggestionGenerator.output_fields.keys())
         expected = {"target_surface", "rule_title", "prevention_instructions", "rationale"}
-        assert expected.issubset(output_names), (
-            f"Missing output fields: {expected - output_names}"
-        )
+        assert expected.issubset(output_names), f"Missing output fields: {expected - output_names}"
 
 
 class TestGroundTruthCandidateSignature:

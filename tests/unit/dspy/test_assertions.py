@@ -10,25 +10,28 @@ Tests assert (per contracts/dspy-module-api.md §6):
 Run to confirm RED before T028:
     uv run pytest tests/unit/dspy/test_assertions.py -v
 """
+
 from __future__ import annotations
 
-from unittest.mock import patch, call
-import pytest
+from unittest.mock import patch
 
 
 def _import_assertions():
     from sio.core.dspy import assertions  # noqa: PLC0415
+
     return assertions
 
 
 def _make_pred(**kwargs):
     import dspy  # noqa: PLC0415
+
     return dspy.Prediction(**kwargs)
 
 
 # ---------------------------------------------------------------------------
 # assert_rule_format tests
 # ---------------------------------------------------------------------------
+
 
 def test_assert_rule_format_empty_title_triggers_dspy_assert():
     """assert_rule_format with empty rule_title must call dspy.Assert with failure msg."""
@@ -49,10 +52,7 @@ def test_assert_rule_format_empty_title_triggers_dspy_assert():
 def test_assert_rule_format_long_body_triggers_dspy_assert():
     """assert_rule_format with rule_body having > 3 sentences triggers Assert."""
     a = _import_assertions()
-    long_body = (
-        "First sentence. Second sentence. Third sentence. "
-        "Fourth sentence. Fifth sentence."
-    )
+    long_body = "First sentence. Second sentence. Third sentence. Fourth sentence. Fifth sentence."
     pred = _make_pred(
         rule_title="Valid Title",
         rule_body=long_body,
@@ -61,9 +61,7 @@ def test_assert_rule_format_long_body_triggers_dspy_assert():
 
     with patch("dspy.Assert") as mock_assert:
         a.assert_rule_format(pred)
-        assert mock_assert.called, (
-            "dspy.Assert was not called for rule_body with > 3 sentences"
-        )
+        assert mock_assert.called, "dspy.Assert was not called for rule_body with > 3 sentences"
         # At least one call should contain "sentence" or length message
         messages = [str(c) for c in mock_assert.call_args_list]
         assert any(True for _ in messages), "dspy.Assert was called (expected)"
@@ -82,9 +80,7 @@ def test_assert_rule_format_long_body_message_mentions_sentences():
     with patch("dspy.Assert") as mock_assert:
         a.assert_rule_format(pred)
         if mock_assert.called:
-            all_messages = " ".join(
-                str(c) for c in mock_assert.call_args_list
-            )
+            all_messages = " ".join(str(c) for c in mock_assert.call_args_list)
             assert "sentence" in all_messages.lower() or "3" in all_messages, (
                 "Assert message for long body should mention sentence limit"
             )
@@ -116,6 +112,7 @@ def test_assert_rule_format_valid_pred_does_not_trigger_assert():
 # ---------------------------------------------------------------------------
 # assert_no_phi tests
 # ---------------------------------------------------------------------------
+
 
 def test_assert_no_phi_catches_ssn_in_rule_title():
     """assert_no_phi must trigger Assert when rule_title contains 'SSN'."""
@@ -188,9 +185,11 @@ def test_assert_no_phi_clean_pred_does_not_trigger():
 # Verify dspy.Assert is used (not Python assert)
 # ---------------------------------------------------------------------------
 
+
 def test_assert_rule_format_uses_dspy_assert_not_python_assert():
     """assert_rule_format source must use dspy.Assert, not bare Python assert."""
     import inspect  # noqa: PLC0415
+
     a = _import_assertions()
     source = inspect.getsource(a.assert_rule_format)
     assert "dspy.Assert" in source, (
@@ -201,8 +200,7 @@ def test_assert_rule_format_uses_dspy_assert_not_python_assert():
 def test_assert_no_phi_uses_dspy_assert_not_python_assert():
     """assert_no_phi source must use dspy.Assert, not bare Python assert."""
     import inspect  # noqa: PLC0415
+
     a = _import_assertions()
     source = inspect.getsource(a.assert_no_phi)
-    assert "dspy.Assert" in source, (
-        "assert_no_phi must use dspy.Assert, not bare Python assert"
-    )
+    assert "dspy.Assert" in source, "assert_no_phi must use dspy.Assert, not bare Python assert"

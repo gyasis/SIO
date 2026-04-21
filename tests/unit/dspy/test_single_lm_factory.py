@@ -31,7 +31,7 @@ _DIRECT_LM_CALL = re.compile(r"dspy\.LM\s*\(")
 def _resolve_src_root() -> Path:
     """Return the absolute path to src/sio/ from the project root."""
     # __file__ is tests/unit/dspy/test_single_lm_factory.py
-    tests_unit_dspy = Path(__file__).parent           # tests/unit/dspy
+    tests_unit_dspy = Path(__file__).parent  # tests/unit/dspy
     project_root = tests_unit_dspy.parent.parent.parent  # project root
     candidate = project_root / "src" / "sio"
     if not candidate.is_dir():
@@ -52,6 +52,7 @@ def _is_factory_file(py_file: Path, src_root: Path) -> bool:
 # T065-1: No direct dspy.LM( in src/ except lm_factory.py
 # ---------------------------------------------------------------------------
 
+
 def test_no_direct_dspy_lm_outside_factory():
     """Zero src/sio/**/*.py files contain dspy.LM( outside lm_factory.py (SC-022)."""
     src_root = _resolve_src_root()
@@ -68,7 +69,11 @@ def test_no_direct_dspy_lm_outside_factory():
             if _DIRECT_LM_CALL.search(line):
                 # Allow lines that are comments or docstrings
                 stripped = line.strip()
-                if stripped.startswith("#") or stripped.startswith('"""') or stripped.startswith("'''"):
+                if (
+                    stripped.startswith("#")
+                    or stripped.startswith('"""')
+                    or stripped.startswith("'''")
+                ):
                     continue
                 violations.append(
                     f"{py_file.relative_to(src_root.parent.parent)}:{lineno}: {stripped}"
@@ -86,6 +91,7 @@ def test_no_direct_dspy_lm_outside_factory():
 # T065-2: lm_factory.py itself exports the required symbols
 # ---------------------------------------------------------------------------
 
+
 def test_lm_factory_exports_required_symbols():
     """lm_factory.py must export get_task_lm, get_reflection_lm, get_adapter, configure_default."""
     from sio.core.dspy import lm_factory  # noqa: PLC0415
@@ -101,6 +107,7 @@ def test_lm_factory_exports_required_symbols():
 # ---------------------------------------------------------------------------
 # T065-3: No dspy.LM( in test files that use factories (best-effort style check)
 # ---------------------------------------------------------------------------
+
 
 def test_no_rogue_lm_construction_in_test_conftest():
     """conftest.py mock_lm fixture should not call dspy.LM() directly.
@@ -120,6 +127,7 @@ def test_no_rogue_lm_construction_in_test_conftest():
     # because conftest.py may legitimately construct mock LMs
     if matches:
         import warnings  # noqa: PLC0415
+
         warnings.warn(
             f"conftest.py contains {len(matches)} dspy.LM( call(s). "
             "Prefer MagicMock or lm_factory helpers in test fixtures.",

@@ -19,14 +19,20 @@ from __future__ import annotations
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_suggestion_generator():
     """Import SuggestionGenerator from the canonical location."""
     # Per contracts/dspy-module-api.md §3 — must live in dspy_generator.py
     from sio.suggestions.dspy_generator import SuggestionGenerator  # noqa: PLC0415
+
     return SuggestionGenerator
 
 
-def _mock_lm_fixture(rule_title: str = "Use absolute paths", rule_body: str = "Always use absolute paths.", rule_rationale: str = "Prevents cwd issues."):
+def _mock_lm_fixture(
+    rule_title: str = "Use absolute paths",
+    rule_body: str = "Always use absolute paths.",
+    rule_rationale: str = "Prevents cwd issues.",
+):
     """Return a mock LM that produces deterministic PatternToRule output."""
     import dspy  # noqa: PLC0415
 
@@ -59,9 +65,11 @@ def _mock_lm_fixture(rule_title: str = "Use absolute paths", rule_body: str = "A
 # T059-1: Class structure tests (RED until T066 Wave 9)
 # ---------------------------------------------------------------------------
 
+
 def test_suggestion_generator_is_dspy_module():
     """SuggestionGenerator must be a dspy.Module subclass (FR-035)."""
     import dspy  # noqa: PLC0415
+
     SuggestionGenerator = _get_suggestion_generator()
     assert issubclass(SuggestionGenerator, dspy.Module), (
         "SuggestionGenerator must subclass dspy.Module"
@@ -71,18 +79,13 @@ def test_suggestion_generator_is_dspy_module():
 def test_suggestion_generator_forward_signature():
     """SuggestionGenerator.forward() must accept (pattern_description, example_errors, project_context)."""
     import inspect  # noqa: PLC0415
+
     SuggestionGenerator = _get_suggestion_generator()
     sig = inspect.signature(SuggestionGenerator.forward)
     params = list(sig.parameters.keys())
-    assert "pattern_description" in params, (
-        "forward() must accept 'pattern_description'"
-    )
-    assert "example_errors" in params, (
-        "forward() must accept 'example_errors'"
-    )
-    assert "project_context" in params, (
-        "forward() must accept 'project_context'"
-    )
+    assert "pattern_description" in params, "forward() must accept 'pattern_description'"
+    assert "example_errors" in params, "forward() must accept 'example_errors'"
+    assert "project_context" in params, "forward() must accept 'project_context'"
 
 
 def test_suggestion_generator_has_generate_predictor():

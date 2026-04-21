@@ -22,14 +22,17 @@ def measure_drift(
         return 0.0
 
     similarity = SequenceMatcher(
-        None, original_prompt.lower(), new_prompt.lower(),
+        None,
+        original_prompt.lower(),
+        new_prompt.lower(),
     ).ratio()
 
     return 1.0 - similarity
 
 
 def requires_manual_approval(
-    drift_score: float, threshold: float = 0.40,
+    drift_score: float,
+    threshold: float = 0.40,
 ) -> bool:
     """Check if drift exceeds threshold requiring manual approval.
 

@@ -14,18 +14,17 @@ Invariants per FR-003:
 Run to confirm RED before T047:
     uv run pytest tests/unit/db/test_active_cycle.py -v
 """
+
 from __future__ import annotations
 
 import sqlite3
 import uuid
 from datetime import datetime, timezone
 
-import pytest
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -111,15 +110,23 @@ def _seed_old_rows(conn, cycle_id: str = "old"):
             "INSERT INTO patterns (pattern_id, description, error_count, "
             "session_count, first_seen, last_seen, rank_score, created_at, "
             "updated_at, active, cycle_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (f"pat-{cycle_id}-{i}", f"Pattern {i}", 3, 2, now, now, 0.8,
-             now, now, 1, cycle_id),
+            (f"pat-{cycle_id}-{i}", f"Pattern {i}", 3, 2, now, now, 0.8, now, now, 1, cycle_id),
         )
         conn.execute(
             "INSERT INTO suggestions (description, confidence, proposed_change, "
             "target_file, change_type, status, created_at, active, cycle_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (f"Suggestion {i}", 0.7, f"Add rule {i}", "~/.claude/CLAUDE.md",
-             "append", "pending", now, 1, cycle_id),
+            (
+                f"Suggestion {i}",
+                0.7,
+                f"Add rule {i}",
+                "~/.claude/CLAUDE.md",
+                "append",
+                "pending",
+                now,
+                1,
+                cycle_id,
+            ),
         )
         conn.execute(
             "INSERT INTO datasets (file_path, positive_count, negative_count, "
@@ -138,15 +145,18 @@ def _seed_old_rows(conn, cycle_id: str = "old"):
 # Import helper
 # ---------------------------------------------------------------------------
 
+
 def _import_helper():
     """Import mark_stale_for_new_cycle from queries."""
     from sio.core.db.queries import mark_stale_for_new_cycle  # noqa: PLC0415
+
     return mark_stale_for_new_cycle
 
 
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestMarkStaleForNewCycle:
     """mark_stale_for_new_cycle(conn, new_cycle_id) must flip prior active rows."""
@@ -165,14 +175,10 @@ class TestMarkStaleForNewCycle:
         mark_stale = _import_helper()
         mark_stale(conn, new_cycle_id)
 
-        rows = conn.execute(
-            "SELECT active FROM patterns WHERE cycle_id = 'old'"
-        ).fetchall()
+        rows = conn.execute("SELECT active FROM patterns WHERE cycle_id = 'old'").fetchall()
         assert len(rows) == 2, "Expected 2 old pattern rows"
         for r in rows:
-            assert r["active"] == 0, (
-                f"Expected active=0 for old pattern, got {r['active']}"
-            )
+            assert r["active"] == 0, f"Expected active=0 for old pattern, got {r['active']}"
 
     def test_prior_suggestions_flipped_to_inactive(self, tmp_path):
         """Suggestions with cycle_id != new_cycle_id must have active=0 after call."""
@@ -183,14 +189,10 @@ class TestMarkStaleForNewCycle:
         mark_stale = _import_helper()
         mark_stale(conn, new_cycle_id)
 
-        rows = conn.execute(
-            "SELECT active FROM suggestions WHERE cycle_id = 'old'"
-        ).fetchall()
+        rows = conn.execute("SELECT active FROM suggestions WHERE cycle_id = 'old'").fetchall()
         assert len(rows) == 2, "Expected 2 old suggestion rows"
         for r in rows:
-            assert r["active"] == 0, (
-                f"Expected active=0 for old suggestion, got {r['active']}"
-            )
+            assert r["active"] == 0, f"Expected active=0 for old suggestion, got {r['active']}"
 
     def test_prior_datasets_flipped_to_inactive(self, tmp_path):
         """Datasets with cycle_id != new_cycle_id must have active=0 after call."""
@@ -201,14 +203,10 @@ class TestMarkStaleForNewCycle:
         mark_stale = _import_helper()
         mark_stale(conn, new_cycle_id)
 
-        rows = conn.execute(
-            "SELECT active FROM datasets WHERE cycle_id = 'old'"
-        ).fetchall()
+        rows = conn.execute("SELECT active FROM datasets WHERE cycle_id = 'old'").fetchall()
         assert len(rows) == 2
         for r in rows:
-            assert r["active"] == 0, (
-                f"Expected active=0 for old dataset, got {r['active']}"
-            )
+            assert r["active"] == 0, f"Expected active=0 for old dataset, got {r['active']}"
 
     def test_prior_pattern_errors_flipped_to_inactive(self, tmp_path):
         """pattern_errors with cycle_id != new must have active=0 after call."""
@@ -219,14 +217,10 @@ class TestMarkStaleForNewCycle:
         mark_stale = _import_helper()
         mark_stale(conn, new_cycle_id)
 
-        rows = conn.execute(
-            "SELECT active FROM pattern_errors WHERE cycle_id = 'old'"
-        ).fetchall()
+        rows = conn.execute("SELECT active FROM pattern_errors WHERE cycle_id = 'old'").fetchall()
         assert len(rows) == 2
         for r in rows:
-            assert r["active"] == 0, (
-                f"Expected active=0 for old pattern_error, got {r['active']}"
-            )
+            assert r["active"] == 0, f"Expected active=0 for old pattern_error, got {r['active']}"
 
     def test_applied_changes_untouched(self, tmp_path):
         """applied_changes rows must NOT be modified by mark_stale_for_new_cycle."""
@@ -308,9 +302,7 @@ class TestMarkStaleForNewCycle:
         mark_stale(conn, cycle_3)
 
         # cycle-2 rows should now be inactive
-        row = conn.execute(
-            "SELECT active FROM patterns WHERE cycle_id = ?", (cycle_2,)
-        ).fetchone()
+        row = conn.execute("SELECT active FROM patterns WHERE cycle_id = ?", (cycle_2,)).fetchone()
         assert row is not None
         assert row["active"] == 0, (
             f"cycle-2 pattern must become inactive after cycle-3 mark_stale, "
@@ -335,9 +327,7 @@ class TestMarkStaleForNewCycle:
         mark_stale(conn, new_cycle_id)
         mark_stale(conn, new_cycle_id)  # second call — must be idempotent
 
-        rows = conn.execute(
-            "SELECT active FROM patterns WHERE cycle_id = 'old'"
-        ).fetchall()
+        rows = conn.execute("SELECT active FROM patterns WHERE cycle_id = 'old'").fetchall()
         assert len(rows) == 2
         for r in rows:
             assert r["active"] == 0, "Idempotent second call must not change state"

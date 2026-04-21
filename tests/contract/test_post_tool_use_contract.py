@@ -60,9 +60,7 @@ class TestSessionIdPropagation:
             "SELECT session_id FROM behavior_invocations WHERE session_id = ?",
             ("propagation-session-xyz",),
         ).fetchall()
-        assert len(rows) >= 1, (
-            "handle_post_tool_use must persist the invocation to the DB"
-        )
+        assert len(rows) >= 1, "handle_post_tool_use must persist the invocation to the DB"
         assert rows[0]["session_id"] == "propagation-session-xyz"
 
 

@@ -24,20 +24,22 @@ import sqlite3
 import tempfile
 from pathlib import Path
 
-import pytest
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
 def _make_event(idx: int) -> str:
-    return json.dumps({
-        "type": "assistant",
-        "message": {"role": "assistant", "content": [{"type": "text", "text": f"Error {idx}"}]},
-        "timestamp": f"2026-04-20T{idx:02d}:00:00Z",
-    })
+    return json.dumps(
+        {
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": f"Error {idx}"}],
+            },
+            "timestamp": f"2026-04-20T{idx:02d}:00:00Z",
+        }
+    )
 
 
 def _open_db(db_path: Path) -> sqlite3.Connection:
@@ -165,8 +167,6 @@ def test_default_mine_excludes_subagent_rows():
             count = conn.execute(
                 "SELECT COUNT(*) FROM error_records WHERE is_subagent = 0"
             ).fetchone()[0]
-            assert count == 1, (
-                f"Default mine query should return 1 top-level record, got {count}"
-            )
+            assert count == 1, f"Default mine query should return 1 top-level record, got {count}"
         finally:
             conn.close()

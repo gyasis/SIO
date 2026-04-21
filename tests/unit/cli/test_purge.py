@@ -24,6 +24,7 @@ from sio.cli.main import cli
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_sio_db(path: str) -> None:
     """Create a minimal sio.db with required tables and test rows."""
     conn = sqlite3.connect(path)
@@ -113,6 +114,7 @@ def _raw_db_conn(db_path):
 # Tests
 # ---------------------------------------------------------------------------
 
+
 def test_purge_days_yes_deletes_old_records_leaves_platform_db():
     """sio purge --days 30 --yes removes old error_records/flow_events from sio.db
     but does NOT purge the per-platform behavior_invocations DB.
@@ -144,12 +146,8 @@ def test_purge_days_yes_deletes_old_records_leaves_platform_db():
         assert result.exit_code == 0, result.output
 
         # sio.db: old rows gone, recent ones kept
-        assert _count(sio_db, "error_records") == 1, (
-            "Recent error_records should survive purge"
-        )
-        assert _count(sio_db, "flow_events") == 1, (
-            "Recent flow_events should survive purge"
-        )
+        assert _count(sio_db, "error_records") == 1, "Recent error_records should survive purge"
+        assert _count(sio_db, "flow_events") == 1, "Recent flow_events should survive purge"
         # Platform DB must be UNTOUCHED
         assert _count(platform_db, "behavior_invocations") == 2, (
             "Per-platform DB must not be touched by a non --behavior-only purge"

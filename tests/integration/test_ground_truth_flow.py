@@ -45,7 +45,12 @@ class TestGroundTruthFullCycle:
     @patch("sio.core.dspy.modules.GroundTruthModule")
     @patch("sio.core.dspy.lm_factory.create_lm")
     def test_generate_approve_load_corpus(
-        self, mock_create_lm, mock_module_cls, mem_db, config, tmp_path,
+        self,
+        mock_create_lm,
+        mock_module_cls,
+        mem_db,
+        config,
+        tmp_path,
     ):
         """Full cycle: generate candidates, approve some, load as corpus."""
         import json
@@ -60,9 +65,9 @@ class TestGroundTruthFullCycle:
 
         # Create a dataset file
         ds_file = tmp_path / "dataset.json"
-        ds_file.write_text(json.dumps({
-            "examples": [{"error_text": "FileNotFoundError", "tool_name": "Read"}]
-        }))
+        ds_file.write_text(
+            json.dumps({"examples": [{"error_text": "FileNotFoundError", "tool_name": "Read"}]})
+        )
 
         # Create pattern in DB so FK validation passes
         from datetime import datetime, timezone
@@ -73,8 +78,7 @@ class TestGroundTruthFullCycle:
             "(pattern_id, description, tool_name, error_count, session_count, "
             "first_seen, last_seen, rank_score, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            ("fnf-pattern", "File not found errors", "Read", 10, 5,
-             now, now, 1.0, now, now),
+            ("fnf-pattern", "File not found errors", "Read", 10, 5, now, now, 1.0, now, now),
         )
         mem_db.commit()
 
@@ -97,9 +101,11 @@ class TestGroundTruthFullCycle:
 
         # Verify all are pending
         for gt_id in ids:
-            row = dict(mem_db.execute(
-                "SELECT label, source FROM ground_truth WHERE id = ?", (gt_id,)
-            ).fetchone())
+            row = dict(
+                mem_db.execute(
+                    "SELECT label, source FROM ground_truth WHERE id = ?", (gt_id,)
+                ).fetchone()
+            )
             assert row["label"] == "pending"
             assert row["source"] == "agent"
 
@@ -111,15 +117,19 @@ class TestGroundTruthFullCycle:
         assert reject(mem_db, ids[2], note="Not relevant") is True
 
         # Verify labels
-        row0 = dict(mem_db.execute(
-            "SELECT label, source FROM ground_truth WHERE id = ?", (ids[0],)
-        ).fetchone())
+        row0 = dict(
+            mem_db.execute(
+                "SELECT label, source FROM ground_truth WHERE id = ?", (ids[0],)
+            ).fetchone()
+        )
         assert row0["label"] == "positive"
         assert row0["source"] == "approved"
 
-        row2 = dict(mem_db.execute(
-            "SELECT label, source FROM ground_truth WHERE id = ?", (ids[2],)
-        ).fetchone())
+        row2 = dict(
+            mem_db.execute(
+                "SELECT label, source FROM ground_truth WHERE id = ?", (ids[2],)
+            ).fetchone()
+        )
         assert row2["label"] == "negative"
         assert row2["source"] == "rejected"
 
@@ -140,7 +150,12 @@ class TestGroundTruthFullCycle:
     @patch("sio.core.dspy.modules.GroundTruthModule")
     @patch("sio.core.dspy.lm_factory.create_lm")
     def test_generate_edit_load_corpus(
-        self, mock_create_lm, mock_module_cls, mem_db, config, tmp_path,
+        self,
+        mock_create_lm,
+        mock_module_cls,
+        mem_db,
+        config,
+        tmp_path,
     ):
         """Generate, edit a candidate, verify edited version in corpus."""
         import json
@@ -162,8 +177,7 @@ class TestGroundTruthFullCycle:
             "(pattern_id, description, tool_name, error_count, session_count, "
             "first_seen, last_seen, rank_score, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            ("edit-test", "Test pattern", "Read", 3, 2,
-             now, now, 1.0, now, now),
+            ("edit-test", "Test pattern", "Read", 3, 2, now, now, 1.0, now, now),
         )
         mem_db.commit()
 
@@ -186,10 +200,14 @@ class TestGroundTruthFullCycle:
         # Edit the candidate
         from sio.ground_truth.reviewer import edit
 
-        edit(mem_db, ids[0], {
-            "rule_title": "Improved title",
-            "prevention_instructions": "Better instructions",
-        })
+        edit(
+            mem_db,
+            ids[0],
+            {
+                "rule_title": "Improved title",
+                "prevention_instructions": "Better instructions",
+            },
+        )
 
         # Load corpus — should have the edited version
         from sio.ground_truth.corpus import load_training_corpus

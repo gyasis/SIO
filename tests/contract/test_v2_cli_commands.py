@@ -1,6 +1,5 @@
 """CLI contract tests — verify all v2 CLI commands respond correctly."""
 
-
 import pytest
 from click.testing import CliRunner
 
@@ -15,6 +14,7 @@ def runner():
 # =========================================================================
 # TestCLIHelp
 # =========================================================================
+
 
 class TestCLIHelp:
     """All v2 commands show help without error."""
@@ -74,6 +74,7 @@ class TestCLIHelp:
 # TestCLIStatus
 # =========================================================================
 
+
 class TestCLIStatus:
     """sio status output format."""
 
@@ -90,6 +91,7 @@ class TestCLIStatus:
         db_path = sio_dir / "sio.db"
 
         from sio.core.db.schema import init_db
+
         conn = init_db(str(db_path))
         conn.close()
 
@@ -103,6 +105,7 @@ class TestCLIStatus:
 # =========================================================================
 # TestCLIMine
 # =========================================================================
+
 
 class TestCLIMine:
     """sio mine command contract."""
@@ -125,6 +128,7 @@ class TestCLIMine:
 # =========================================================================
 # TestCLIPatterns
 # =========================================================================
+
 
 class TestCLIPatterns:
     """sio patterns output format."""

@@ -20,10 +20,17 @@ def config():
     return SIOConfig()
 
 
-_ALL_SURFACES = frozenset({
-    "claude_md_rule", "skill_update", "hook_config",
-    "mcp_config", "settings_config", "agent_profile", "project_config",
-})
+_ALL_SURFACES = frozenset(
+    {
+        "claude_md_rule",
+        "skill_update",
+        "hook_config",
+        "mcp_config",
+        "settings_config",
+        "agent_profile",
+        "project_config",
+    }
+)
 
 
 class TestSeedGroundTruth:
@@ -39,9 +46,7 @@ class TestSeedGroundTruth:
 
         seed_ground_truth(config, mem_db)
 
-        rows = mem_db.execute(
-            "SELECT DISTINCT target_surface FROM ground_truth"
-        ).fetchall()
+        rows = mem_db.execute("SELECT DISTINCT target_surface FROM ground_truth").fetchall()
         surfaces = {dict(r)["target_surface"] for r in rows}
 
         assert surfaces == _ALL_SURFACES
@@ -52,9 +57,7 @@ class TestSeedGroundTruth:
 
         seed_ground_truth(config, mem_db)
 
-        rows = mem_db.execute(
-            "SELECT source FROM ground_truth"
-        ).fetchall()
+        rows = mem_db.execute("SELECT source FROM ground_truth").fetchall()
         for row in rows:
             assert dict(row)["source"] == "seed"
 
@@ -64,9 +67,7 @@ class TestSeedGroundTruth:
 
         seed_ground_truth(config, mem_db)
 
-        rows = mem_db.execute(
-            "SELECT label FROM ground_truth"
-        ).fetchall()
+        rows = mem_db.execute("SELECT label FROM ground_truth").fetchall()
         for row in rows:
             assert dict(row)["label"] == "positive"
 
@@ -76,9 +77,7 @@ class TestSeedGroundTruth:
         ids = seed_ground_truth(config, mem_db)
 
         for row_id in ids:
-            row = mem_db.execute(
-                "SELECT id FROM ground_truth WHERE id = ?", (row_id,)
-            ).fetchone()
+            row = mem_db.execute("SELECT id FROM ground_truth WHERE id = ?", (row_id,)).fetchone()
             assert row is not None
 
     def test_entries_have_required_fields(self, config, mem_db):

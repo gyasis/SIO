@@ -18,7 +18,9 @@ _ALLOWED_ROOTS: list[Path] = [
 
 
 def _validate_target_path(
-    path: Path, *, extra_roots: tuple[Path, ...] = (),
+    path: Path,
+    *,
+    extra_roots: tuple[Path, ...] = (),
 ) -> str | None:
     """Return an error message if path is outside allowed roots or cwd."""
     resolved = path.resolve()
@@ -36,15 +38,16 @@ def _validate_target_path(
 
 
 def rollback_change(
-    db: sqlite3.Connection, change_id: int, *, force: bool = False,
+    db: sqlite3.Connection,
+    change_id: int,
+    *,
+    force: bool = False,
 ) -> dict:
     """Rollback an applied change by restoring diff_before content.
 
     Returns a dict with keys: success, change_id, target_file, reason (on failure).
     """
-    row = db.execute(
-        "SELECT * FROM applied_changes WHERE id = ?", (change_id,)
-    ).fetchone()
+    row = db.execute("SELECT * FROM applied_changes WHERE id = ?", (change_id,)).fetchone()
 
     if row is None:
         return {"success": False, "reason": "Change not found"}

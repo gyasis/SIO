@@ -13,10 +13,26 @@ from sio.adapters.claude_code.hooks.post_tool_use import handle_post_tool_use
 
 # Tool names that represent a realistic mix of Claude Code tools
 _TOOL_NAMES = [
-    "Read", "Write", "Edit", "Bash", "Grep", "Glob",
-    "WebSearch", "WebFetch", "NotebookEdit", "Skill",
-    "Task", "TodoRead", "TodoWrite", "GitLog", "GitDiff",
-    "GitStatus", "GitCommit", "ListDir", "MoveFile", "CopyFile",
+    "Read",
+    "Write",
+    "Edit",
+    "Bash",
+    "Grep",
+    "Glob",
+    "WebSearch",
+    "WebFetch",
+    "NotebookEdit",
+    "Skill",
+    "Task",
+    "TodoRead",
+    "TodoWrite",
+    "GitLog",
+    "GitDiff",
+    "GitStatus",
+    "GitCommit",
+    "ListDir",
+    "MoveFile",
+    "CopyFile",
 ]
 
 assert len(_TOOL_NAMES) == 20, "Need exactly 20 distinct tool names"
@@ -66,9 +82,7 @@ class TestTwentyHookCallsProduceTwentyRows:
             "SELECT COUNT(*) FROM behavior_invocations "
             "WHERE session_id = 'integration-session-001'"
         ).fetchone()[0]
-        assert row_count == 20, (
-            f"Expected 20 rows for 20 distinct tool calls, got {row_count}"
-        )
+        assert row_count == 20, f"Expected 20 rows for 20 distinct tool calls, got {row_count}"
 
         # Verify no duplicates -- each tool_name should appear exactly once
         distinct_actions = tmp_db.execute(
@@ -95,8 +109,7 @@ class TestTwentyHookCallsProduceTwentyRows:
 
         for row in rows:
             assert "sk-secret-value-12345" not in row["user_message"], (
-                f"Secret not scrubbed in row for {row['actual_action']}: "
-                f"{row['user_message']}"
+                f"Secret not scrubbed in row for {row['actual_action']}: {row['user_message']}"
             )
 
     def test_all_rows_have_required_fields(self, tmp_db):
@@ -106,8 +119,7 @@ class TestTwentyHookCallsProduceTwentyRows:
             handle_post_tool_use(stdin_json, conn=tmp_db)
 
         rows = tmp_db.execute(
-            "SELECT * FROM behavior_invocations "
-            "WHERE session_id = 'integration-session-001'"
+            "SELECT * FROM behavior_invocations WHERE session_id = 'integration-session-001'"
         ).fetchall()
 
         for row in rows:

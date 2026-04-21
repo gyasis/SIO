@@ -15,39 +15,43 @@ Run to confirm RED before implementing writer.py:
 from __future__ import annotations
 
 import re
-import time
 from pathlib import Path
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Import helpers
 # ---------------------------------------------------------------------------
 
+
 def _import_writer():
     from sio.core.applier import writer  # noqa: PLC0415
+
     return writer
 
 
 def _import_atomic_write():
     from sio.core.applier.writer import atomic_write  # noqa: PLC0415
+
     return atomic_write
 
 
 def _import_prune():
     from sio.core.applier.writer import _prune_backups  # noqa: PLC0415
+
     return _prune_backups
 
 
 def _import_errors():
     from sio.core.applier.writer import WriteIntegrityError  # noqa: PLC0415
+
     return WriteIntegrityError
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def target_file(tmp_path: Path) -> Path:
@@ -63,6 +67,7 @@ def target_file(tmp_path: Path) -> Path:
 # ---------------------------------------------------------------------------
 # 1. Happy path: returns backup path, target updated, backup exists
 # ---------------------------------------------------------------------------
+
 
 def test_atomic_write_returns_path(target_file: Path, monkeypatch):
     """atomic_write() returns a Path object pointing to the backup."""
@@ -122,9 +127,8 @@ def test_atomic_write_backup_filename_format(target_file: Path, monkeypatch):
 # 3. Post-write size check — simulated corruption triggers WriteIntegrityError
 # ---------------------------------------------------------------------------
 
-def test_atomic_write_size_check_triggers_integrity_error(
-    target_file: Path, monkeypatch
-):
+
+def test_atomic_write_size_check_triggers_integrity_error(target_file: Path, monkeypatch):
     """If post-write target is < 90% of intended size, WriteIntegrityError is raised."""
     atomic_write = _import_atomic_write()
     WriteIntegrityError = _import_errors()
@@ -136,6 +140,7 @@ def test_atomic_write_size_check_triggers_integrity_error(
 
     # Monkeypatch os.replace to write truncated content instead
     import os as _os
+
     real_replace = _os.replace
 
     def corrupt_replace(src, dst):
@@ -158,6 +163,7 @@ def test_atomic_write_size_check_triggers_integrity_error(
 # 4. WriteIntegrityError is Exception subclass
 # ---------------------------------------------------------------------------
 
+
 def test_write_integrity_error_is_exception():
     """WriteIntegrityError must be a subclass of Exception."""
     WriteIntegrityError = _import_errors()
@@ -167,6 +173,7 @@ def test_write_integrity_error_is_exception():
 # ---------------------------------------------------------------------------
 # 5. _prune_backups — keeps most recent 10, deletes older
 # ---------------------------------------------------------------------------
+
 
 def test_prune_backups_keeps_most_recent_10(tmp_path: Path):
     """_prune_backups(dir, keep=10) deletes all but the 10 newest .bak files."""
@@ -182,15 +189,14 @@ def test_prune_backups_keeps_most_recent_10(tmp_path: Path):
         # Spread mtimes by 1 second each
         mtime = 1_700_000_000 + i
         import os
+
         os.utime(f, (mtime, mtime))
         files.append((mtime, f))
 
     _prune_backups(bak_dir, keep=10)
 
     remaining = list(bak_dir.glob("*.bak"))
-    assert len(remaining) == 10, (
-        f"Expected 10 backups after pruning 15, got {len(remaining)}"
-    )
+    assert len(remaining) == 10, f"Expected 10 backups after pruning 15, got {len(remaining)}"
 
     # The 10 most recent (highest mtime) must survive
     files.sort(key=lambda x: x[0], reverse=True)
@@ -218,6 +224,7 @@ def test_prune_backups_fewer_than_keep_is_noop(tmp_path: Path):
 # ---------------------------------------------------------------------------
 # 6. No partial state — target contains either old or new content
 # ---------------------------------------------------------------------------
+
 
 def test_atomic_write_no_partial_state(target_file: Path, monkeypatch):
     """If write succeeds, target contains exactly new_content (no partial state)."""

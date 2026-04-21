@@ -6,6 +6,7 @@ import sqlite3
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _seed_approved_suggestion(conn: sqlite3.Connection, **overrides) -> int:
     """Insert one approved suggestion and return its ID."""
     defaults = {
@@ -24,9 +25,16 @@ def _seed_approved_suggestion(conn: sqlite3.Connection, **overrides) -> int:
         "(pattern_id, dataset_id, description, confidence, proposed_change, "
         " target_file, change_type, status, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
-        (defaults["pattern_id"], defaults["dataset_id"], defaults["description"],
-         defaults["confidence"], defaults["proposed_change"], defaults["target_file"],
-         defaults["change_type"], defaults["status"]),
+        (
+            defaults["pattern_id"],
+            defaults["dataset_id"],
+            defaults["description"],
+            defaults["confidence"],
+            defaults["proposed_change"],
+            defaults["target_file"],
+            defaults["change_type"],
+            defaults["status"],
+        ),
     )
     conn.commit()
     return cur.lastrowid
@@ -36,15 +44,18 @@ def _seed_approved_suggestion(conn: sqlite3.Connection, **overrides) -> int:
 # TestApplyToCLAUDEmd
 # =========================================================================
 
+
 class TestApplyToCLAUDEmd:
     """Writer appends to CLAUDE.md (never overwrites existing content)."""
 
     def test_appends_to_existing_file(self, v2_db, tmp_path):
         from sio.applier.writer import apply_change
+
         target = tmp_path / "CLAUDE.md"
         target.write_text("# Existing Rules\n\nDo not delete.\n")
         sid = _seed_approved_suggestion(
-            v2_db, target_file=str(target),
+            v2_db,
+            target_file=str(target),
             proposed_change="## New Rule\n\nNew content.",
         )
         result = apply_change(v2_db, sid)
@@ -56,9 +67,11 @@ class TestApplyToCLAUDEmd:
 
     def test_creates_file_if_missing(self, v2_db, tmp_path):
         from sio.applier.writer import apply_change
+
         target = tmp_path / "CLAUDE.md"
         sid = _seed_approved_suggestion(
-            v2_db, target_file=str(target),
+            v2_db,
+            target_file=str(target),
             proposed_change="## First Rule\n\nContent.",
         )
         apply_change(v2_db, sid)
@@ -67,6 +80,7 @@ class TestApplyToCLAUDEmd:
 
     def test_stores_diff_before(self, v2_db, tmp_path):
         from sio.applier.writer import apply_change
+
         target = tmp_path / "CLAUDE.md"
         original = "# Original\n"
         target.write_text(original)
@@ -76,6 +90,7 @@ class TestApplyToCLAUDEmd:
 
     def test_stores_diff_after(self, v2_db, tmp_path):
         from sio.applier.writer import apply_change
+
         target = tmp_path / "CLAUDE.md"
         target.write_text("# Original\n")
         sid = _seed_approved_suggestion(v2_db, target_file=str(target))
@@ -84,6 +99,7 @@ class TestApplyToCLAUDEmd:
 
     def test_records_applied_change_in_db(self, v2_db, tmp_path):
         from sio.applier.writer import apply_change
+
         target = tmp_path / "CLAUDE.md"
         target.write_text("")
         sid = _seed_approved_suggestion(v2_db, target_file=str(target))
@@ -96,13 +112,12 @@ class TestApplyToCLAUDEmd:
 
     def test_updates_suggestion_status_to_applied(self, v2_db, tmp_path):
         from sio.applier.writer import apply_change
+
         target = tmp_path / "CLAUDE.md"
         target.write_text("")
         sid = _seed_approved_suggestion(v2_db, target_file=str(target))
         apply_change(v2_db, sid)
-        row = v2_db.execute(
-            "SELECT status FROM suggestions WHERE id = ?", (sid,)
-        ).fetchone()
+        row = v2_db.execute("SELECT status FROM suggestions WHERE id = ?", (sid,)).fetchone()
         assert row[0] == "applied"
 
 
@@ -110,11 +125,13 @@ class TestApplyToCLAUDEmd:
 # TestApplyNotApproved
 # =========================================================================
 
+
 class TestApplyNotApproved:
     """Writer refuses to apply non-approved suggestions."""
 
     def test_pending_suggestion_fails(self, v2_db, tmp_path):
         from sio.applier.writer import apply_change
+
         target = tmp_path / "CLAUDE.md"
         target.write_text("")
         sid = _seed_approved_suggestion(v2_db, target_file=str(target), status="pending")
@@ -127,6 +144,7 @@ class TestApplyNotApproved:
 
     def test_rejected_suggestion_fails(self, v2_db, tmp_path):
         from sio.applier.writer import apply_change
+
         target = tmp_path / "CLAUDE.md"
         target.write_text("")
         sid = _seed_approved_suggestion(v2_db, target_file=str(target))
@@ -137,6 +155,7 @@ class TestApplyNotApproved:
 
     def test_nonexistent_suggestion_fails(self, v2_db):
         from sio.applier.writer import apply_change
+
         result = apply_change(v2_db, 9999)
         assert result["success"] is False
 
@@ -145,11 +164,13 @@ class TestApplyNotApproved:
 # TestApplyReturnsChangeId
 # =========================================================================
 
+
 class TestApplyReturnsChangeId:
     """apply_change returns the applied_changes row ID."""
 
     def test_returns_change_id(self, v2_db, tmp_path):
         from sio.applier.writer import apply_change
+
         target = tmp_path / "CLAUDE.md"
         target.write_text("")
         sid = _seed_approved_suggestion(v2_db, target_file=str(target))

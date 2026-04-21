@@ -54,27 +54,30 @@ def populated_db() -> sqlite3.Connection:
             (
                 f"sess-{i:03d}",
                 f"/tmp/sess-{i}.jsonl",
-                10000 + i * 1000,   # input tokens
-                5000 + i * 500,     # output tokens
-                3000,               # cache read
-                1000,               # cache create
-                0.65 + i * 0.05,    # cache hit ratio
-                0.50 + i * 0.10,    # cost
-                600 + i * 60,       # duration
-                20 + i * 5,         # messages
-                10 + i * 2,         # tool calls
-                2 + i,              # errors
-                1,                  # corrections
-                3,                  # positive signals
-                0,                  # sidechains
+                10000 + i * 1000,  # input tokens
+                5000 + i * 500,  # output tokens
+                3000,  # cache read
+                1000,  # cache create
+                0.65 + i * 0.05,  # cache hit ratio
+                0.50 + i * 0.10,  # cost
+                600 + i * 60,  # duration
+                20 + i * 5,  # messages
+                10 + i * 2,  # tool calls
+                2 + i,  # errors
+                1,  # corrections
+                3,  # positive signals
+                0,  # sidechains
                 _ts(days_ago=i * 2),
             ),
         )
 
     # --- error_records ---
     error_types = [
-        "tool_failure", "user_correction", "tool_failure",
-        "repeated_attempt", "undo",
+        "tool_failure",
+        "user_correction",
+        "tool_failure",
+        "repeated_attempt",
+        "undo",
     ]
     for i, etype in enumerate(error_types):
         conn.execute(
@@ -250,7 +253,8 @@ class TestHtmlReportSelfContained:
         assert "<style>" in html
         # No external CSS links
         css_links = re.findall(
-            r'<link[^>]+rel=["\']stylesheet["\'][^>]*>', html,
+            r'<link[^>]+rel=["\']stylesheet["\'][^>]*>',
+            html,
         )
         assert len(css_links) == 0
 
@@ -388,10 +392,14 @@ class TestHtmlReportEdgeCases:
                 "xss-test",
                 '<script>alert("xss")</script>',
                 "Bash",
-                1, 1,
-                _ts(1), _ts(0),
-                0.5, "emerging",
-                _ts(1), _ts(0),
+                1,
+                1,
+                _ts(1),
+                _ts(0),
+                0.5,
+                "emerging",
+                _ts(1),
+                _ts(0),
             ),
         )
         populated_db.commit()
@@ -413,9 +421,18 @@ class TestHtmlReportEdgeCases:
             (
                 "sess-big",
                 "/tmp/big.jsonl",
-                5000000, 2000000,  # 7M total
-                0, 0, 0.0, 5.0,
-                100, 50, 10, 2, 5, 0,
+                5000000,
+                2000000,  # 7M total
+                0,
+                0,
+                0.0,
+                5.0,
+                100,
+                50,
+                10,
+                2,
+                5,
+                0,
                 _ts(0),
             ),
         )

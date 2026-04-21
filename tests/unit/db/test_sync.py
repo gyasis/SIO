@@ -10,14 +10,13 @@ Tests assert (per contracts/storage-sync.md §4):
 Run to confirm RED before T035:
     uv run pytest tests/unit/db/test_sync.py -v
 """
+
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -101,9 +100,11 @@ def _seed_canonical_schema(path: Path) -> None:
 def _import_sync(monkeypatch, sio_db_path: Path, platform_db_path: Path):
     """Import sync module with env vars pointing at tmp paths."""
     import importlib  # noqa: PLC0415
+
     monkeypatch.setenv("SIO_DB_PATH", str(sio_db_path))
     monkeypatch.setenv("SIO_PLATFORM_DB_PATH", str(platform_db_path))
     import sio.core.db.sync as sync_mod  # noqa: PLC0415
+
     importlib.reload(sync_mod)
     return sync_mod
 
@@ -111,6 +112,7 @@ def _import_sync(monkeypatch, sio_db_path: Path, platform_db_path: Path):
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def sync_dbs(tmp_path: Path, monkeypatch):
@@ -136,21 +138,22 @@ def sync_dbs(tmp_path: Path, monkeypatch):
 # 1. Full sync copies all rows
 # ---------------------------------------------------------------------------
 
+
 def test_sync_copies_all_rows(sync_dbs, monkeypatch):
     """sync_behavior_invocations() must copy all platform rows to sio.db."""
     sio_path, plat_path = sync_dbs
     _seed_platform_rows(plat_path, count=10)
 
     import importlib  # noqa: PLC0415
+
     import sio.core.db.sync as sync_mod  # noqa: PLC0415
+
     importlib.reload(sync_mod)
 
     result = sync_mod.sync_behavior_invocations()
 
     assert "claude-code" in result, "Result must contain 'claude-code' key"
-    assert result["claude-code"] == 10, (
-        f"Expected 10 rows copied, got {result['claude-code']}"
-    )
+    assert result["claude-code"] == 10, f"Expected 10 rows copied, got {result['claude-code']}"
 
     conn = sqlite3.connect(str(sio_path))
     count = conn.execute("SELECT COUNT(*) FROM behavior_invocations").fetchone()[0]
@@ -162,13 +165,16 @@ def test_sync_copies_all_rows(sync_dbs, monkeypatch):
 # 2. Second call copies zero rows (idempotency)
 # ---------------------------------------------------------------------------
 
+
 def test_sync_idempotent_second_call_copies_zero(sync_dbs, monkeypatch):
     """Second sync_behavior_invocations() call must copy 0 rows (INSERT OR IGNORE)."""
     sio_path, plat_path = sync_dbs
     _seed_platform_rows(plat_path, count=5)
 
     import importlib  # noqa: PLC0415
+
     import sio.core.db.sync as sync_mod  # noqa: PLC0415
+
     importlib.reload(sync_mod)
 
     sync_mod.sync_behavior_invocations()
@@ -187,6 +193,7 @@ def test_sync_idempotent_second_call_copies_zero(sync_dbs, monkeypatch):
 # ---------------------------------------------------------------------------
 # 3. since_timestamp scopes correctly
 # ---------------------------------------------------------------------------
+
 
 def test_sync_since_timestamp_scopes_correctly(sync_dbs, monkeypatch):
     """sync_behavior_invocations(since_timestamp=...) copies only rows >= timestamp."""
@@ -214,12 +221,12 @@ def test_sync_since_timestamp_scopes_correctly(sync_dbs, monkeypatch):
     conn.close()
 
     import importlib  # noqa: PLC0415
+
     import sio.core.db.sync as sync_mod  # noqa: PLC0415
+
     importlib.reload(sync_mod)
 
-    result = sync_mod.sync_behavior_invocations(
-        since_timestamp="2026-04-20T00:00:00+00:00"
-    )
+    result = sync_mod.sync_behavior_invocations(since_timestamp="2026-04-20T00:00:00+00:00")
 
     assert result["claude-code"] == 3, (
         f"Expected 3 new rows with since_timestamp filter, got {result['claude-code']}"
@@ -230,22 +237,23 @@ def test_sync_since_timestamp_scopes_correctly(sync_dbs, monkeypatch):
 # 4. Each mirrored row has platform='claude-code'
 # ---------------------------------------------------------------------------
 
+
 def test_sync_adds_platform_discriminator(sync_dbs, monkeypatch):
     """Each mirrored row in sio.db must have platform='claude-code'."""
     sio_path, plat_path = sync_dbs
     _seed_platform_rows(plat_path, count=3)
 
     import importlib  # noqa: PLC0415
+
     import sio.core.db.sync as sync_mod  # noqa: PLC0415
+
     importlib.reload(sync_mod)
 
     sync_mod.sync_behavior_invocations()
 
     conn = sqlite3.connect(str(sio_path))
     platforms = [
-        r[0] for r in conn.execute(
-            "SELECT DISTINCT platform FROM behavior_invocations"
-        ).fetchall()
+        r[0] for r in conn.execute("SELECT DISTINCT platform FROM behavior_invocations").fetchall()
     ]
     conn.close()
 
@@ -258,6 +266,7 @@ def test_sync_adds_platform_discriminator(sync_dbs, monkeypatch):
 # 5. Missing per-platform DB returns gracefully
 # ---------------------------------------------------------------------------
 
+
 def test_sync_missing_platform_db_returns_zero(tmp_path, monkeypatch):
     """sync_behavior_invocations() with missing platform DB returns {platform: 0}."""
     sio_path = tmp_path / "sio.db"
@@ -269,7 +278,9 @@ def test_sync_missing_platform_db_returns_zero(tmp_path, monkeypatch):
     monkeypatch.setenv("SIO_PLATFORM_DB_PATH", str(plat_path))
 
     import importlib  # noqa: PLC0415
+
     import sio.core.db.sync as sync_mod  # noqa: PLC0415
+
     importlib.reload(sync_mod)
 
     result = sync_mod.sync_behavior_invocations()

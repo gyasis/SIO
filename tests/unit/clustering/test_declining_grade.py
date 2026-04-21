@@ -17,16 +17,15 @@ Run to confirm RED:
 from __future__ import annotations
 
 import sqlite3
-import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Test DB fixture
 # ---------------------------------------------------------------------------
+
 
 def _utc_days_ago(n: int) -> str:
     dt = datetime.now(timezone.utc) - timedelta(days=n)
@@ -77,14 +76,12 @@ def test_established_transitions_to_declining_after_7_days(db):
     db.execute(
         "INSERT INTO patterns (pattern_id, description, grade, error_count, last_error_at) "
         "VALUES (?, ?, ?, ?, ?)",
-        ("tool_fail_abc1234567", "tool_failure: Bash error", "established", 10,
-         _utc_days_ago(14)),
+        ("tool_fail_abc1234567", "tool_failure: Bash error", "established", 10, _utc_days_ago(14)),
     )
     db.execute(
         "INSERT INTO error_records (session_id, pattern_id, error_text, timestamp) "
         "VALUES (?, ?, ?, ?)",
-        ("sess_001", "tool_fail_abc1234567", "tool_failure: Bash error",
-         _utc_days_ago(14)),
+        ("sess_001", "tool_fail_abc1234567", "tool_failure: Bash error", _utc_days_ago(14)),
     )
     db.commit()
 
@@ -107,22 +104,18 @@ def test_fresh_pattern_stays_established(db):
     db.execute(
         "INSERT INTO patterns (pattern_id, description, grade, error_count, last_error_at) "
         "VALUES (?, ?, ?, ?, ?)",
-        ("fresh_pattern_bb1234567a", "parse_error: recent", "established", 5,
-         _utc_days_ago(0)),
+        ("fresh_pattern_bb1234567a", "parse_error: recent", "established", 5, _utc_days_ago(0)),
     )
     db.execute(
         "INSERT INTO error_records (session_id, pattern_id, error_text, timestamp) "
         "VALUES (?, ?, ?, ?)",
-        ("sess_002", "fresh_pattern_bb1234567a", "parse_error: recent",
-         _utc_days_ago(0)),
+        ("sess_002", "fresh_pattern_bb1234567a", "parse_error: recent", _utc_days_ago(0)),
     )
     db.commit()
 
     grade = compute_pattern_grade(db, "fresh_pattern_bb1234567a")
 
-    assert grade == "established", (
-        f"Fresh pattern should stay 'established', got {grade!r}"
-    )
+    assert grade == "established", f"Fresh pattern should stay 'established', got {grade!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -137,14 +130,12 @@ def test_very_stale_pattern_transitions_to_dead(db):
     db.execute(
         "INSERT INTO patterns (pattern_id, description, grade, error_count, last_error_at) "
         "VALUES (?, ?, ?, ?, ?)",
-        ("dead_pattern_cc1234567b", "timeout: old error", "declining", 3,
-         _utc_days_ago(35)),
+        ("dead_pattern_cc1234567b", "timeout: old error", "declining", 3, _utc_days_ago(35)),
     )
     db.execute(
         "INSERT INTO error_records (session_id, pattern_id, error_text, timestamp) "
         "VALUES (?, ?, ?, ?)",
-        ("sess_003", "dead_pattern_cc1234567b", "timeout: old error",
-         _utc_days_ago(35)),
+        ("sess_003", "dead_pattern_cc1234567b", "timeout: old error", _utc_days_ago(35)),
     )
     db.commit()
 
@@ -170,21 +161,18 @@ def test_grade_uses_max_error_records_timestamp(db):
     db.execute(
         "INSERT INTO patterns (pattern_id, description, grade, error_count, last_error_at) "
         "VALUES (?, ?, ?, ?, ?)",
-        ("stale_meta_dd1234567c", "auth_error: stale meta", "established", 8,
-         _utc_days_ago(14)),
+        ("stale_meta_dd1234567c", "auth_error: stale meta", "established", 8, _utc_days_ago(14)),
     )
     # Insert fresh error record — MAX will be today
     db.execute(
         "INSERT INTO error_records (session_id, pattern_id, error_text, timestamp) "
         "VALUES (?, ?, ?, ?)",
-        ("sess_004", "stale_meta_dd1234567c", "auth_error: stale meta",
-         _utc_days_ago(14)),
+        ("sess_004", "stale_meta_dd1234567c", "auth_error: stale meta", _utc_days_ago(14)),
     )
     db.execute(
         "INSERT INTO error_records (session_id, pattern_id, error_text, timestamp) "
         "VALUES (?, ?, ?, ?)",
-        ("sess_005", "stale_meta_dd1234567c", "auth_error: stale meta",
-         _utc_days_ago(0)),  # fresh
+        ("sess_005", "stale_meta_dd1234567c", "auth_error: stale meta", _utc_days_ago(0)),  # fresh
     )
     db.commit()
 
@@ -208,8 +196,7 @@ def test_grade_falls_back_to_last_error_at_when_no_records(db):
     db.execute(
         "INSERT INTO patterns (pattern_id, description, grade, error_count, last_error_at) "
         "VALUES (?, ?, ?, ?, ?)",
-        ("orphan_ee1234567d", "io_error: orphan pattern", "established", 2,
-         _utc_days_ago(10)),
+        ("orphan_ee1234567d", "io_error: orphan pattern", "established", 2, _utc_days_ago(10)),
     )
     # No error_records inserted for this pattern
     db.commit()

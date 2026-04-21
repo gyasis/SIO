@@ -17,9 +17,11 @@ from __future__ import annotations
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_recall_evaluator():
     """Import RecallEvaluator from the canonical location."""
     from sio.training.recall_trainer import RecallEvaluator  # noqa: PLC0415
+
     return RecallEvaluator
 
 
@@ -27,9 +29,11 @@ def _get_recall_evaluator():
 # T060-1: Class structure tests (RED until T067 Wave 9)
 # ---------------------------------------------------------------------------
 
+
 def test_recall_evaluator_is_dspy_module():
     """RecallEvaluator must be a dspy.Module subclass."""
     import dspy  # noqa: PLC0415
+
     RecallEvaluator = _get_recall_evaluator()
     assert issubclass(RecallEvaluator, dspy.Module), (
         "RecallEvaluator must subclass dspy.Module (contracts/dspy-module-api.md §7)"
@@ -39,15 +43,12 @@ def test_recall_evaluator_is_dspy_module():
 def test_recall_evaluator_forward_signature():
     """RecallEvaluator.forward() must accept (gold_rule, candidate_rule)."""
     import inspect  # noqa: PLC0415
+
     RecallEvaluator = _get_recall_evaluator()
     sig = inspect.signature(RecallEvaluator.forward)
     params = list(sig.parameters.keys())
-    assert "gold_rule" in params, (
-        "forward() must accept 'gold_rule'"
-    )
-    assert "candidate_rule" in params, (
-        "forward() must accept 'candidate_rule'"
-    )
+    assert "gold_rule" in params, "forward() must accept 'gold_rule'"
+    assert "candidate_rule" in params, "forward() must accept 'candidate_rule'"
 
 
 def test_recall_evaluator_forward_returns_score_and_reasoning():
@@ -80,6 +81,7 @@ def test_recall_evaluator_forward_returns_score_and_reasoning():
 def test_recall_evaluator_uses_rule_recall_score_signature():
     """RecallEvaluator must use the RuleRecallScore signature."""
     import inspect  # noqa: PLC0415
+
     RecallEvaluator = _get_recall_evaluator()
     source = inspect.getsource(RecallEvaluator)
     assert "RuleRecallScore" in source, (

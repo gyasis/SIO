@@ -79,9 +79,7 @@ def _compute_tool_mastery(
                 approved_calls += 1
 
     diversity = len(tools_used)
-    approval_rate = (
-        approved_calls / total_tool_calls if total_tool_calls > 0 else 0.0
-    )
+    approval_rate = approved_calls / total_tool_calls if total_tool_calls > 0 else 0.0
 
     if diversity >= 5 and approval_rate >= 0.8:
         level = "high"
@@ -183,17 +181,14 @@ def _compute_session_complexity(
     token_count = 0
 
     if session_metrics:
-        token_count = (
-            (session_metrics.get("total_input_tokens") or 0)
-            + (session_metrics.get("total_output_tokens") or 0)
+        token_count = (session_metrics.get("total_input_tokens") or 0) + (
+            session_metrics.get("total_output_tokens") or 0
         )
 
     # Fallback: sum per-message tokens
     if token_count == 0:
         for msg in parsed_messages:
-            token_count += msg.get("input_tokens", 0) + msg.get(
-                "output_tokens", 0
-            )
+            token_count += msg.get("input_tokens", 0) + msg.get("output_tokens", 0)
 
     # Avoid log(0)
     log_tokens = math.log(max(token_count, 1))
@@ -252,11 +247,13 @@ def extract_facets(
     facets = {
         "tool_mastery": _compute_tool_mastery(parsed_messages),
         "error_prone_area": _compute_error_prone_area(
-            session_metrics, parsed_messages,
+            session_metrics,
+            parsed_messages,
         ),
         "user_satisfaction": _compute_user_satisfaction(parsed_messages),
         "session_complexity": _compute_session_complexity(
-            parsed_messages, session_metrics,
+            parsed_messages,
+            session_metrics,
         ),
     }
 

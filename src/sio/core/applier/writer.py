@@ -24,6 +24,7 @@ from sio.core.util.time import utc_now_iso
 # Allowlist roots (FR-019, R-14)
 # ---------------------------------------------------------------------------
 
+
 def _build_allowlist_roots() -> list[Path]:
     """Build the list of allowed target root directories.
 
@@ -52,6 +53,7 @@ BACKUP_ROOT: Path = Path.home() / ".sio" / "backups"
 # Exception classes
 # ---------------------------------------------------------------------------
 
+
 class WriteIntegrityError(Exception):
     """Raised when post-write size check fails (potential file-watcher race).
 
@@ -78,6 +80,7 @@ class BackupMissingError(Exception):
 # ---------------------------------------------------------------------------
 # Path validation (R-14)
 # ---------------------------------------------------------------------------
+
 
 def _validate_target_path(target: Path) -> None:
     """Validate that *target* is under an allowlisted root.
@@ -112,6 +115,7 @@ def _validate_target_path(target: Path) -> None:
 # Backup retention
 # ---------------------------------------------------------------------------
 
+
 def _prune_backups(backup_dir: Path, keep: int = 10) -> None:
     """Delete old backup files, keeping the *keep* most recent.
 
@@ -137,6 +141,7 @@ def _prune_backups(backup_dir: Path, keep: int = 10) -> None:
 # Timestamp helper
 # ---------------------------------------------------------------------------
 
+
 def _ts() -> str:
     """Return a compact UTC timestamp suitable for backup filenames.
 
@@ -153,6 +158,7 @@ def _ts() -> str:
 # ---------------------------------------------------------------------------
 # Atomic write (R-4)
 # ---------------------------------------------------------------------------
+
 
 def atomic_write(target: Path, new_content: str) -> Path:
     """Write *new_content* to *target* atomically, with backup and size check.
@@ -236,6 +242,7 @@ def atomic_write(target: Path, new_content: str) -> Path:
 # High-level apply_change (T055 — US3, FR-004, FR-019)
 # ---------------------------------------------------------------------------
 
+
 def apply_change(
     suggestion_id: int,
     target_path: Path,
@@ -310,6 +317,7 @@ def apply_change(
 # Rollback (US2, FR-003)
 # ---------------------------------------------------------------------------
 
+
 def _open_rollback_db(db_path) -> tuple[sqlite3.Connection, bool]:
     """Return (conn, owned) for rollback operations."""
     if isinstance(db_path, sqlite3.Connection):
@@ -364,9 +372,7 @@ def rollback_applied_change(
         ).fetchone()
 
         if row is None:
-            raise ValueError(
-                f"applied_changes row with id={applied_change_id} does not exist"
-            )
+            raise ValueError(f"applied_changes row with id={applied_change_id} does not exist")
 
         backup_path_str = row["backup_path"]
         target_path_str = row["target_file"]
@@ -392,6 +398,7 @@ def rollback_applied_change(
 
         # Mark this applied_change as superseded (no successor ID for rollback)
         from sio.core.db.queries import mark_superseded  # noqa: PLC0415
+
         mark_superseded(conn, applied_change_id, by_id=None)
 
         return {

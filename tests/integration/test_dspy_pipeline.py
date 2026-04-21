@@ -120,12 +120,8 @@ class TestDspyPipelineIntegration:
     ):
         """End-to-end: pattern + dataset -> generate_dspy_suggestion -> valid suggestion dict."""
         with (
-            patch(
-                "sio.core.dspy.modules.SuggestionModule"
-            ) as MockModuleClass,
-            patch(
-                "sio.core.dspy.lm_factory.create_lm"
-            ) as mock_create_lm,
+            patch("sio.core.dspy.modules.SuggestionModule") as MockModuleClass,
+            patch("sio.core.dspy.lm_factory.create_lm") as mock_create_lm,
         ):
             mock_lm = MagicMock()
             mock_create_lm.return_value = mock_lm
@@ -163,12 +159,8 @@ class TestDspyPipelineIntegration:
     ):
         """The suggestion content must reference the specific tool name from the pattern."""
         with (
-            patch(
-                "sio.core.dspy.modules.SuggestionModule"
-            ) as MockModuleClass,
-            patch(
-                "sio.core.dspy.lm_factory.create_lm"
-            ) as mock_create_lm,
+            patch("sio.core.dspy.modules.SuggestionModule") as MockModuleClass,
+            patch("sio.core.dspy.lm_factory.create_lm") as mock_create_lm,
         ):
             mock_lm = MagicMock()
             mock_create_lm.return_value = mock_lm
@@ -207,12 +199,8 @@ class TestDspyPipelineIntegration:
     ):
         """The suggestion content must reference the specific error from the pattern."""
         with (
-            patch(
-                "sio.core.dspy.modules.SuggestionModule"
-            ) as MockModuleClass,
-            patch(
-                "sio.core.dspy.lm_factory.create_lm"
-            ) as mock_create_lm,
+            patch("sio.core.dspy.modules.SuggestionModule") as MockModuleClass,
+            patch("sio.core.dspy.lm_factory.create_lm") as mock_create_lm,
         ):
             mock_lm = MagicMock()
             mock_create_lm.return_value = mock_lm
@@ -251,12 +239,8 @@ class TestDspyPipelineIntegration:
     ):
         """Pipeline output target_surface must be one of the 7 valid surfaces."""
         with (
-            patch(
-                "sio.core.dspy.modules.SuggestionModule"
-            ) as MockModuleClass,
-            patch(
-                "sio.core.dspy.lm_factory.create_lm"
-            ) as mock_create_lm,
+            patch("sio.core.dspy.modules.SuggestionModule") as MockModuleClass,
+            patch("sio.core.dspy.lm_factory.create_lm") as mock_create_lm,
         ):
             mock_lm = MagicMock()
             mock_create_lm.return_value = mock_lm
@@ -304,12 +288,8 @@ class TestDspyPipelineIntegration:
         }
 
         with (
-            patch(
-                "sio.core.dspy.modules.SuggestionModule"
-            ) as MockModuleClass,
-            patch(
-                "sio.core.dspy.lm_factory.create_lm"
-            ) as mock_create_lm,
+            patch("sio.core.dspy.modules.SuggestionModule") as MockModuleClass,
+            patch("sio.core.dspy.lm_factory.create_lm") as mock_create_lm,
         ):
             mock_lm = MagicMock()
             mock_create_lm.return_value = mock_lm
@@ -335,6 +315,4 @@ class TestDspyPipelineIntegration:
                 passed_examples = call_kwargs.args[0] if call_kwargs.args else ""
 
             # Secrets must not appear in what was passed to the LLM
-            assert "sk-proj-abc123xyz" not in passed_examples, (
-                "API key leaked to LLM input"
-            )
+            assert "sk-proj-abc123xyz" not in passed_examples, "API key leaked to LLM input"

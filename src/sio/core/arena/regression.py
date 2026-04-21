@@ -41,26 +41,24 @@ def run_arena(
     failed_golds = 0
     for gold in golds:
         passed = replay_against_prompt(gold, new_prompt)
-        gold_results.append({
-            "gold_id": gold.get("id"),
-            "passed": passed,
-        })
+        gold_results.append(
+            {
+                "gold_id": gold.get("id"),
+                "passed": passed,
+            }
+        )
         if not passed:
             failed_golds += 1
 
     if failed_golds > 0:
-        reasons.append(
-            f"{failed_golds}/{len(golds)} gold standards failed"
-        )
+        reasons.append(f"{failed_golds}/{len(golds)} gold standards failed")
 
     # Drift check — compare against first gold's message
     reference = golds[0].get("user_message", "")
     drift_score = measure_drift(reference, new_prompt, embedder)
 
     if requires_manual_approval(drift_score):
-        reasons.append(
-            f"Drift {drift_score:.1%} exceeds 40% threshold"
-        )
+        reasons.append(f"Drift {drift_score:.1%} exceeds 40% threshold")
 
     passed = len(reasons) == 0
 
