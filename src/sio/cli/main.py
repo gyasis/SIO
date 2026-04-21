@@ -2828,7 +2828,8 @@ def optimize_suggestions_cmd(optimizer, dry_run):
     """Optimize the suggestion module using ground truth corpus.
 
     Uses BootstrapFewShot (<50 examples) or MIPROv2 (>=50 examples)
-    to optimize the DSPy SuggestionModule on approved ground truth.
+    to optimize the DSPy SuggestionGenerator (PatternToRule signature
+    per contracts/dspy-module-api.md §3) on approved ground truth.
     Shows before/after metric scores and prompts for approval.
     """
     from rich.console import Console

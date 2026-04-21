@@ -109,41 +109,13 @@ class TestGroundTruthCandidateContract:
         )
 
 
-class TestSuggestionModuleContract:
-    """Verify SuggestionModule.forward() signature matches the Signature inputs."""
-
-    def test_forward_accepts_signature_input_names(self):
-        """SuggestionModule.forward() parameters must match SuggestionGenerator input fields."""
-        import inspect
-
-        from sio.core.dspy.modules import SuggestionModule
-        from sio.core.dspy.signatures import SuggestionGenerator
-
-        expected_params = set(SuggestionGenerator.input_fields.keys())
-
-        sig = inspect.signature(SuggestionModule.forward)
-        # Exclude 'self' from parameter names
-        actual_params = {name for name in sig.parameters if name != "self"}
-
-        assert expected_params == actual_params, (
-            f"SuggestionModule.forward() parameters mismatch with Signature inputs.\n"
-            f"  Signature inputs: {expected_params}\n"
-            f"  forward() params: {actual_params}\n"
-            f"  Missing in forward: {expected_params - actual_params}\n"
-            f"  Extra in forward: {actual_params - expected_params}"
-        )
-
-    def test_module_wraps_chain_of_thought(self):
-        """SuggestionModule.generate must be a ChainOfThought instance."""
-        import dspy
-
-        from sio.core.dspy.modules import SuggestionModule
-
-        mod = SuggestionModule()
-        assert isinstance(mod.generate, dspy.ChainOfThought), (
-            f"SuggestionModule.generate should be ChainOfThought, "
-            f"got {type(mod.generate).__name__}"
-        )
+# Audit Round 2 C-R2.6 (Hunter #2, DSPy) consolidation:
+# `TestSuggestionModuleContract` (2 tests) has been REMOVED because the
+# `SuggestionModule` class it covered was deleted in the same commit. The
+# canonical replacement is `sio.suggestions.dspy_generator.SuggestionGenerator`,
+# which uses the PatternToRule signature (3 inputs, 3 outputs) per PRD
+# contracts/dspy-module-api.md §3. Equivalent contract coverage for the new
+# class lives at `tests/unit/dspy/test_suggestion_generator_module.py`.
 
 
 class TestTargetSurfaceContract:

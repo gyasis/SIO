@@ -194,16 +194,18 @@ class TestFullOptimizationCycle:
         assert active is not None
         assert active["is_active"] == 1
 
-        # Simulate what _load_optimized_or_default does
+        # Simulate what _load_optimized_or_default does.
+        # Audit Round 2 C-R2.6: canonical class is SuggestionGenerator
+        # (PatternToRule signature), not the deleted SuggestionModule.
         from sio.core.dspy.module_store import load_module
-        from sio.core.dspy.modules import SuggestionModule
+        from sio.suggestions.dspy_generator import SuggestionGenerator
 
-        with patch.object(SuggestionModule, "load") as mock_load:
-            loaded = load_module(SuggestionModule, active["file_path"])
+        with patch.object(SuggestionGenerator, "load") as mock_load:
+            loaded = load_module(SuggestionGenerator, active["file_path"])
 
         # The module was instantiated and load() was called with the file path
         mock_load.assert_called_once_with(active["file_path"])
-        assert isinstance(loaded, SuggestionModule)
+        assert isinstance(loaded, SuggestionGenerator)
 
     def test_empty_corpus_returns_error(self, integration_db):
         """Returns error when no positive ground truth exists."""
