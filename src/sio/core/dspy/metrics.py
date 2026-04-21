@@ -283,99 +283,140 @@ def _extract_details_from_examples(error_examples_json: str) -> set[str]:
     return details
 
 
-def _score_specificity(example: Any, pred: Any) -> float:
-    """Score how specifically the prediction references details from the example.
+# Audit Round 2 N-R2D.2 (Hunter #2, DSPy): the suggestion metric must read
+# whatever fields the current SuggestionGenerator emits. Per C-R2.6, the
+# canonical PatternToRule signature is:
+#     inputs  : pattern_description (str), example_errors (list[str]),
+#               project_context (str)
+#     outputs : rule_title, rule_body, rule_rationale
+# The sub-scorers below prefer the new field names but fall back to the
+# legacy ones so the metric stays usable for historical examples and
+# during the transition.
 
-    Parameters
-    ----------
-    example:
-        dspy.Example-like object with ``error_examples`` (JSON string),
-        ``error_type``, ``pattern_summary`` attributes.
-    pred:
-        dspy.Example-like object with ``prevention_instructions`` attribute.
 
-    Returns
-    -------
-    float
-        Score in [0.0, 1.0].
-    """
+def _rule_text(pred: Any) -> str:
+    """Return the rule-body text from pred, new field first, legacy fallback."""
+    body = getattr(pred, "rule_body", None)
+    if body:
+        return str(body)
+    # Legacy 4-output signature fallback
+    return str(getattr(pred, "prevention_instructions", "") or "")
+
+
+def _example_error_texts(example: Any) -> list[str]:
+    """Return a list of error message strings from example (new or old shape)."""
+    # New: example.example_errors is list[str]
+    new_list = getattr(example, "example_errors", None)
+    if isinstance(new_list, list):
+        return [str(x) for x in new_list if x]
+    # Legacy: example.error_examples is JSON string
     examples_json = getattr(example, "error_examples", "[]")
     details = _extract_details_from_examples(examples_json)
+    # Return the detail set as a synthetic list for consistent downstream use
+    return [d for d in details if d]
+
+
+def _score_specificity(example: Any, pred: Any) -> float:
+    """Score how specifically the rule body references details from the example.
+
+    Uses the new PatternToRule shape (example.example_errors list[str] +
+    pred.rule_body) with legacy-shape fallback. Builds a set of "details"
+    (tool names, significant words) from the error messages and measures
+    how many appear in the rule body.
+    """
+    details: set[str] = set()
+
+    # Extract tool_name tokens + significant words from error messages
+    error_texts = _example_error_texts(example)
+    for text in error_texts:
+        for word in re.findall(r"[A-Za-z_]{3,}", text):
+            details.add(word.lower())
+
+    # Also mine tool_name if present on the example
+    tool = _get_tool_name_from_example(example)
+    if tool:
+        details.add(tool.lower())
 
     if not details:
         return 0.5  # neutral when we can't extract details
 
-    instructions = getattr(pred, "prevention_instructions", "").lower()
-
-    if not instructions:
+    body = _rule_text(pred).lower()
+    if not body:
         return 0.0
 
-    matched = sum(1 for d in details if d in instructions)
-    ratio = matched / len(details)
-
-    # Clamp to [0, 1] -- ratio is naturally in that range
-    return min(ratio, 1.0)
+    matched = sum(1 for d in details if d in body)
+    return min(matched / len(details), 1.0)
 
 
 def _score_actionability(pred: Any) -> float:
-    """Score how actionable the prevention instructions are.
+    """Score how actionable the rule body is.
 
     Checks for:
     - Concrete action verbs
     - File paths
     - Code/command references (backticks)
 
-    Parameters
-    ----------
-    pred:
-        dspy.Example-like object with ``prevention_instructions`` attribute.
-
-    Returns
-    -------
-    float
-        Score in [0.0, 1.0].
+    Reads pred.rule_body (new) with pred.prevention_instructions fallback.
     """
-    instructions = getattr(pred, "prevention_instructions", "")
-    if not instructions:
+    body = _rule_text(pred)
+    if not body:
         return 0.0
 
-    lower_instructions = instructions.lower()
-    words = set(re.findall(r"[a-z]+", lower_instructions))
+    lower_body = body.lower()
+    words = set(re.findall(r"[a-z]+", lower_body))
 
     # Sub-signal 1: action verbs (0-1, based on count, capped at 3)
     verb_hits = len(_ACTION_VERBS & words)
     verb_score = min(verb_hits / 3.0, 1.0)
 
     # Sub-signal 2: file paths present
-    has_paths = 1.0 if _FILE_PATH_RE.search(instructions) else 0.0
+    has_paths = 1.0 if _FILE_PATH_RE.search(body) else 0.0
 
     # Sub-signal 3: backtick code references
-    has_code = 1.0 if _BACKTICK_RE.search(instructions) else 0.0
+    has_code = 1.0 if _BACKTICK_RE.search(body) else 0.0
 
     # Weighted combination: verbs most important, paths and code equally
-    score = 0.50 * verb_score + 0.25 * has_paths + 0.25 * has_code
-    return score
+    return 0.50 * verb_score + 0.25 * has_paths + 0.25 * has_code
 
 
 def _score_surface_accuracy(example: Any, pred: Any) -> float:
-    """Score whether the predicted target_surface is appropriate for the error.
+    """Score whether the rule text matches the expected target surface.
 
-    Parameters
-    ----------
-    example:
-        dspy.Example-like object with ``error_type`` and optionally
-        ``error_examples`` (JSON with tool_name) attributes.
-    pred:
-        dspy.Example-like object with ``target_surface`` attribute.
+    PatternToRule doesn't emit a target_surface field (routing is delegated
+    to the code side). We therefore derive target_surface HEURISTICALLY
+    from the rule text (keywords for hook / skill / mcp / claude_md) and
+    compare against the error-type routing map.
 
-    Returns
-    -------
-    float
-        1.0 for correct match, 0.5 for safe default (claude_md_rule),
-        0.0 for mismatch.
+    Legacy-shape fallback: if pred.target_surface is present (old
+    SuggestionGenerator output), use it directly.
     """
-    error_type = getattr(example, "error_type", "unknown")
-    target_surface = getattr(pred, "target_surface", "claude_md_rule")
+    # Legacy path: explicit target_surface field present
+    legacy_target = getattr(pred, "target_surface", None)
+    if legacy_target:
+        target_surface = legacy_target
+    else:
+        # Infer from rule body text keywords
+        body = _rule_text(pred).lower()
+        if "hook" in body:
+            target_surface = "hook_config"
+        elif "skill" in body or "prompt" in body:
+            target_surface = "skill_update"
+        elif "mcp" in body:
+            target_surface = "mcp_config"
+        elif "settings" in body:
+            target_surface = "settings_config"
+        elif "agent" in body or "profile" in body:
+            target_surface = "agent_profile"
+        else:
+            target_surface = "claude_md_rule"
+
+    # error_type: new shape embeds it in pattern_description prefix
+    # ("[error_type] ...") or legacy explicit field
+    error_type = getattr(example, "error_type", None)
+    if not error_type:
+        pd = getattr(example, "pattern_description", "")
+        m = re.match(r"\s*\[([a-z_]+)\]", pd)
+        error_type = m.group(1) if m else "unknown"
 
     # Check MCP-related: if tool_name contains "mcp"
     tool_name = _get_tool_name_from_example(example) or ""
@@ -397,7 +438,6 @@ def _score_surface_accuracy(example: Any, pred: Any) -> float:
     # Standard error_type -> surface mapping
     expected_surfaces = _ERROR_TYPE_SURFACE_MAP.get(error_type)
     if expected_surfaces is None:
-        # Unknown error type -- claude_md_rule is always acceptable
         if target_surface == "claude_md_rule":
             return 0.5
         return 0.0
@@ -406,7 +446,6 @@ def _score_surface_accuracy(example: Any, pred: Any) -> float:
         return 1.0
 
     if target_surface == "claude_md_rule":
-        # Safe default -- partial credit
         return 0.5
 
     return 0.0
@@ -447,14 +486,21 @@ def suggestion_quality_metric(
 ) -> float | bool:
     """Score a DSPy suggestion on specificity, actionability, and surface accuracy.
 
+    Reads the PatternToRule-shaped fields by default, with legacy-shape
+    fallback so the metric stays functional for historical examples.
+
     Parameters
     ----------
     example:
-        dspy.Example-like object with input fields (``error_examples``,
-        ``error_type``, ``pattern_summary``).
+        dspy.Example-like object.
+        NEW: ``pattern_description`` (str, may embed [error_type] prefix),
+             ``example_errors`` (list[str]), ``project_context`` (str).
+        LEGACY: ``error_examples`` (JSON str), ``error_type``, ``pattern_summary``.
     pred:
-        dspy.Example-like object with output fields (``target_surface``,
-        ``prevention_instructions``, ``rule_title``, ``rationale``).
+        dspy.Example-like object.
+        NEW: ``rule_title``, ``rule_body``, ``rule_rationale``.
+        LEGACY: ``target_surface``, ``rule_title``, ``prevention_instructions``,
+                ``rationale``.
     trace:
         When not None (DSPy optimization), returns ``bool(score > 0.5)``.
         When None (standalone evaluation), returns ``float``.
