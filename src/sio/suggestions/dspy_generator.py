@@ -28,7 +28,12 @@ from typing import Any, Callable
 
 import dspy
 
-from sio.core.dspy.assertions import assert_no_phi, assert_rule_format
+from sio.core.dspy.assertions import (
+    assert_no_phi,
+    assert_rule_format,
+    validate_no_phi,
+    validate_rule_format,
+)
 from sio.core.dspy.signatures import PatternToRule
 
 logger = logging.getLogger(__name__)
@@ -943,27 +948,61 @@ class SuggestionGenerator(dspy.Module):
             },
         }
 
-        pred = self.generate(
-            pattern_description=pattern_description,
-            example_errors=example_errors,
-            project_context=project_context,
-        )
+        _MAX_RETRIES = 2
+        last_format_error: str | None = None
+        last_phi_error: str | None = None
 
-        # Stage 1: assert_rule_format — capture rejection reason on failure.
-        try:
-            assert_rule_format(pred)
-        except Exception as exc:  # noqa: BLE001
-            instrumentation["rejection_reasons"]["format_valid"] = str(exc)
-            instrumentation["backtrack_count"] += 1
-            raise
+        for attempt in range(_MAX_RETRIES + 1):
+            context = project_context
+            if attempt > 0:
+                # Append correction hint from the previous attempt's failure
+                hints = []
+                if last_format_error:
+                    hints.append(f"FORMAT CORRECTION NEEDED: {last_format_error}")
+                if last_phi_error:
+                    hints.append(f"PHI REMOVAL NEEDED: {last_phi_error}")
+                if hints:
+                    context = context + "\n\n" + "\n".join(hints)
 
-        # Stage 2: assert_no_phi — capture rejection reason on failure.
-        try:
-            assert_no_phi(pred)
-        except Exception as exc:  # noqa: BLE001
-            instrumentation["rejection_reasons"]["no_phi"] = str(exc)
-            instrumentation["backtrack_count"] += 1
-            raise
+            pred = self.generate(
+                pattern_description=pattern_description,
+                example_errors=example_errors,
+                project_context=context,
+            )
+
+            # Stage 1: validate_rule_format
+            if not validate_rule_format(pred):
+                try:
+                    assert_rule_format(pred)
+                except Exception as exc:  # noqa: BLE001
+                    last_format_error = str(exc)
+                else:
+                    last_format_error = "format validation failed (unknown reason)"
+                instrumentation["rejection_reasons"]["format_valid"] = last_format_error
+                instrumentation["backtrack_count"] += 1
+                if attempt < _MAX_RETRIES:
+                    continue
+                raise Exception(last_format_error)  # noqa: TRY002
+
+            last_format_error = None
+
+            # Stage 2: validate_no_phi
+            if not validate_no_phi(pred):
+                try:
+                    assert_no_phi(pred)
+                except Exception as exc:  # noqa: BLE001
+                    last_phi_error = str(exc)
+                else:
+                    last_phi_error = "PHI validation failed (unknown reason)"
+                instrumentation["rejection_reasons"]["no_phi"] = last_phi_error
+                instrumentation["backtrack_count"] += 1
+                if attempt < _MAX_RETRIES:
+                    continue
+                raise Exception(last_phi_error)  # noqa: TRY002
+
+            last_phi_error = None
+            # Both validations passed
+            break
 
         # Attach instrumentation to the prediction as a JSON string.
         pred.instrumentation_json = json.dumps(instrumentation)

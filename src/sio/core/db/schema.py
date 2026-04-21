@@ -32,7 +32,10 @@ CREATE TABLE IF NOT EXISTS behavior_invocations (
     token_count INTEGER,
     latency_ms INTEGER,
     labeled_by TEXT,
-    labeled_at TEXT
+    labeled_at TEXT,
+    tool_name TEXT,
+    tool_input TEXT,
+    conversation_pointer TEXT
 )
 """
 
@@ -67,7 +70,10 @@ CREATE TABLE IF NOT EXISTS gold_standards (
     expected_action TEXT NOT NULL,
     expected_outcome TEXT,
     created_at TEXT NOT NULL,
-    exempt_from_purge INTEGER DEFAULT 1
+    exempt_from_purge INTEGER DEFAULT 1,
+    task_type TEXT NOT NULL DEFAULT 'suggestion',
+    dspy_example_json TEXT,
+    promoted_by TEXT
 )
 """
 
@@ -101,7 +107,8 @@ CREATE TABLE IF NOT EXISTS error_records (
     tool_output TEXT,
     mined_at TEXT NOT NULL,
     is_subagent INTEGER NOT NULL DEFAULT 0,
-    parent_session_id TEXT
+    parent_session_id TEXT,
+    pattern_id TEXT
 )
 """
 
@@ -115,10 +122,16 @@ CREATE TABLE IF NOT EXISTS patterns (
     session_count INTEGER NOT NULL,
     first_seen TEXT NOT NULL,
     last_seen TEXT NOT NULL,
-    rank_score REAL NOT NULL,
+    rank_score REAL NOT NULL DEFAULT 0.0,
     centroid_embedding BLOB,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    centroid_model_version TEXT,
+    centroid_text TEXT,
+    approved INTEGER NOT NULL DEFAULT 0,
+    grade TEXT DEFAULT 'emerging'
+        CHECK(grade IN ('emerging', 'strong', 'established', 'declining')),
+    cycle_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 )
 """
 
@@ -323,6 +336,7 @@ CREATE TABLE IF NOT EXISTS flow_events (
     was_successful INTEGER NOT NULL DEFAULT 0,
     duration_seconds REAL DEFAULT 0,
     source_file TEXT,
+    file_path TEXT,
     timestamp TEXT NOT NULL,
     mined_at TEXT NOT NULL
 )
@@ -576,17 +590,38 @@ def finish_migration(conn: sqlite3.Connection, version: int) -> None:
 
 
 def refuse_to_start(conn: sqlite3.Connection) -> None:
-    """Raise PartialMigrationError if any schema_version row has status='applying'.
+    """Raise PartialMigrationError if any schema_version row has status='applying' or 'failed'.
 
     Called at SIO startup to prevent running against a partially-migrated DB.
     Operator must run ``sio db repair`` to resolve.
     """
     row = conn.execute(
-        "SELECT version, description FROM schema_version WHERE status='applying' LIMIT 1"
+        "SELECT version, status, description FROM schema_version "
+        "WHERE status IN ('applying', 'failed') LIMIT 1"
     ).fetchone()
     if row is not None:
-        version, description = row
+        version, status, description = row
         raise PartialMigrationError(
-            f"Migration version={version} ({description!r}) has status='applying' — "
-            "the previous migration crashed.  Run 'sio db repair' to resolve."
+            f"Migration version={version} ({description!r}) has status={status!r} — "
+            "the previous migration did not complete successfully.  "
+            "Run 'sio db repair' to resolve."
         )
+
+
+def repair_schema_version(conn: sqlite3.Connection) -> list[int]:
+    """Mark any 'failed' or 'applying' schema_version rows as 'applied'.
+
+    Used by ``sio db repair`` after the operator has manually verified the DB
+    is in a consistent state.  Returns the list of version numbers repaired.
+    """
+    rows = conn.execute(
+        "SELECT version FROM schema_version WHERE status IN ('applying', 'failed')"
+    ).fetchall()
+    versions = [row[0] for row in rows]
+    if versions:
+        conn.execute(
+            "UPDATE schema_version SET status='applied', applied_at=datetime('now') "
+            "WHERE status IN ('applying', 'failed')"
+        )
+        conn.commit()
+    return versions

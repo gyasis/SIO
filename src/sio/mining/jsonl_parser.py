@@ -443,13 +443,18 @@ def iter_events(
         return
 
     with fh:
-        # Seek to start_offset, but be careful not to split a multi-byte character.
-        # Since we're in binary mode, we seek to the given byte offset and then
-        # discard the (likely partial) first line.
+        # Seek to start_offset.  Only discard the first line when the seek
+        # landed in the middle of a line (i.e. the byte immediately before
+        # start_offset is NOT a newline).  When start_offset is exactly at a
+        # line boundary (as _update_session_state stores it — the offset after
+        # the last complete line's newline), reading forward from there gives
+        # the first new line without skipping it.
         if start_offset > 0:
-            fh.seek(start_offset)
-            # Discard the partial line at the seek point (it may be mid-line)
-            fh.readline()
+            fh.seek(start_offset - 1)
+            prev_byte = fh.read(1)
+            # fh is now at start_offset; only discard if previous byte wasn't \n
+            if prev_byte != b"\n":
+                fh.readline()  # discard partial line at mid-line seek
 
         for raw_line in fh:
             end_offset = fh.tell()

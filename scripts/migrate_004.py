@@ -23,11 +23,12 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
-    """ALTER TABLE ADD COLUMN, ignoring 'duplicate column name' errors."""
+    """ALTER TABLE ADD COLUMN, ignoring 'duplicate column name' and 'no such table' errors."""
     try:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column_def}")
     except sqlite3.OperationalError as exc:
-        if "duplicate column name" in str(exc).lower():
+        msg = str(exc).lower()
+        if "duplicate column name" in msg or "no such table" in msg:
             return
         raise
 
@@ -95,8 +96,11 @@ def migrate(db_path: Path | str) -> None:
         conn.commit()
 
         # ---------------------------------------------------------------
-        # §2.2 behavior_invocations — composite UNIQUE + platform index
+        # §2.2 behavior_invocations — new columns + composite UNIQUE + platform index
         # ---------------------------------------------------------------
+        _add_column(conn, "behavior_invocations", "tool_name TEXT")
+        _add_column(conn, "behavior_invocations", "tool_input TEXT")
+        _add_column(conn, "behavior_invocations", "conversation_pointer TEXT")
         _create_index(conn, """
             CREATE UNIQUE INDEX IF NOT EXISTS ix_bi_identity
                 ON behavior_invocations(platform, session_id, timestamp, tool_name)
@@ -120,10 +124,11 @@ def migrate(db_path: Path | str) -> None:
         _add_column(conn, "processed_sessions", "parent_session_id TEXT")
 
         # ---------------------------------------------------------------
-        # §2.5 error_records — subagent linkage + hot-read indexes
+        # §2.5 error_records — subagent linkage + pattern_id + hot-read indexes
         # ---------------------------------------------------------------
         _add_column(conn, "error_records", "parent_session_id TEXT")
         _add_column(conn, "error_records", "is_subagent INTEGER NOT NULL DEFAULT 0")
+        _add_column(conn, "error_records", "pattern_id TEXT")
         _create_index(conn, """
             CREATE INDEX IF NOT EXISTS ix_er_user_msg
                 ON error_records(user_message)
@@ -140,6 +145,7 @@ def migrate(db_path: Path | str) -> None:
         # ---------------------------------------------------------------
         # §2.6 flow_events — dedup key + indexes
         # ---------------------------------------------------------------
+        _add_column(conn, "flow_events", "file_path TEXT")
         _add_column(conn, "flow_events", "parent_session_id TEXT")
         _add_column(conn, "flow_events", "is_subagent INTEGER NOT NULL DEFAULT 0")
         _create_index(conn, """
@@ -185,6 +191,21 @@ def migrate(db_path: Path | str) -> None:
         # §2.10 ground_truth — slug remap column
         # ---------------------------------------------------------------
         _add_column(conn, "ground_truth", "remapped_from_pattern_id TEXT")
+
+        # ---------------------------------------------------------------
+        # §2.11 gold_standards — DSPy training columns (C-R2.3 fix)
+        # ---------------------------------------------------------------
+        _add_column(conn, "gold_standards", "task_type TEXT NOT NULL DEFAULT 'suggestion'")
+        _add_column(conn, "gold_standards", "dspy_example_json TEXT")
+        _add_column(conn, "gold_standards", "promoted_by TEXT")
+        # Backfill any pre-existing rows that would have NULL task_type
+        # (NOT NULL DEFAULT means new rows get 'suggestion'; existing NULLs need update)
+        try:
+            conn.execute(
+                "UPDATE gold_standards SET task_type = 'suggestion' WHERE task_type IS NULL"
+            )
+        except sqlite3.OperationalError:
+            pass  # table doesn't exist — skipped gracefully
 
         conn.commit()
 

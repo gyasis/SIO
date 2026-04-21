@@ -301,7 +301,7 @@ def _run_miprov2_optimization(
     module,
     corpus: list,
     metric_fn,
-    num_trials: int = 10,
+    num_trials: int | None = None,
 ):
     """Run MIPROv2 optimization.
 
@@ -309,7 +309,8 @@ def _run_miprov2_optimization(
         module: DSPy SuggestionModule instance.
         corpus: Training examples (dspy.Example list).
         metric_fn: Quality metric function.
-        num_trials: Number of optimization trials.
+        num_trials: Number of optimization trials.  Must be None when
+            ``auto`` is set (DSPy 3.x raises ValueError if both are provided).
 
     Returns:
         Optimized DSPy module.
@@ -320,7 +321,9 @@ def _run_miprov2_optimization(
         metric=metric_fn,
         auto="medium",
     )
-    return optimizer.compile(module, trainset=corpus, num_trials=num_trials)
+    # DSPy 3.1.3: cannot pass num_trials when auto is set.
+    # Compile without num_trials; auto="medium" controls the budget.
+    return optimizer.compile(module, trainset=corpus)
 
 
 def optimize_suggestions(
@@ -350,11 +353,11 @@ def optimize_suggestions(
     """
     import dspy
 
-    from sio.core.dspy.lm_factory import create_lm
+    from sio.core.dspy.lm_factory import create_lm, get_adapter
     from sio.core.dspy.metrics import suggestion_quality_metric
     from sio.core.dspy.module_store import save_module
-    from sio.core.dspy.modules import SuggestionModule
     from sio.ground_truth.corpus import load_training_corpus
+    from sio.suggestions.dspy_generator import SuggestionGenerator
 
     # Load corpus
     corpus = load_training_corpus(conn)
@@ -370,11 +373,12 @@ def optimize_suggestions(
             "Run 'sio ground-truth review' to approve examples first.",
         )
 
-    # Configure LM
+    # Configure LM (H-R2.1: also bind adapter, matching the run_optimize pattern)
     if config is not None:
         lm = create_lm(config)
         if lm is not None:
-            dspy.configure(lm=lm)
+            adapter = get_adapter(lm)
+            dspy.configure(lm=lm, adapter=adapter)
 
     # Resolve optimizer
     resolved = _select_optimizer(optimizer, len(corpus))
@@ -385,8 +389,9 @@ def optimize_suggestions(
         len(corpus),
     )
 
-    # Create base module and evaluate before score
-    base_module = SuggestionModule()
+    # Create base module and evaluate before score.
+    # Use canonical SuggestionGenerator (3-input PatternToRule-based) per C-R2.6.
+    base_module = SuggestionGenerator()
     metric_before = _evaluate_metric(
         base_module,
         corpus,
@@ -397,13 +402,13 @@ def optimize_suggestions(
     try:
         if resolved == "miprov2":
             optimized_module = _run_miprov2_optimization(
-                SuggestionModule(),
+                SuggestionGenerator(),
                 corpus,
                 suggestion_quality_metric,
             )
         else:
             optimized_module = _run_bootstrap_optimization(
-                SuggestionModule(),
+                SuggestionGenerator(),
                 corpus,
                 suggestion_quality_metric,
             )
@@ -693,67 +698,85 @@ def _record_optimization_run(
     task_lm: str | None,
     reflection_lm: str | None,
 ) -> int:
-    """Insert optimized_modules row, deactivate prior rows, return new row id."""
+    """Insert optimized_modules row, deactivate prior rows, return new row id.
+
+    H-R2.2 fix: the deactivate-then-insert sequence is wrapped in a SAVEPOINT
+    so that any failure rolls back both the deactivation and the insert,
+    leaving the previous active row intact.
+    """
     import datetime as _dt  # noqa: PLC0415
 
     now = _dt.datetime.now(_dt.timezone.utc).isoformat()
 
-    # Deactivate prior active rows for the same module
+    conn.execute("SAVEPOINT activate_module")
     try:
-        conn.execute(
-            "UPDATE optimized_modules SET is_active=0 "
-            "WHERE (module_type=? OR module_name=?) AND is_active=1",
-            (module_name, module_name),
-        )
-    except Exception:
-        pass
-    try:
-        conn.execute(
-            "UPDATE optimized_modules SET active=0 "
-            "WHERE (module_type=? OR module_name=?) AND active=1",
-            (module_name, module_name),
-        )
-    except Exception:
-        pass
+        # Deactivate prior active rows for the same module
+        try:
+            conn.execute(
+                "UPDATE optimized_modules SET is_active=0 "
+                "WHERE (module_type=? OR module_name=?) AND is_active=1",
+                (module_name, module_name),
+            )
+        except Exception:  # noqa: BLE001
+            pass  # column may not exist on old schema
+        try:
+            conn.execute(
+                "UPDATE optimized_modules SET active=0 "
+                "WHERE (module_type=? OR module_name=?) AND active=1",
+                (module_name, module_name),
+            )
+        except Exception:  # noqa: BLE001
+            pass  # column may not exist on old schema
 
-    # Build INSERT with graceful fallback for missing columns
-    try:
-        cur = conn.execute(
-            "INSERT INTO optimized_modules "
-            "(module_type, module_name, optimizer_used, optimizer_name, "
-            "file_path, artifact_path, training_count, trainset_size, "
-            "valset_size, score, metric_before, metric_after, "
-            "task_lm, reflection_lm, is_active, active, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?)",
-            (
-                module_name,
-                module_name,
-                optimizer_name,
-                optimizer_name,
-                artifact_path,
-                artifact_path,
-                trainset_size,
-                trainset_size,
-                valset_size,
-                score,
-                None,
-                score,
-                task_lm,
-                reflection_lm,
-                now,
-            ),
-        )
-    except Exception:
-        # Minimal fallback for older schema
-        cur = conn.execute(
-            "INSERT INTO optimized_modules "
-            "(module_type, optimizer_used, file_path, training_count, "
-            "metric_after, is_active, created_at) "
-            "VALUES (?, ?, ?, ?, ?, 1, ?)",
-            (module_name, optimizer_name, artifact_path, trainset_size, score, now),
-        )
+        # Build INSERT with graceful fallback for missing columns
+        try:
+            cur = conn.execute(
+                "INSERT INTO optimized_modules "
+                "(module_type, module_name, optimizer_used, optimizer_name, "
+                "file_path, artifact_path, training_count, trainset_size, "
+                "valset_size, score, metric_before, metric_after, "
+                "task_lm, reflection_lm, is_active, active, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?)",
+                (
+                    module_name,
+                    module_name,
+                    optimizer_name,
+                    optimizer_name,
+                    artifact_path,
+                    artifact_path,
+                    trainset_size,
+                    trainset_size,
+                    valset_size,
+                    score,
+                    None,
+                    score,
+                    task_lm,
+                    reflection_lm,
+                    now,
+                ),
+            )
+        except Exception:  # noqa: BLE001
+            # Minimal fallback for older schema
+            import logging as _log  # noqa: PLC0415
 
-    conn.commit()
+            _log.getLogger(__name__).warning(
+                "Rich INSERT failed for optimized_modules; using minimal fallback schema"
+            )
+            cur = conn.execute(
+                "INSERT INTO optimized_modules "
+                "(module_type, optimizer_used, file_path, training_count, "
+                "metric_after, is_active, created_at) "
+                "VALUES (?, ?, ?, ?, ?, 1, ?)",
+                (module_name, optimizer_name, artifact_path, trainset_size, score, now),
+            )
+
+        conn.execute("RELEASE activate_module")
+        conn.commit()
+    except Exception:
+        conn.execute("ROLLBACK TO activate_module")
+        conn.execute("RELEASE activate_module")
+        raise
+
     return cur.lastrowid
 
 

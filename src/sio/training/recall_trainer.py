@@ -66,15 +66,29 @@ class RecallEvaluator(dspy.Module):
                 reasoning (str): Brief justification for the score.
         """
         result = self.evaluate(gold_rule=gold_rule, candidate_rule=candidate_rule)
-        # Clamp score to [0, 1] defensively
+        # Clamp score to [0, 1] defensively.
+        # Always return a Prediction with a numeric float score to preserve the
+        # contract (score: float in [0, 1]).  On coercion failure, return 0.0
+        # with a diagnostic reasoning string so the optimizer still gets a valid
+        # numeric signal instead of crashing downstream.
+        import logging as _logging  # noqa: PLC0415
+
         try:
             clamped = max(0.0, min(1.0, float(result.score)))
             return dspy.Prediction(
                 score=clamped,
-                reasoning=result.reasoning,
+                reasoning=getattr(result, "reasoning", ""),
             )
-        except (TypeError, ValueError):
-            return result
+        except (TypeError, ValueError) as exc:
+            _logging.getLogger(__name__).warning(
+                "RecallEvaluator: unparseable score %r — defaulting to 0.0 (%s)",
+                getattr(result, "score", None),
+                exc,
+            )
+            return dspy.Prediction(
+                score=0.0,
+                reasoning=f"unparseable score: {getattr(result, 'score', None)!r}",
+            )
 
 
 def evaluate_recall(gold: str, candidate: str) -> dspy.Prediction:

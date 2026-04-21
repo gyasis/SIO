@@ -236,6 +236,14 @@ class TestStop:
         assert row is not None
 
     def test_marks_session_as_processed(self, mem_conn, skills_dir):
+        """Stop hook must write session_metrics (not processed_sessions).
+
+        H-R1.3: stop hook no longer writes to processed_sessions because it
+        does not know the file SHA-256 hash.  Idempotency of processed_sessions
+        is maintained exclusively by the mining pipeline
+        (pipeline._update_session_state).  The stop hook records its work in
+        session_metrics instead.
+        """
         from sio.adapters.claude_code.hooks.stop import handle_stop
 
         payload = json.dumps(
@@ -246,11 +254,21 @@ class TestStop:
         )
         handle_stop(payload, conn=mem_conn)
 
-        row = mem_conn.execute(
+        # processed_sessions is NOT written by the stop hook (H-R1.3).
+        row_ps = mem_conn.execute(
             "SELECT * FROM processed_sessions WHERE file_path = ?",
             ("/tmp/proc.jsonl",),
         ).fetchone()
-        assert row is not None
+        assert row_ps is None, (
+            "stop hook must NOT write to processed_sessions (H-R1.3: hash unknown at stop time)"
+        )
+
+        # session_metrics IS written by the stop hook.
+        row_sm = mem_conn.execute(
+            "SELECT * FROM session_metrics WHERE session_id = ?",
+            ("sess-proc",),
+        ).fetchone()
+        assert row_sm is not None, "stop hook must write a session_metrics row"
 
     def test_saves_high_confidence_pattern(self, mem_conn, skills_dir):
         from sio.adapters.claude_code.hooks.stop import handle_stop

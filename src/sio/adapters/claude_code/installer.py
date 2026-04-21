@@ -78,7 +78,7 @@ def install(
         Summary dict with installation results.
     """
     if db_dir is None:
-        db_dir = os.path.expanduser("~/.sio/claude-code")
+        db_dir = os.path.expanduser(f"~/.sio/{DEFAULT_PLATFORM}")
     if claude_dir is None:
         claude_dir = os.path.expanduser("~/.claude")
 

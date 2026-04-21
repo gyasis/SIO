@@ -130,43 +130,47 @@ def test_suggestion_generator_forward_returns_prediction_fields():
 
 
 def test_suggestion_generator_assert_fires_on_empty_rule_title():
-    """dspy.Assert must fire when forward() returns an empty rule_title.
+    """ValidationError (or Exception) must fire when forward() returns empty rule_title.
 
-    Uses a mock that returns empty rule_title to trigger the assertion guard.
+    C-R2.1 fix: dspy.Assert was replaced with validate_rule_format() + retry loop.
+    The assertion contract is now: forward() raises on persistent format violation,
+    and the validate_rule_format validator returns False for empty rule_title.
     """
     from unittest.mock import patch  # noqa: PLC0415
 
     import dspy  # noqa: PLC0415
 
+    from sio.core.dspy.assertions import validate_rule_format  # noqa: PLC0415
+
     SuggestionGenerator = _get_suggestion_generator()
 
-    # Empty rule_title should trigger assert_rule_format
+    # Empty rule_title should trigger format validation failure
     mock_pred = dspy.Prediction(
-        rule_title="",  # EMPTY — should trigger assertion
+        rule_title="",  # EMPTY — should fail validate_rule_format
         rule_body="Some body.",
         rule_rationale="Some rationale.",
     )
 
     gen = SuggestionGenerator()
 
-    triggered = []
+    # Direct validator check: validate_rule_format must return False for empty title
+    assert validate_rule_format(mock_pred) is False, (
+        "validate_rule_format must return False for empty rule_title"
+    )
 
-    def _track_assert(condition, msg="", **kwargs):
-        if not condition:
-            triggered.append((condition, msg))
-
+    # Forward() with a mock that always returns invalid pred must raise
     with patch.object(gen, "generate", return_value=mock_pred):
-        with patch("dspy.Assert", side_effect=_track_assert):
-            try:
-                gen.forward(
-                    pattern_description="Test pattern",
-                    example_errors=["error 1"],
-                    project_context="test",
-                )
-            except Exception:
-                pass  # Assert may raise — that's fine
+        raised = False
+        try:
+            gen.forward(
+                pattern_description="Test pattern",
+                example_errors=["error 1"],
+                project_context="test",
+            )
+        except Exception:
+            raised = True
 
-    assert triggered, (
-        "dspy.Assert should have been called with a failing condition for empty rule_title. "
-        "Ensure SuggestionGenerator.forward() calls assert_rule_format(pred)."
+    assert raised, (
+        "SuggestionGenerator.forward() must raise when format validation fails after retries. "
+        "Ensure forward() calls validate_rule_format(pred) and raises on persistent failure."
     )

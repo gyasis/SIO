@@ -10,7 +10,9 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_DB_DIR = os.path.expanduser("~/.sio/claude-code")
+from sio.core.constants import DEFAULT_PLATFORM as _DEFAULT_PLATFORM  # noqa: E402
+
+_DEFAULT_DB_DIR = os.path.expanduser(f"~/.sio/{_DEFAULT_PLATFORM}")
 _ERROR_LOG = os.path.expanduser("~/.sio/hook_errors.log")
 _SKILLS_DIR = os.path.expanduser("~/.claude/skills/learned")
 
@@ -184,13 +186,10 @@ def _do_finalize(stdin_json: str, *, conn=None) -> list[str]:
                 if fpath:
                     saved_files.append(fpath)
 
-        # Mark session as processed
-        conn.execute(
-            "INSERT OR IGNORE INTO processed_sessions "
-            "(file_path, file_hash, message_count, tool_call_count, mined_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (transcript_path, session_id, 0, tool_call_count, now),
-        )
+        # NOTE: Do NOT write to processed_sessions here.
+        # The stop hook does not know the real file SHA-256 hash.
+        # processed_sessions is exclusively managed by the mining pipeline
+        # (pipeline._update_session_state) to maintain idempotency.
         conn.commit()
     finally:
         if own_conn:

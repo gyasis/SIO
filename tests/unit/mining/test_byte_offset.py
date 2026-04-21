@@ -67,7 +67,7 @@ def _open_db(db_path: Path) -> sqlite3.Connection:
             last_mtime REAL,
             is_subagent INTEGER NOT NULL DEFAULT 0,
             parent_session_id TEXT,
-            UNIQUE(file_path)
+            UNIQUE(file_path, file_hash)
         );
         CREATE TABLE IF NOT EXISTS error_records (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

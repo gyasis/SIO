@@ -266,48 +266,58 @@ def _most_common(values: list[Any]) -> Any:
 def _load_stored_centroids(
     db_conn: sqlite3.Connection,
     current_model_hash: bytes,
-) -> dict[str, np.ndarray]:
+) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
     """Load stored centroid BLOBs from the patterns table.
 
-    Returns a mapping of ``description -> centroid_vector`` for all patterns
-    whose stored ``centroid_embedding`` BLOB has a model_hash that matches
-    *current_model_hash*.  Patterns with a mismatching hash or no BLOB are
-    excluded (they will be re-embedded).
+    Returns two mappings:
+    - ``pattern_id -> centroid_vector`` for cache lookups after clustering.
+    - ``description -> centroid_vector`` for pre-clustering text-exact-match
+      shortcuts (allows skipping encode for errors whose text exactly matches
+      a stored pattern description with a valid model_hash).
+
+    H-R2.7 fix: primary cache is keyed by ``pattern_id`` (slug), NOT by
+    ``description``.  Keying by description caused cross-cluster collisions
+    when two distinct clusters happened to share the same leading error text.
+    The description map is a secondary convenience lookup only.
 
     Parameters
     ----------
     db_conn:
         An open sqlite3.Connection with a ``patterns`` table that has
-        ``description`` and ``centroid_embedding`` columns.
+        ``pattern_id``, ``description``, and ``centroid_embedding`` columns.
     current_model_hash:
         Exactly 8 bytes from ``_current_model_hash()``.
 
     Returns
     -------
-    dict[str, np.ndarray]
-        ``{description: centroid_vector}`` for cache-valid patterns.
+    tuple[dict[str, np.ndarray], dict[str, np.ndarray]]
+        ``(by_pattern_id, by_description)`` — both map to centroid vectors
+        for model-hash-valid patterns.
     """
-    cache: dict[str, np.ndarray] = {}
+    by_id: dict[str, np.ndarray] = {}
+    by_desc: dict[str, np.ndarray] = {}
     try:
         rows = db_conn.execute(
-            "SELECT description, centroid_embedding FROM patterns "
-            "WHERE centroid_embedding IS NOT NULL"
+            "SELECT pattern_id, description, centroid_embedding FROM patterns "
+            "WHERE centroid_embedding IS NOT NULL AND pattern_id IS NOT NULL"
         ).fetchall()
     except Exception:  # noqa: BLE001
-        return cache  # table may not have the column yet; degrade gracefully
+        return by_id, by_desc  # table may not have the column yet; degrade gracefully
 
     for row in rows:
-        description, blob = row[0], row[1]
-        if not blob or not description:
+        pattern_id, description, blob = row[0], row[1], row[2]
+        if not blob or not pattern_id:
             continue
         try:
             vec, stored_hash = _unpack_centroid(blob)
             if stored_hash == current_model_hash:
-                cache[description] = vec
+                by_id[pattern_id] = vec
+                if description:
+                    by_desc[description] = vec
         except (ValueError, struct.error):
             continue  # malformed BLOB — skip
 
-    return cache
+    return by_id, by_desc
 
 
 def _store_centroid(
@@ -349,8 +359,22 @@ def _store_centroid(
                 (pattern_id, blob, model_version),
             )
         db_conn.commit()
-    except Exception:  # noqa: BLE001
-        pass  # degrade gracefully if schema differs
+    except sqlite3.OperationalError as exc:
+        # Schema may be missing centroid_model_version (pre-migration DB).
+        # Log the error so operators can diagnose, but do not crash the caller.
+        import logging as _logging  # noqa: PLC0415
+
+        _logging.getLogger(__name__).warning(
+            "centroid write failed for pattern_id=%r (schema issue — run sio db migrate): %s",
+            pattern_id,
+            exc,
+        )
+    except Exception as exc:  # noqa: BLE001
+        import logging as _logging  # noqa: PLC0415
+
+        _logging.getLogger(__name__).error(
+            "centroid write failed for pattern_id=%r: %s", pattern_id, exc
+        )
 
 
 def cluster_errors(
@@ -408,26 +432,28 @@ def cluster_errors(
     )
 
     # ---- Step 2: load stored centroids from DB (centroid reuse, T102) ----
-    # Map description -> cached centroid vector for patterns whose BLOB is
-    # valid for the current model.
+    # by_pattern_id: pattern_id -> vec (used in Step 7 to skip re-store)
+    # by_description: description -> vec (text-exact-match shortcut for Step 3)
     centroid_cache: dict[str, np.ndarray] = {}
+    desc_cache: dict[str, np.ndarray] = {}
     cur_model_hash: bytes = _current_model_hash()
 
     if db_conn is not None:
-        centroid_cache = _load_stored_centroids(db_conn, cur_model_hash)
+        centroid_cache, desc_cache = _load_stored_centroids(db_conn, cur_model_hash)
 
-    # ---- Step 3: determine which texts need encoding ---------------------
+    # ---- Step 3: identify which error texts need fresh encoding -----------
+    # If an error's text exactly matches a stored pattern description whose
+    # BLOB is valid for the current model, reuse the stored centroid vector
+    # directly (skips the encode call for that text).
     texts_to_encode: list[str] = []
-    text_to_encode_idx: list[int] = []  # index into sorted_errors
+    text_to_encode_idx: list[int] = []
 
     for i, err in enumerate(sorted_errors):
-        text = err["error_text"]
-        if text not in centroid_cache:
-            texts_to_encode.append(text)
+        if err["error_text"] not in desc_cache:
+            texts_to_encode.append(err["error_text"])
             text_to_encode_idx.append(i)
 
-    # ---- Step 4: encode only uncached texts ------------------------------
-    # If all texts are cached, we skip encoding entirely (0 encode calls).
+    # ---- Step 4: encode only the texts without a cached centroid ----------
     encoded_map: dict[int, np.ndarray] = {}  # sorted_errors index -> vector
 
     if texts_to_encode:
@@ -436,12 +462,11 @@ def cluster_errors(
         for local_i, err_i in enumerate(text_to_encode_idx):
             encoded_map[err_i] = new_embeddings[local_i]
 
-    # Build the full embedding array (cached or freshly encoded).
+    # Build the full embedding array, using desc_cache hits where available.
     embeddings: list[np.ndarray] = []
     for i, err in enumerate(sorted_errors):
-        text = err["error_text"]
-        if text in centroid_cache:
-            embeddings.append(centroid_cache[text])
+        if err["error_text"] in desc_cache:
+            embeddings.append(desc_cache[err["error_text"]])
         else:
             embeddings.append(encoded_map[i])
 
@@ -510,9 +535,9 @@ def cluster_errors(
         )
 
         # ---- Step 7: write new centroids back to DB ----------------------
-        # Only write for clusters whose description was NOT in the cache
-        # (i.e., new clusters or re-computed due to model_hash mismatch).
-        if db_conn is not None and description not in centroid_cache:
+        # Write centroid for this cluster unless its pattern_id was already
+        # in the cache (i.e., loaded from DB with a matching model_hash).
+        if db_conn is not None and pattern_id not in centroid_cache:
             _store_centroid(db_conn, pattern_id, centroid_vec, cur_model_hash)
 
     return patterns

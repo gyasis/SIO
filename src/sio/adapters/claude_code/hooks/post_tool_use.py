@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 from sio.core.constants import DEFAULT_PLATFORM as _DEFAULT_PLATFORM  # noqa: E402
 
-_DEFAULT_DB_DIR = os.path.expanduser("~/.sio/claude-code")
+_DEFAULT_DB_DIR = os.path.expanduser(f"~/.sio/{_DEFAULT_PLATFORM}")
 
 
 def handle_post_tool_use(stdin_json: str, *, conn=None) -> str:

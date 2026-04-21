@@ -6,7 +6,9 @@ import argparse
 import os
 import sys
 
-_DEFAULT_DB_DIR = os.path.expanduser("~/.sio/claude-code")
+from sio.core.constants import DEFAULT_PLATFORM as _DEFAULT_PLATFORM
+
+_DEFAULT_DB_DIR = os.path.expanduser(f"~/.sio/{_DEFAULT_PLATFORM}")
 
 
 def main():

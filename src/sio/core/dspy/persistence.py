@@ -25,6 +25,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class ArtifactStructureMismatch(ValueError):
+    """Raised when a compiled DSPy artifact cannot be loaded into the target module.
+
+    Indicates that the saved predictor names do not match the current module
+    structure.  Re-run optimization to regenerate a compatible artifact.
+    """
+
+
 # ---------------------------------------------------------------------------
 # Module registry — lazy-loaded so we don't crash if Wave 9 classes not yet real
 # ---------------------------------------------------------------------------
@@ -194,12 +202,23 @@ def load_compiled(module_name: str, path: Path) -> dspy.Module:
         import json as _json  # noqa: PLC0415
 
         state = _json.loads(Path(path).read_text(encoding="utf-8"))
-        # Try to restore whatever predictors exist in the saved state
+        # Try to restore whatever predictors exist in the saved state.
+        # Track failures — if ANY predictor fails to load, raise with details.
+        failed_predictors: list[str] = []
         for name, predictor in program.named_predictors():
             if name in state:
                 try:
                     predictor.load_state(state[name])
-                except Exception:
-                    pass
+                except Exception as load_exc:  # noqa: BLE001
+                    failed_predictors.append(f"{name}: {load_exc}")
+        if failed_predictors:
+            saved_keys = list(state.keys())
+            expected_keys = [n for n, _ in program.named_predictors()]
+            raise ArtifactStructureMismatch(
+                f"Compiled artifact at {path} could not be fully loaded into "
+                f"'{module_name}'. Failed predictors: {failed_predictors}. "
+                f"Saved keys: {saved_keys}, expected: {expected_keys}. "
+                "Re-run optimization to regenerate a compatible artifact."
+            )
     logger.debug("Loaded compiled DSPy module '%s' from %s", module_name, path)
     return program

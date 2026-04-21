@@ -139,24 +139,35 @@ def _is_cross_format_duplicate(
 _ONE_GB = 1_073_741_824  # 1 GiB in bytes (FR-027)
 
 
-def _file_hash(file_path: Path) -> str | None:
+_OVERSIZED_HASH_PREFIX = "__size_exceeded__"
+
+
+def _file_hash(file_path: Path) -> str:
     """Compute SHA-256 hex digest of a file's contents.
 
-    Returns None and emits a WARNING log when the file exceeds 1 GB
-    (FR-027), to avoid blocking the pipeline on pathological inputs.
+    For files exceeding 1 GB (FR-027), returns a sentinel string
+    ``"__size_exceeded__<sha256(path+mtime)[:32]>"`` rather than None, so
+    callers can always satisfy the ``processed_sessions.file_hash NOT NULL``
+    constraint.  The sentinel is unique enough to prevent false dedup matches.
     """
     try:
-        size = file_path.stat().st_size
+        stat = file_path.stat()
+        size = stat.st_size
+        mtime = stat.st_mtime
     except OSError:
         size = 0
+        mtime = 0.0
 
     if size > _ONE_GB:
         logger.warning(
-            "Skipping file too large for hashing (> 1 GB): %s (%d bytes)",
+            "File exceeds 1 GB — using size-exceeded sentinel hash: %s (%d bytes)",
             file_path,
             size,
         )
-        return None
+        import hashlib as _hl  # noqa: PLC0415
+
+        path_hash = _hl.sha256(f"{file_path}{mtime}".encode()).hexdigest()[:32]
+        return f"{_OVERSIZED_HASH_PREFIX}{path_hash}"
 
     h = hashlib.sha256()
     with open(file_path, "rb") as f:
@@ -365,7 +376,7 @@ def _update_session_state(
         """
         INSERT INTO processed_sessions (file_path, file_hash, last_offset, last_mtime, mined_at)
         VALUES (?, '', ?, ?, ?)
-        ON CONFLICT(file_path) DO UPDATE SET
+        ON CONFLICT(file_path, file_hash) DO UPDATE SET
             last_offset = excluded.last_offset,
             last_mtime  = excluded.last_mtime,
             mined_at    = excluded.mined_at
