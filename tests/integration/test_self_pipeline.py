@@ -532,7 +532,24 @@ class TestSelfPipelineIntegration:
         seeded_db: tuple[sqlite3.Connection, list[int]],
         tmp_path: Path,
     ) -> None:
-        """T074g: Pipeline can produce suggestions targeting different surfaces."""
+        """T074g: Pipeline can produce suggestions targeting different surfaces.
+
+        Requires a real LM: the DSPy path chooses `target_surface` via
+        reasoning, producing a mix of `tool_rule` / `claude_md_rule`. The
+        template-fallback path always returns `tool_rule` for seeded tools
+        (Read/Bash/Edit), so without a real LM this test would silently pass
+        via fallback or fail spuriously. We skip honestly when no LM is
+        configured rather than rubber-stamp a template-only assertion.
+        """
+        from tests.conftest import _has_real_lm_credentials
+
+        if not _has_real_lm_credentials():
+            pytest.skip(
+                "Requires a real DSPy LM (OPENAI_API_KEY / ANTHROPIC_API_KEY / "
+                "SIO_REAL_LM_ENABLED). Template-fallback always emits 'tool_rule' "
+                "for seeded tools, so this test is only meaningful against a real "
+                "LM that can produce diverse target_surface values."
+            )
         conn, _ = seeded_db
         all_errors = get_error_records(conn, limit=0)
         patterns = cluster_errors(all_errors)
@@ -589,10 +606,21 @@ class TestSelfPipelineIntegration:
 
         suggestions = generate_suggestions(persisted, datasets, conn)
 
+        # Principle guard: every suggestion must have come from the real DSPy path.
+        # If template-fallback fired, `_using_dspy` is False; asserting this early
+        # prevents a false-positive "green" via the fallback (see FR-029 / user
+        # principle "tests validate reality, never adjust to match bugs").
+        dspy_sources = [s.get("_using_dspy", False) for s in suggestions]
+        assert all(dspy_sources), (
+            "Expected every suggestion from the DSPy path, but some fell back to template. "
+            f"_using_dspy flags: {dspy_sources}. Investigate LM connectivity."
+        )
+
         # Collect the change_type values from all suggestions
         change_types = {s["change_type"] for s in suggestions}
 
-        # At minimum we expect claude_md_rule (the default for most errors)
+        # At minimum we expect claude_md_rule (DSPy reasoning may route some
+        # patterns to general CLAUDE.md rules, not tool-specific rule files).
         assert "claude_md_rule" in change_types, (
             f"Expected 'claude_md_rule' in change types, got: {change_types}"
         )

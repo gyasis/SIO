@@ -600,6 +600,64 @@ def mock_lm(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
 
 @pytest.fixture
+def dspy_stub_lm(monkeypatch: pytest.MonkeyPatch):
+    """Configure `dspy.settings.lm` with a DummyLM so `forward()` runs offline.
+
+    Returns a factory: call `dspy_stub_lm(answers=[{...}, {...}])` with one
+    dict per expected predictor invocation (DSPy cycles through in order).
+    Each dict maps Signature OutputField name → value. Example::
+
+        def test_forward(dspy_stub_lm):
+            dspy_stub_lm(answers=[{
+                "reasoning": "short thought",
+                "rule_title": "Avoid large args",
+                "rule_body": "Split long Bash commands.",
+                "rule_rationale": "argv exceeds limit",
+            }])
+            pred = SuggestionGenerator().forward(...)
+            # pred now has real instrumentation_json, not ValueError("No LM loaded")
+
+    This is NOT a rubber-stamp: `SuggestionGenerator.forward()` still runs
+    the real validators (`validate_rule_format`, `validate_no_phi`) and the
+    retry loop. The stub only controls LM outputs; code behavior is real.
+    """
+    import dspy
+    from dspy.utils.dummies import DummyLM
+
+    prior_lm = getattr(dspy.settings, "lm", None)
+
+    def _configure(answers: list[dict[str, Any]]) -> Any:
+        lm = DummyLM(answers=answers)
+        dspy.configure(lm=lm)
+        return lm
+
+    yield _configure
+
+    # Restore prior LM state (None if none was set)
+    try:
+        dspy.configure(lm=prior_lm)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _has_real_lm_credentials() -> bool:
+    """Return True ONLY when the operator has explicitly opted in to real-LM tests.
+
+    Presence of an API key is NOT sufficient — invalid/expired keys still "look
+    present" but fail the actual call, which would cause a test to spuriously
+    run and fail (or worse, silently fall back to template).
+
+    Opt-in is via ``SIO_REAL_LM_ENABLED=1``. Used by tests that need genuine
+    LLM reasoning diversity (e.g. DSPy picking varied ``target_surface`` values).
+    CI pipelines that have verified-working credentials set this flag; dev
+    environments leave it unset and the tests skip honestly.
+    """
+    import os
+
+    return os.environ.get("SIO_REAL_LM_ENABLED") in {"1", "true", "True", "yes"}
+
+
+@pytest.fixture
 def fake_fastembed(monkeypatch: pytest.MonkeyPatch) -> None:
     """Replace the SIO embedder with a deterministic stub returning ones.
 
