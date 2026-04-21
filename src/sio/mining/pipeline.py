@@ -332,9 +332,15 @@ def _get_session_state(
         ``is_subagent`` (int), ``parent_session_id`` (str | None).
         All default to 0 / None if no row found.
     """
+    # Audit Round 2 N-R2D.4: query the byte-offset row specifically
+    # (file_hash = ''), not any row for file_path. The _mark_processed flow
+    # may have also inserted a row with a real hash for the same file_path,
+    # and a bare file_path query returns an arbitrary one — typically losing
+    # the real resume offset. Byte-offset rows are identified by file_hash=''
+    # (the convention used by _update_session_state below).
     row = conn.execute(
         "SELECT last_offset, last_mtime, is_subagent, parent_session_id "
-        "FROM processed_sessions WHERE file_path = ?",
+        "FROM processed_sessions WHERE file_path = ? AND file_hash = ''",
         (path,),
     ).fetchone()
     if row is None:

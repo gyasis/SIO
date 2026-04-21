@@ -234,8 +234,11 @@ CREATE TABLE IF NOT EXISTS processed_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     file_path TEXT NOT NULL,
     file_hash TEXT NOT NULL,
-    message_count INTEGER NOT NULL,
-    tool_call_count INTEGER NOT NULL,
+    -- Audit Round 2 C-R1.4 / N-R2D.3: DEFAULT 0 so byte-offset-resume
+    -- updates from mining pipeline do not crash with NOT NULL IntegrityError
+    -- on first-touch rows (mining tracks offset before it counts messages).
+    message_count INTEGER NOT NULL DEFAULT 0,
+    tool_call_count INTEGER NOT NULL DEFAULT 0,
     skipped INTEGER NOT NULL DEFAULT 0,
     mined_at TEXT NOT NULL,
     is_subagent INTEGER NOT NULL DEFAULT 0,
