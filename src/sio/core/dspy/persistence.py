@@ -202,6 +202,25 @@ def load_compiled(module_name: str, path: Path) -> dspy.Module:
         import json as _json  # noqa: PLC0415
 
         state = _json.loads(Path(path).read_text(encoding="utf-8"))
+        expected_keys = [n for n, _ in program.named_predictors()]
+        saved_keys = list(state.keys()) if isinstance(state, dict) else []
+
+        # Audit Round 2 N-R2D.4 (Hunter #2, DSPy): if the saved state has
+        # ZERO overlap with current predictor names, the partial-load loop
+        # below is a no-op and we would silently return a fresh-default
+        # program to the operator with a misleading "Loaded compiled DSPy
+        # module" log. That lets an unoptimized baseline masquerade as an
+        # optimized artifact. Zero overlap is ALWAYS wrong — raise loudly.
+        overlap = [n for n in expected_keys if n in state]
+        if not overlap:
+            raise ArtifactStructureMismatch(
+                f"Compiled artifact at {path} has ZERO predictor-name overlap "
+                f"with '{module_name}'. Saved keys: {saved_keys}; expected: "
+                f"{expected_keys}. Returning a fresh default would silently "
+                "hide the mismatch — re-run optimization to regenerate a "
+                "compatible artifact."
+            )
+
         # Try to restore whatever predictors exist in the saved state.
         # Track failures — if ANY predictor fails to load, raise with details.
         failed_predictors: list[str] = []
@@ -212,8 +231,6 @@ def load_compiled(module_name: str, path: Path) -> dspy.Module:
                 except Exception as load_exc:  # noqa: BLE001
                     failed_predictors.append(f"{name}: {load_exc}")
         if failed_predictors:
-            saved_keys = list(state.keys())
-            expected_keys = [n for n, _ in program.named_predictors()]
             raise ArtifactStructureMismatch(
                 f"Compiled artifact at {path} could not be fully loaded into "
                 f"'{module_name}'. Failed predictors: {failed_predictors}. "
