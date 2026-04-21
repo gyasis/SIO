@@ -61,24 +61,24 @@ _VALID_SURFACES = frozenset(_SURFACE_TARGET_MAP.keys())
 
 
 def _load_optimized_or_default(config: Any) -> Any:
-    """Load the active optimized SuggestionModule, or create a fresh one.
+    """Load the active optimized SuggestionGenerator, or create a fresh one.
 
-    Checks the SIO database for an active optimized module of type
-    'suggestion'. If found and the file exists on disk, loads and returns
-    it. Otherwise returns a new (unoptimized) SuggestionModule.
+    Audit Round 2 C-R2.6 consolidation (Hunter #2, DSPy): the canonical
+    suggestion class is ``SuggestionGenerator`` (3-input PatternToRule),
+    not the legacy ``SuggestionModule`` (4-input old SuggestionGenerator
+    signature). This function now returns the canonical class per
+    ``contracts/dspy-module-api.md`` §3.
 
     Args:
         config: SIOConfig instance (used to locate the DB).
 
     Returns:
-        A DSPy SuggestionModule — either optimized or freshly created.
+        A DSPy SuggestionGenerator — either optimized or freshly created.
     """
-    from sio.core.dspy.modules import SuggestionModule
-
     try:
         db_path = os.path.expanduser("~/.sio/sio.db")
         if not os.path.exists(db_path):
-            return SuggestionModule()
+            return SuggestionGenerator()
 
         import sqlite3
 
@@ -93,17 +93,17 @@ def _load_optimized_or_default(config: Any) -> Any:
 
         if active and os.path.exists(active["file_path"]):
             logger.info(
-                "Loading optimized SuggestionModule from %s",
+                "Loading optimized SuggestionGenerator from %s",
                 active["file_path"],
             )
-            return load_module(SuggestionModule, active["file_path"])
+            return load_module(SuggestionGenerator, active["file_path"])
     except Exception:
         logger.warning(
             "Failed to load optimized module, falling back to default",
             exc_info=True,
         )
 
-    return SuggestionModule()
+    return SuggestionGenerator()
 
 
 # ---------------------------------------------------------------------------
@@ -439,24 +439,40 @@ def generate_dspy_suggestion(
     tool_input_context = _truncate_fields(tool_input_context, max_chars=4000)
 
     error_type = pattern.get("error_type") or "unknown"
-    # Build a concise pattern summary from description + tool_name + counts
-    pattern_summary = (
-        f"Tool: {pattern.get('tool_name', 'unknown')}. "
+    # Build a concise pattern description from error_type + description + counts.
+    # Audit Round 2 C-R2.6: this maps the old 4-input signature onto the new
+    # PatternToRule 3-input contract (pattern_description / example_errors /
+    # project_context). error_type is folded into pattern_description.
+    pattern_description = (
+        f"[{error_type}] Tool: {pattern.get('tool_name', 'unknown')}. "
         f"{pattern.get('description', 'Recurring error pattern')}. "
         f"{pattern.get('error_count', 0)} errors across "
         f"{pattern.get('session_count', 0)} sessions."
     )
-    pattern_summary = _truncate_fields(pattern_summary, max_chars=500)
+    pattern_description = _truncate_fields(pattern_description, max_chars=500)
+
+    # Extract 3-5 representative error messages as a list[str] (new signature's
+    # `example_errors` field). Prefer error_text, fall back to context_message.
+    example_errors: list[str] = []
+    for ex in examples[:5]:
+        msg = ex.get("error_text") or ex.get("error_message") or ex.get("context_message")
+        if msg:
+            example_errors.append(str(msg)[:500])
+    if not example_errors:
+        example_errors = [pattern.get("description", "Recurring error pattern")]
+
+    # project_context = old tool_input_context; both describe "what the agent
+    # was trying to do" context that informs the rule target.
+    project_context = tool_input_context
 
     # --- T027: Verbose trace logging (inputs) ---
     if verbose:
         logger.info(
-            "DSPy input — error_type=%s, pattern_summary=%s, "
-            "examples_json_len=%d, tool_input_context_len=%d",
-            error_type,
-            pattern_summary[:200],
-            len(examples_json),
-            len(tool_input_context),
+            "DSPy input (PatternToRule) — pattern_description=%s, "
+            "example_errors=%d items, project_context_len=%d",
+            pattern_description[:200],
+            len(example_errors),
+            len(project_context),
         )
 
     # --- T062: Load optimized module if available (FR-011) ---
@@ -464,10 +480,9 @@ def generate_dspy_suggestion(
 
     try:
         result = module.forward(
-            error_examples=examples_json,
-            error_type=error_type,
-            pattern_summary=pattern_summary,
-            tool_input_context=tool_input_context,
+            pattern_description=pattern_description,
+            example_errors=example_errors,
+            project_context=project_context,
         )
     except Exception as exc:
         # Check if this is an Azure content filter / jailbreak false positive
@@ -483,33 +498,46 @@ def generate_dspy_suggestion(
 
         # Retry with aggressive sanitization — strip stack traces, paths, etc.
         logger.info("Azure content filter triggered — retrying with aggressive sanitization")
-        examples_json_clean = json.dumps(examples[:10], default=str)
-        examples_json_clean = _sanitize_examples(examples_json_clean, aggressive=True)
-        examples_json_clean = _truncate_fields(examples_json_clean, max_chars=3000)
-        tool_input_clean = _sanitize_examples(tool_input_context, aggressive=True)
-        tool_input_clean = _truncate_fields(tool_input_clean, max_chars=2000)
+        example_errors_clean = [
+            _truncate_fields(_sanitize_examples(m, aggressive=True), max_chars=300)
+            for m in example_errors
+        ]
+        project_context_clean = _sanitize_examples(project_context, aggressive=True)
+        project_context_clean = _truncate_fields(project_context_clean, max_chars=2000)
 
         try:
             result = module.forward(
-                error_examples=examples_json_clean,
-                error_type=error_type,
-                pattern_summary=pattern_summary,
-                tool_input_context=tool_input_clean,
+                pattern_description=pattern_description,
+                example_errors=example_errors_clean,
+                project_context=project_context_clean,
             )
         except Exception as retry_exc:
             raise RuntimeError(
                 f"DSPy call failed after aggressive sanitization: {retry_exc}"
             ) from retry_exc
 
-    # --- Extract outputs ---
-    raw_surface = getattr(result, "target_surface", None) or "claude_md_rule"
-    target_surface = _normalize_surface(raw_surface)
+    # --- Extract outputs (PatternToRule — new signature) ---
+    # Audit Round 2 C-R2.6: new SuggestionGenerator produces
+    # rule_title / rule_body / rule_rationale. Legacy field names
+    # (prevention_instructions, rationale, target_surface) are mapped
+    # for downstream-dict compat:
+    #   - prevention_instructions = rule_body   (the actionable rule text)
+    #   - rationale               = rule_rationale
+    #   - target_surface          = derived from pattern via existing routing
     rule_title = getattr(result, "rule_title", "Improvement suggestion")
     prevention_instructions = getattr(
-        result, "prevention_instructions", "Review the error pattern."
+        result, "rule_body", "Review the error pattern."
     )
-    rationale = getattr(result, "rationale", "Based on observed error patterns.")
+    rationale = getattr(result, "rule_rationale", "Based on observed error patterns.")
     reasoning_trace = getattr(result, "reasoning", "")
+
+    # target_surface is no longer a DSPy output field in the new signature;
+    # derive it via the existing rule-based router (generator._infer_change_type)
+    # which inspects pattern.tool_name etc. This keeps downstream callers
+    # (apply path, change_type filter) working unchanged.
+    from sio.suggestions.generator import _infer_change_type  # noqa: PLC0415
+
+    target_surface = _normalize_surface(_infer_change_type(pattern))
 
     # Warn if DSPy returned default/empty fields — low quality signal
     _DEFAULT_VALUES = {
