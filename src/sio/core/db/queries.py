@@ -29,6 +29,13 @@ _INVOCATION_COLS = [
     "latency_ms",
     "labeled_by",
     "labeled_at",
+    # Audit Round 2 N-R2D.2: required to populate UNIQUE ix_bi_identity key.
+    # Without tool_name written to the row, the (platform, session_id, timestamp,
+    # tool_name) UNIQUE constraint treats NULL as distinct → INSERT OR IGNORE in
+    # sync.py never dedupes, duplicating every mirrored row.
+    "tool_name",
+    "tool_input",
+    "conversation_pointer",
 ]
 
 

@@ -48,6 +48,10 @@ def log_invocation(
         # Auto-label agent-inferred fields
         labels = auto_label(tool_name, tool_input, tool_output, error)
 
+        # Audit Round 2 N-R2D.2: tool_name / tool_input / conversation_pointer
+        # MUST be populated. The UNIQUE ix_bi_identity index depends on
+        # tool_name being non-NULL for INSERT OR IGNORE dedup to work across
+        # sync and re-ingest. Previously only actual_action carried tool_name.
         record = {
             "session_id": session_id,
             "timestamp": now,
@@ -69,6 +73,9 @@ def log_invocation(
             "latency_ms": None,
             "labeled_by": None,
             "labeled_at": None,
+            "tool_name": tool_name,
+            "tool_input": tool_input,
+            "conversation_pointer": None,  # populated by hook when available
         }
 
         return insert_invocation(conn, record)
