@@ -568,20 +568,35 @@ def generate_dspy_suggestion(
     pattern_confidence = score_confidence(pattern, dataset)
 
     # --- T054: Blend pattern confidence with quality metric ---
+    # Audit Round 2 C-R2.6 follow-up: the quality metric reads PatternToRule
+    # shape first (example_errors/pattern_description + rule_body/rule_rationale)
+    # with legacy fallback. Build the SimpleNamespace with the new canonical
+    # names — and include the legacy aliases so any still-legacy metric path
+    # (e.g. 3rd-party callers) keeps working. This replaces the prior
+    # reference to the removed `pattern_summary` variable (NameError fix).
     from types import SimpleNamespace
 
     from sio.core.dspy.metrics import suggestion_quality_metric
 
     quality_example = SimpleNamespace(
+        # New canonical fields
+        pattern_description=pattern_description,
+        example_errors=example_errors,
+        project_context=project_context,
+        # Legacy aliases for fallback
         error_examples=examples_json,
         error_type=error_type,
-        pattern_summary=pattern_summary,
+        pattern_summary=pattern_description,  # same value, old key preserved
         tool_name=pattern.get("tool_name", ""),
     )
     quality_pred = SimpleNamespace(
+        # New canonical output fields
+        rule_title=rule_title,
+        rule_body=prevention_instructions,  # local var already aliased from rule_body
+        rule_rationale=rationale,           # local var already aliased from rule_rationale
+        # Legacy aliases (target_surface derived via _infer_change_type above)
         target_surface=target_surface,
         prevention_instructions=prevention_instructions,
-        rule_title=rule_title,
         rationale=rationale,
     )
     quality_score = suggestion_quality_metric(quality_example, quality_pred, trace=None)

@@ -81,16 +81,24 @@ def tool_failure_dataset(tmp_path):
 
 @pytest.fixture
 def mock_lm_prediction():
-    """A mock DSPy prediction that references the Bash tool and timeout errors."""
+    """A mock DSPy prediction that references the Bash tool and timeout errors.
+
+    Audit Round 2 C-R2.6 migration: the canonical SuggestionGenerator emits
+    PatternToRule-shape output fields (rule_title / rule_body / rule_rationale).
+    This fixture populates the new names. Legacy attributes
+    (prevention_instructions, rationale, target_surface) are ALSO set so the
+    fixture is useful for any remaining legacy-path tests — but the production
+    flow (`generate_dspy_suggestion`) now reads the new names exclusively.
+    """
     pred = MagicMock()
-    pred.target_surface = "claude_md_rule"
+    # New canonical fields (what production reads)
     pred.rule_title = "Use timeout flag for Bash pytest commands"
-    pred.prevention_instructions = (
+    pred.rule_body = (
         "When running pytest via the Bash tool, always use `--timeout=30` per-test "
         "and split large test suites into smaller runs. For integration tests, "
         "use `run_in_background` parameter to avoid blocking."
     )
-    pred.rationale = (
+    pred.rule_rationale = (
         "18 TimeoutError failures across 6 sessions show that Bash pytest runs "
         "consistently exceed the 120s tool limit. Splitting and adding per-test "
         "timeouts prevents cascading failures."
@@ -100,7 +108,25 @@ def mock_lm_prediction():
         "Step 2: The common factor is full test suite runs with verbose output. "
         "Step 3: A claude_md_rule to enforce timeout flags is the best surface."
     )
+    # Legacy alias attributes (for any still-legacy paths)
+    pred.target_surface = "claude_md_rule"
+    pred.prevention_instructions = pred.rule_body
+    pred.rationale = pred.rule_rationale
     return pred
+
+
+@pytest.fixture
+def mock_dspy_lm(monkeypatch):
+    """Return a DSPy-compatible LM stub via DummyLM.
+
+    Audit Round 2 follow-up: DSPy 3.1.3 `dspy.configure(lm=...)` rejects
+    non-BaseLM instances (MagicMock fails). Using DummyLM bypasses the
+    type check while remaining a controlled, deterministic stub.
+    """
+    from dspy.utils.dummies import DummyLM
+
+    lm = DummyLM(answers=[{"rule_title": "mocked", "rule_body": "mocked body", "rule_rationale": "mocked"}])
+    return lm
 
 
 @pytest.fixture
@@ -119,16 +145,21 @@ class TestDspyPipelineIntegration:
         mock_config,
     ):
         """End-to-end: pattern + dataset -> generate_dspy_suggestion -> valid suggestion dict."""
+        # Audit Round 2 C-R2.6 migration:
+        #   - Patch target is now SuggestionGenerator (in suggestions.dspy_generator),
+        #     NOT the deleted SuggestionModule in core.dspy.modules.
+        #   - create_lm returns DummyLM (BaseLM subclass) so dspy.configure(lm=..)
+        #     in DSPy 3.1.3 accepts it. MagicMock was rejected as non-BaseLM.
         with (
-            patch("sio.core.dspy.modules.SuggestionModule") as MockModuleClass,
+            patch("sio.suggestions.dspy_generator._load_optimized_or_default") as mock_load,
             patch("sio.core.dspy.lm_factory.create_lm") as mock_create_lm,
         ):
-            mock_lm = MagicMock()
-            mock_create_lm.return_value = mock_lm
+            from dspy.utils.dummies import DummyLM
+            mock_create_lm.return_value = DummyLM(answers=[{}])
 
             mock_module = MagicMock()
             mock_module.forward.return_value = mock_lm_prediction
-            MockModuleClass.return_value = mock_module
+            mock_load.return_value = mock_module
 
             from sio.suggestions.dspy_generator import generate_dspy_suggestion
 
@@ -158,16 +189,21 @@ class TestDspyPipelineIntegration:
         mock_config,
     ):
         """The suggestion content must reference the specific tool name from the pattern."""
+        # Audit Round 2 C-R2.6 migration:
+        #   - Patch target is now SuggestionGenerator (in suggestions.dspy_generator),
+        #     NOT the deleted SuggestionModule in core.dspy.modules.
+        #   - create_lm returns DummyLM (BaseLM subclass) so dspy.configure(lm=..)
+        #     in DSPy 3.1.3 accepts it. MagicMock was rejected as non-BaseLM.
         with (
-            patch("sio.core.dspy.modules.SuggestionModule") as MockModuleClass,
+            patch("sio.suggestions.dspy_generator._load_optimized_or_default") as mock_load,
             patch("sio.core.dspy.lm_factory.create_lm") as mock_create_lm,
         ):
-            mock_lm = MagicMock()
-            mock_create_lm.return_value = mock_lm
+            from dspy.utils.dummies import DummyLM
+            mock_create_lm.return_value = DummyLM(answers=[{}])
 
             mock_module = MagicMock()
             mock_module.forward.return_value = mock_lm_prediction
-            MockModuleClass.return_value = mock_module
+            mock_load.return_value = mock_module
 
             from sio.suggestions.dspy_generator import generate_dspy_suggestion
 
@@ -198,16 +234,21 @@ class TestDspyPipelineIntegration:
         mock_config,
     ):
         """The suggestion content must reference the specific error from the pattern."""
+        # Audit Round 2 C-R2.6 migration:
+        #   - Patch target is now SuggestionGenerator (in suggestions.dspy_generator),
+        #     NOT the deleted SuggestionModule in core.dspy.modules.
+        #   - create_lm returns DummyLM (BaseLM subclass) so dspy.configure(lm=..)
+        #     in DSPy 3.1.3 accepts it. MagicMock was rejected as non-BaseLM.
         with (
-            patch("sio.core.dspy.modules.SuggestionModule") as MockModuleClass,
+            patch("sio.suggestions.dspy_generator._load_optimized_or_default") as mock_load,
             patch("sio.core.dspy.lm_factory.create_lm") as mock_create_lm,
         ):
-            mock_lm = MagicMock()
-            mock_create_lm.return_value = mock_lm
+            from dspy.utils.dummies import DummyLM
+            mock_create_lm.return_value = DummyLM(answers=[{}])
 
             mock_module = MagicMock()
             mock_module.forward.return_value = mock_lm_prediction
-            MockModuleClass.return_value = mock_module
+            mock_load.return_value = mock_module
 
             from sio.suggestions.dspy_generator import generate_dspy_suggestion
 
@@ -238,16 +279,21 @@ class TestDspyPipelineIntegration:
         mock_config,
     ):
         """Pipeline output target_surface must be one of the 7 valid surfaces."""
+        # Audit Round 2 C-R2.6 migration:
+        #   - Patch target is now SuggestionGenerator (in suggestions.dspy_generator),
+        #     NOT the deleted SuggestionModule in core.dspy.modules.
+        #   - create_lm returns DummyLM (BaseLM subclass) so dspy.configure(lm=..)
+        #     in DSPy 3.1.3 accepts it. MagicMock was rejected as non-BaseLM.
         with (
-            patch("sio.core.dspy.modules.SuggestionModule") as MockModuleClass,
+            patch("sio.suggestions.dspy_generator._load_optimized_or_default") as mock_load,
             patch("sio.core.dspy.lm_factory.create_lm") as mock_create_lm,
         ):
-            mock_lm = MagicMock()
-            mock_create_lm.return_value = mock_lm
+            from dspy.utils.dummies import DummyLM
+            mock_create_lm.return_value = DummyLM(answers=[{}])
 
             mock_module = MagicMock()
             mock_module.forward.return_value = mock_lm_prediction
-            MockModuleClass.return_value = mock_module
+            mock_load.return_value = mock_module
 
             from sio.suggestions.dspy_generator import generate_dspy_suggestion
 
@@ -287,16 +333,21 @@ class TestDspyPipelineIntegration:
             "negative_count": 0,
         }
 
+        # Audit Round 2 C-R2.6 migration:
+        #   - Patch target is now SuggestionGenerator (in suggestions.dspy_generator),
+        #     NOT the deleted SuggestionModule in core.dspy.modules.
+        #   - create_lm returns DummyLM (BaseLM subclass) so dspy.configure(lm=..)
+        #     in DSPy 3.1.3 accepts it. MagicMock was rejected as non-BaseLM.
         with (
-            patch("sio.core.dspy.modules.SuggestionModule") as MockModuleClass,
+            patch("sio.suggestions.dspy_generator._load_optimized_or_default") as mock_load,
             patch("sio.core.dspy.lm_factory.create_lm") as mock_create_lm,
         ):
-            mock_lm = MagicMock()
-            mock_create_lm.return_value = mock_lm
+            from dspy.utils.dummies import DummyLM
+            mock_create_lm.return_value = DummyLM(answers=[{}])
 
             mock_module = MagicMock()
             mock_module.forward.return_value = mock_lm_prediction
-            MockModuleClass.return_value = mock_module
+            mock_load.return_value = mock_module
 
             from sio.suggestions.dspy_generator import generate_dspy_suggestion
 
