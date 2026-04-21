@@ -49,7 +49,14 @@ class TestLoadTrainingCorpus:
         assert isinstance(corpus[0], dspy.Example)
 
     def test_with_inputs_set_correctly(self, mem_db):
-        """with_inputs should mark error_examples, error_type, pattern_summary."""
+        """Corpus examples must use the canonical PatternToRule shape.
+
+        Audit Round 2 C-R2.6 migration (commit 28c48ff):
+        load_training_corpus now maps DB fields onto the new 3-input signature
+        (pattern_description, example_errors, project_context) and 3-output
+        fields (rule_title, rule_body, rule_rationale) per contracts/
+        dspy-module-api.md §3.
+        """
         _insert_gt(mem_db, label="positive", source="approved")
 
         from sio.ground_truth.corpus import load_training_corpus
@@ -57,16 +64,24 @@ class TestLoadTrainingCorpus:
         corpus = load_training_corpus(mem_db)
         ex = corpus[0]
 
-        # Access input fields
-        assert ex.error_examples is not None
-        assert ex.error_type is not None
-        assert ex.pattern_summary is not None
+        # Input keys must be the 3 canonical PatternToRule input fields
+        assert set(ex.inputs().keys()) == {
+            "pattern_description",
+            "example_errors",
+            "project_context",
+        }
 
-        # Access output fields
-        assert ex.target_surface is not None
+        # Input field values populated
+        assert ex.pattern_description, "pattern_description must be non-empty"
+        assert isinstance(ex.example_errors, list) and ex.example_errors, (
+            "example_errors must be a non-empty list[str]"
+        )
+        assert ex.project_context is not None  # may be "" but must exist
+
+        # Output fields populated (new canonical names)
         assert ex.rule_title is not None
-        assert ex.prevention_instructions is not None
-        assert ex.rationale is not None
+        assert ex.rule_body is not None
+        assert ex.rule_rationale is not None
 
     def test_only_positive_rows_included(self, mem_db):
         """Only positive-labeled rows should appear in corpus."""

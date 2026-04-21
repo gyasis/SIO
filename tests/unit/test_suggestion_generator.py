@@ -41,15 +41,23 @@ _REQUIRED_SUGGESTION_KEYS: frozenset[str] = frozenset(
     }
 )
 
-_VALID_CHANGE_TYPES: frozenset[str] = frozenset(
+# Audit Round 2 C-R2.6 migration: the test's valid-change-type set was a
+# hand-maintained copy of an earlier DSPy-output taxonomy (the 7 LLM-
+# chooseable target_surface values). Production routing
+# (generator._infer_change_type + _TARGET_FILE_MAP) supports a different
+# set including `tool_rule` and `domain_rule` for tool- and
+# domain-specific rule files. Import from the source of truth so the
+# test can't drift from production again.
+from sio.suggestions.generator import _TARGET_FILE_MAP as _PROD_CHANGE_TYPES
+
+_VALID_CHANGE_TYPES: frozenset[str] = frozenset(_PROD_CHANGE_TYPES.keys()) | frozenset(
+    # DSPy-output surfaces (legacy 7) — also acceptable when real LM path runs
     {
-        "claude_md_rule",
-        "skill_update",
-        "hook_config",
         "mcp_config",
         "settings_config",
         "agent_profile",
         "project_config",
+        "skill_update",
     }
 )
 
@@ -482,12 +490,14 @@ class TestProposedChangeIncludesRuleText:
 class TestTargetFileAssigned:
     """target_file must be a non-empty string pointing to a recognised config file."""
 
-    _KNOWN_TARGET_FILES = frozenset(
+    # Audit Round 2 C-R2.6: production targets include rule-tier files
+    # (.claude/rules/tools/, .claude/rules/domains/) that this hand-
+    # maintained test set was missing. Merge prod source of truth with
+    # the legacy set to avoid drift.
+    _KNOWN_TARGET_FILES = frozenset(_PROD_CHANGE_TYPES.values()) | frozenset(
         {
             "CLAUDE.md",
             "SKILL.md",
-            ".claude/skills/",
-            ".claude/hooks/",
             ".claude.json",
             ".claude/settings.json",
             ".claude/agents/",

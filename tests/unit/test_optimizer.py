@@ -662,12 +662,20 @@ class TestOptimizedModuleLoading:
 
     @patch("sio.suggestions.dspy_generator.os.path.exists", return_value=False)
     def test_falls_back_to_default_when_no_db(self, mock_exists):
-        """_load_optimized_or_default returns fresh module when no DB exists."""
-        from sio.suggestions.dspy_generator import _load_optimized_or_default
+        """_load_optimized_or_default returns fresh module when no DB exists.
+
+        Audit Round 2 C-R2.6 migration (commit a05ccce):
+        The canonical fresh default is now SuggestionGenerator (3-input
+        PatternToRule signature per contracts/dspy-module-api.md §3), not
+        the deleted SuggestionModule. The ImportError-raising migration
+        shim for SuggestionModule would reject instantiation anyway.
+        """
+        from sio.suggestions.dspy_generator import (
+            SuggestionGenerator,
+            _load_optimized_or_default,
+        )
 
         result = _load_optimized_or_default(config=None)
 
-        # Should be a SuggestionModule instance (the fresh default)
-        from sio.core.dspy.modules import SuggestionModule
-
-        assert isinstance(result, SuggestionModule)
+        # Should be a SuggestionGenerator instance (the fresh default)
+        assert isinstance(result, SuggestionGenerator)

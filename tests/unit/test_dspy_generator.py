@@ -101,20 +101,43 @@ def mock_config():
 
 @pytest.fixture()
 def mock_dspy_prediction():
-    """A MagicMock that mimics a dspy.Prediction from SuggestionModule.forward()."""
+    """A MagicMock that mimics a Prediction from SuggestionGenerator.forward().
+
+    Audit Round 2 C-R2.6 migration: SuggestionGenerator now emits the
+    PatternToRule output fields (rule_title / rule_body / rule_rationale).
+    Legacy aliases (prevention_instructions, rationale, target_surface) are
+    also populated so assertions against the legacy-shaped suggestion dict
+    (whose keys are mapped from new fields in generate_dspy_suggestion)
+    continue to work.
+    """
     pred = MagicMock()
-    pred.target_surface = "claude_md_rule"
+    # New canonical output fields (what production reads)
     pred.rule_title = "Verify file existence before Read calls"
-    pred.prevention_instructions = (
+    pred.rule_body = (
         "Before calling the Read tool, check that the file path exists "
         "using Glob or Bash `test -f`. This prevents FileNotFoundError."
     )
-    pred.rationale = (
+    pred.rule_rationale = (
         "12 failures across 4 sessions show Read is called on missing paths. "
         "A precondition check eliminates this recurring error class."
     )
     pred.reasoning = "The pattern shows repeated FileNotFoundError..."
+    # Legacy aliases (for any remaining legacy-path assertions)
+    pred.target_surface = "claude_md_rule"
+    pred.prevention_instructions = pred.rule_body
+    pred.rationale = pred.rule_rationale
     return pred
+
+
+def _make_dummy_lm():
+    """Return a DSPy-compatible LM stub.
+
+    DSPy 3.1.3's `dspy.configure(lm=...)` type-checks against BaseLM and
+    rejects MagicMock. DummyLM is a BaseLM subclass that passes the check.
+    """
+    from dspy.utils.dummies import DummyLM
+
+    return DummyLM(answers=[{}])
 
 
 # =========================================================================
@@ -244,15 +267,15 @@ class TestGenerateDspySuggestion:
         """Helper to run generate_dspy_suggestion with mocked DSPy."""
         with (
             patch("sio.core.dspy.lm_factory.create_lm") as mock_create_lm,
-            patch("sio.core.dspy.modules.SuggestionModule") as MockModule,
+            patch("sio.suggestions.dspy_generator._load_optimized_or_default") as MockLoad,
             patch("dspy.configure"),
         ):
-            mock_lm = MagicMock()
-            mock_create_lm.return_value = mock_lm
+            # DSPy 3.1.3 requires BaseLM — DummyLM passes the type check
+            mock_create_lm.return_value = _make_dummy_lm()
 
             mock_instance = MagicMock()
             mock_instance.forward.return_value = mock_prediction
-            MockModule.return_value = mock_instance
+            MockLoad.return_value = mock_instance
 
             from sio.suggestions.dspy_generator import generate_dspy_suggestion
 
@@ -369,9 +392,12 @@ class TestGenerateDspySuggestion:
         )
         mock_instance.forward.assert_called_once()
         kwargs = mock_instance.forward.call_args.kwargs
-        assert "error_examples" in kwargs
-        assert "error_type" in kwargs
-        assert "pattern_summary" in kwargs
+        # Audit Round 2 C-R2.6: forward() is now called with the 3 canonical
+        # PatternToRule input fields (pattern_description, example_errors,
+        # project_context) per contracts/dspy-module-api.md §3.
+        assert "pattern_description" in kwargs
+        assert "example_errors" in kwargs
+        assert "project_context" in kwargs
 
     def test_invalid_target_surface_falls_back_to_claude_md_rule(
         self,
@@ -379,11 +405,24 @@ class TestGenerateDspySuggestion:
         sample_dataset,
         mock_config,
     ):
+        """Audit Round 2 C-R2.6: target_surface is derived code-side from the
+        pattern (via _infer_change_type), NOT chosen by the LLM. The test's
+        original concern ("invalid LLM output falls back to claude_md_rule")
+        is moot under the new signature — LLM doesn't choose the surface.
+
+        Reframed: assert the pipeline still produces a well-formed suggestion
+        dict even when the pred is minimal (edge case: missing output fields).
+        The target_surface comes from _infer_change_type(pattern) per the
+        pattern's tool_name ("Read" → "tool_rule" in the default map).
+        """
         bad_pred = MagicMock()
-        bad_pred.target_surface = "invalid_surface_xyz"
+        # Explicitly set string values for the NEW canonical fields so the
+        # production code's _format_proposed_change("\n".join(...)) works.
+        # A MagicMock lacking these fields would return auto-MagicMocks,
+        # which fail string join — a test-mock artifact, not a prod bug.
         bad_pred.rule_title = "Some rule"
-        bad_pred.prevention_instructions = "Do something"
-        bad_pred.rationale = "Because reasons"
+        bad_pred.rule_body = "Do something"
+        bad_pred.rule_rationale = "Because reasons"
         bad_pred.reasoning = "trace"
 
         result, _, _ = self._run_with_mock(
@@ -392,7 +431,13 @@ class TestGenerateDspySuggestion:
             mock_config,
             bad_pred,
         )
-        assert result["target_surface"] == "claude_md_rule"
+        # Well-formed suggestion — target_surface derived from pattern
+        # (sample_pattern.tool_name == "Read" → "tool_rule" per _TOOL_RULE_FILES)
+        assert isinstance(result["target_surface"], str)
+        assert result["target_surface"] in {"tool_rule", "claude_md_rule"}
+        # Legacy output keys still populated from new pred fields
+        assert result["prevention_instructions"] == "Do something"
+        assert result["rationale"] == "Because reasons"
 
     def test_raises_runtime_error_when_no_lm(
         self,
@@ -464,26 +509,37 @@ class TestSurfaceTargetMap:
         mock_config,
         mock_dspy_prediction,
     ):
-        """The target_file in the result must match the surface mapping."""
-        mock_dspy_prediction.target_surface = "hook_config"
+        """The target_file in the result must match the derived surface.
+
+        Audit Round 2 C-R2.6: target_surface is now derived code-side from
+        pattern (via _infer_change_type), NOT from the LLM prediction.
+        Setting `mock_dspy_prediction.target_surface = "hook_config"` has no
+        effect — the code uses pattern.tool_name to route. To force
+        target_surface=hook_config, the pattern.tool_name must contain 'hook'.
+
+        Reframed to exercise the real routing: use a pattern with tool_name
+        containing 'hook' and verify the target_file is hooks dir.
+        """
+        hook_pattern = {**sample_pattern, "tool_name": "PostToolUse_hook"}
 
         with (
             patch("sio.core.dspy.lm_factory.create_lm") as mock_create_lm,
-            patch("sio.core.dspy.modules.SuggestionModule") as MockModule,
+            patch("sio.suggestions.dspy_generator._load_optimized_or_default") as MockLoad,
             patch("dspy.configure"),
         ):
-            mock_create_lm.return_value = MagicMock()
+            mock_create_lm.return_value = _make_dummy_lm()
             mock_instance = MagicMock()
             mock_instance.forward.return_value = mock_dspy_prediction
-            MockModule.return_value = mock_instance
+            MockLoad.return_value = mock_instance
 
             from sio.suggestions.dspy_generator import generate_dspy_suggestion
 
             result = generate_dspy_suggestion(
-                sample_pattern,
+                hook_pattern,
                 sample_dataset,
                 mock_config,
             )
+            assert result["target_surface"] == "hook_config"
             assert result["target_file"] == ".claude/hooks/"
 
 
@@ -505,13 +561,13 @@ class TestVerboseLogging:
     ):
         with (
             patch("sio.core.dspy.lm_factory.create_lm") as mock_create_lm,
-            patch("sio.core.dspy.modules.SuggestionModule") as MockModule,
+            patch("sio.suggestions.dspy_generator._load_optimized_or_default") as MockLoad,
             patch("dspy.configure"),
         ):
-            mock_create_lm.return_value = MagicMock()
+            mock_create_lm.return_value = _make_dummy_lm()
             mock_instance = MagicMock()
             mock_instance.forward.return_value = mock_dspy_prediction
-            MockModule.return_value = mock_instance
+            MockLoad.return_value = mock_instance
 
             from sio.suggestions.dspy_generator import generate_dspy_suggestion
 
@@ -536,13 +592,13 @@ class TestVerboseLogging:
     ):
         with (
             patch("sio.core.dspy.lm_factory.create_lm") as mock_create_lm,
-            patch("sio.core.dspy.modules.SuggestionModule") as MockModule,
+            patch("sio.suggestions.dspy_generator._load_optimized_or_default") as MockLoad,
             patch("dspy.configure"),
         ):
-            mock_create_lm.return_value = MagicMock()
+            mock_create_lm.return_value = _make_dummy_lm()
             mock_instance = MagicMock()
             mock_instance.forward.return_value = mock_dspy_prediction
-            MockModule.return_value = mock_instance
+            MockLoad.return_value = mock_instance
 
             from sio.suggestions.dspy_generator import generate_dspy_suggestion
 
@@ -637,16 +693,15 @@ class TestGeneratorDspyIntegration:
             "negative_count": 2,
         }
 
-        mock_lm = MagicMock()
         with (
-            patch("sio.core.dspy.lm_factory.create_lm", return_value=mock_lm),
+            patch("sio.core.dspy.lm_factory.create_lm", return_value=_make_dummy_lm()),
             patch("sio.core.config.load_config", return_value=mock_config),
-            patch("sio.core.dspy.modules.SuggestionModule") as MockModule,
+            patch("sio.suggestions.dspy_generator._load_optimized_or_default") as MockLoad,
             patch("dspy.configure"),
         ):
             mock_instance = MagicMock()
             mock_instance.forward.return_value = mock_dspy_prediction
-            MockModule.return_value = mock_instance
+            MockLoad.return_value = mock_instance
 
             result = generate_suggestions(
                 [pattern],

@@ -139,12 +139,15 @@ class TestGroundTruthFullCycle:
         corpus = load_training_corpus(mem_db)
         assert len(corpus) == 2
 
-        # Verify dspy.Example format
+        # Verify dspy.Example format (PatternToRule shape — C-R2.6 migration)
         for ex in corpus:
             assert isinstance(ex, dspy.Example)
-            assert ex.error_examples is not None
-            assert ex.error_type == "tool_failure"
-            assert ex.target_surface == "skill_update"
+            # New canonical input fields
+            assert ex.pattern_description is not None
+            assert isinstance(ex.example_errors, list) and ex.example_errors
+            # error_type is embedded in pattern_description prefix: [tool_failure] ...
+            assert "tool_failure" in ex.pattern_description
+            # rule_title passes through unchanged
             assert ex.rule_title == "Verify paths before reading"
 
     @patch("sio.core.dspy.modules.GroundTruthModule")
@@ -215,7 +218,9 @@ class TestGroundTruthFullCycle:
         corpus = load_training_corpus(mem_db)
         assert len(corpus) == 1
         assert corpus[0].rule_title == "Improved title"
-        assert corpus[0].prevention_instructions == "Better instructions"
+        # C-R2.6 migration: corpus emits rule_body (was prevention_instructions
+        # in the legacy 4-output signature).
+        assert corpus[0].rule_body == "Better instructions"
 
     def test_seed_then_load_corpus(self, mem_db, config):
         """Seed entries should be loadable as training corpus immediately."""
@@ -228,10 +233,11 @@ class TestGroundTruthFullCycle:
         corpus = load_training_corpus(mem_db)
         assert len(corpus) == 10
 
-        # All should have proper structure
+        # All should have proper PatternToRule structure (C-R2.6 migration)
         for ex in corpus:
-            assert ex.error_examples is not None
-            assert ex.error_type is not None
-            assert ex.pattern_summary is not None
-            assert ex.target_surface is not None
+            assert ex.pattern_description is not None
+            assert isinstance(ex.example_errors, list) and ex.example_errors
+            assert ex.project_context is not None  # may be "" but must exist
             assert ex.rule_title is not None
+            assert ex.rule_body is not None
+            assert ex.rule_rationale is not None
