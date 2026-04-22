@@ -14,7 +14,7 @@ SIO mines your Claude Code session history to find errors, discover workflows, d
 |--------------|--------------|-------------|------|
 | Find what's going wrong | `/sio-scan` | `sio mine` + `sio errors` | Free |
 | Get improvement suggestions | `/sio-suggest` | `sio suggest` | ~$0.05 (LLM) |
-| Review pending suggestions | `/sio-review` | `sio suggest --review` | Free |
+| Review pending suggestions | `/sio-review` | `sio suggest-review` | Free |
 | Apply a suggestion | `/sio-apply` | `sio apply` | Free |
 | Check pipeline status | `/sio-status` | `sio status` | Free |
 | **Discover what works** | `/sio-flows` | `sio flows` | Free |
