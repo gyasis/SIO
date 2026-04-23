@@ -378,10 +378,14 @@ def _update_session_state(
         Current file mtime from ``os.path.getmtime``.
     """
     now = datetime.now(timezone.utc).isoformat()
+    # message_count and tool_call_count explicit-0 for pre-Audit-R2 DBs
+    # (older schemas lack DEFAULT 0, NOT NULL fails otherwise).
     conn.execute(
         """
-        INSERT INTO processed_sessions (file_path, file_hash, last_offset, last_mtime, mined_at)
-        VALUES (?, '', ?, ?, ?)
+        INSERT INTO processed_sessions
+            (file_path, file_hash, message_count, tool_call_count,
+             last_offset, last_mtime, mined_at)
+        VALUES (?, '', 0, 0, ?, ?, ?)
         ON CONFLICT(file_path, file_hash) DO UPDATE SET
             last_offset = excluded.last_offset,
             last_mtime  = excluded.last_mtime,

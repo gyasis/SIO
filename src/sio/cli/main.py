@@ -596,6 +596,29 @@ def flows(since, project, min_count, limit, mine_first):
                     f"Mined {result['total_files_scanned']} sessions, "
                     f"found {result['flows_found']} flow events"
                 )
+                # No-more-silent-errors: visible failure banner + log path
+                failed = result.get("failed_files", 0)
+                if failed:
+                    log_path = os.path.expanduser("~/.sio/logs/flow_failures.log")
+                    click.secho(
+                        f"⚠  {failed} file(s) failed during mining — "
+                        f"details: {log_path}",
+                        err=True,
+                        fg="yellow",
+                    )
+                    # Show top 3 failures inline so the user actually sees them
+                    for f in result.get("failures", [])[:3]:
+                        click.secho(
+                            f"   [{f['stage']}] {f['error']}  —  {f['file']}",
+                            err=True,
+                            fg="yellow",
+                        )
+                    if failed > 3:
+                        click.secho(
+                            f"   ... and {failed - 3} more (see log)",
+                            err=True,
+                            fg="yellow",
+                        )
             else:
                 click.echo("No JSONL source directories found.")
                 return

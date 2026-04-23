@@ -33,10 +33,29 @@ _POSITIVE_KEYWORDS = re.compile(
 
 
 def _extract_extension(tool_input: str | None) -> str:
-    """Extract file extension from tool input JSON string."""
+    """Extract differentiator marker from tool input JSON string.
+
+    Priority:
+    1. Skill name (for Skill tool)      -> `.<skill-name>`
+    2. Subagent type (for Agent tool)   -> `.<subagent-type>`
+    3. File extension (for file tools)  -> `.<ext>`
+    """
     if not tool_input:
         return ""
-    # Quick regex for common path patterns
+
+    # (1) Skill invocations — surface skill name so flow mining can
+    # distinguish e.g. /work-recap -> /open-items -> /session-reconcile
+    m_skill = re.search(r'"skill"\s*:\s*"([a-zA-Z0-9_:-]+)"', tool_input)
+    if m_skill:
+        return f".{m_skill.group(1)}"
+
+    # (2) Agent subagent_type — surface agent type so flow mining can
+    # distinguish explore-vs-debug-vs-architect agent compositions
+    m_agent = re.search(r'"subagent_type"\s*:\s*"([a-zA-Z0-9_:-]+)"', tool_input)
+    if m_agent:
+        return f".{m_agent.group(1)}"
+
+    # (3) File extensions (original behavior)
     m = re.search(r'["\']([^"\']+\.(\w{1,6}))["\']', tool_input)
     if m:
         ext = m.group(2).lower()
