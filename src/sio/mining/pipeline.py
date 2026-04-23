@@ -154,7 +154,12 @@ def _file_hash(file_path: Path) -> str:
         stat = file_path.stat()
         size = stat.st_size
         mtime = stat.st_mtime
-    except OSError:
+    except OSError as e:
+        from sio.core.observability import log_failure  # noqa: PLC0415
+        log_failure(
+            "io_errors", str(file_path), e,
+            stage="stat", severity="debug",
+        )
         size = 0
         mtime = 0.0
 
@@ -641,7 +646,12 @@ def _parse_iso_timestamp(ts: str | None) -> datetime | None:
         if ts.endswith("Z"):
             ts = ts[:-1] + "+00:00"
         return datetime.fromisoformat(ts)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as e:
+        from sio.core.observability import log_failure  # noqa: PLC0415
+        log_failure(
+            "parse_errors", f"ts={ts!r}", e,
+            stage="iso_timestamp", severity="debug",
+        )
         return None
 
 

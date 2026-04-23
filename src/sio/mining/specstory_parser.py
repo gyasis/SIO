@@ -200,7 +200,9 @@ def parse_specstory(file_path: Path) -> list[dict[str, Any]]:
     """
     try:
         raw = file_path.read_text(encoding="utf-8")
-    except (OSError, IOError):
+    except (OSError, IOError) as e:
+        from sio.core.observability import log_failure  # noqa: PLC0415
+        log_failure("parse_errors", str(file_path), e, stage="read_text")
         return []
 
     if not raw.strip():
@@ -324,7 +326,12 @@ def _extract_inline_tool_calls(text: str) -> list[dict[str, Any]]:
             try:
                 json.loads(raw_input)  # validate JSON
                 tool_input = raw_input
-            except (json.JSONDecodeError, ValueError):
+            except (json.JSONDecodeError, ValueError) as e:
+                from sio.core.observability import log_failure  # noqa: PLC0415
+                log_failure(
+                    "parse_errors", str(file_path), e,
+                    stage="tool_input_json", severity="debug",
+                )
                 tool_input = None  # discard malformed JSON
 
             current = {
@@ -646,7 +653,12 @@ def _extract_md_tool_calls(segment: str) -> list[dict[str, Any]]:
                 try:
                     json.loads(raw_json)
                     tool_input = raw_json
-                except (json.JSONDecodeError, ValueError):
+                except (json.JSONDecodeError, ValueError) as e:
+                    from sio.core.observability import log_failure  # noqa: PLC0415
+                    log_failure(
+                        "parse_errors", str(file_path), e,
+                        stage="tool_input_fenced_json", severity="debug",
+                    )
                     tool_input = None
 
             # Skip blank lines.

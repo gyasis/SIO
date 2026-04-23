@@ -191,8 +191,12 @@ def format_recall_output(filtered: dict, struggles: list[dict]) -> str:
                     lines.append("   ```bash")
                     lines.append(f"   {cmd}")
                     lines.append("   ```")
-            except (json.JSONDecodeError, TypeError):
-                pass
+            except (json.JSONDecodeError, TypeError) as e:
+                from sio.core.observability import log_failure  # noqa: PLC0415
+                log_failure(
+                    "parse_errors", "recall_bash_input", e,
+                    stage="bash_cmd_extract", severity="debug",
+                )
 
         lines.append("")
 

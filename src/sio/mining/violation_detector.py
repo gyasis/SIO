@@ -272,7 +272,9 @@ def parse_rules(file_path: str | Path) -> list[Rule]:
     rules: list[Rule] = []
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeDecodeError):
+    except (OSError, UnicodeDecodeError) as e:
+        from sio.core.observability import log_failure  # noqa: PLC0415
+        log_failure("parse_errors", str(path), e, stage="claude_md_read")
         return []
 
     in_code_block = False

@@ -166,8 +166,12 @@ def parse_since(since: str) -> datetime:
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=_UTC)
         return parsed
-    except (ValueError, OverflowError):
-        pass
+    except (ValueError, OverflowError) as e:
+        from sio.core.observability import log_failure  # noqa: PLC0415
+        log_failure(
+            "parse_errors", f"since={raw!r}", e,
+            stage="dateutil_parse", severity="debug",
+        )
 
     raise ValueError(
         f"Unrecognised since format: {since!r}. "

@@ -64,6 +64,7 @@ def log_failure(
     *,
     stage: str | None = None,
     extra: dict[str, Any] | None = None,
+    severity: str = "warning",
 ) -> dict[str, Any]:
     """Record a failure to both stderr and a per-category rotating log.
 
@@ -103,13 +104,19 @@ def log_failure(
         record["stage"] = stage
     if extra:
         record.update(extra)
+    record["severity"] = severity
 
-    # (1) stderr — user sees it even without looking at the log file
-    logger.warning("[%s] %s: %s", category, subject, err_str)
+    level = logging.DEBUG if severity == "debug" else logging.WARNING
 
-    # (2) persistent rotating log — never trust in-memory visibility alone
+    # (1) stderr — warning severity is visible; debug is typically filtered
+    logger.log(level, "[%s] %s: %s", category, subject, err_str)
+
+    # (2) persistent rotating log — EVERY severity persists, including debug.
+    # No more silent errors — even expected fallbacks leave an audit trail.
     try:
-        _get_category_logger(category).warning(json.dumps(record))
+        cat_logger = _get_category_logger(category)
+        cat_logger.setLevel(logging.DEBUG)  # ensure debug survives to disk
+        cat_logger.log(level, json.dumps(record))
     except Exception as e:  # pragma: no cover — observability must not fail loud
         logger.error("observability.log_failure: could not persist %s: %s", category, e)
 

@@ -39,7 +39,12 @@ def _load_cache(file_hash: str) -> dict[str, Any] | None:
     if p.exists():
         try:
             return json.loads(p.read_text())
-        except (json.JSONDecodeError, OSError):
+        except (json.JSONDecodeError, OSError) as e:
+            from sio.core.observability import log_failure  # noqa: PLC0415
+            log_failure(
+                "cache_errors", str(p), e,
+                stage="facet_cache_read", severity="debug",
+            )
             return None
     return None
 
@@ -144,8 +149,12 @@ def _compute_user_satisfaction(
         if score is not None:
             try:
                 scores.append(float(score))
-            except (TypeError, ValueError):
-                pass
+            except (TypeError, ValueError) as e:
+                from sio.core.observability import log_failure  # noqa: PLC0415
+                log_failure(
+                    "parse_errors", f"sentiment_score={score!r}", e,
+                    stage="sentiment_float", severity="debug",
+                )
 
     if not scores:
         return {"level": "neutral", "avg_score": 0.0, "scored_messages": 0}
