@@ -182,10 +182,18 @@ def run_flow_mine(
 
     db_conn.commit()
 
-    # Observability: persist failures to a rotating log so a silent warning
+    # Observability: persist failures via central module so a silent warning
     # never swallows a systemic bug (cf. 2026-04-23 message_count regression).
     if failures:
-        _write_failure_log("flow_failures", failures, mined_at)
+        from sio.core.observability import log_failure  # noqa: PLC0415
+        for f in failures:
+            log_failure(
+                "flow_failures",
+                f["file"],
+                f["error"],
+                stage=f.get("stage"),
+                extra={"mined_at": mined_at},
+            )
 
     return {
         "total_files_scanned": len(files),
@@ -193,35 +201,6 @@ def run_flow_mine(
         "failed_files": len(failures),
         "failures": failures,
     }
-
-
-def _write_failure_log(name: str, failures: list[dict], mined_at: str) -> None:
-    """Append failures to ~/.sio/logs/<name>.log with rotation at 5 MB.
-
-    No more silent errors — every failure has a durable record on disk.
-    """
-    try:
-        import json
-        from logging.handlers import RotatingFileHandler
-        from pathlib import Path as _P
-
-        log_dir = _P.home() / ".sio" / "logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_path = log_dir / f"{name}.log"
-
-        handler = RotatingFileHandler(
-            log_path, maxBytes=5 * 1024 * 1024, backupCount=3
-        )
-        fail_logger = logging.getLogger(f"sio.failures.{name}")
-        fail_logger.propagate = False
-        if not any(isinstance(h, RotatingFileHandler) for h in fail_logger.handlers):
-            fail_logger.addHandler(handler)
-            fail_logger.setLevel(logging.WARNING)
-
-        for f in failures:
-            fail_logger.warning(json.dumps({"mined_at": mined_at, **f}))
-    except Exception as e:  # pragma: no cover — never let observability mask real data
-        logger.warning("Failed to write failure log %s: %s", name, e)
 
 
 def query_flows(

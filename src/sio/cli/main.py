@@ -9,6 +9,7 @@ from importlib.metadata import version as pkg_version
 import click
 
 from sio.core.constants import DEFAULT_PLATFORM
+from sio.core.observability import log_failure
 
 _DEFAULT_DB_DIR = os.path.expanduser(f"~/.sio/{DEFAULT_PLATFORM}")
 
@@ -327,16 +328,16 @@ def purge(platform, days, dry_run, behavior_only, yes):
                     (f"-{days} days",),
                 )
                 total_purged += cur.rowcount
-            except Exception:
-                pass
+            except Exception as e:
+                log_failure("purge_errors", "error_records", e, stage="delete")
             try:
                 cur = conn.execute(
                     "DELETE FROM flow_events WHERE mined_at < datetime('now', ?)",
                     (f"-{days} days",),
                 )
                 total_purged += cur.rowcount
-            except Exception:
-                pass
+            except Exception as e:
+                log_failure("purge_errors", "flow_events", e, stage="delete")
             conn.commit()
 
         # Optionally purge behavior_invocations from main DB
@@ -348,7 +349,10 @@ def purge(platform, days, dry_run, behavior_only, yes):
                         "WHERE timestamp < datetime('now', ?)",
                         (f"-{days} days",),
                     ).fetchone()[0]
-                except Exception:
+                except Exception as e:
+                    log_failure(
+                        "purge_errors", "behavior_invocations", e, stage="count"
+                    )
                     n_bi = 0
                 click.echo(
                     f"Would also purge {n_bi} behavior_invocations rows from {sio_db_path}."
@@ -361,8 +365,11 @@ def purge(platform, days, dry_run, behavior_only, yes):
                     )
                     total_purged += cur.rowcount
                     conn.commit()
-                except Exception:
-                    pass
+                except Exception as e:
+                    log_failure(
+                        "purge_errors", "behavior_invocations (main)", e,
+                        stage="delete",
+                    )
 
     # Also purge per-platform DB when --behavior-only
     if behavior_only and not dry_run:
@@ -379,8 +386,13 @@ def purge(platform, days, dry_run, behavior_only, yes):
                     )
                     total_purged += cur.rowcount
                     pconn.commit()
-                except Exception:
-                    pass
+                except Exception as e:
+                    log_failure(
+                        "purge_errors",
+                        f"behavior_invocations (platform:{platform})",
+                        e,
+                        stage="delete",
+                    )
             click.echo(f"Also purged per-platform DB: {platform_db_path}")
 
     if not dry_run:
