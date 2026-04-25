@@ -2,6 +2,7 @@
 
 import json as _json
 import os
+import time
 from contextlib import contextmanager
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as pkg_version
@@ -1419,6 +1420,56 @@ def inspect(pattern_id):
     default=False,
     help="Preview: filter + cluster + show pattern groupings, then stop. No generation.",
 )
+@click.option(
+    "--refine",
+    "refine_term",
+    default=None,
+    help=(
+        "Hop-2 refinement: narrow Hop-1's (--grep) error set by a second AND-filter. "
+        "Comma-separated terms use OR logic within Hop-2, AND-composed with Hop-1. "
+        "See --strategy for how narrowing is applied."
+    ),
+)
+@click.option(
+    "--strategy",
+    "hop2_strategy",
+    type=click.Choice(["filter", "recluster", "hybrid"], case_sensitive=False),
+    default="filter",
+    help=(
+        "Hop-2 narrowing strategy (used with --refine). "
+        "'filter' (default): narrow errors by --refine, feed subset to DSPy. Fast, shallow. "
+        "'recluster': re-cluster Hop-1's errors and select sub-clusters matching --refine. Slower, deep. "
+        "'hybrid': filter by --refine, then re-cluster the survivors. Balance."
+    ),
+)
+@click.option(
+    "--within",
+    "within_csv",
+    default=None,
+    help=(
+        "Path to a Hop-1 errors CSV (from a previous --preview run). "
+        "Skips DB load + --grep / --project / --type filters (those were applied in Hop-1). "
+        "Feeds the cached errors directly into clustering + Hop-2. "
+        "Use '~/.sio/previews/errors_preview.csv' (latest preview) by default if --use-cache is set."
+    ),
+)
+@click.option(
+    "--use-cache",
+    "use_cache",
+    is_flag=True,
+    default=False,
+    help=(
+        "Use the most recent Hop-1 preview CSV at ~/.sio/previews/errors_preview.csv. "
+        "Warns if the cache is older than --cache-ttl hours (default 24)."
+    ),
+)
+@click.option(
+    "--cache-ttl",
+    "cache_ttl_hours",
+    type=int,
+    default=24,
+    help="Max age in hours for --use-cache to accept without warning. Default: 24.",
+)
 def suggest(
     error_type,
     min_examples,
@@ -1429,6 +1480,11 @@ def suggest(
     project,
     exclude_types,
     preview,
+    refine_term,
+    hop2_strategy,
+    within_csv,
+    use_cache,
+    cache_ttl_hours,
 ):
     """Run the full pipeline: cluster -> persist -> dataset -> suggestions."""
     import uuid
@@ -1459,16 +1515,80 @@ def suggest(
         # Generate a new cycle_id for this suggest run (FR-003, data-model.md §2.8)
         cycle_id = str(uuid.uuid4())
 
-        # 1. Get all errors (no limit), filtered by project if specified
-        all_errors = get_error_records(conn, limit=0, project=project)
-        if not all_errors:
-            filter_hint = f" for project '{project}'" if project else ""
-            click.echo(
-                f"No errors mined yet{filter_hint}. Run 'sio mine --since \"7 days\"' first."
-            )
-            return
+        # --- Hop-1 cache shortcut (T4) -----------------------------------
+        # When --within or --use-cache is set, skip the DB load + Hop-1 filters
+        # entirely. The CSV is the frozen output of a prior Hop-1 run.
+        csv_path = within_csv
+        if not csv_path and use_cache:
+            csv_path = os.path.expanduser("~/.sio/previews/errors_preview.csv")
 
-        errors_to_cluster = all_errors
+        if csv_path:
+            import csv as _csv
+            from datetime import datetime as _dt, timezone as _tz
+
+            csv_abs = os.path.expanduser(csv_path)
+            if not os.path.exists(csv_abs):
+                click.echo(
+                    f"--within CSV not found: {csv_abs}\n"
+                    f"Run 'sio suggest ... --preview' first to generate it."
+                )
+                return
+
+            # TTL check
+            age_hours = (time.time() - os.path.getmtime(csv_abs)) / 3600.0
+            if age_hours > cache_ttl_hours:
+                console.print(
+                    f"[yellow]⚠ Hop-1 cache is {age_hours:.1f}h old (>{cache_ttl_hours}h TTL). "
+                    f"Data may be stale. Consider re-running --preview.[/yellow]"
+                )
+            else:
+                console.print(
+                    f"[dim]Using Hop-1 cache from {csv_abs} "
+                    f"({age_hours:.1f}h old, TTL={cache_ttl_hours}h)[/dim]"
+                )
+
+            loaded_errors: list[dict] = []
+            with open(csv_abs, newline="") as f:
+                reader = _csv.DictReader(f)
+                for row in reader:
+                    loaded_errors.append(
+                        {
+                            "id": int(row["id"]) if row.get("id", "").isdigit() else row.get("id"),
+                            "error_type": row.get("error_type") or "",
+                            "error_text": row.get("error_text") or "",
+                            "tool_name": row.get("tool_name") or "",
+                            "session_id": row.get("session_id") or "",
+                            "timestamp": row.get("timestamp") or "",
+                            "source_file": row.get("source_file") or "",
+                            "user_message": row.get("user_message") or "",
+                            # fields truncated in CSV but still sufficient for Hop-2 filtering
+                            "context_before": "",
+                            "context_after": "",
+                        }
+                    )
+
+            if not loaded_errors:
+                click.echo(f"--within CSV is empty: {csv_abs}")
+                return
+
+            errors_to_cluster = loaded_errors
+            all_errors = loaded_errors  # so downstream doesn't mis-reference
+            console.print(
+                f"[dim]Hop-1 cache loaded: {len(loaded_errors)} errors "
+                f"(skipping DB query + --grep/--project/--type Hop-1 filters)[/dim]"
+            )
+        else:
+            # Normal path — load from DB and apply Hop-1 filters
+            # 1. Get all errors (no limit), filtered by project if specified
+            all_errors = get_error_records(conn, limit=0, project=project)
+            if not all_errors:
+                filter_hint = f" for project '{project}'" if project else ""
+                click.echo(
+                    f"No errors mined yet{filter_hint}. Run 'sio mine --since \"7 days\"' first."
+                )
+                return
+
+            errors_to_cluster = all_errors
 
         # Apply error type filter (include)
         if error_type:
@@ -1513,6 +1633,39 @@ def suggest(
                     deduped.append(e)
             errors_to_cluster = deduped
 
+        # ---------------------------------------------------------------
+        # Hop-2 refinement (PRD: sio_multi_hop_search_2026-04-24)
+        # When --refine is set, narrow Hop-1's result set by a second AND-filter
+        # before or after clustering, per --strategy. 'filter' (default) narrows
+        # the error set pre-cluster. 'recluster' defers narrowing to post-cluster
+        # (sub-cluster selection). 'hybrid' does both.
+        # ---------------------------------------------------------------
+        hop2_refine_terms: list = []
+        if refine_term:
+            hop2_refine_terms = [t.strip().lower() for t in refine_term.split(",") if t.strip()]
+
+        def _hop2_matches(e: dict) -> bool:
+            if not hop2_refine_terms:
+                return True
+            searchable = (
+                "error_text",
+                "user_message",
+                "context_before",
+                "context_after",
+                "source_file",
+            )
+            for field in searchable:
+                val = (e.get(field) or "").lower()
+                for term in hop2_refine_terms:
+                    if term in val:
+                        return True
+            return False
+
+        hop1_error_count = len(errors_to_cluster)
+        if hop2_refine_terms and hop2_strategy.lower() in ("filter", "hybrid"):
+            # Pre-cluster narrowing — shrinks the set that clustering sees
+            errors_to_cluster = [e for e in errors_to_cluster if _hop2_matches(e)]
+
         if not errors_to_cluster:
             filter_desc = []
             if error_type:
@@ -1525,6 +1678,11 @@ def suggest(
         filter_msg = ""
         if grep_term:
             filter_msg = f" matching '{grep_term}'"
+        if hop2_refine_terms:
+            filter_msg += (
+                f" | Hop-2 strategy={hop2_strategy.lower()} refine='{refine_term}'"
+                f" ({hop1_error_count} -> {len(errors_to_cluster)} errors after pre-cluster narrowing)"
+            )
         console.print(
             f"[bold]Step 1:[/bold] Clustering {len(errors_to_cluster)} errors{filter_msg}..."
         )
@@ -1533,6 +1691,37 @@ def suggest(
         clustered = cluster_errors(errors_to_cluster)
         ranked = rank_patterns(clustered)
         console.print(f"  Found {len(ranked)} patterns")
+
+        # ---------------------------------------------------------------
+        # Hop-2 post-cluster narrowing (PRD: sio_multi_hop_search_2026-04-24)
+        # For 'recluster' and 'hybrid' strategies, after the cluster+rank pass
+        # we sub-select patterns whose description OR any sample error text
+        # matches at least one refine term. For pure 'recluster' (no pre-cluster
+        # narrowing) this is how Hop-2 kicks in at all. For 'hybrid' this is a
+        # second pass on an already-filtered-and-reclustered set, which may or
+        # may not prune further depending on how coherent the filtered clusters
+        # came out.
+        # ---------------------------------------------------------------
+        if hop2_refine_terms and hop2_strategy.lower() in ("recluster", "hybrid"):
+            error_index = {e.get("id"): e for e in errors_to_cluster}
+
+            def _pattern_matches_hop2(p: dict) -> bool:
+                desc = (p.get("description") or "").lower()
+                for term in hop2_refine_terms:
+                    if term in desc:
+                        return True
+                for eid in p.get("error_ids", []):
+                    e = error_index.get(eid)
+                    if e and _hop2_matches(e):
+                        return True
+                return False
+
+            pre_count = len(ranked)
+            ranked = [p for p in ranked if _pattern_matches_hop2(p)]
+            console.print(
+                f"  Hop-2 post-cluster narrowing: {pre_count} -> {len(ranked)} patterns"
+                f" (strategy={hop2_strategy.lower()})"
+            )
 
         # Preview mode: show pattern groupings and stop
         if preview:
@@ -2142,9 +2331,8 @@ def config_show():
         provider = cfg.llm_model.split("/")[0] if "/" in cfg.llm_model else "custom"
     else:
         for env_name, prov in [
-            ("AZURE_OPENAI_API_KEY", "azure"),
-            ("ANTHROPIC_API_KEY", "anthropic"),
             ("OPENAI_API_KEY", "openai"),
+            ("ANTHROPIC_API_KEY", "anthropic"),
         ]:
             if os.environ.get(env_name):
                 provider = prov
@@ -2174,10 +2362,8 @@ def config_show():
     env_table.add_column("Variable", style="bold")
     env_table.add_column("Status")
     env_vars = [
-        "AZURE_OPENAI_API_KEY",
-        "ANTHROPIC_API_KEY",
         "OPENAI_API_KEY",
-        "AZURE_OPENAI_ENDPOINT",
+        "ANTHROPIC_API_KEY",
         "OLLAMA_HOST",
     ]
     for var in env_vars:
@@ -2215,9 +2401,8 @@ def config_test():
         console.print("[red]No LLM available.[/red]")
         console.print()
         console.print("Set one of these environment variables:")
-        console.print("  export AZURE_OPENAI_API_KEY=...")
-        console.print("  export ANTHROPIC_API_KEY=...")
         console.print("  export OPENAI_API_KEY=...")
+        console.print("  export ANTHROPIC_API_KEY=...")
         console.print()
         console.print("Or configure explicitly in ~/.sio/config.toml:")
         console.print("  [llm]")
@@ -4695,6 +4880,218 @@ def autoresearch_install_schedule(method):
             "  0 4 * * * python -m scripts.autoresearch_cron\n"
             "Or run: bash scripts/install_autoresearch_systemd.sh for systemd.",
         )
+
+
+# ---------------------------------------------------------------------------
+# sio trend — pattern growth over time (PRD T6: sio_multi_hop_search_2026-04-24)
+# ---------------------------------------------------------------------------
+@cli.command("trend")
+@click.option(
+    "--weekly",
+    "granularity",
+    flag_value="weekly",
+    default="weekly",
+    help="Weekly buckets (default).",
+)
+@click.option(
+    "--daily",
+    "granularity",
+    flag_value="daily",
+    help="Daily buckets.",
+)
+@click.option(
+    "--monthly",
+    "granularity",
+    flag_value="monthly",
+    help="Monthly buckets.",
+)
+@click.option(
+    "--top",
+    "top_n",
+    type=int,
+    default=10,
+    help="Show top-N patterns by total error count over the window. Default: 10.",
+)
+@click.option(
+    "--windows",
+    "num_windows",
+    type=int,
+    default=6,
+    help=(
+        "How many time windows (weeks / days / months) to include. "
+        "Default: 6. Counted backwards from now."
+    ),
+)
+@click.option(
+    "--pattern",
+    "pattern_filter",
+    default=None,
+    help="Filter to a single pattern by id or slug (pattern_id). Optional.",
+)
+@click.option(
+    "--grep",
+    "grep_term",
+    default=None,
+    help="Filter patterns by substring match on description (comma-separated OR).",
+)
+def trend(granularity, top_n, num_windows, pattern_filter, grep_term):
+    """Show growth / decline of pattern clusters over time.
+
+    Uses the `error_records.timestamp` column joined via `pattern_errors` to
+    bucket errors per pattern per time window. Produces a compact table with a
+    trend arrow (↑ growing, ↓ shrinking, → stable) based on the last two windows.
+    """
+    from rich.console import Console
+    from rich.table import Table
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found. Run 'sio mine' first.")
+        return
+
+    # SQLite strftime tokens per granularity
+    if granularity == "weekly":
+        bucket_fmt = "%Y-W%W"
+        interval_days = 7 * num_windows
+        bucket_label = "Week"
+    elif granularity == "daily":
+        bucket_fmt = "%Y-%m-%d"
+        interval_days = num_windows
+        bucket_label = "Day"
+    else:  # monthly
+        bucket_fmt = "%Y-%m"
+        interval_days = 31 * num_windows
+        bucket_label = "Month"
+
+    with _db_conn(db_path) as conn:
+        cur = conn.cursor()
+
+        # 1. Build the ordered list of buckets that currently fall in-window
+        cur.execute(
+            f"""
+            SELECT DISTINCT strftime('{bucket_fmt}', e.timestamp) AS bucket
+            FROM error_records e
+            WHERE e.timestamp >= datetime('now', '-{interval_days} days')
+            ORDER BY bucket
+            """
+        )
+        buckets = [r[0] for r in cur.fetchall() if r[0]]
+        # Keep only the last num_windows buckets (most recent)
+        buckets = buckets[-num_windows:]
+
+        if not buckets:
+            click.echo(
+                f"No error_records timestamps in the last {interval_days} days. "
+                f"Run 'sio mine' or widen --windows."
+            )
+            return
+
+        # 2. Per-pattern bucket counts
+        where_clauses = []
+        params: list = []
+        if pattern_filter:
+            if pattern_filter.isdigit():
+                where_clauses.append("p.id = ?")
+                params.append(int(pattern_filter))
+            else:
+                where_clauses.append("p.pattern_id = ?")
+                params.append(pattern_filter)
+        if grep_term:
+            terms = [t.strip() for t in grep_term.split(",") if t.strip()]
+            grep_sql = " OR ".join(["LOWER(p.description) LIKE ?"] * len(terms))
+            where_clauses.append(f"({grep_sql})")
+            for t in terms:
+                params.append(f"%{t.lower()}%")
+        where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+        cur.execute(
+            f"""
+            SELECT
+                p.id AS pid,
+                p.pattern_id AS slug,
+                p.description AS description,
+                strftime('{bucket_fmt}', e.timestamp) AS bucket,
+                COUNT(*) AS err_count
+            FROM patterns p
+            JOIN pattern_errors pe ON pe.pattern_id = p.id AND pe.active = 1
+            JOIN error_records e ON e.id = pe.error_id
+            {where_sql}
+            GROUP BY p.id, bucket
+            HAVING bucket IS NOT NULL
+            ORDER BY p.id, bucket
+            """,
+            params,
+        )
+        rows = cur.fetchall()
+
+    if not rows:
+        click.echo(
+            "No pattern-error rows match. "
+            "Run 'sio suggest' first to persist patterns, or widen filters."
+        )
+        return
+
+    # 3. Pivot into {pattern_id: {bucket: count}}
+    pivot: dict = {}
+    totals: dict = {}
+    meta: dict = {}
+    for pid, slug, description, bucket, err_count in rows:
+        if bucket not in buckets:
+            continue  # drop old ones outside window
+        pivot.setdefault(pid, {})[bucket] = err_count
+        totals[pid] = totals.get(pid, 0) + err_count
+        meta[pid] = (slug, description)
+
+    if not pivot:
+        click.echo("No rows in the requested window. Try --windows <larger>.")
+        return
+
+    # 4. Sort by total count desc, take top-N
+    ranked = sorted(pivot.keys(), key=lambda k: totals[k], reverse=True)[:top_n]
+
+    # 5. Render
+    console = Console()
+    table = Table(
+        title=(
+            f"SIO Trend — {granularity} × {len(buckets)} {bucket_label.lower()}s, "
+            f"top {len(ranked)} patterns"
+            + (f", pattern='{pattern_filter}'" if pattern_filter else "")
+            + (f", grep='{grep_term}'" if grep_term else "")
+        ),
+    )
+    table.add_column("#", justify="right", style="dim", no_wrap=True)
+    table.add_column("Pattern", max_width=48)
+    for b in buckets:
+        table.add_column(b, justify="right", no_wrap=True)
+    table.add_column("Total", justify="right", style="bold")
+    table.add_column("Δ", justify="center", style="bold")
+
+    for i, pid in enumerate(ranked, 1):
+        slug, description = meta[pid]
+        row_cells = [str(i), (description or slug)[:48]]
+        counts_this_row = [pivot[pid].get(b, 0) for b in buckets]
+        for c in counts_this_row:
+            row_cells.append(str(c) if c else "·")
+        row_cells.append(str(totals[pid]))
+        # Trend arrow: compare last two non-zero buckets
+        if len(counts_this_row) >= 2:
+            prev, curr = counts_this_row[-2], counts_this_row[-1]
+            if curr > prev:
+                arrow = f"[green]↑[/green] +{curr - prev}"
+            elif curr < prev:
+                arrow = f"[red]↓[/red] -{prev - curr}"
+            else:
+                arrow = "[dim]→[/dim]"
+        else:
+            arrow = "[dim]·[/dim]"
+        row_cells.append(arrow)
+        table.add_row(*row_cells)
+
+    console.print(table)
+    console.print(
+        f"[dim]Data source: error_records.timestamp via pattern_errors (active=1). "
+        f"Granularity={granularity}, window=last {interval_days} days.[/dim]"
+    )
 
 
 if __name__ == "__main__":

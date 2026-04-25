@@ -16,10 +16,16 @@ import logging
 import os
 
 import dspy
+import litellm
 
 from sio.core.config import SIOConfig
 
 logger = logging.getLogger(__name__)
+
+# gpt-5 family only accepts temperature=1; litellm would otherwise raise
+# UnsupportedParamsError when a config passes e.g. 0.7. drop_params=True
+# silently drops unsupported params instead of failing the call.
+litellm.drop_params = True
 
 
 # ---------------------------------------------------------------------------
@@ -44,9 +50,12 @@ def get_adapter(lm: dspy.LM) -> dspy.Adapter:
 
     Honors SIO_FORCE_ADAPTER (json|chat) and SIO_FORCE_NATIVE_FC (0|1) env overrides.
     Falls back to provider detection:
-      openai / anthropic / azure  -> ChatAdapter(use_native_function_calling=True)
-      ollama                      -> JSONAdapter(use_native_function_calling=False)
-      unknown                     -> ChatAdapter(use_native_function_calling=False)
+      openai / anthropic  -> ChatAdapter(use_native_function_calling=True)
+      ollama              -> JSONAdapter(use_native_function_calling=False)
+      unknown             -> ChatAdapter(use_native_function_calling=False)
+
+    NOTE: Azure provider support was removed 2026-04-24 after the Azure OpenAI
+    endpoints were deactivated (2026-04-16). Do not re-introduce.
     """
     forced = os.environ.get("SIO_FORCE_ADAPTER")
     native_env = os.environ.get("SIO_FORCE_NATIVE_FC")
@@ -59,7 +68,7 @@ def get_adapter(lm: dspy.LM) -> dspy.Adapter:
         return dspy.ChatAdapter(use_native_function_calling=native)
 
     provider = lm.model.split("/", 1)[0]
-    if provider in ("openai", "anthropic", "azure"):
+    if provider in ("openai", "anthropic"):
         return dspy.ChatAdapter(use_native_function_calling=True)
     if provider == "ollama":
         return dspy.JSONAdapter(use_native_function_calling=False)
@@ -82,10 +91,13 @@ def create_lm(config: SIOConfig) -> dspy.LM | None:
 
     Priority:
     1. Config file llm_model setting
-    2. AZURE_OPENAI_API_KEY env var -> azure/DeepSeek-R1-0528
+    2. OPENAI_API_KEY env var -> openai/gpt-4o-mini
     3. ANTHROPIC_API_KEY env var -> anthropic/claude-sonnet-4-20250514
-    4. OPENAI_API_KEY env var -> openai/gpt-4o
-    5. None (no LLM available)
+    4. None (no LLM available)
+
+    NOTE: Azure OpenAI was removed 2026-04-24 after endpoints deactivated
+    2026-04-16 (see memory file ref_azure_endpoints_deactivated.md).
+    Do not re-introduce an Azure branch here.
     """
     if config.llm_model:
         kwargs: dict = {
@@ -104,19 +116,14 @@ def create_lm(config: SIOConfig) -> dspy.LM | None:
                 kwargs["api_base"] = api_base
         return dspy.LM(**kwargs)
 
-    azure_key = os.environ.get("AZURE_OPENAI_API_KEY")
-    if azure_key:
-        kwargs = {
-            "model": "azure/DeepSeek-R1-0528",
-            "api_key": azure_key,
-            "temperature": config.llm_temperature,
-            "max_tokens": config.llm_max_tokens,
-            "num_retries": 3,
-        }
-        azure_base = os.environ.get("AZURE_OPENAI_ENDPOINT")
-        if azure_base:
-            kwargs["api_base"] = azure_base
-        return dspy.LM(**kwargs)
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    if openai_key:
+        return dspy.LM(
+            model="openai/gpt-4o-mini",
+            api_key=openai_key,
+            temperature=config.llm_temperature,
+            max_tokens=config.llm_max_tokens,
+        )
 
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
     if anthropic_key:
@@ -127,21 +134,11 @@ def create_lm(config: SIOConfig) -> dspy.LM | None:
             max_tokens=config.llm_max_tokens,
         )
 
-    openai_key = os.environ.get("OPENAI_API_KEY")
-    if openai_key:
-        return dspy.LM(
-            model="openai/gpt-4o",
-            api_key=openai_key,
-            temperature=config.llm_temperature,
-            max_tokens=config.llm_max_tokens,
-        )
-
     logger.info(
         "No LLM backend available. To configure, either: "
         "(1) set llm.model in ~/.sio/config.toml, "
-        "(2) set AZURE_OPENAI_API_KEY, "
-        "(3) set ANTHROPIC_API_KEY, or "
-        "(4) set OPENAI_API_KEY environment variable."
+        "(2) set OPENAI_API_KEY, or "
+        "(3) set ANTHROPIC_API_KEY environment variable."
     )
     return None
 

@@ -154,12 +154,35 @@ sio status
 
 | Command | Description |
 |---------|-------------|
-| `sio suggest` | Generate suggestions from patterns (supports `--mode auto\|hitl`) |
+| `sio suggest` | Generate suggestions from patterns (supports `--mode auto\|hitl`). See **Multi-Hop Targeted Search** below for `--refine` / `--strategy` / `--within`. |
 | `sio suggest-review` | Interactive review of pending suggestions |
 | `sio approve <id>` | Approve a suggestion (with optional `--note`) |
 | `sio reject <id>` | Reject a suggestion (with optional `--note`) |
 | `sio apply <id>` | Apply an approved suggestion to its target file |
 | `sio rollback <id>` | Revert an applied change |
+| `sio trend` | Pattern growth over time (weekly / daily / monthly buckets, top-N, grep/pattern filters, trend arrows) |
+
+#### Multi-Hop Targeted Search (v3.1 — 2026-04-24)
+
+Single-pass grep in `sio suggest` forces an impossible trade-off: wide grep returns noisy unrelated suggestions, tight grep starves DSPy of training data. **Hop-2** narrows Hop-1's result set with a second predicate so rare-but-high-signal clusters are preserved.
+
+| Flag | Purpose |
+|---|---|
+| `--refine <terms>` | Second AND-filter (comma-separated OR within). Applied per `--strategy`. |
+| `--strategy filter` (default) | Pre-cluster narrowing. Fast, shallow. |
+| `--strategy recluster` | No pre-filter; re-cluster Hop-1, then select sub-clusters matching `--refine`. Slower, finds sub-structure. |
+| `--strategy hybrid` | `filter` + `recluster`. Balance. |
+| `--within <csv>` | Feed a previously exported `errors_preview.csv` (from `--preview`) into Hop-2. Skips DB load + Hop-1 filters. |
+| `--use-cache` | Shortcut for `--within ~/.sio/previews/errors_preview.csv`. |
+| `--cache-ttl <hours>` | Warning threshold for stale cache. Default 24h. |
+
+Example — narrowing 73 matched errors → 21 targeted → 2 real DSPy suggestions instead of 9 noisy ones:
+```bash
+sio suggest --grep 'hhdev,zeno,patch,ZENO_DIR,zombie' --type agent_admission \
+  --refine 'ZENO_DIR,zombie,cwd,BAS-2' --strategy filter --auto
+```
+
+See `~/dev/prd/sio_multi_hop_search_2026-04-24.md` for the design rationale and follow-up work.
 
 ### Ground Truth Management
 
