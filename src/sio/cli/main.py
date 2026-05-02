@@ -110,8 +110,26 @@ def init(
     from rich.table import Table
 
     from sio.harnesses import ALL_ADAPTERS, detect_adapters, get_adapter
+    from sio.harnesses.bootstrap import seed_sio_home
 
     console = Console()
+
+    # Step 0 — seed ~/.sio/ data dir + config.toml template before any
+    # harness adapter runs. This is harness-agnostic infrastructure
+    # (DB, datasets cache, LM config) and should land regardless of
+    # which adapter we're about to invoke. Skip on --status (read-only).
+    if not status:
+        home_report = seed_sio_home(dry_run=dry_run)
+        console.print(
+            f"\n[bold magenta]→ ~/.sio/ data dir[/bold magenta]  "
+            f"({home_report.sio_home})"
+        )
+        for action, path, reason in home_report.actions:
+            tag = "[dim](dry-run)[/dim] " if dry_run else ""
+            color = {"create": "green", "skip": "white"}.get(
+                action.replace("would-", ""), "white"
+            )
+            console.print(f"  {tag}[{color}]{action:<14}[/{color}] {path}  {reason}")
 
     if harness:
         try:

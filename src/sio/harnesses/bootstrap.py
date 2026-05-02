@@ -17,11 +17,144 @@ re-encoding the conventions.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
+from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
 
 _BOOTSTRAP_PKG = "sio._bootstrap"
+
+# ---------------------------------------------------------------------------
+# ~/.sio/ data dir bootstrap (config.toml + subdirs)
+# ---------------------------------------------------------------------------
+
+# Default config.toml seeded into a fresh install. Every provider block is
+# commented out so the install can never silently dispatch to the wrong LM
+# — the user must uncomment one block before `sio suggest` will succeed.
+# `lm_factory` raises a clear "set llm.model in ~/.sio/config.toml" when
+# nothing is configured, so the failure mode is loud.
+_DEFAULT_CONFIG_TEMPLATE = """\
+# SIO configuration — ~/.sio/config.toml
+#
+# Quick start: uncomment ONE of the [llm] provider blocks below and set
+# the matching API key in your shell environment. `sio suggest` will fail
+# loudly until a provider is configured.
+
+# Instruction-file budget caps (lines of meaningful content).
+budget_cap_primary = 200
+budget_cap_supplementary = 150
+
+[llm]
+
+# --- OpenAI ---
+# model = "openai/gpt-4o"
+# api_key_env = "OPENAI_API_KEY"
+
+# --- Anthropic ---
+# model = "anthropic/claude-sonnet-4-20250514"
+# api_key_env = "ANTHROPIC_API_KEY"
+
+# --- Azure OpenAI ---
+# model = "azure/<deployment-name>"
+# api_key_env = "AZURE_OPENAI_API_KEY"
+# api_base_env = "AZURE_OPENAI_ENDPOINT"
+
+# --- Local Ollama (free, private; needs `ollama` running on this host) ---
+# model = "ollama/qwen3-coder:30b"
+# api_base_env = "OLLAMA_HOST"
+
+temperature = 0.7
+max_tokens = 16000
+
+[llm.sub]
+# Cheaper sub-LM for non-critical secondary calls. OpenAI shown; flip to
+# any provider above for full-local mode.
+# model = "openai/gpt-4o-mini"
+# api_key_env = "OPENAI_API_KEY"
+"""
+
+# Subdirectories every fresh `~/.sio/` install needs. The DB itself
+# (`sio.db`) is created lazily by `init_db` on first use; subdirs that
+# downstream code expects to find are created eagerly.
+_SIO_HOME_SUBDIRS = (
+    "datasets",
+    "previews",
+    "backups",
+    "ground_truth",
+    "optimized",
+)
+
+
+@dataclass
+class HomeSeedReport:
+    """Result of seeding the `~/.sio/` data dir.
+
+    Mirrors the shape of `harnesses.base.InstallReport` so the CLI can
+    render both with one rendering loop.
+    """
+
+    sio_home: Path
+    dry_run: bool = False
+    actions: list[tuple[str, Path, str]] = field(default_factory=list)
+
+    def add(self, action: str, path: Path, reason: str = "") -> None:
+        self.actions.append((action, path, reason))
+
+
+def seed_sio_home(
+    *,
+    sio_home: Path | None = None,
+    dry_run: bool = False,
+) -> HomeSeedReport:
+    """Create `~/.sio/` + subdirs and seed `~/.sio/config.toml` if absent.
+
+    Idempotent: re-running on an already-bootstrapped home is a no-op
+    except for re-emitting "skip" actions in the report. Existing
+    `config.toml` is never overwritten by this function — even with
+    `force` semantics that's a destructive change reserved for explicit
+    `sio init --force-config` (not yet wired).
+
+    Honors the `SIO_HOME` env var so tests and alternate-config users
+    can redirect without monkeypatching `Path.home()`.
+    """
+    if sio_home is None:
+        sio_home = Path(os.environ.get("SIO_HOME", str(Path.home() / ".sio")))
+
+    report = HomeSeedReport(sio_home=sio_home, dry_run=dry_run)
+
+    # Top-level dir
+    if sio_home.exists():
+        report.add("skip", sio_home, "already exists")
+    else:
+        report.add("would-create" if dry_run else "create", sio_home, "data dir")
+        if not dry_run:
+            sio_home.mkdir(parents=True, exist_ok=True)
+
+    # Subdirs
+    for sub in _SIO_HOME_SUBDIRS:
+        target = sio_home / sub
+        if target.exists():
+            report.add("skip", target, "already exists")
+        else:
+            report.add("would-create" if dry_run else "create", target, "subdir")
+            if not dry_run:
+                target.mkdir(parents=True, exist_ok=True)
+
+    # config.toml — never clobber a user-edited file
+    cfg_path = sio_home / "config.toml"
+    if cfg_path.exists():
+        report.add("skip", cfg_path, "config.toml already present — preserved")
+    else:
+        report.add(
+            "would-create" if dry_run else "create",
+            cfg_path,
+            "seeded template — UNCOMMENT one [llm] provider before running suggest",
+        )
+        if not dry_run:
+            cfg_path.write_text(_DEFAULT_CONFIG_TEMPLATE, encoding="utf-8")
+
+    return report
 
 
 def _walk_resources(anchor) -> Iterator[tuple[str, str]]:

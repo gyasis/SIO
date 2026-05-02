@@ -153,6 +153,69 @@ class TestClaudeCodeAdapterInstall:
         assert any("no SIO manifest" in e for e in report.errors)
 
 
+class TestSeedSioHome:
+    """Verify ~/.sio/ data dir + config.toml seeding (gap from v0.1.0 fresh install)."""
+
+    def test_creates_data_dir_subdirs_and_config(self, tmp_path: Path) -> None:
+        from sio.harnesses.bootstrap import seed_sio_home
+
+        sio_home = tmp_path / ".sio"
+        report = seed_sio_home(sio_home=sio_home)
+
+        assert sio_home.is_dir()
+        for sub in ("datasets", "previews", "backups", "ground_truth", "optimized"):
+            assert (sio_home / sub).is_dir(), f"missing {sub}/"
+        cfg = sio_home / "config.toml"
+        assert cfg.is_file()
+        text = cfg.read_text()
+        assert "Quick start" in text
+        # All provider lines must be commented out by default — installs
+        # should never silently dispatch to a provider the user didn't
+        # explicitly opt into.
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("model =") or stripped.startswith("api_key_env ="):
+                pytest.fail(f"shipped config.toml has un-commented provider line: {line!r}")
+        # 7 actions: data dir + 5 subdirs + config.toml
+        assert len(report.actions) == 7
+
+    def test_does_not_overwrite_existing_config(self, tmp_path: Path) -> None:
+        from sio.harnesses.bootstrap import seed_sio_home
+
+        sio_home = tmp_path / ".sio"
+        sio_home.mkdir()
+        cfg = sio_home / "config.toml"
+        cfg.write_text("# user-edited content — do not clobber\n")
+
+        report = seed_sio_home(sio_home=sio_home)
+        assert cfg.read_text() == "# user-edited content — do not clobber\n"
+        # The config skip must be reported.
+        assert any(action == "skip" and path == cfg for action, path, _ in report.actions)
+
+    def test_dry_run_writes_nothing(self, tmp_path: Path) -> None:
+        from sio.harnesses.bootstrap import seed_sio_home
+
+        sio_home = tmp_path / ".sio"
+        report = seed_sio_home(sio_home=sio_home, dry_run=True)
+        assert report.dry_run is True
+        # Nothing should hit disk on a dry run.
+        assert not sio_home.exists()
+        # Each action must be tagged 'would-create'.
+        for action, _, _ in report.actions:
+            assert action == "would-create" or action == "skip"
+
+    def test_idempotent_re_run(self, tmp_path: Path) -> None:
+        from sio.harnesses.bootstrap import seed_sio_home
+
+        sio_home = tmp_path / ".sio"
+        seed_sio_home(sio_home=sio_home)
+        first_config = (sio_home / "config.toml").read_text()
+        report2 = seed_sio_home(sio_home=sio_home)
+        # Second run is all skips.
+        assert all(action == "skip" for action, _, _ in report2.actions)
+        assert (sio_home / "config.toml").read_text() == first_config
+
+
 class TestDetectAdapters:
     def test_detect_returns_only_present_harnesses(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         # Point HOME at an empty tmp dir so none of the real harness dirs exist.
