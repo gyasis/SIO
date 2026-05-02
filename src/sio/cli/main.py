@@ -54,6 +54,117 @@ def cli():
 
 
 @cli.command()
+@click.option(
+    "--harness",
+    default=None,
+    help="Target harness (claude-code, cursor, windsurf, opencode). "
+    "If omitted, auto-detects every harness installed on this system.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Preview the file changes without writing anything.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Overwrite user-modified files (default: skip + report drift).",
+)
+@click.option(
+    "--uninstall",
+    is_flag=True,
+    help="Remove SIO-managed assets instead of installing.",
+)
+@click.option(
+    "--status",
+    is_flag=True,
+    help="Show what's installed vs what the package ships, without changing anything.",
+)
+def init(
+    harness: str | None,
+    dry_run: bool,
+    force: bool,
+    uninstall: bool,
+    status: bool,
+) -> None:
+    """Stage SIO's bundled skills and rules into your AI coding harness.
+
+    By default, copies the package's bootstrap content (skills, tool rules)
+    into the user's harness config directory (e.g., ~/.claude/) using a
+    sidecar manifest to track managed files. Re-running is idempotent.
+    User-modified files are preserved unless --force is set.
+
+    \b
+    Examples:
+        sio init                    # auto-detect harness, install
+        sio init --dry-run          # preview only
+        sio init --status           # what's installed where
+        sio init --uninstall        # remove SIO-managed files
+        sio init --harness claude-code --force
+    """
+    from rich.console import Console
+    from rich.table import Table
+
+    from sio.harnesses import ALL_ADAPTERS, detect_adapters, get_adapter
+
+    console = Console()
+
+    if harness:
+        try:
+            adapters = [get_adapter(harness)]
+        except ValueError as e:
+            console.print(f"[red]error:[/red] {e}")
+            raise SystemExit(2) from None
+    else:
+        adapters = detect_adapters()
+        if not adapters:
+            known = ", ".join(c.name for c in ALL_ADAPTERS)
+            console.print(
+                f"[yellow]No supported harnesses detected.[/yellow] Known: {known}\n"
+                f"Use --harness <name> to force one anyway."
+            )
+            raise SystemExit(1)
+
+    for adapter in adapters:
+        console.print(f"\n[bold cyan]→ {adapter.name}[/bold cyan]  ({adapter.config_dir})")
+
+        if status:
+            sr = adapter.status()
+            tbl = Table(show_header=True, header_style="bold")
+            tbl.add_column("State")
+            tbl.add_column("Count")
+            tbl.add_row("installed", str(len(sr.installed_files)))
+            tbl.add_row("missing", str(len(sr.missing_files)))
+            tbl.add_row("drifted", str(len(sr.drifted_files)))
+            console.print(tbl)
+            for note in sr.notes:
+                console.print(f"  [dim]· {note}[/dim]")
+            continue
+
+        if uninstall:
+            ir = adapter.uninstall(dry_run=dry_run)
+        else:
+            ir = adapter.install(dry_run=dry_run, force=force)
+
+        for ch in ir.changes:
+            tag = "[dim](dry-run)[/dim] " if dry_run else ""
+            color = {"create": "green", "update": "yellow", "remove": "red"}.get(
+                ch.action.replace("would-", ""), "white"
+            )
+            console.print(f"  {tag}[{color}]{ch.action:<14}[/{color}] {ch.path}  {ch.reason}")
+
+        for err in ir.errors:
+            console.print(f"  [red]error:[/red] {err}")
+
+        if ir.success and not ir.errors:
+            verb = "would " if dry_run else ""
+            kind = "uninstall" if uninstall else "install"
+            console.print(
+                f"  [green]✓[/green] {verb}{kind} complete — {len(ir.changes)} change(s)"
+            )
+
+
+@cli.command()
 @click.option("--platform", default=DEFAULT_PLATFORM, help="Platform filter.")
 @click.option("--skill", default=None, help="Skill name filter.")
 @click.option(
