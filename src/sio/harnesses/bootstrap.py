@@ -208,6 +208,17 @@ def _repo_root_fallback() -> Path | None:
     return None
 
 
+class BootstrapMissingError(RuntimeError):
+    """Raised when neither the bundled nor the dev-fallback bootstrap source resolves.
+
+    Indicates a malformed wheel (the `force-include` of skills/rules didn't
+    happen) or an editable install run from outside the repo. Either way,
+    `sio init` cannot stage anything and should fail loudly rather than
+    print a green "0 changes, install complete" — that silent-success path
+    is the v0.1.1 bug being fixed in v0.1.2.
+    """
+
+
 def iter_bootstrap_files() -> Iterator[tuple[Path, Path, str]]:
     """Yield `(absolute_source_path, relative_target_path, text_content)` tuples.
 
@@ -218,6 +229,28 @@ def iter_bootstrap_files() -> Iterator[tuple[Path, Path, str]]:
     Resolution order:
         1. Bundled package data at `sio._bootstrap` (the wheel/sdist case)
         2. Repo-root `skills/` + `rules/` (the editable / from-clone case)
+
+    Raises ``BootstrapMissingError`` if neither source yields any files.
+    The CLI surfaces this with the exact reinstall command, so a malformed
+    wheel can never be mistaken for a successful no-op install.
+    """
+    files = list(_collect_bootstrap_files())
+    if not files:
+        raise BootstrapMissingError(
+            "SIO bootstrap content not found — neither the bundled "
+            f"`{_BOOTSTRAP_PKG}` package data nor a repo-root `skills/` + `rules/` "
+            "tree could be resolved. The installed wheel may be malformed. "
+            "Try: `pip install --force-reinstall --no-deps "
+            "git+https://github.com/gyasis/SIO.git@latest` and re-run `sio init`."
+        )
+    yield from files
+
+
+def _collect_bootstrap_files() -> Iterator[tuple[Path, Path, str]]:
+    """Internal: yield bootstrap tuples without raising on empty result.
+
+    Split from the public function so it can be exercised from tests
+    that need to assert "yields zero" (which the public API forbids).
     """
     yielded_any = False
     try:
@@ -244,4 +277,5 @@ def iter_bootstrap_files() -> Iterator[tuple[Path, Path, str]]:
     if repo is None:
         return
     for top_name in ("skills", "rules"):
-        yield from _iter_from_disk(repo / top_name) if (repo / top_name).is_dir() else []
+        if (repo / top_name).is_dir():
+            yield from _iter_from_disk(repo / top_name)

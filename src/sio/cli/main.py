@@ -110,7 +110,7 @@ def init(
     from rich.table import Table
 
     from sio.harnesses import ALL_ADAPTERS, detect_adapters, get_adapter
-    from sio.harnesses.bootstrap import seed_sio_home
+    from sio.harnesses.bootstrap import BootstrapMissingError, seed_sio_home
 
     console = Console()
 
@@ -137,15 +137,33 @@ def init(
         except ValueError as e:
             console.print(f"[red]error:[/red] {e}")
             raise SystemExit(2) from None
+        # Risk #3 fix: when the user passes --harness explicitly, auto-create
+        # the harness's config dir if it doesn't exist yet. Without this,
+        # a fresh box where Claude Code has never launched gets "no harnesses
+        # detected" and `sio init` exits with nothing staged — looks like a
+        # silent install failure to the user.
+        for adapter in adapters:
+            if not adapter.detect() and not status and not uninstall and not dry_run:
+                adapter.config_dir.mkdir(parents=True, exist_ok=True)
+                console.print(
+                    f"[yellow]→ created {adapter.config_dir}[/yellow] "
+                    f"(harness config dir didn't exist; --harness was explicit)"
+                )
     else:
         adapters = detect_adapters()
         if not adapters:
             known = ", ".join(c.name for c in ALL_ADAPTERS)
             console.print(
                 f"[yellow]No supported harnesses detected.[/yellow] Known: {known}\n"
-                f"Use --harness <name> to force one anyway."
+                f"To force-install for a specific harness even if its config "
+                f"dir doesn't exist yet:\n"
+                f"  sio init --harness claude-code"
             )
             raise SystemExit(1)
+
+    # Track whether anything was actually staged across all adapters so we
+    # can surface a clear restart-Claude-Code message at the end (Risk #2).
+    any_creates = False
 
     for adapter in adapters:
         console.print(f"\n[bold cyan]→ {adapter.name}[/bold cyan]  ({adapter.config_dir})")
@@ -166,13 +184,19 @@ def init(
         if uninstall:
             ir = adapter.uninstall(dry_run=dry_run)
         else:
-            ir = adapter.install(dry_run=dry_run, force=force)
+            try:
+                ir = adapter.install(dry_run=dry_run, force=force)
+            except BootstrapMissingError as e:
+                console.print(f"[red]bootstrap missing:[/red] {e}")
+                raise SystemExit(3) from None
 
         for ch in ir.changes:
             tag = "[dim](dry-run)[/dim] " if dry_run else ""
             color = {"create": "green", "update": "yellow", "remove": "red"}.get(
                 ch.action.replace("would-", ""), "white"
             )
+            if ch.action in ("create", "update", "would-create", "would-update"):
+                any_creates = True
             console.print(f"  {tag}[{color}]{ch.action:<14}[/{color}] {ch.path}  {ch.reason}")
 
         for err in ir.errors:
@@ -184,6 +208,21 @@ def init(
             console.print(
                 f"  [green]✓[/green] {verb}{kind} complete — {len(ir.changes)} change(s)"
             )
+
+    # Risk #2 fix: Claude Code reads ~/.claude/skills/ at process start —
+    # newly staged SKILL.md files don't appear as slash commands until the
+    # user restarts. Surface this clearly so a successful install doesn't
+    # look broken to anyone running `/sio` immediately after.
+    if not status and not dry_run and not uninstall and any_creates:
+        console.print(
+            "\n[bold yellow]→ Restart your AI coding agent[/bold yellow] "
+            "for newly-staged skills to appear (Claude Code only reads the "
+            "skills dir at startup)."
+        )
+        console.print(
+            "  [dim]Also: open ~/.sio/config.toml and uncomment one [llm] "
+            "block before running `sio suggest`.[/dim]"
+        )
 
 
 @cli.command()
@@ -353,27 +392,18 @@ def optimize(skill_name, platform, optimizer, dry_run):
 
 
 @cli.command()
-@click.option(
-    "--platform",
-    type=click.Choice([DEFAULT_PLATFORM]),
-    default=DEFAULT_PLATFORM,
-    help="Platform to install.",
-)
-@click.option("--auto", "auto_detect", is_flag=True, help="Auto-detect platform.")
-def install(platform, auto_detect):
-    """Install SIO for a platform."""
-    from sio.adapters.claude_code.installer import install as do_install
+def install():
+    """[REMOVED] Use `sio init` instead.
 
-    click.echo(f"Installing SIO for {platform}...")
-    result = do_install()
-    click.echo(f"Database: {result['db_path']}")
-    click.echo(f"Hooks registered: {result['hooks_registered']}")
-    skills = result.get("skills_installed", [])
-    if skills:
-        click.echo(f"Skills installed ({len(skills)}):")
-        for s in skills:
-            click.echo(f"  - {s}")
-    click.echo("Installation complete.")
+    The legacy `sio install` path silently no-op'd on wheel installs because
+    it read skill files from a directory that wasn't packaged into the
+    wheel. Removed in v0.1.2 to eliminate that failure mode entirely.
+    """
+    raise click.ClickException(
+        "`sio install` was removed in v0.1.2. Use `sio init` — see `sio init --help`. "
+        "If you ran `sio install` previously and saw 'success' but no skills appeared, "
+        "that's the bug v0.1.2 fixes. Run `sio init` now to actually stage the skills."
+    )
 
 
 @cli.command()
@@ -4861,7 +4891,7 @@ def db_migrate(db_path):
     conn = _get_sio_db_conn()
     if conn is None:
         click.echo(
-            f"Database not found at {db_path}. Run 'sio install' first.",
+            f"Database not found at {db_path}. Run 'sio init' first.",
             err=True,
         )
         raise SystemExit(1)
