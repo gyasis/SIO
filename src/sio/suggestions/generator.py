@@ -58,6 +58,38 @@ _TOOL_RULE_FILES: dict[str, str] = {
 }
 
 
+def _record_generation_failure(
+    db_conn: sqlite3.Connection,
+    pattern: dict,
+    *,
+    reason: str,
+    error_class: str | None = None,
+    error_message: str | None = None,
+) -> None:
+    """Best-effort write to ``generation_failures`` (observability gap #6).
+
+    Wrapper around ``insert_generation_failure`` that swallows any error so
+    observability never blocks the suggestion path. Imports lazily so the
+    rest of the module stays cheap to import.
+    """
+    try:
+        from sio.core.db.queries import insert_generation_failure  # noqa: PLC0415
+
+        insert_generation_failure(
+            db_conn,
+            pattern_id=int(pattern["id"]) if pattern.get("id") is not None else None,
+            pattern_str_id=pattern.get("pattern_id"),
+            cycle_id=pattern.get("cycle_id"),
+            reason=reason,
+            error_class=error_class,
+            error_message=error_message,
+        )
+    except Exception:  # noqa: BLE001
+        # Observability is best-effort. Swallow any failure so it cannot
+        # mask the actual generation outcome.
+        pass
+
+
 def _infer_change_type(pattern: dict) -> str:
     """Infer the change type from pattern metadata.
 
@@ -748,6 +780,11 @@ def generate_suggestions(
         dataset = datasets.get(pattern_str_id)
         if dataset is None:
             continue
+        # Observability gap #7: track *why* this pattern landed in the
+        # template path. Default 'template_default' = no DSPy was even
+        # attempted (mode wasn't auto/hitl). The DSPy paths overwrite
+        # this with a more specific source if they fall through.
+        _fallback_source = "template_default"
 
         # --- DSPy path (when LLM is available) ---
         if use_dspy:
@@ -771,6 +808,15 @@ def generate_suggestions(
                             "pattern %s, falling back to template",
                             pattern_str_id,
                         )
+                        # Observability gap #6 + #7: record WHY we're
+                        # falling through so future operators can audit
+                        # fallback rates without grepping logs.
+                        _record_generation_failure(
+                            db_conn,
+                            pattern,
+                            reason="dspy_returned_none",
+                        )
+                        _fallback_source = "template_after_dspy_none"
                     else:
                         suggestions.append(suggestion)
                         continue
@@ -806,6 +852,17 @@ def generate_suggestions(
                     pattern_str_id,
                     exc,
                 )
+                # Observability gap #6 + #7: distinguish exception-based
+                # fallback from None-return fallback — both land here but
+                # they mean different things downstream.
+                _record_generation_failure(
+                    db_conn,
+                    pattern,
+                    reason="dspy_exception",
+                    error_class=type(exc).__name__,
+                    error_message=str(exc),
+                )
+                _fallback_source = "template_after_dspy_exception"
                 # Fall through to template path for this pattern
 
         # --- Template path (deterministic fallback) ---
@@ -828,6 +885,11 @@ def generate_suggestions(
             "change_type": change_type,
             "status": "pending",
             "_using_dspy": False,
+            # Observability gap #7: surface fallback provenance at the
+            # suggestion level so downstream review tooling can show
+            # operators "this is template-fallback because the LM threw"
+            # vs "this is the configured template path".
+            "_fallback_source": _fallback_source,
         }
         suggestions.append(suggestion_dict)
 

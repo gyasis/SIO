@@ -558,12 +558,18 @@ def generate_dspy_suggestion(
     # discriminating signal for writing theme-specific rules — without it the
     # LM grounds only on the error string and produces generic boilerplate.
     example_errors: list[str] = []
+    n_with_ctx_before = 0
+    n_with_ctx_after = 0
     for ex in examples[:5]:
         msg = ex.get("error_text") or ex.get("error_message") or ex.get("context_message")
         if not msg:
             continue
         ctx_before = ex.get("context_before")
         ctx_after = ex.get("context_after")
+        if ctx_before:
+            n_with_ctx_before += 1
+        if ctx_after:
+            n_with_ctx_after += 1
         parts: list[str] = []
         if ctx_before:
             parts.append(f"[before] {str(ctx_before)[:300]}")
@@ -573,6 +579,25 @@ def generate_dspy_suggestion(
         example_errors.append(" | ".join(parts))
     if not example_errors:
         example_errors = [pattern.get("description", "Recurring error pattern")]
+    # Observability gap #1: warn when none of the grounding examples carry
+    # the agent's pre-error action — DSPy will produce more generic rule
+    # text in that case. This was the precise data-side issue that turned
+    # an AP-010-style probe into a misleading "fixes don't work" signal.
+    n_examples = len(example_errors)
+    if n_examples > 0 and n_with_ctx_before == 0:
+        logger.warning(
+            "context_before missing from all %d grounding examples for pattern %s — "
+            "rule will be less specific. Source error_type=%s. "
+            "Re-mine with `sio scan` if context capture has been added since.",
+            n_examples,
+            pattern.get("pattern_id", "?"),
+            error_type,
+        )
+    elif n_examples > 0 and n_with_ctx_before < n_examples:
+        logger.info(
+            "context_before present on %d/%d examples for pattern %s",
+            n_with_ctx_before, n_examples, pattern.get("pattern_id", "?"),
+        )
 
     # project_context = old tool_input_context; both describe "what the agent
     # was trying to do" context that informs the rule target.
@@ -650,7 +675,22 @@ def generate_dspy_suggestion(
     # (apply path, change_type filter) working unchanged.
     from sio.suggestions.generator import _infer_change_type  # noqa: PLC0415
 
-    target_surface = _normalize_surface(_infer_change_type(pattern))
+    inferred_change_type = _infer_change_type(pattern)
+    target_surface = _normalize_surface(inferred_change_type)
+    # Observability gap #4: record HOW target_surface was decided so a
+    # future operator inspecting a suggestion can tell whether it came from
+    # the rule-based router (and which heuristic), the LM, or the default.
+    target_surface_source = (
+        "router-default" if inferred_change_type == "claude_md_rule"
+        else f"router-heuristic({inferred_change_type})"
+    )
+    logger.info(
+        "target_surface_inference: pattern=%s tool=%s -> %s (via %s)",
+        pattern.get("pattern_id", "?"),
+        pattern.get("tool_name", "?"),
+        target_surface,
+        target_surface_source,
+    )
 
     # Warn if DSPy returned default/empty fields — low quality signal
     _DEFAULT_VALUES = {
@@ -714,6 +754,38 @@ def generate_dspy_suggestion(
     )
     quality_score = suggestion_quality_metric(quality_example, quality_pred, trace=None)
     confidence = 0.5 * pattern_confidence + 0.5 * quality_score
+    # Observability gap #5: capture the confidence breakdown so a future
+    # operator (or sio review) can see WHY a suggestion landed at e.g. 0.42
+    # — was the pattern weak, was the quality metric harsh, or both?
+    confidence_breakdown = {
+        "pattern_confidence": round(float(pattern_confidence), 4),
+        "quality_score": round(float(quality_score), 4),
+        "blend_weights": {"pattern": 0.5, "quality": 0.5},
+        "final": round(float(confidence), 4),
+    }
+    logger.info(
+        "confidence_breakdown: pattern=%s pattern_conf=%.3f quality=%.3f final=%.3f",
+        pattern.get("pattern_id", "?"),
+        pattern_confidence,
+        quality_score,
+        confidence,
+    )
+    # Stuff observability metadata into reasoning_trace as a structured
+    # JSON-after-prose block so existing readers (which just print the
+    # string) keep working, while operators / future tooling can parse it.
+    obs_block = {
+        "target_surface_source": target_surface_source,
+        "confidence_breakdown": confidence_breakdown,
+        "context_before_coverage": {
+            "with_ctx_before": n_with_ctx_before,
+            "with_ctx_after": n_with_ctx_after,
+            "n_examples": n_examples,
+        },
+        "common_phrases": common_phrases or None,
+    }
+    reasoning_trace = (reasoning_trace or "") + (
+        "\n\n--- sio_observability ---\n" + json.dumps(obs_block, indent=2)
+    )
 
     # Build description consistent with template generator
     tool_name = pattern.get("tool_name") or "unknown tool"

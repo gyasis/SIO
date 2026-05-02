@@ -229,6 +229,24 @@ CREATE TABLE IF NOT EXISTS recall_examples (
 )
 """
 
+# Observability gap #6: capture every caught DSPy generation failure so a
+# future operator can see how often the LM is silently falling through to
+# the template path, broken down by reason. Without this table the events
+# only existed as transient log lines.
+_GENERATION_FAILURES_DDL = """
+CREATE TABLE IF NOT EXISTS generation_failures (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pattern_id INTEGER,
+    pattern_str_id TEXT,
+    cycle_id TEXT,
+    reason TEXT NOT NULL,
+    error_class TEXT,
+    error_message TEXT,
+    fallback_source TEXT NOT NULL DEFAULT 'template',
+    occurred_at TEXT NOT NULL
+)
+"""
+
 _PROCESSED_SESSIONS_DDL = """
 CREATE TABLE IF NOT EXISTS processed_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -493,6 +511,9 @@ def init_db(db_path: str) -> sqlite3.Connection:
 
     # Create recall examples table (v2.1 — DSPy training data)
     conn.execute(_RECALL_EXAMPLES_DDL)
+
+    # Create generation_failures table (observability gap #6)
+    conn.execute(_GENERATION_FAILURES_DDL)
 
     # Create DSPy suggestion engine tables
     conn.execute(_GROUND_TRUTH_DDL)

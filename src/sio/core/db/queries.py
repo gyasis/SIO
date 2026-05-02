@@ -1131,3 +1131,58 @@ def mark_superseded(
     )
     conn.commit()
     return cur.rowcount > 0
+
+
+def insert_generation_failure(
+    conn: sqlite3.Connection,
+    *,
+    pattern_id: int | None,
+    pattern_str_id: str | None,
+    cycle_id: str | None,
+    reason: str,
+    error_class: str | None = None,
+    error_message: str | None = None,
+    fallback_source: str = "template",
+) -> int:
+    """Record a caught DSPy generation failure (observability gap #6).
+
+    Each suggestion that falls through to the deterministic template path
+    instead of being LM-generated leaves a row here so a future operator
+    can audit fallback rates by reason without grepping logs.
+
+    Recognized ``reason`` values:
+        'dspy_exception'      — module.forward raised
+        'dspy_returned_none'  — auto-mode generation returned None
+        'no_dspy_module'      — no compiled artifact + no LM available
+        'lm_unavailable'      — LM creation / config failure
+        'fallback_unknown'    — catch-all for unclassified fallbacks
+
+    Errors are recorded best-effort: if the schema doesn't yet have the
+    table (older DB without the migration), this returns 0 silently rather
+    than raising — observability records must never break the calling path.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    msg = (error_message or "")[:2000] if error_message else None
+    try:
+        cur = conn.execute(
+            "INSERT INTO generation_failures "
+            "(pattern_id, pattern_str_id, cycle_id, reason, error_class, "
+            " error_message, fallback_source, occurred_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                pattern_id,
+                pattern_str_id,
+                cycle_id,
+                reason,
+                error_class,
+                msg,
+                fallback_source,
+                now,
+            ),
+        )
+        conn.commit()
+        return cur.lastrowid or 0
+    except sqlite3.OperationalError:
+        # generation_failures table missing — older DB; observability is
+        # best-effort, never block the suggestion path.
+        return 0
