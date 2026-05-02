@@ -333,6 +333,13 @@ def _truncate_fields(text: str, max_chars: int = 500) -> str:
     """
     if len(text) <= max_chars:
         return text
+    # Observability gap #3: log truncation events so operators can tell when a
+    # grounding payload was capped (and DSPy ended up with less context than
+    # the dataset actually had).
+    logger.info(
+        "_truncate_fields: input was %d chars, capped to %d (%.1f%% retained)",
+        len(text), max_chars, 100.0 * max_chars / len(text),
+    )
     return text[:max_chars] + "..."
 
 
@@ -526,6 +533,15 @@ def generate_dspy_suggestion(
     # data point.
     common_phrases = _extract_common_phrases(examples, top_n=5)
     theme_prefix = f"Common phrases: {common_phrases}. " if common_phrases else ""
+    # Observability gap #2: log theme-detection result so operators can tell
+    # whether B4's aggregation surfaced anything useful (or fell through to
+    # single-sample grounding).
+    logger.info(
+        "theme_extraction: pattern_id=%s n_examples=%d common_phrases=%s",
+        pattern.get("pattern_id", "?"),
+        len(examples),
+        common_phrases or "(none — no recurring 2/3-grams across cluster members)",
+    )
     pattern_description = (
         f"[{error_type}] Tool: {pattern.get('tool_name', 'unknown')}. "
         f"{theme_prefix}"
