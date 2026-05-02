@@ -78,6 +78,11 @@ def _load_optimized_or_default(config: Any) -> Any:
     try:
         db_path = os.path.expanduser("~/.sio/sio.db")
         if not os.path.exists(db_path):
+            logger.info(
+                "SuggestionGenerator: no SIO DB at %s — using uncompiled "
+                "ChainOfThought (only docstring few-shots are grounding)",
+                db_path,
+            )
             return SuggestionGenerator()
 
         import sqlite3
@@ -97,6 +102,23 @@ def _load_optimized_or_default(config: Any) -> Any:
                 active["file_path"],
             )
             return load_module(SuggestionGenerator, active["file_path"])
+
+        # B5: distinguish "no row in optimized_modules" vs "row but file missing"
+        # so operators can tell whether to run `sio optimize` (no row) or repair
+        # the artifact path (row but file missing).
+        if active is None:
+            logger.info(
+                "SuggestionGenerator: no active 'suggestion' module in "
+                "optimized_modules — using uncompiled ChainOfThought. "
+                "Run `sio optimize --optimizer gepa` to compile a fresh artifact."
+            )
+        else:
+            logger.warning(
+                "SuggestionGenerator: optimized_modules row exists but "
+                "file_path %s is missing on disk — using uncompiled fallback. "
+                "Re-run `sio optimize` to rebuild the artifact.",
+                active.get("file_path", "<unknown>"),
+            )
     except Exception:
         logger.warning(
             "Failed to load optimized module, falling back to default",
@@ -314,6 +336,60 @@ def _truncate_fields(text: str, max_chars: int = 500) -> str:
     return text[:max_chars] + "..."
 
 
+# Stop-token list for theme aggregation. Kept tight on purpose — anything
+# in here is too generic to be a useful "common phrase" signal.
+_THEME_STOP = frozenset(
+    {
+        "the", "a", "an", "of", "to", "in", "on", "at", "for", "with", "by",
+        "and", "or", "but", "is", "was", "were", "be", "been", "being",
+        "this", "that", "these", "those", "it", "its", "as", "from", "into",
+        "not", "no", "do", "does", "did", "have", "has", "had", "will",
+        "error", "failed", "failure", "exception",
+    }
+)
+_WORD_RE = re.compile(r"[a-zA-Z_][a-zA-Z0-9_./-]+")
+
+
+def _extract_common_phrases(examples: list[dict], *, top_n: int = 5) -> str:
+    """B4: extract top-N recurring 2/3-grams across cluster member error_texts.
+
+    Returns a comma-separated string of the most frequent multi-word phrases
+    (with stopword filtering). Empty string when no phrase recurs ≥2 times,
+    in which case the caller skips the prefix entirely. The goal is to hand
+    the LM a *theme* signal — not a single sample dressed as the description.
+    """
+    if not examples:
+        return ""
+    bigram_counter: Counter[str] = Counter()
+    trigram_counter: Counter[str] = Counter()
+    for ex in examples:
+        text = ex.get("error_text") or ex.get("context_before") or ""
+        if not text:
+            continue
+        tokens = [
+            t.lower() for t in _WORD_RE.findall(str(text)) if t.lower() not in _THEME_STOP
+        ]
+        for i in range(len(tokens) - 1):
+            bigram_counter[f"{tokens[i]} {tokens[i + 1]}"] += 1
+        for i in range(len(tokens) - 2):
+            trigram_counter[
+                f"{tokens[i]} {tokens[i + 1]} {tokens[i + 2]}"
+            ] += 1
+    # Prefer trigrams (more specific), pad with bigrams. Only keep phrases
+    # that recur — single occurrences aren't a theme.
+    phrases: list[str] = []
+    for phrase, count in trigram_counter.most_common(top_n):
+        if count >= 2:
+            phrases.append(phrase)
+    if len(phrases) < top_n:
+        for phrase, count in bigram_counter.most_common(top_n * 2):
+            if count >= 2 and phrase not in phrases:
+                phrases.append(phrase)
+                if len(phrases) >= top_n:
+                    break
+    return ", ".join(phrases[:top_n])
+
+
 # ---------------------------------------------------------------------------
 # T025 + T027: DSPy suggestion generation
 # ---------------------------------------------------------------------------
@@ -443,21 +519,42 @@ def generate_dspy_suggestion(
     # Audit Round 2 C-R2.6: this maps the old 4-input signature onto the new
     # PatternToRule 3-input contract (pattern_description / example_errors /
     # project_context). error_type is folded into pattern_description.
+    # B4: prepend an extractive theme summary (top common 2/3-gram phrases
+    # across cluster members) so the LM grounds on the THEME, not the single
+    # first error_text. Without this, pattern.description is just one sample
+    # dressed up with counts — and the LM writes generic rules from a single
+    # data point.
+    common_phrases = _extract_common_phrases(examples, top_n=5)
+    theme_prefix = f"Common phrases: {common_phrases}. " if common_phrases else ""
     pattern_description = (
         f"[{error_type}] Tool: {pattern.get('tool_name', 'unknown')}. "
+        f"{theme_prefix}"
         f"{pattern.get('description', 'Recurring error pattern')}. "
         f"{pattern.get('error_count', 0)} errors across "
         f"{pattern.get('session_count', 0)} sessions."
     )
-    pattern_description = _truncate_fields(pattern_description, max_chars=500)
+    pattern_description = _truncate_fields(pattern_description, max_chars=800)
 
     # Extract 3-5 representative error messages as a list[str] (new signature's
     # `example_errors` field). Prefer error_text, fall back to context_message.
+    # B2: enrich each example with surrounding context_before / context_after
+    # excerpts when present. The agent's pre-error action is the single most
+    # discriminating signal for writing theme-specific rules — without it the
+    # LM grounds only on the error string and produces generic boilerplate.
     example_errors: list[str] = []
     for ex in examples[:5]:
         msg = ex.get("error_text") or ex.get("error_message") or ex.get("context_message")
-        if msg:
-            example_errors.append(str(msg)[:500])
+        if not msg:
+            continue
+        ctx_before = ex.get("context_before")
+        ctx_after = ex.get("context_after")
+        parts: list[str] = []
+        if ctx_before:
+            parts.append(f"[before] {str(ctx_before)[:300]}")
+        parts.append(f"[error] {str(msg)[:500]}")
+        if ctx_after:
+            parts.append(f"[after] {str(ctx_after)[:200]}")
+        example_errors.append(" | ".join(parts))
     if not example_errors:
         example_errors = [pattern.get("description", "Recurring error pattern")]
 

@@ -758,3 +758,59 @@ class TestGeneratorDspyIntegration:
 
         assert len(result) == 1
         assert result[0]["_using_dspy"] is False
+
+
+class TestB4ExtractCommonPhrases:
+    """B4 regression — pattern_description must aggregate theme, not echo first error."""
+
+    def test_extracts_recurring_trigram(self) -> None:
+        from sio.suggestions.dspy_generator import _extract_common_phrases
+
+        examples = [
+            {"error_text": "ZENO_DIR mismatch detected, cwd is BAS-2"},
+            {"error_text": "ZENO_DIR mismatch detected on hhdev start"},
+            {"error_text": "patch failed to apply, ZENO_DIR pointing wrong"},
+            {"error_text": "ZENO_DIR mismatch — zombie next-server"},
+        ]
+        phrases = _extract_common_phrases(examples, top_n=5)
+        assert "zeno_dir mismatch" in phrases, (
+            f"B4: expected recurring theme to surface; got {phrases!r}"
+        )
+
+    def test_returns_empty_on_no_recurrence(self) -> None:
+        from sio.suggestions.dspy_generator import _extract_common_phrases
+
+        examples = [
+            {"error_text": "completely unique error one"},
+            {"error_text": "totally different error two"},
+        ]
+        assert _extract_common_phrases(examples, top_n=5) == ""
+
+    def test_returns_empty_on_empty_input(self) -> None:
+        from sio.suggestions.dspy_generator import _extract_common_phrases
+
+        assert _extract_common_phrases([], top_n=5) == ""
+
+    def test_filters_stopwords(self) -> None:
+        from sio.suggestions.dspy_generator import _extract_common_phrases
+
+        examples = [
+            {"error_text": "the foo is broken"},
+            {"error_text": "the foo is broken"},
+            {"error_text": "the foo is broken"},
+        ]
+        phrases = _extract_common_phrases(examples, top_n=5)
+        assert "foo broken" in phrases
+        assert "the foo" not in phrases
+        assert "is broken" not in phrases
+
+    def test_falls_back_to_context_before_when_no_error_text(self) -> None:
+        from sio.suggestions.dspy_generator import _extract_common_phrases
+
+        examples = [
+            {"error_text": "", "context_before": "agent ran hhdev start zeno"},
+            {"error_text": "", "context_before": "agent ran hhdev start cube"},
+            {"error_text": "", "context_before": "agent ran hhdev start zeno"},
+        ]
+        phrases = _extract_common_phrases(examples, top_n=5)
+        assert "hhdev start" in phrases or "agent ran" in phrases

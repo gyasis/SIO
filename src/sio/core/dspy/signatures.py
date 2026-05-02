@@ -10,23 +10,34 @@ class PatternToRule(dspy.Signature):
 
     The rule must be actionable, file-path-safe, and <= 3 sentences.
 
+    CRITICAL — required specificity (B5 grounding directives):
+    - The rule TITLE must reference the SPECIFIC tokens from `pattern_description`
+      (tool name, env var, path, command — whatever recurs in `Common phrases:`).
+      Generic titles like "Always check inputs" or "Verify configuration" are
+      WRONG — they lose the discriminating signal that justifies the rule.
+    - The rule BODY must cite the concrete failure observed in `example_errors`
+      (the `[before] ... [error] ... [after]` excerpts). Do NOT paraphrase into
+      a tool-agnostic platitude.
+    - If `example_errors` shows an env var, file path, or command literal,
+      that literal MUST appear verbatim in the rule.
+
     Few-shot guidance (T109, GEPA optimization target):
     ---
-    EXAMPLE 1
-    pattern_description: "Agent retries sed -i after file wipe"
-    example_errors: ["sed -i silently emptied .env", "file truncated after sed"]
+    EXAMPLE 1 — tool_failure (file wipe)
+    pattern_description: "[tool_failure] Tool: Bash. Common phrases: sed -i emptied, file truncated, .env gone. 12 errors across 5 sessions."
+    example_errors: ["[error] sed -i silently emptied .env", "[error] file truncated after sed"]
     project_context: "WSL2 Claude Code project"
     ---
-    rule_title: "Never use sed -i for file edits"
+    rule_title: "Never use sed -i for file edits — use Edit tool"
     rule_body: |
       Use the Edit tool instead of `sed -i` for all in-place file
       modifications. The `sed -i` temp-rename pattern races with Windows
       filesystem watchers and has silently wiped files on this WSL2 system.
     rule_rationale: "Prevents file wipes caused by atomic-rename races in WSL2."
     ---
-    EXAMPLE 2
-    pattern_description: "Agent batches MCP tools with Bash causing cascade failures"
-    example_errors: ["sibling tool call errored", "MCP timeout cancelled Bash"]
+    EXAMPLE 2 — tool_failure (cascade)
+    pattern_description: "[tool_failure] Tool: parallel. Common phrases: sibling tool call errored, MCP timeout, Bash cancelled. 8 errors across 4 sessions."
+    example_errors: ["[error] sibling tool call errored", "[error] MCP timeout cancelled Bash"]
     project_context: "Claude Code multi-tool pipeline"
     ---
     rule_title: "Never mix MCP and Bash in the same parallel batch"
@@ -35,6 +46,45 @@ class PatternToRule(dspy.Signature):
       If any tool in a parallel batch fails, all sibling calls are cancelled.
       Run Bash first (sequentially), then MCP tools.
     rule_rationale: "Prevents cascade cancellation of valid tool calls."
+    ---
+    EXAMPLE 3 — agent_admission (env-var mismatch)
+    pattern_description: "[agent_admission] Tool: hhdev. Common phrases: ZENO_DIR mismatch, cwd BAS-2, zombie next-server, patch failed. 21 errors across 3 sessions."
+    example_errors: ["[before] hhdev start zeno from CDIA cwd | [error] ZENO_DIR points to BAS-2 not CDIA | [after] zombie next-server on :3000", "[before] hhdev start zeno | [error] patch hcc-only failed to apply on cdia branch"]
+    project_context: "hhdev local dev — zeno boot from project-specific cwd"
+    ---
+    rule_title: "Verify ZENO_DIR matches cwd before `hhdev start zeno`"
+    rule_body: |
+      Before running `hhdev start zeno`, confirm `realpath ~/dev/hh-dev/local-dev/$ZENO_DIR`
+      points to the workspace where the current task lives. If port :3000 is live,
+      check `readlink /proc/$(lsof -t -i:3000 | head -1)/cwd` matches; kill zombie
+      next-server processes from old project clones before restart.
+    rule_rationale: "Prevents zombie next-server pollution and project-specific patches applied to the wrong branch."
+    ---
+    EXAMPLE 4 — user_correction (agent re-pivot)
+    pattern_description: "[user_correction] Tool: Agent. Common phrases: not what I meant, wrong session, that's the old one. 6 errors across 3 sessions."
+    example_errors: ["[before] surfaced session from 14 days ago | [error] user said 'no, the recent one' | [after] re-ran search with --recent 7"]
+    project_context: "Claude Code session resume / memory recall"
+    ---
+    rule_title: "Recency-first on resume — never default to `--all` for 'continue X' intents"
+    rule_body: |
+      When the user says "remember", "resume", or "continue" without a date,
+      MUST start with `session-search "<keywords>" --recent 7 --files`. Widen to
+      30 only on zero hits, and explicitly flag the age. Never auto-resume work
+      >7 days old without confirming.
+    rule_rationale: "Prevents resuming stale sessions as if they were current work."
+    ---
+    EXAMPLE 5 — undo (data loss)
+    pattern_description: "[undo] Tool: Edit. Common phrases: file overwritten, rolled back, lost work, undo. 4 errors across 2 sessions."
+    example_errors: ["[before] Write tool replaced full file with new content | [error] user said 'I lost 200 lines' | [after] git checkout HEAD -- file restored"]
+    project_context: "Claude Code file editing"
+    ---
+    rule_title: "Use Edit not Write for existing files — Write overwrites"
+    rule_body: |
+      The Write tool fully replaces the target file. For existing files always
+      use the Edit tool with explicit old_string/new_string. Only use Write to
+      create new files or after explicit user "overwrite" confirmation.
+    rule_rationale: "Prevents accidental whole-file overwrites of existing work."
+    ---
     """
 
     pattern_description: str = dspy.InputField(desc="Human-readable cluster name")

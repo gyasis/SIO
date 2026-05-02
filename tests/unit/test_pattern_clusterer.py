@@ -22,6 +22,7 @@ _REQUIRED_PATTERN_KEYS = frozenset(
         "pattern_id",
         "description",
         "tool_name",
+        "error_type",  # B3: dominant error_type for DSPy grounding
         "error_count",
         "session_count",
         "first_seen",
@@ -30,6 +31,32 @@ _REQUIRED_PATTERN_KEYS = frozenset(
         "error_ids",
     }
 )
+
+
+class TestPatternIncludesErrorType:
+    """B3 regression — pattern dict must carry the dominant error_type."""
+
+    def test_pattern_dict_includes_error_type_field(self) -> None:
+        errors = _make_errors(
+            ["File not found: /tmp/a.py", "File not found: /tmp/b.py"]
+        )
+        for e in errors:
+            e["error_type"] = "tool_failure"
+        patterns = cluster_errors(errors)
+        assert patterns
+        for p in patterns:
+            assert "error_type" in p, "B3: pattern dict missing error_type"
+            # Slugified — _top_error_type_term lowercases + non-alnum→_
+            assert p["error_type"] == "tool_failure"
+
+    def test_pattern_error_type_falls_back_when_missing(self) -> None:
+        """When members have no error_type, fallback uses the helper's logic."""
+        errors = _make_errors(["something broke", "something broke"])
+        # No error_type set → helper falls through to first-word/fallback
+        patterns = cluster_errors(errors)
+        assert patterns
+        for p in patterns:
+            assert p["error_type"], "B3: error_type must be a non-empty fallback"
 
 
 def _make_error(

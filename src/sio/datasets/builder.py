@@ -38,8 +38,28 @@ def _get_linked_error_ids(db_conn: sqlite3.Connection, pattern_row_id: int) -> s
     return {row[0] for row in rows}
 
 
+_CONTEXT_TRUNC_CHARS = 500
+
+
+def _truncate(value: str | None, limit: int) -> str | None:
+    """Cap a context excerpt so dataset files stay LM-grounding-friendly."""
+    if value is None:
+        return None
+    s = str(value)
+    if len(s) <= limit:
+        return s
+    return s[:limit].rstrip() + "…"
+
+
 def _error_to_example(error: dict) -> dict:
-    """Convert an error record dict to a dataset example dict."""
+    """Convert an error record dict to a dataset example dict.
+
+    `context_before` / `context_after` carry the agent's pre-error action
+    and post-error reaction — the most discriminating signal for theme-
+    specific rule generation. Both are included (truncated to keep
+    grounding payloads bounded) so the DSPy SuggestionGenerator can write
+    rules tied to *what the agent did*, not just the error string.
+    """
     error_text: str = error.get("error_text") or ""
     label = 1 if not error_text else 0
     return {
@@ -52,6 +72,8 @@ def _error_to_example(error: dict) -> dict:
         "user_message": error.get("user_message"),
         "error_type": error.get("error_type"),
         "source_file": error.get("source_file"),
+        "context_before": _truncate(error.get("context_before"), _CONTEXT_TRUNC_CHARS),
+        "context_after": _truncate(error.get("context_after"), _CONTEXT_TRUNC_CHARS),
     }
 
 
@@ -71,6 +93,7 @@ def build_dataset(
     db_conn: sqlite3.Connection,
     dataset_dir: str | Path | None = None,
     min_threshold: int = 5,
+    cycle_id: int | str | None = None,
 ) -> dict | None:
     """Build or incrementally update a labeled dataset for a pattern.
 
@@ -86,6 +109,14 @@ def build_dataset(
             ``~/.sio/datasets/``.
         min_threshold: Minimum total examples required to write/return a
             dataset.  Returns ``None`` when the total falls below this.
+        cycle_id: When provided, the dataset is REBUILT from scratch for the
+            current cycle rather than merged onto an existing file. This is
+            the correct mode for per-cycle suggest runs: the centroid-hash
+            ``pattern_id`` is stable across runs, so without per-cycle
+            isolation a narrowed Hop-2 run would be polluted by examples
+            appended from prior wider-grep runs (poisoning DSPy grounding
+            with stale generic errors). Pass ``cycle_id=None`` only for
+            legacy callers that genuinely want incremental append semantics.
 
     Returns:
         Metadata dict with ``pattern_id``, ``positive_count``,
@@ -112,9 +143,14 @@ def build_dataset(
     safe_name = pattern_id.replace("/", "_").replace("\\", "_")
     file_path = output_dir / f"{safe_name}.json"
 
-    # Load existing data for incremental append.
-    existing = _load_existing_file(file_path)
-    existing_examples: list[dict] = existing.get("examples", [])
+    # Per-cycle mode: rebuild from scratch, do NOT merge stale prior contents.
+    # Authoritative pattern↔error links live in the pattern_errors table; the
+    # JSON file is a derived per-cycle artifact for DSPy grounding.
+    if cycle_id is not None:
+        existing_examples: list[dict] = []
+    else:
+        existing = _load_existing_file(file_path)
+        existing_examples = existing.get("examples", [])
 
     # Deduplicate by example id — only append genuinely new records.
     existing_example_ids: set[Any] = {
@@ -132,13 +168,16 @@ def build_dataset(
     negative_count = sum(1 for ex in combined_examples if ex["label"] == 0)
 
     now_iso = datetime.now(timezone.utc).isoformat()
+    metadata_payload: dict[str, Any] = {
+        "pattern_id": pattern_id,
+        "positive_count": positive_count,
+        "negative_count": negative_count,
+        "updated_at": now_iso,
+    }
+    if cycle_id is not None:
+        metadata_payload["cycle_id"] = cycle_id
     payload: dict[str, Any] = {
-        "metadata": {
-            "pattern_id": pattern_id,
-            "positive_count": positive_count,
-            "negative_count": negative_count,
-            "updated_at": now_iso,
-        },
+        "metadata": metadata_payload,
         "examples": combined_examples,
     }
     file_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

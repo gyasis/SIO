@@ -628,3 +628,160 @@ class TestDatasetMetadataReturned:
         assert Path(result["file_path"]).exists(), (
             "file_path must point to an existing file after build"
         )
+
+
+class TestCycleIsolation:
+    """B1 regression — per-cycle dataset rebuild prevents stale-file pollution.
+
+    The DSPy SuggestionGenerator grounds rule generation on the dataset JSON
+    file at ``~/.sio/datasets/<pattern_id>.json``. Pattern_id is centroid-hash
+    stable, so a Hop-2 narrowed run can collide with a prior wider-grep run's
+    pattern_id. Without per-cycle isolation, ``build_dataset`` appends the
+    narrowed examples after the prior wide examples — and ``examples[:20]``
+    in the generator then sees stale generic errors first, producing generic
+    rule text. Passing ``cycle_id`` rebuilds from scratch.
+    """
+
+    def test_cycle_id_rebuilds_dataset_dropping_stale_examples(
+        self, v2_db: sqlite3.Connection, tmp_path: Path
+    ) -> None:
+        # Wide-grep run: 6 errors linked to pattern.
+        pattern_row_id = _insert_pattern(v2_db, pattern_id="p-cycle-iso-001")
+        pattern = _build_pattern_dict(row_id=pattern_row_id, pattern_id="p-cycle-iso-001")
+        wide_ids = _make_errors_for_pattern(
+            v2_db, pattern_row_id, positive_count=3, negative_count=3
+        )
+        all_errors_wide = [
+            dict(row) for row in v2_db.execute("SELECT * FROM error_records").fetchall()
+        ]
+
+        # Cycle 1 — write the dataset.
+        result_1 = build_dataset(
+            pattern, all_errors_wide, v2_db, dataset_dir=tmp_path, cycle_id=1
+        )
+        assert result_1 is not None
+        file_1 = Path(result_1["file_path"])
+        payload_1 = json.loads(file_1.read_text())
+        assert len(payload_1["examples"]) == len(wide_ids)
+        assert payload_1["metadata"]["cycle_id"] == 1
+
+        # Hop-2 narrowed run: simulate the user iterating with --refine.
+        # The DB now has the same 6 errors but the all_errors slice handed to
+        # build_dataset reflects only the 2 errors that survived narrowing.
+        narrowed_subset = all_errors_wide[:2]
+
+        # Cycle 2 — rebuild from the narrowed set; MUST NOT carry over stale 4.
+        result_2 = build_dataset(
+            pattern, narrowed_subset, v2_db, dataset_dir=tmp_path, cycle_id=2
+        )
+        # narrowed_subset has only 2 examples — below the default min_threshold=5
+        # so result_2 will be None unless we lower the threshold for the test.
+        result_2 = build_dataset(
+            pattern,
+            narrowed_subset,
+            v2_db,
+            dataset_dir=tmp_path,
+            min_threshold=1,
+            cycle_id=2,
+        )
+        assert result_2 is not None
+        payload_2 = json.loads(Path(result_2["file_path"]).read_text())
+
+        # The B1 assertion: cycle 2's file contains EXACTLY the narrowed
+        # subset, not the wide-cycle leftovers.
+        assert len(payload_2["examples"]) == len(narrowed_subset), (
+            f"cycle_id=2 rebuild leaked stale examples — got "
+            f"{len(payload_2['examples'])}, expected {len(narrowed_subset)}"
+        )
+        assert payload_2["metadata"]["cycle_id"] == 2
+
+        narrowed_ids = {e["id"] for e in narrowed_subset}
+        actual_ids = {e["id"] for e in payload_2["examples"]}
+        assert actual_ids == narrowed_ids, (
+            "cycle 2 examples must match exactly the narrowed input ids; "
+            f"unexpected: {actual_ids - narrowed_ids}, missing: {narrowed_ids - actual_ids}"
+        )
+
+    def test_context_fields_round_trip_through_example(
+        self, v2_db: sqlite3.Connection, tmp_path: Path
+    ) -> None:
+        """B2 regression — context_before/context_after must reach the dataset.
+
+        These are the most discriminating signal for theme-specific rule
+        generation (the agent's pre-error action). Until B2 they were dropped
+        between mining and DSPy grounding.
+        """
+        from sio.datasets.builder import _error_to_example
+
+        error = {
+            "id": 42,
+            "error_text": "FileNotFoundError: missing.py",
+            "tool_name": "Read",
+            "session_id": "sess-ctx-001",
+            "timestamp": _NOW,
+            "user_message": "open the config",
+            "error_type": "tool_failure",
+            "source_file": "x.md",
+            "context_before": "agent attempted to ZENO_DIR-switch but cwd was BAS-2",
+            "context_after": "user said no, that's wrong project",
+        }
+        example = _error_to_example(error)
+        assert example["context_before"] == error["context_before"]
+        assert example["context_after"] == error["context_after"]
+
+    def test_context_fields_truncated_to_bounded_size(self) -> None:
+        """B2 — long contexts must be truncated to keep grounding payloads bounded."""
+        from sio.datasets.builder import _CONTEXT_TRUNC_CHARS, _error_to_example
+
+        long_ctx = "X" * (_CONTEXT_TRUNC_CHARS + 200)
+        example = _error_to_example(
+            {
+                "id": 1,
+                "error_text": "boom",
+                "context_before": long_ctx,
+                "context_after": long_ctx,
+            }
+        )
+        assert example["context_before"] is not None
+        assert len(example["context_before"]) <= _CONTEXT_TRUNC_CHARS + 3  # +"…"
+        assert example["context_before"].endswith("…")
+        assert example["context_after"].endswith("…")
+
+    def test_context_fields_none_when_absent(self) -> None:
+        """B2 — missing context fields must roundtrip as None, not empty string."""
+        from sio.datasets.builder import _error_to_example
+
+        example = _error_to_example({"id": 1, "error_text": "boom"})
+        assert example["context_before"] is None
+        assert example["context_after"] is None
+
+    def test_cycle_id_none_preserves_legacy_append_semantics(
+        self, v2_db: sqlite3.Connection, tmp_path: Path
+    ) -> None:
+        """Backwards compat — callers passing no cycle_id keep the merge behavior."""
+        pattern_row_id = _insert_pattern(v2_db, pattern_id="p-cycle-legacy-001")
+        pattern = _build_pattern_dict(row_id=pattern_row_id, pattern_id="p-cycle-legacy-001")
+        _make_errors_for_pattern(v2_db, pattern_row_id, positive_count=3, negative_count=3)
+
+        all_errors = [
+            dict(row) for row in v2_db.execute("SELECT * FROM error_records").fetchall()
+        ]
+
+        # First call without cycle_id — writes 6 examples.
+        first = build_dataset(pattern, all_errors, v2_db, dataset_dir=tmp_path)
+        assert first is not None
+        first_payload = json.loads(Path(first["file_path"]).read_text())
+        assert len(first_payload["examples"]) == 6
+        assert "cycle_id" not in first_payload["metadata"]
+
+        # Second call without cycle_id and only 2 of the 6 — merges, total stays 6.
+        # (legacy "incremental update" semantics; no dedup re-introduces anything.)
+        subset_errors = all_errors[:2]
+        second = build_dataset(
+            pattern, subset_errors, v2_db, dataset_dir=tmp_path, min_threshold=1
+        )
+        assert second is not None
+        second_payload = json.loads(Path(second["file_path"]).read_text())
+        assert len(second_payload["examples"]) == 6, (
+            "without cycle_id the file must retain merged historical examples"
+        )

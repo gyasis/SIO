@@ -1877,7 +1877,9 @@ def suggest(
 
         datasets: dict[str, dict] = {}
         for p in persisted_patterns:
-            metadata = build_dataset(p, all_errors, conn, min_threshold=min_examples)
+            metadata = build_dataset(
+                p, all_errors, conn, min_threshold=min_examples, cycle_id=cycle_id
+            )
             if metadata is not None:
                 pid = metadata["pattern_id"]
                 ds_cur = conn.execute(

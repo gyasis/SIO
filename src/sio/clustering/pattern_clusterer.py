@@ -539,12 +539,18 @@ def cluster_errors(
 
         session_ids: set[str] = {e["session_id"] for e in member_errors}
         error_ids: list[int] = [e["id"] for e in member_errors]
+        # B3: store the dominant error_type on the pattern dict so downstream
+        # consumers (DSPy SuggestionGenerator) can write rules tied to the
+        # specific failure mode (tool_failure vs user_correction vs undo)
+        # instead of always reading "[unknown]".
+        top_type = _top_error_type_term(member_errors)
 
         patterns.append(
             {
                 "pattern_id": pattern_id,
                 "description": description,
                 "tool_name": tool_name,
+                "error_type": top_type,
                 "error_count": len(member_errors),
                 "session_count": len(session_ids),
                 "first_seen": first_seen,
