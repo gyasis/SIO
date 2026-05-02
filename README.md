@@ -84,28 +84,60 @@ The v004 remediation hardened every stage of the pipeline:
 ### Prerequisites
 
 - Python 3.11+
-- An AI coding tool that produces session transcripts (Claude Code, Cursor, etc.)
+- An AI coding tool that produces session transcripts. Claude Code is supported
+  out of the box; Cursor / Windsurf / OpenCode adapters are stubs (PRs welcome).
 
 ### Install
 
+The package name on pypi is `self-improving-organism`; the CLI binary stays
+`sio` for ergonomics.
+
 ```bash
-# Clone and install in editable mode
+# Recommended: from pypi (once published)
+pip install self-improving-organism
+
+# Or from source (editable, for tinkering)
 git clone https://github.com/gyasisutton/SIO.git
 cd SIO
 pip install -e ".[all,dev]"
-
-# Install Claude Code slash commands (10 skills)
-bash scripts/install-skills.sh
 
 # Verify
 sio --version
 ```
 
-### First Run (5 minutes)
+### Bootstrap your harness (`sio init`)
+
+`sio init` stages SIO's bundled skills and tool rules into your AI coding
+agent's config directory. For Claude Code that's `~/.claude/skills/sio-*/`
+and `~/.claude/rules/tools/sio.md`. The install is idempotent, tracks
+managed files via a sidecar manifest, and preserves anything you've edited.
 
 ```bash
-# 1. Install SIO hooks into Claude Code
-sio install
+# Auto-detect harness, install
+sio init
+
+# Preview without writing
+sio init --dry-run
+
+# See what's currently installed and whether anything has drifted
+sio init --status
+
+# Force re-sync (overwrite user-edited files; originals get backed up
+# to ~/.sio/backups/<timestamp>/)
+sio init --force
+
+# Cleanly remove SIO-managed files (user-modified files are left in place)
+sio init --uninstall
+
+# Force a specific harness even if the auto-detect missed it
+sio init --harness claude-code
+```
+
+### First run (5 minutes)
+
+```bash
+# 1. Stage SIO skills + rules into your harness
+sio init
 
 # 2. Mine errors from your recent sessions
 sio mine --since "7 days"
@@ -127,6 +159,23 @@ sio schedule install
 
 # 8. Check overall pipeline status
 sio status
+```
+
+### LLM configuration
+
+SIO's DSPy suggestion engine needs an LLM. Edit `~/.sio/config.toml` after
+first run; it ships with a commented template covering OpenAI, Anthropic,
+Azure OpenAI, and local Ollama. Pick the provider you want and set the
+matching API key in your shell environment.
+
+```toml
+[llm]
+model = "openai/gpt-4o"
+api_key_env = "OPENAI_API_KEY"
+
+# Or local-only mode (free, private):
+# model = "ollama/qwen3-coder:30b"
+# api_base_env = "OLLAMA_HOST"
 ```
 
 ## CLI Reference

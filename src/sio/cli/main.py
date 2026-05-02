@@ -41,9 +41,13 @@ def _get_sio_db_conn():
 
 
 try:
-    _sio_version = pkg_version("sio")
+    _sio_version = pkg_version("self-improving-organism")
 except PackageNotFoundError:
-    _sio_version = "0.0.0-dev"
+    try:
+        # Fall back to legacy package name during dev / mid-rename installs.
+        _sio_version = pkg_version("sio")
+    except PackageNotFoundError:
+        _sio_version = "0.0.0-dev"
 
 
 @click.group()
