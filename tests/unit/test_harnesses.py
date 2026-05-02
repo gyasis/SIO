@@ -216,6 +216,108 @@ class TestSeedSioHome:
         assert (sio_home / "config.toml").read_text() == first_config
 
 
+class TestPathLink:
+    """`sio init --link-path` shell PATH integration."""
+
+    def test_link_creates_managed_block(self, tmp_path: Path) -> None:
+        from sio.harnesses.path_link import link_path
+
+        rc = tmp_path / ".zshrc"
+        rc.write_text("# pre-existing user content\n")
+        scripts = tmp_path / "venv" / "bin"
+        scripts.mkdir(parents=True)
+
+        report = link_path(rc_file=rc, scripts_dir=scripts)
+        assert report.action == "create"
+        text = rc.read_text()
+        assert "# pre-existing user content" in text
+        assert "# >>> sio managed-path >>>" in text
+        assert f'export PATH="{scripts}:$PATH"' in text
+        assert "# <<< sio managed-path <<<" in text
+
+    def test_link_is_idempotent(self, tmp_path: Path) -> None:
+        from sio.harnesses.path_link import link_path
+
+        rc = tmp_path / ".bashrc"
+        rc.write_text("")
+        scripts = tmp_path / "venv" / "bin"
+        scripts.mkdir(parents=True)
+
+        link_path(rc_file=rc, scripts_dir=scripts)
+        first = rc.read_text()
+        report2 = link_path(rc_file=rc, scripts_dir=scripts)
+        assert report2.action == "skip"
+        assert rc.read_text() == first
+
+    def test_unlink_removes_block_only(self, tmp_path: Path) -> None:
+        from sio.harnesses.path_link import link_path, unlink_path
+
+        rc = tmp_path / ".zshrc"
+        rc.write_text("# user content above\n")
+        scripts = tmp_path / "venv" / "bin"
+        scripts.mkdir(parents=True)
+
+        link_path(rc_file=rc, scripts_dir=scripts)
+        # Add user content AFTER the block
+        with rc.open("a") as f:
+            f.write("# user content below\n")
+
+        report = unlink_path(rc_file=rc)
+        assert report.action == "remove"
+        text = rc.read_text()
+        assert "# user content above" in text
+        assert "# user content below" in text
+        assert "# >>> sio managed-path >>>" not in text
+        assert "managed-path" not in text
+
+    def test_unlink_when_no_block_present(self, tmp_path: Path) -> None:
+        from sio.harnesses.path_link import unlink_path
+
+        rc = tmp_path / ".zshrc"
+        rc.write_text("# user-only file\n")
+        report = unlink_path(rc_file=rc)
+        assert report.action == "skip-not-managed"
+        # File untouched.
+        assert rc.read_text() == "# user-only file\n"
+
+    def test_dry_run_writes_nothing(self, tmp_path: Path) -> None:
+        from sio.harnesses.path_link import link_path
+
+        rc = tmp_path / ".zshrc"
+        scripts = tmp_path / "venv" / "bin"
+        scripts.mkdir(parents=True)
+
+        report = link_path(rc_file=rc, scripts_dir=scripts, dry_run=True)
+        assert report.action == "would-create"
+        assert not rc.exists()
+
+
+class TestBootstrapMissingError:
+    """C2 — `sio init` must hard-fail rather than silently no-op."""
+
+    def test_iter_bootstrap_files_raises_when_empty(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from sio.harnesses import bootstrap as bs
+
+        monkeypatch.setattr(bs, "_BOOTSTRAP_PKG", "non.existent.pkg")
+        # Force the dev-fallback to also fail by pointing it at empty space.
+        monkeypatch.setattr(bs, "_repo_root_fallback", lambda: tmp_path / "nope")
+        with pytest.raises(bs.BootstrapMissingError) as exc_info:
+            list(bs.iter_bootstrap_files())
+        assert "force-reinstall" in str(exc_info.value)
+
+    def test_collect_bootstrap_files_returns_empty_without_raising(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from sio.harnesses import bootstrap as bs
+
+        monkeypatch.setattr(bs, "_BOOTSTRAP_PKG", "non.existent.pkg")
+        monkeypatch.setattr(bs, "_repo_root_fallback", lambda: tmp_path / "nope")
+        # The internal API used by tests stays generator-empty rather than raising.
+        assert list(bs._collect_bootstrap_files()) == []
+
+
 class TestDetectAdapters:
     def test_detect_returns_only_present_harnesses(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         # Point HOME at an empty tmp dir so none of the real harness dirs exist.

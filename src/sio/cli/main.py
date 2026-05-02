@@ -84,12 +84,23 @@ def cli():
     is_flag=True,
     help="Show what's installed vs what the package ships, without changing anything.",
 )
+@click.option(
+    "--link-path",
+    is_flag=True,
+    help=(
+        "Append a managed `export PATH=...` block to the user's shell rc file "
+        "(~/.zshrc, ~/.bashrc, etc.) so the `sio` binary is reachable from "
+        "subprocesses with sanitized environments (e.g., the Bash tool inside "
+        "Claude Code). Skipped on --status / --dry-run unless explicit."
+    ),
+)
 def init(
     harness: str | None,
     dry_run: bool,
     force: bool,
     uninstall: bool,
     status: bool,
+    link_path: bool,
 ) -> None:
     """Stage SIO's bundled skills and rules into your AI coding harness.
 
@@ -208,6 +219,33 @@ def init(
             console.print(
                 f"  [green]✓[/green] {verb}{kind} complete — {len(ir.changes)} change(s)"
             )
+
+    # PATH integration step (opt-in via --link-path). On uninstall, removes
+    # any managed block left behind. Adversarial bug-hunter B1 — pip --user
+    # often puts the `sio` binary at ~/.local/bin which isn't on the PATH
+    # used by non-login subprocesses (Claude Code's Bash tool, for one).
+    if link_path or uninstall:
+        from sio.harnesses.path_link import link_path as do_link
+        from sio.harnesses.path_link import unlink_path
+
+        if uninstall:
+            pl = unlink_path(dry_run=dry_run)
+        else:
+            pl = do_link(dry_run=dry_run)
+        console.print(
+            f"\n[bold blue]→ shell PATH integration[/bold blue]  ({pl.rc_file})"
+        )
+        color = {
+            "create": "green",
+            "would-create": "green",
+            "remove": "red",
+            "would-remove": "red",
+            "skip": "white",
+            "skip-not-managed": "dim",
+        }.get(pl.action, "white")
+        console.print(f"  [{color}]{pl.action:<14}[/{color}] {pl.detail}")
+        for n in pl.notes:
+            console.print(f"  [dim]· {n}[/dim]")
 
     # Risk #2 fix: Claude Code reads ~/.claude/skills/ at process start —
     # newly staged SKILL.md files don't appear as slash commands until the
@@ -389,6 +427,46 @@ def optimize(skill_name, platform, optimizer, dry_run):
             click.echo(f"Full result: {_json.dumps(result, indent=2, default=str)}")
         else:
             click.echo("Optimization rejected.")
+
+
+@cli.command()
+def doctor() -> None:
+    """Diagnose `sio` install / config problems.
+
+    Runs a battery of checks (Python version, package collision, PATH
+    visibility, ~/.sio/ data dir, config.toml, bundled bootstrap content,
+    harness install state) and prints a color-coded report. Each problem
+    detected comes with a one-line fix command. Exits 0 if everything is
+    OK, 1 if any errors were found.
+    """
+    from rich.console import Console
+    from rich.table import Table
+
+    from sio.cli.doctor import run_doctor
+
+    console = Console()
+    report = run_doctor()
+
+    table = Table(title="sio doctor — diagnostics", show_header=True, header_style="bold")
+    table.add_column("Check")
+    table.add_column("Status")
+    table.add_column("Detail")
+    color_map = {"ok": "green", "warn": "yellow", "error": "red"}
+    glyph_map = {"ok": "✓", "warn": "!", "error": "✗"}
+    for c in report.checks:
+        color = color_map[c.status]
+        glyph = glyph_map[c.status]
+        table.add_row(c.name, f"[{color}]{glyph} {c.status}[/{color}]", c.detail)
+    console.print(table)
+
+    fixes = [c for c in report.checks if c.fix_hint]
+    if fixes:
+        console.print("\n[bold]Suggested fixes:[/bold]")
+        for c in fixes:
+            console.print(f"  [{color_map[c.status]}]{c.name}[/{color_map[c.status]}]: {c.fix_hint}")
+
+    if report.has_errors:
+        raise SystemExit(1)
 
 
 @cli.command()
