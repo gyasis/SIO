@@ -90,11 +90,15 @@ The v004 remediation hardened every stage of the pipeline:
 ### Install
 
 The package name on pypi is `self-improving-organism`; the CLI binary stays
-`sio` for ergonomics.
+`sio` for ergonomics. (Pypi publish hasn't happened yet — install from the
+GitHub release for now.)
 
 ```bash
-# Recommended: from pypi (once published)
-pip install self-improving-organism
+# Recommended: pin to a release tag (latest = v0.1.1)
+pip install git+https://github.com/gyasisutton/SIO.git@v0.1.1
+
+# Or grab the wheel directly from the release page (no build step)
+pip install https://github.com/gyasisutton/SIO/releases/download/v0.1.1/self_improving_organism-0.1.1-py3-none-any.whl
 
 # Or from source (editable, for tinkering)
 git clone https://github.com/gyasisutton/SIO.git
@@ -102,18 +106,28 @@ cd SIO
 pip install -e ".[all,dev]"
 
 # Verify
-sio --version
+sio --version          # → 0.1.1
 ```
 
 ### Bootstrap your harness (`sio init`)
 
-`sio init` stages SIO's bundled skills and tool rules into your AI coding
-agent's config directory. For Claude Code that's `~/.claude/skills/sio-*/`
-and `~/.claude/rules/tools/sio.md`. The install is idempotent, tracks
-managed files via a sidecar manifest, and preserves anything you've edited.
+> **You must run `sio init` after `pip install`.** `pip install` only puts the
+> Python package in place; it does not touch `~/.claude/` or `~/.sio/`.
+> `sio init` is the step that actually wires SIO into your agent.
+
+`sio init` does two things:
+
+1. **Creates `~/.sio/`** with subdirs (`datasets/`, `previews/`, `backups/`,
+   `ground_truth/`, `optimized/`) and seeds `~/.sio/config.toml` from a
+   template if it doesn't already exist. Existing config.toml is **never**
+   overwritten — even on subsequent runs.
+2. **Stages SIO's bundled skills and tool rules** into your AI agent's
+   config directory. For Claude Code that's `~/.claude/skills/sio-*/` and
+   `~/.claude/rules/tools/sio.md`. Idempotent, manifest-tracked, preserves
+   anything you've edited.
 
 ```bash
-# Auto-detect harness, install
+# Auto-detect harness, install (creates ~/.sio/ + ~/.claude/skills/sio-*/)
 sio init
 
 # Preview without writing
@@ -131,6 +145,30 @@ sio init --uninstall
 
 # Force a specific harness even if the auto-detect missed it
 sio init --harness claude-code
+```
+
+After `sio init`, your tree should look like:
+
+```
+~/.sio/
+  config.toml          ← uncomment one [llm] provider before `sio suggest`
+  datasets/
+  previews/
+  backups/
+  ground_truth/
+  optimized/
+~/.claude/
+  skills/sio-*/        ← 10 SIO skill folders
+  rules/tools/sio.md   ← canonical SIO usage rule
+  .sio-managed.json    ← manifest tracking what SIO installed
+```
+
+### Upgrade
+
+```bash
+pip install --upgrade git+https://github.com/gyasisutton/SIO.git@v0.1.1
+sio init                    # safe — never clobbers user-edited files
+sio init --status           # confirm what shipped vs what's drifted
 ```
 
 ### First run (5 minutes)
@@ -163,20 +201,45 @@ sio status
 
 ### LLM configuration
 
-SIO's DSPy suggestion engine needs an LLM. Edit `~/.sio/config.toml` after
-first run; it ships with a commented template covering OpenAI, Anthropic,
-Azure OpenAI, and local Ollama. Pick the provider you want and set the
-matching API key in your shell environment.
+SIO's DSPy suggestion engine needs an LLM. `sio init` already created
+`~/.sio/config.toml` for you — open it and **uncomment one** `[llm]`
+provider block, then set the matching API key in your shell environment.
+
+The shipped template:
 
 ```toml
-[llm]
-model = "openai/gpt-4o"
-api_key_env = "OPENAI_API_KEY"
+# SIO configuration — ~/.sio/config.toml
+#
+# Quick start: uncomment ONE of the [llm] provider blocks below and set
+# the matching API key in your shell environment. `sio suggest` will fail
+# loudly until a provider is configured.
 
-# Or local-only mode (free, private):
+[llm]
+
+# --- OpenAI ---
+# model = "openai/gpt-4o"
+# api_key_env = "OPENAI_API_KEY"
+
+# --- Anthropic ---
+# model = "anthropic/claude-sonnet-4-20250514"
+# api_key_env = "ANTHROPIC_API_KEY"
+
+# --- Azure OpenAI ---
+# model = "azure/<deployment-name>"
+# api_key_env = "AZURE_OPENAI_API_KEY"
+# api_base_env = "AZURE_OPENAI_ENDPOINT"
+
+# --- Local Ollama (free, private; needs `ollama` running on this host) ---
 # model = "ollama/qwen3-coder:30b"
 # api_base_env = "OLLAMA_HOST"
+
+temperature = 0.7
+max_tokens = 16000
 ```
+
+Every provider block is commented out by default — `sio suggest` will fail
+loudly with "no LM available" until you opt in. This is intentional: a
+fresh install should never silently dispatch to the wrong provider.
 
 ## CLI Reference
 
