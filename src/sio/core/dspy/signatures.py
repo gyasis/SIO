@@ -1,5 +1,10 @@
 """DSPy Signature definitions for suggestion generation and ground truth."""
 
+# Long lines are inherent to the few-shot demo blocks in the docstrings below
+# (each EXAMPLE encodes a multi-field pattern → rule mapping inline). Reflowing
+# them harms LM readability of the demos, so disable E501 file-wide.
+# ruff: noqa: E501
+
 from __future__ import annotations
 
 import dspy
@@ -48,17 +53,18 @@ class PatternToRule(dspy.Signature):
     rule_rationale: "Prevents cascade cancellation of valid tool calls."
     ---
     EXAMPLE 3 — agent_admission (env-var mismatch)
-    pattern_description: "[agent_admission] Tool: hhdev. Common phrases: ZENO_DIR mismatch, cwd BAS-2, zombie next-server, patch failed. 21 errors across 3 sessions."
-    example_errors: ["[before] hhdev start zeno from CDIA cwd | [error] ZENO_DIR points to BAS-2 not CDIA | [after] zombie next-server on :3000", "[before] hhdev start zeno | [error] patch hcc-only failed to apply on cdia branch"]
-    project_context: "hhdev local dev — zeno boot from project-specific cwd"
+    pattern_description: "[agent_admission] Tool: dev-server. Common phrases: WORKSPACE_DIR mismatch, cwd proj-a, stale dev server, patch failed. 21 errors across 3 sessions."
+    example_errors: ["[before] dev-server start from proj-b cwd | [error] WORKSPACE_DIR points to proj-a not proj-b | [after] stale server on :3000 from old clone", "[before] dev-server start | [error] project-specific patch failed to apply on unrelated branch"]
+    project_context: "monorepo with project-specific dev-server boots"
     ---
-    rule_title: "Verify ZENO_DIR matches cwd before `hhdev start zeno`"
+    rule_title: "Verify $WORKSPACE_DIR matches cwd before starting dev server"
     rule_body: |
-      Before running `hhdev start zeno`, confirm `realpath ~/dev/hh-dev/local-dev/$ZENO_DIR`
-      points to the workspace where the current task lives. If port :3000 is live,
-      check `readlink /proc/$(lsof -t -i:3000 | head -1)/cwd` matches; kill zombie
-      next-server processes from old project clones before restart.
-    rule_rationale: "Prevents zombie next-server pollution and project-specific patches applied to the wrong branch."
+      Before running the dev-server bootstrap script, confirm
+      `realpath $WORKSPACE_DIR` points to the workspace where the current task
+      lives. If the dev port is already bound, check the holding process's cwd
+      via `readlink /proc/$(lsof -t -i:<port> | head -1)/cwd` and kill any
+      stale process from an old project clone before restart.
+    rule_rationale: "Prevents stale-server pollution and project-specific patches applied to the wrong branch."
     ---
     EXAMPLE 4 — user_correction (agent re-pivot)
     pattern_description: "[user_correction] Tool: Agent. Common phrases: not what I meant, wrong session, that's the old one. 6 errors across 3 sessions."

@@ -835,9 +835,9 @@ def recall(query, session, project, polish, output):
     detects struggle→fix transitions, and optionally polishes via Gemini.
 
     Examples:
-        sio recall "dbt hhdev"                    # Cheap: filter + format
-        sio recall "dbt hhdev" --polish            # Expensive: + Gemini runbook
-        sio recall "auth fix" --project hh-dev     # Filter by project
+        sio recall "dbt setup"                    # Cheap: filter + format
+        sio recall "dbt setup" --polish            # Expensive: + Gemini runbook
+        sio recall "auth fix" --project my-app     # Filter by project
         sio recall "snowflake deploy" -o runbook.md
     """
     from pathlib import Path
@@ -3501,8 +3501,8 @@ def collect_recall(query, session, project, runbook, label):
     The pipeline: collect → (optional: LLM polish) → label → train
 
     Examples:
-        sio collect-recall "dbt hhdev" --project dev
-        sio collect-recall "dbt hhdev" --runbook polished.md --label positive
+        sio collect-recall "dbt setup" --project dev
+        sio collect-recall "dbt setup" --runbook polished.md --label positive
     """
     from pathlib import Path
 

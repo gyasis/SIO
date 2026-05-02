@@ -722,7 +722,7 @@ class TestCycleIsolation:
             "user_message": "open the config",
             "error_type": "tool_failure",
             "source_file": "x.md",
-            "context_before": "agent attempted to ZENO_DIR-switch but cwd was BAS-2",
+            "context_before": "agent attempted to switch WORKSPACE_DIR but cwd was proj-a",
             "context_after": "user said no, that's wrong project",
         }
         example = _error_to_example(error)

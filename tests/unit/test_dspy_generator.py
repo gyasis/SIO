@@ -767,13 +767,13 @@ class TestB4ExtractCommonPhrases:
         from sio.suggestions.dspy_generator import _extract_common_phrases
 
         examples = [
-            {"error_text": "ZENO_DIR mismatch detected, cwd is BAS-2"},
-            {"error_text": "ZENO_DIR mismatch detected on hhdev start"},
-            {"error_text": "patch failed to apply, ZENO_DIR pointing wrong"},
-            {"error_text": "ZENO_DIR mismatch — zombie next-server"},
+            {"error_text": "WORKSPACE_DIR mismatch detected, cwd is proj-a"},
+            {"error_text": "WORKSPACE_DIR mismatch detected on dev-server start"},
+            {"error_text": "patch failed to apply, WORKSPACE_DIR pointing wrong"},
+            {"error_text": "WORKSPACE_DIR mismatch — stale dev server"},
         ]
         phrases = _extract_common_phrases(examples, top_n=5)
-        assert "zeno_dir mismatch" in phrases, (
+        assert "workspace_dir mismatch" in phrases, (
             f"B4: expected recurring theme to surface; got {phrases!r}"
         )
 
@@ -808,9 +808,9 @@ class TestB4ExtractCommonPhrases:
         from sio.suggestions.dspy_generator import _extract_common_phrases
 
         examples = [
-            {"error_text": "", "context_before": "agent ran hhdev start zeno"},
-            {"error_text": "", "context_before": "agent ran hhdev start cube"},
-            {"error_text": "", "context_before": "agent ran hhdev start zeno"},
+            {"error_text": "", "context_before": "agent ran dev-server start app"},
+            {"error_text": "", "context_before": "agent ran dev-server start api"},
+            {"error_text": "", "context_before": "agent ran dev-server start app"},
         ]
         phrases = _extract_common_phrases(examples, top_n=5)
-        assert "hhdev start" in phrases or "agent ran" in phrases
+        assert "dev-server start" in phrases or "agent ran" in phrases

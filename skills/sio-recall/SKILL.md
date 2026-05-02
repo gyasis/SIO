@@ -82,18 +82,20 @@ Ask the user: "Save this runbook to `.memory/` for future reference?"
 ```bash
 sio recall "query"                          # Cheap: topic-filtered distill
 sio recall "query" --polish                 # Show Gemini prompt for polish
-sio recall "query" --project hh-dev         # Filter by project
+sio recall "query" --project my-app          # Filter by project
 sio recall "query" -o runbook.md            # Save to file
 sio recall "query" --session /path/to.jsonl # Specific session
 ```
 
 ## How Topic Filtering Works
 
-The query is expanded into a keyword cluster:
+The query is expanded into a keyword cluster (universal tooling only):
 - "dbt" → also searches for: profiles.yml, dbt_project, models/, target/
-- "hhdev" → also searches for: hh-dev, start.sh, stop.sh, local-dev
 - "cube" → also searches for: cubejs, schema/, .yml
-- "snowflake" → also searches for: snowsql, TWICE, H_EXP
+- "snowflake" → also searches for: snowsql
+- "superset" → also searches for: dataset, chart
+- "tableau" → also searches for: twb, tds, workbook
+- "prefect" → also searches for: flow, deployment, work.pool
 
 Steps are included if their summary, tool_input, or output matches ANY keyword.
 Context window: 1 step before and 1 after each match is also included.

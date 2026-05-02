@@ -26,24 +26,25 @@ import re
 def _build_topic_regex(query: str) -> re.Pattern:
     """Build a regex pattern from the user's query.
 
-    Expands keywords to include related terms:
-    - "dbt" also matches profiles.yml, models/, target/
-    - "hhdev" also matches hh-dev, start.sh, stop.sh
+    Expands keywords to include related terms for common open-source data /
+    BI tools (dbt, Cube, Snowflake, Superset, Tableau, Prefect). Project- or
+    organization-specific keyword aliases are out of scope here — add them to
+    your own fork or follow the upcoming `[recall.aliases]` config block
+    (planned).
     """
     # Split query into keywords
     keywords = [w.strip().lower() for w in query.split() if len(w.strip()) > 2]
 
-    # Expansion map for common terms
+    # Universal expansion map — tool names + their conventional file / dir
+    # patterns. Kept intentionally small + tool-agnostic; project-specific
+    # aliases belong in user config (not yet shipped — tracked separately).
     expansions = {
         "dbt": ["dbt", "profiles\\.yml", "dbt_project", "models/", "target/", "seeds/"],
-        "hhdev": ["hhdev", "hh-dev", "start\\.sh", "stop\\.sh", "local-dev"],
         "cube": ["cube", "cubejs", "cube\\.js", "schema/", "\\.yml"],
-        "snowflake": ["snowflake", "snowsql", "TWICE", "H_EXP"],
-        "superset": ["superset", "viz\\.hertek", "dataset", "chart"],
+        "snowflake": ["snowflake", "snowsql"],
+        "superset": ["superset", "dataset", "chart"],
         "tableau": ["tableau", "twb", "tds", "workbook"],
         "prefect": ["prefect", "flow", "deployment", "work.pool"],
-        "navina": ["navina", "hcc", "suggestion", "assessment"],
-        "raf": ["raf", "hcc", "demographic", "snapshot", "monthly"],
     }
 
     all_patterns = []
