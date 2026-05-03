@@ -152,6 +152,7 @@ CREATE TABLE IF NOT EXISTS datasets (
     negative_count INTEGER NOT NULL,
     min_threshold INTEGER NOT NULL DEFAULT 5,
     lineage_sessions TEXT,
+    cycle_id TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 )
@@ -170,6 +171,7 @@ CREATE TABLE IF NOT EXISTS suggestions (
     status TEXT NOT NULL DEFAULT 'pending',
     ai_explanation TEXT,
     user_note TEXT,
+    cycle_id TEXT,
     created_at TEXT NOT NULL,
     reviewed_at TEXT
 )
@@ -556,6 +558,19 @@ def init_db(db_path: str) -> sqlite3.Connection:
         pass  # Column already exists
     try:
         conn.execute("ALTER TABLE error_records ADD COLUMN tool_output TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Migration: add cycle_id to datasets + suggestions. Code in
+    # cli/main.py (suggest pipeline, FR-003) and datasets/builder.py
+    # writes cycle_id, but the DDLs originally shipped without it —
+    # ALTER here so existing pre-fix DBs catch up on next init_db().
+    try:
+        conn.execute("ALTER TABLE datasets ADD COLUMN cycle_id TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        conn.execute("ALTER TABLE suggestions ADD COLUMN cycle_id TEXT")
     except sqlite3.OperationalError:
         pass  # Column already exists
 
