@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import ClassVar
@@ -25,6 +26,18 @@ from sio.harnesses.base import HarnessAdapter, InstallReport, StatusReport
 from sio.harnesses.bootstrap import iter_bootstrap_files
 
 _MANIFEST_NAME = ".sio-managed.json"
+
+# Hook events SIO registers in ~/.claude/settings.json. Each entry is
+# (event_name, module_path); the command is dispatched via
+# `<sys.executable> -m <module_path>` so the right Python interpreter
+# fires regardless of which env the user installed SIO into.
+_SIO_HOOK_DEFS: list[tuple[str, str]] = [
+    ("PostToolUse", "sio.adapters.claude_code.hooks.post_tool_use"),
+    ("PreCompact", "sio.adapters.claude_code.hooks.pre_compact"),
+    ("Stop", "sio.adapters.claude_code.hooks.stop"),
+    ("UserPromptSubmit", "sio.adapters.claude_code.hooks.user_prompt_submit"),
+    ("SessionStart", "sio.adapters.claude_code.hooks.session_start"),
+]
 
 
 def _hash_text(text: str) -> str:
@@ -111,6 +124,119 @@ class ClaudeCodeAdapter(HarnessAdapter):
 
         if not dry_run:
             _save_manifest(manifest_path, manifest)
+        return report
+
+    # ---------------------------------------------------------------- post_install
+    def post_install(self, *, dry_run: bool = False) -> InstallReport:
+        """Register SIO hooks in ``~/.claude/settings.json``.
+
+        Merges with existing hook entries — never overwrites a user's
+        unrelated hooks. Migrates legacy bare-format hook entries
+        (``{"type": "command", "command": "..."}``) to the current
+        wrapped format (``{"matcher": "", "hooks": [{...}]}``) on
+        contact, so users upgrading from a pre-wrapped install pick up
+        the right shape automatically.
+
+        Idempotent: re-running this skips any hook whose module_path is
+        already registered (matched in either format).
+
+        On corrupt JSON, the existing settings.json is backed up to
+        ``settings.json.bak`` before being replaced. Atomic write
+        (tmp + rename) so an interrupted write cannot leave a
+        zero-byte settings.json.
+        """
+        report = InstallReport(harness=self.name, dry_run=dry_run)
+        settings_path = self.config_dir / "settings.json"
+
+        # Read existing settings, recover from corruption with a backup
+        if settings_path.exists():
+            try:
+                settings = json.loads(settings_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, ValueError):
+                if not dry_run:
+                    backup_path = settings_path.with_suffix(".json.bak")
+                    shutil.copy2(settings_path, backup_path)
+                    report.add(
+                        backup_path,
+                        "backup",
+                        "settings.json was malformed JSON — backed up before reset",
+                    )
+                settings = {}
+        else:
+            settings = {}
+
+        hooks = settings.setdefault("hooks", {})
+
+        # Migrate legacy bare-format entries → wrapped format
+        for event_name, event_hooks in list(hooks.items()):
+            if not isinstance(event_hooks, list):
+                continue
+            for i, entry in enumerate(event_hooks):
+                if (
+                    isinstance(entry, dict)
+                    and "type" in entry
+                    and "command" in entry
+                    and "hooks" not in entry
+                ):
+                    event_hooks[i] = {"matcher": "", "hooks": [entry]}
+
+        # Register each SIO hook if not already present (match on
+        # module_path so hooks reinstalled from a different Python env
+        # are recognised as duplicates rather than appended).
+        added = 0
+        for event_name, module_path in _SIO_HOOK_DEFS:
+            sio_hook_entry = {
+                "matcher": "",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": f"{sys.executable} -m {module_path}",
+                    }
+                ],
+            }
+            event_hooks = hooks.setdefault(event_name, [])
+
+            already = False
+            for h in event_hooks:
+                if not isinstance(h, dict):
+                    continue
+                if module_path in h.get("command", ""):
+                    already = True
+                    break
+                for inner in h.get("hooks", []):
+                    if isinstance(inner, dict) and module_path in inner.get(
+                        "command", ""
+                    ):
+                        already = True
+                        break
+                if already:
+                    break
+
+            if not already:
+                event_hooks.append(sio_hook_entry)
+                added += 1
+                action = "would-create" if dry_run else "create"
+                report.add(
+                    settings_path,
+                    action,
+                    f"register {event_name} hook → {module_path}",
+                )
+
+        if added == 0:
+            report.add(
+                settings_path,
+                "skip",
+                f"all {len(_SIO_HOOK_DEFS)} SIO hooks already registered",
+            )
+        elif not dry_run:
+            # Atomic write — tmp + rename so an interrupt can't leave
+            # a zero-byte settings.json
+            tmp_path = settings_path.with_suffix(".json.tmp")
+            tmp_path.write_text(
+                json.dumps(settings, indent=2), encoding="utf-8"
+            )
+            tmp_path.replace(settings_path)
+
         return report
 
     # ---------------------------------------------------------------- uninstall
