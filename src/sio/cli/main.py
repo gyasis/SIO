@@ -142,6 +142,31 @@ def init(
             )
             console.print(f"  {tag}[{color}]{action:<14}[/{color}] {path}  {reason}")
 
+        # Harness-agnostic canonical-DB bootstrap. Runs ONCE before any
+        # adapter so the canonical sio.db is ready (schema, schema_version
+        # baseline, 004 migration, split-brain backfill) regardless of
+        # which harness was selected. Skip on --uninstall (would create
+        # the very files we're about to remove) and --dry-run (read-only).
+        if not uninstall and not dry_run:
+            from sio.core.db.bootstrap import ensure_canonical_db_ready  # noqa: PLC0415
+
+            try:
+                canonical_db = ensure_canonical_db_ready()
+                console.print(
+                    f"  [green]{'ready':<14}[/green] {canonical_db}  "
+                    f"canonical DB schema verified"
+                )
+            except Exception as exc:  # noqa: BLE001
+                console.print(
+                    f"  [yellow]{'warn':<14}[/yellow] canonical DB bootstrap "
+                    f"failed: {exc} — continuing"
+                )
+        elif dry_run and not uninstall:
+            console.print(
+                "  [dim](dry-run)[/dim] [white]would-ready    [/white] "
+                "~/.sio/sio.db  canonical DB schema verify"
+            )
+
     if harness:
         try:
             adapters = [get_adapter(harness)]

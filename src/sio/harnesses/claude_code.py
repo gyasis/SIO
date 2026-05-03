@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -124,6 +125,58 @@ class ClaudeCodeAdapter(HarnessAdapter):
 
         if not dry_run:
             _save_manifest(manifest_path, manifest)
+        return report
+
+    # ----------------------------------------------------------------- pre_install
+    def pre_install(self, *, dry_run: bool = False) -> InstallReport:
+        """Initialize the per-platform ``behavior_invocations.db``.
+
+        Each harness writes its hook telemetry to a per-platform DB at
+        ``~/.sio/<platform>/behavior_invocations.db`` (canonical
+        ``~/.sio/sio.db`` is bootstrapped harness-agnostically before
+        the adapter loop runs).
+
+        Idempotent: re-running re-applies the in-place ALTER block in
+        ``schema.py``, so any new column from a SIO upgrade lands on
+        next install.
+        """
+        report = InstallReport(harness=self.name, dry_run=dry_run)
+
+        sio_home = Path(
+            os.environ.get("SIO_HOME", str(Path.home() / ".sio"))
+        )
+        platform_db_dir = sio_home / self.name  # e.g. ~/.sio/claude-code
+        platform_db_path = platform_db_dir / "behavior_invocations.db"
+        existed_before = platform_db_path.exists()
+
+        if dry_run:
+            action = "skip" if existed_before else "would-create"
+            reason = (
+                "per-platform DB already exists"
+                if existed_before
+                else "would initialize per-platform DB"
+            )
+            report.add(platform_db_path, action, reason)
+            return report
+
+        platform_db_dir.mkdir(parents=True, exist_ok=True)
+        from sio.core.db.schema import init_db  # noqa: PLC0415
+
+        conn = init_db(str(platform_db_path))
+        conn.close()
+
+        if existed_before:
+            report.add(
+                platform_db_path,
+                "skip",
+                "per-platform DB already exists — schema reverified",
+            )
+        else:
+            report.add(
+                platform_db_path,
+                "create",
+                "per-platform behavior_invocations DB initialized",
+            )
         return report
 
     # ---------------------------------------------------------------- post_install
