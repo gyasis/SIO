@@ -15,3 +15,5 @@ lives here.
 |---|---|---|
 | 001 | [Skill-side LLM delegation](001-skill-side-llm-delegation.md) | draft |
 | 002 | [Local LM backend (Ollama)](002-local-lm-backend.md) | draft |
+| 004 | [Install-orchestration regression after harness refactor](004-install-orchestration-regression.md) | draft 🔴 high |
+| 005 | [Promote violated rule → PreToolUse hook](005-violated-rule-to-pretooluse-hook.md) | draft (blocked by 004) |
