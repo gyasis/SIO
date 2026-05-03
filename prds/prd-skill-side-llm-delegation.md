@@ -1,4 +1,4 @@
-# PRD 001 — Skill-side LLM delegation
+# PRD skill-side-llm-delegation — Skill-side LLM delegation
 
 **Status:** draft
 **Created:** 2026-05-02

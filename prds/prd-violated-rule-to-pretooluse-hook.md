@@ -1,9 +1,9 @@
-# PRD 005 — Promote violated rule → PreToolUse hook
+# PRD violated-rule-to-pretooluse-hook — Promote violated rule → PreToolUse hook
 
 **Status:** draft
 **Created:** 2026-05-03
 **Owner:** unassigned
-**Blocked by:** PRD 004 (hooks must exist before we can promote rules to hooks)
+**Blocked by:** PRD install-orchestration-regression (hooks must exist before we can promote rules to hooks)
 
 ## Problem
 
@@ -129,25 +129,25 @@ Medium. Roughly:
   from rule text + 10 violating tool_input examples"
 - 0.5d: hook script template (Python) + `~/.claude/settings.json`
   merge logic (lifted from the install-orchestration restore in
-  PRD 004)
+  PRD install-orchestration-regression)
 - 0.5d: dry-run-against-historical-violations verifier
 - 0.5d: `/sio-promote-rule` SKILL.md + interactive flow
 - 0.5d: regression tests + a smoke test that promotes the
   "Bash+Write parallel" rule and confirms it fires on a synthetic
   session
 
-Total: ~3.5 days. Strictly blocked by PRD 004 — without hooks
+Total: ~3.5 days. Strictly blocked by PRD install-orchestration-regression — without hooks
 infrastructure restored, there is nothing to promote into.
 
 ## References
 
 - `sio violations` output (run today against this user's corpus,
   3 rules being violated 361 / 66 / 62 times)
-- PRD 004 (install-orchestration regression — the prerequisite that
+- PRD install-orchestration-regression (install-orchestration regression — the prerequisite that
   restores the hook system this PRD writes into)
 - Claude Code PreToolUse hook docs (covered in `update-config`
   skill — the harness-side mechanism this PRD plugs into)
 - The existing `sio-validate` skill is adjacent: it already
   generates `validate-args.js` rules from tool_failure errors.
-  PRD 005 generalises the same shape to *all* CLAUDE.md rules,
+  PRD violated-rule-to-pretooluse-hook generalises the same shape to *all* CLAUDE.md rules,
   not just tool-arg failures.

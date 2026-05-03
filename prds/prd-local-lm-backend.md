@@ -1,4 +1,4 @@
-# PRD 002 — Local LM backend (Ollama)
+# PRD local-lm-backend — Local LM backend (Ollama)
 
 **Status:** draft
 **Created:** 2026-05-02
@@ -129,5 +129,5 @@ Small. Roughly:
   reachable from configuration.
 - `src/sio/adapters/claude_code/installer.py:16-45` (post-update) —
   the installer template that surfaces the `[llm]` choice.
-- See PRD 001 for the in-harness path that doesn't need any LM
+- See PRD skill-side-llm-delegation for the in-harness path that doesn't need any LM
   backend at all; this PRD covers the standalone-CLI complement.

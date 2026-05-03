@@ -1,4 +1,4 @@
-# PRD 006 — Fresh-machine SIO install test report + session handoff
+# PRD fresh-machine-install-handoff — Fresh-machine SIO install test report + session handoff
 
 **Status:** report (not a proposal — captures state for handoff)
 **Created:** 2026-05-03
@@ -67,9 +67,9 @@ targeting the disaster-recovery work (April 2026) as the test data:
 | `patterns` | 25+ | recovery-slice clustering produced 25 |
 | `datasets` | 2 | only 2 patterns met `min_examples` threshold |
 | `suggestions` (pending) | 2 | both DSPy-generated; details below |
-| `behavior_invocations` | **0** | per-platform AND canonical — see PRD 004 |
+| `behavior_invocations` | **0** | per-platform AND canonical — see PRD install-orchestration-regression |
 | `applied_changes` | 0 | nothing applied yet |
-| `schema_version` | n/a | table never created — see PRD 004 |
+| `schema_version` | n/a | table never created — see PRD install-orchestration-regression |
 
 ### Pending suggestions ready for review
 
@@ -110,11 +110,11 @@ PR #1 is merged + branch deleted. No open PRs.
 
 - **The `cycle_id` schema bug.** v0.1.3 ships `sio suggest` broken on
   every fresh install. PR #1 fixed it. This bug exists *because* the
-  install pipeline regression in PRD 004 means
+  install pipeline regression in PRD install-orchestration-regression means
   `_apply_004_migration_if_needed` no longer runs.
 - **No hooks installed.** `~/.claude/settings.json` doesn't exist
   after `sio init`. Hooks were dropped in commit `bc39869` (the
-  harness refactor) — see PRD 004 for the full delta.
+  harness refactor) — see PRD install-orchestration-regression for the full delta.
 - **Routing rot.** Master `sio` skill + canonical `tools/sio.md`
   routed to 9 of 19 skills — the 9 added in v0.1.3 were invisible to
   the agent's decision tree. Fixed in commit `0e97eb4`.
@@ -142,17 +142,17 @@ PR #1 is merged + branch deleted. No open PRs.
 
 | PRD | Title | Severity / Status |
 |---|---|---|
-| [001](001-skill-side-llm-delegation.md) | Skill-side LLM delegation | draft |
-| [002](002-local-lm-backend.md) | Local LM backend (Ollama) | draft |
+| [001](prd-skill-side-llm-delegation.md) | Skill-side LLM delegation | draft |
+| [002](prd-local-lm-backend.md) | Local LM backend (Ollama) | draft |
 | 003 | (not written — would be "context-grounded outputs" — gap surfaced today, deferred) | — |
-| [004](004-install-orchestration-regression.md) | Install-orchestration regression after harness refactor | 🔴 high |
-| [005](005-violated-rule-to-pretooluse-hook.md) | Promote violated rule → PreToolUse hook | draft (blocked by 004) |
+| [004](prd-install-orchestration-regression.md) | Install-orchestration regression after harness refactor | 🔴 high |
+| [005](prd-violated-rule-to-pretooluse-hook.md) | Promote violated rule → PreToolUse hook | draft (blocked by 004) |
 
 ## What an incoming agent should do next
 
 In rough priority:
 
-1. **Implement PRD 004** (restore install-orchestration). Without it
+1. **Implement PRD install-orchestration-regression** (restore install-orchestration). Without it
    `sio velocity` is permanently zeroed and the closed loop stays
    open. Highest-leverage single piece of work.
 2. **Add the cycle_id regression test** in `tests/unit/` so PR #1
@@ -164,7 +164,7 @@ In rough priority:
 4. **Write the deferred PRDs** — context-grounding outputs (would
    be 003) and `sio distill` credential redaction. Both surfaced
    today, neither captured yet.
-5. **Implement PRD 005** *after* 004 lands. Rule-to-hook promotion
+5. **Implement PRD violated-rule-to-pretooluse-hook** *after* 004 lands. Rule-to-hook promotion
    needs hooks to exist first.
 
 ## Quick-rehydrate checklist for a new session on this machine

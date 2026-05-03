@@ -1,4 +1,4 @@
-# PRD 004 — Install-orchestration regression after harness refactor
+# PRD install-orchestration-regression — Install-orchestration regression after harness refactor
 
 **Status:** draft
 **Created:** 2026-05-03
@@ -147,7 +147,7 @@ adapters (it shouldn't be — defaults are no-op).
   regression (file-staging done right, orchestration not ported)
 - PR #1 (merged 2026-05-03) — `cycle_id` schema fix, a downstream
   symptom of `_apply_004_migration_if_needed` not running
-- PRD 005 — depends on this PRD (rule-to-hook promotion needs hooks
+- PRD violated-rule-to-pretooluse-hook — depends on this PRD (rule-to-hook promotion needs hooks
   to exist first)
 - `src/sio/adapters/claude_code/installer.py` — the old monolith,
   deleted from disk; full source is preserved in git history at
