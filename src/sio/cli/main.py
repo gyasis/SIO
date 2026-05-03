@@ -196,10 +196,19 @@ def init(
             ir = adapter.uninstall(dry_run=dry_run)
         else:
             try:
+                # Lifecycle: pre_install (DB schema + migrations) →
+                # install (file staging) → post_install (hook registration
+                # + platform_config write). Default pre/post are no-op so
+                # harnesses without orchestration concerns are unaffected.
+                pre_ir = adapter.pre_install(dry_run=dry_run)
                 ir = adapter.install(dry_run=dry_run, force=force)
+                post_ir = adapter.post_install(dry_run=dry_run)
             except BootstrapMissingError as e:
                 console.print(f"[red]bootstrap missing:[/red] {e}")
                 raise SystemExit(3) from None
+            # Merge lifecycle reports into the main one for unified rendering
+            ir.changes = [*pre_ir.changes, *ir.changes, *post_ir.changes]
+            ir.errors = [*pre_ir.errors, *ir.errors, *post_ir.errors]
 
         for ch in ir.changes:
             tag = "[dim](dry-run)[/dim] " if dry_run else ""
