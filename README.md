@@ -158,7 +158,7 @@ After `sio init`, your tree should look like:
   ground_truth/
   optimized/
 ~/.claude/
-  skills/sio-*/        ← 10 SIO skill folders
+  skills/sio-*/        ← 19 SIO skill folders
   rules/tools/sio.md   ← canonical SIO usage rule
   .sio-managed.json    ← manifest tracking what SIO installed
 ```
@@ -308,7 +308,11 @@ See `~/dev/prd/sio_multi_hop_search_2026-04-24.md` for the design rationale and 
 
 | Command | Description |
 |---------|-------------|
-| `sio install` | Install SIO hooks and skills into Claude Code |
+| `sio init` | Stage SIO skills + rules into your AI agent's config dir + seed `~/.sio/` |
+| `sio init --status` | Show what's installed where; report drift |
+| `sio init --link-path` | Append a managed `export PATH=...` block to your shell rc |
+| `sio init --uninstall` | Surgically remove SIO-managed files |
+| `sio doctor` | 7-check diagnostic with one-line fix commands for any problem |
 | `sio config show` | Display current configuration |
 | `sio config test` | Test configuration validity |
 | `sio schedule install` | Install cron jobs for passive analysis |
@@ -437,9 +441,11 @@ src/sio/
 │
 └── adapters/
     └── claude_code/              # Claude Code integration
-        ├── installer.py          #   One-command hook + skill setup (v3: 4 hooks)
+        ├── hooks/                #   Lifecycle hook scripts (PreCompact, Stop, ...)
         ├── hooks/                #   v3: PostToolUse, PreCompact, Stop, UserPromptSubmit
-        └── skills/               #   10 bundled slash commands
+  _bootstrap/
+    skills/                       # 19 bundled slash commands (staged by `sio init`)
+    rules/tools/sio.md            #   canonical SIO usage rule
             ├── sio/              #     Main entry point
             ├── sio-scan/         #     Mine recent sessions
             ├── sio-suggest/      #     Generate suggestions
@@ -492,7 +498,7 @@ v3.0 imports the best features from 10+ self-improving agent tools (claude-refle
 | **Rule Deduplication** | Semantic similarity detection (>85%) with merge proposals | `sio dedupe` |
 | **Delta Writing** | Merge similar rules in-place instead of always appending | `sio apply` |
 | **Violation Detection** | Detects when the agent ignores rules already in CLAUDE.md | `sio violations` |
-| **Lifecycle Hooks** | PreCompact, Stop, UserPromptSubmit capture data in real-time | `sio install` |
+| **Lifecycle Hooks** | PreCompact, Stop, UserPromptSubmit capture data in real-time | `sio init` |
 | **Binary Assertions** | Pass/fail gates: error_rate_decreased, no_regressions, etc. | arena |
 | **Git Experiments** | Test rules on isolated worktree branches before promoting | `sio apply --experiment` |
 | **Anomaly Detection** | MAD-based flagging of unusual sessions (>3 deviations) | arena |
@@ -622,7 +628,8 @@ sio recall "query"                             (uses trained model — $0)
 git clone https://github.com/gyasisutton/SIO.git
 cd SIO
 pip install -e ".[all,dev]"
-bash scripts/install-skills.sh   # Install 10 Claude Code slash commands
+sio init                         # Stage 19 slash commands + tool rule into ~/.claude/
+sio doctor                       # Verify everything resolved correctly
 ```
 
 ### Tests
