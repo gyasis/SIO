@@ -290,6 +290,55 @@ class ClaudeCodeAdapter(HarnessAdapter):
             )
             tmp_path.replace(settings_path)
 
+        # Record install metadata in platform_config (per-platform DB).
+        # This row is what `sio status` and the doctor / health surfaces
+        # read to know "claude-code is installed, hooks=1, skills=1, etc."
+        # INSERT OR REPLACE so re-running is idempotent and updates the
+        # installed_at timestamp on every successful install.
+        sio_home = Path(
+            os.environ.get("SIO_HOME", str(Path.home() / ".sio"))
+        )
+        platform_db_path = sio_home / self.name / "behavior_invocations.db"
+
+        if dry_run:
+            report.add(
+                platform_db_path,
+                "would-update",
+                f"would record platform_config row for {self.name}",
+            )
+        elif platform_db_path.exists():
+            try:
+                from sio.core.db.connect import open_db  # noqa: PLC0415
+
+                with open_db(platform_db_path) as conn:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO platform_config "
+                        "(platform, db_path, hooks_installed, skills_installed, "
+                        "config_updated, capability_tier, installed_at) "
+                        "VALUES (?, ?, 1, 1, 1, 1, ?)",
+                        (
+                            self.name,
+                            str(platform_db_path),
+                            datetime.now(timezone.utc).isoformat(),
+                        ),
+                    )
+                report.add(
+                    platform_db_path,
+                    "update",
+                    f"platform_config row recorded for {self.name}",
+                )
+            except Exception as exc:  # noqa: BLE001
+                report.errors.append(
+                    f"platform_config write failed for {self.name}: {exc}"
+                )
+        else:
+            # Per-platform DB doesn't exist — pre_install was likely
+            # skipped (e.g. tests stubbing it out). Surface, don't fail.
+            report.errors.append(
+                f"platform_config write skipped: {platform_db_path} does not exist "
+                f"(was pre_install run?)"
+            )
+
         return report
 
     # ---------------------------------------------------------------- uninstall
