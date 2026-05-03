@@ -17,3 +17,4 @@ lives here.
 | 002 | [Local LM backend (Ollama)](002-local-lm-backend.md) | draft |
 | 004 | [Install-orchestration regression after harness refactor](004-install-orchestration-regression.md) | draft 🔴 high |
 | 005 | [Promote violated rule → PreToolUse hook](005-violated-rule-to-pretooluse-hook.md) | draft (blocked by 004) |
+| 006 | [Fresh-machine SIO install test report + session handoff](006-fresh-machine-install-handoff.md) | report (handoff doc, not a proposal) |
