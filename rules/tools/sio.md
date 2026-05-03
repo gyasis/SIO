@@ -28,14 +28,22 @@ tool" — flow mining is the efficiency-uplift signal, not the bugfix signal.
 | Skill | Purpose |
 |---|---|
 | `/sio` | Master router — pick the right sub-skill |
+| `/sio-briefing` | Session-start intel: violations + budget + declining rules + pending suggestions |
 | `/sio-status` | Pipeline state (errors mined, patterns, suggestions) |
 | `/sio-scan` | Mine recent sessions for errors + corrections |
-| `/sio-suggest` | Generate rule suggestions from error/correction patterns |
+| `/sio-discover` | Repo-specific skill candidates from mined patterns (workflow / guard / tool) |
+| `/sio-suggest` | Generate rule suggestions from error/correction patterns (cross-project) |
+| `/sio-validate` | Specialized parser: bad tool args → cascade-shield deny / auto-fix rules |
 | `/sio-review` | Interactively review pending suggestions |
 | `/sio-apply` | Apply an approved suggestion |
+| `/sio-violations` | Detect existing CLAUDE.md rules being ignored by the agent |
+| `/sio-velocity` | Per-rule effectiveness — are applied rules actually shrinking errors? |
+| `/sio-budget` | Per-instruction-file size report (lines / cap / status) |
+| `/sio-feedback` | Mark the last AI action ++ / -- (feeds DSPy ground-truth corpus) |
 | `/sio-flows` | Discover recurring positive tool sequences |
-| `/sio-discover` | Find skill candidates from recurring flow patterns |
 | `/sio-distill` | Distill a long exploratory session into a clean playbook |
+| `/sio-promote-flow` | Promote an existing mined flow into a SKILL.md |
+| `/sio-codify-workflow` | One-shot: distill → promote-flow → optimize on the *current* session |
 | `/sio-recall` | Recall how a task was solved in a previous session |
 | `/sio-export` | Export structured training datasets (DSPy-ready) |
 
@@ -102,9 +110,34 @@ do not instantiate directly.
 
 ## When to invoke which skill
 
+Read the *whole list* before defaulting to `/sio-suggest`. There are nine
+specialized parsers below the generic suggestion path that handle specific
+questions far better than `sio suggest --grep` ever can.
+
+**Diagnosis (what's wrong / what should I know?)**
 - Starting a session and wondering about pending issues → `/sio-briefing`
 - "What is my agent doing wrong?" → `/sio-scan`
-- "Generate rules from what I've collected" → `/sio-suggest`
+- "Which CLAUDE.md rules are being ignored?" → `/sio-violations`
+- "Are my rules actually reducing errors?" → `/sio-velocity`
+- "How much room is left in CLAUDE.md?" → `/sio-budget`
+- "Pipeline status?" → `/sio-status`
+
+**Generation (turn signal into rules / skills)**
+- "What can SIO improve in THIS repo?" → `/sio-discover`  *(repo-scoped — preferred over /sio-suggest)*
+- "What tool args keep failing?" → `/sio-validate`  *(specialized for tool-arg failures)*
+- "Generate rules from what I've collected" → `/sio-suggest`  *(generic, cross-project)*
+
+**Review + apply**
+- "Review my suggestions" → `/sio-review`
+- "Apply suggestion N" → `/sio-apply`
+
+**Positive signal (what works)**
 - "What workflows actually work for me?" → `/sio-flows`
-- "How did I solve X last time?" → `/sio-recall`
+- "Distill that session into a playbook" → `/sio-distill`
+- "Promote that flow into a skill file" → `/sio-promote-flow`
 - "Make a skill from the workflow we just did" → `/sio-codify-workflow`
+- "How did I solve X last time?" → `/sio-recall`
+
+**Training data + closed-loop feedback**
+- "Export training data for DSPy" → `/sio-export`
+- "Mark this action ++ / --" → `/sio-feedback`
