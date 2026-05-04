@@ -526,6 +526,9 @@ def get_violation_report(
     summary_list.sort(key=lambda s: (-s["count"], s.get("last_seen", "")))
 
     # Build violation dicts for JSON output.
+    # tool_name + tool_input + tool_output are lifted from error_record so
+    # downstream consumers (e.g. `sio promote-rule`) can sample the actual
+    # violating tool calls without re-querying the DB row-by-row.
     violation_dicts: list[dict[str, Any]] = []
     for v in violations:
         violation_dicts.append(
@@ -537,6 +540,9 @@ def get_violation_report(
                 "error_type": v.error_record.get("error_type", ""),
                 "session_id": v.error_record.get("session_id", ""),
                 "timestamp": v.error_record.get("timestamp", ""),
+                "tool_name": v.error_record.get("tool_name", ""),
+                "tool_input": v.error_record.get("tool_input", ""),
+                "tool_output": v.error_record.get("tool_output", ""),
                 "match_type": v.match_type,
                 "confidence": v.confidence,
             }

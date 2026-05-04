@@ -4271,6 +4271,41 @@ def violations(since, fmt):
             click.echo(f"\nAll rules are being followed. Checked {report['total_rules']} rules.")
 
 
+def _pick_violation_samples(
+    matching: list[dict],
+    n: int = 10,
+) -> list[dict]:
+    """Pick a varied subset of violations for downstream pattern extraction.
+
+    Greedy session-diversity selection: walk newest first, take the first
+    occurrence per session_id until we have ``n``. If the cap isn't
+    reached we fill with additional examples from already-seen sessions
+    (gives Phase 3 enough mass even when violations are concentrated in
+    a few sessions).
+
+    Inputs are dicts as produced by ``get_violation_report["violations"]``.
+    """
+    by_session: dict[str, dict] = {}
+    overflow: list[dict] = []
+
+    # Newest first
+    sorted_violations = sorted(
+        matching, key=lambda v: v.get("timestamp", ""), reverse=True
+    )
+
+    for v in sorted_violations:
+        sid = v.get("session_id", "")
+        if sid not in by_session:
+            by_session[sid] = v
+        else:
+            overflow.append(v)
+
+    samples = list(by_session.values())[:n]
+    if len(samples) < n:
+        samples.extend(overflow[: n - len(samples)])
+    return samples
+
+
 def _discover_rule_files() -> list[str]:
     """Discover CLAUDE.md + rule files to scan for imperative rules.
 
@@ -4395,6 +4430,15 @@ def promote_rule(rule_index: int, mode: str, since: str | None) -> None:
         if matched_rule:
             break
 
+    # Phase 2: collect representative violation samples for this rule.
+    # Pull all violations matching the chosen rule_text, pick a varied
+    # subset (different sessions, varied tool_inputs) — this is what
+    # Phase 3's DSPy detection-pattern extractor will consume.
+    matching = [
+        v for v in report.get("violations", []) if v.get("rule_text") == chosen["rule_text"]
+    ]
+    samples = _pick_violation_samples(matching, n=10)
+
     try:
         from rich.console import Console  # noqa: PLC0415
         from rich.panel import Panel  # noqa: PLC0415
@@ -4415,11 +4459,35 @@ def promote_rule(rule_index: int, mode: str, since: str | None) -> None:
             f"[dim]Mode:[/dim]         [yellow]{mode}[/yellow]"
         )
         console.print(Panel(body, title="Promotion target", expand=False))
+
+        # Phase 2: render the collected samples that will feed Phase 3
+        if samples:
+            from rich.table import Table  # noqa: PLC0415
+
+            samples_tbl = Table(
+                title=f"Representative violations (sampled {len(samples)} of {len(matching)})",
+                show_lines=False,
+            )
+            samples_tbl.add_column("#", style="bold", width=3)
+            samples_tbl.add_column("session", max_width=12, style="dim")
+            samples_tbl.add_column("tool", style="cyan")
+            samples_tbl.add_column("input excerpt", overflow="fold", max_width=46)
+            samples_tbl.add_column("error excerpt", overflow="fold", max_width=46)
+            for i, s in enumerate(samples, 1):
+                tin = (s.get("tool_input") or "").strip().replace("\n", " ")[:80]
+                terr = (s.get("error_text") or "").strip().replace("\n", " ")[:80]
+                sid = (s.get("session_id") or "")[:8]
+                samples_tbl.add_row(
+                    str(i), sid, s.get("tool_name") or "?", tin or "—", terr or "—"
+                )
+            console.print(samples_tbl)
+
         console.print(
-            "[yellow]Phase 1 scaffold — not yet writing.[/yellow] "
-            "Phases 2-5 will collect violation samples, extract a detection "
-            "pattern via DSPy, generate the hook script, register it in "
-            "~/.claude/settings.json, and verify against historical violations."
+            "[yellow]Phase 2 — samples collected, not yet writing.[/yellow] "
+            "Phase 3 will feed these samples to a DSPy module to extract a "
+            "structured detection pattern; Phase 4 generates the hook + "
+            "registers it in ~/.claude/settings.json; Phase 5 verifies the "
+            "detection against the historical violations above."
         )
     except ImportError:
         click.echo(f"Rule #{rule_index}: {chosen['rule_text']}")
