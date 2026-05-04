@@ -379,6 +379,28 @@ CREATE TABLE IF NOT EXISTS optimized_modules (
 )
 """
 
+# Records each `sio promote-rule` run — see PRD
+# prds/prd-violated-rule-to-pretooluse-hook.md. A "promotion" lifts
+# a CLAUDE.md text rule that's being violated at scale into a runtime
+# PreToolUse hook script that can detect (mode='warn') or block
+# (mode='block') the violating shape before it executes.
+_PROMOTED_HOOKS_DDL = """
+CREATE TABLE IF NOT EXISTS promoted_hooks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule_text TEXT NOT NULL,
+    rule_source_file TEXT NOT NULL,
+    rule_source_line INTEGER NOT NULL,
+    hook_event TEXT NOT NULL,
+    hook_path TEXT NOT NULL,
+    detection_pattern TEXT NOT NULL,
+    mode TEXT NOT NULL DEFAULT 'warn'
+        CHECK(mode IN ('warn', 'block')),
+    promoted_at TEXT NOT NULL,
+    promoted_by TEXT,
+    rolled_back_at TEXT
+)
+"""
+
 _INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_session ON behavior_invocations(session_id)",
     (
@@ -527,6 +549,9 @@ def init_db(db_path: str) -> sqlite3.Connection:
     conn.execute(_POSITIVE_RECORDS_DDL)
     conn.execute(_VELOCITY_SNAPSHOTS_DDL)
     conn.execute(_AUTORESEARCH_TXLOG_DDL)
+
+    # Promoted-hook audit table (see PRD violated-rule-to-pretooluse-hook)
+    conn.execute(_PROMOTED_HOOKS_DDL)
 
     # v3 migrations: add columns to existing tables
     _migrate_v3(conn)

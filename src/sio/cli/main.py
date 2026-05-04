@@ -4271,6 +4271,172 @@ def violations(since, fmt):
             click.echo(f"\nAll rules are being followed. Checked {report['total_rules']} rules.")
 
 
+def _discover_rule_files() -> list[str]:
+    """Discover CLAUDE.md + rule files to scan for imperative rules.
+
+    Used by both ``sio violations`` and ``sio promote-rule`` so the
+    same set of files surfaces in the violation report and is then
+    pickable from by index.
+    """
+    from pathlib import Path  # noqa: PLC0415
+
+    rule_file_paths: list[str] = []
+
+    # CLAUDE.md candidates (user + cwd, dedup later)
+    for candidate in (Path.home() / ".claude" / "CLAUDE.md", Path.cwd() / "CLAUDE.md"):
+        if candidate.exists() and str(candidate) not in rule_file_paths:
+            rule_file_paths.append(str(candidate))
+
+    # ~/.claude/rules/ — markdown files
+    user_rules = Path.home() / ".claude" / "rules"
+    if user_rules.exists():
+        for md in sorted(user_rules.rglob("*.md")):
+            rule_file_paths.append(str(md))
+
+    # Project-level rules/
+    project_rules = Path.cwd() / "rules"
+    if project_rules.exists():
+        for md in sorted(project_rules.rglob("*.md")):
+            if str(md) not in rule_file_paths:
+                rule_file_paths.append(str(md))
+
+    return rule_file_paths
+
+
+# ---------------------------------------------------------------------------
+# Promote a violated rule into a runtime PreToolUse hook
+#   Phase 1 scaffold: resolves the rule by violation-report index and
+#   prints what would be promoted. Subsequent phases (2-5) will collect
+#   violation samples, extract the detection pattern via DSPy, generate
+#   the hook script, register it in settings.json, and verify against
+#   historical violations. See prds/prd-violated-rule-to-pretooluse-hook.md.
+# ---------------------------------------------------------------------------
+
+
+@cli.command(name="promote-rule")
+@click.argument("rule_index", type=int)
+@click.option(
+    "--mode",
+    type=click.Choice(["warn", "block"]),
+    default="warn",
+    help="warn: hook prints the rule + continues. block: hook prevents the call.",
+)
+@click.option(
+    "--since",
+    default=None,
+    help="Only count violations after this ISO-8601 date.",
+)
+def promote_rule(rule_index: int, mode: str, since: str | None) -> None:
+    """Promote a violated CLAUDE.md rule into a runtime PreToolUse hook.
+
+    \b
+    Takes the 1-based index from the `sio violations` report:
+
+        sio violations          # prints the indexed report
+        sio promote-rule 1      # promotes row #1 to a hook
+
+    \b
+    Modes:
+      warn  (default) — hook prints the rule text + a soft warning, lets
+                        the call proceed. Use until the violation count
+                        is decisively shrinking.
+      block           — hook prevents the violating tool call entirely.
+                        Use only after a warn-mode soak.
+
+    Phase 1 scaffold: looks up the rule + prints what would be promoted.
+    Hook generation + registration land in subsequent phases. See
+    prds/prd-violated-rule-to-pretooluse-hook.md.
+    """
+    from sio.mining.violation_detector import get_violation_report  # noqa: PLC0415
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found. Run 'sio mine' first.")
+        raise SystemExit(2)
+
+    rule_file_paths = _discover_rule_files()
+    if not rule_file_paths:
+        click.echo("No instruction files found to scan.")
+        click.echo(
+            "  Checked: ~/.claude/CLAUDE.md, ./CLAUDE.md, ~/.claude/rules/, ./rules/"
+        )
+        raise SystemExit(2)
+
+    with _db_conn(db_path) as conn:
+        report = get_violation_report(conn, rule_file_paths, since=since)
+
+    summary = report["violation_summary"]
+    if not summary:
+        click.echo(
+            "All rules are being followed — nothing to promote. "
+            "Run `sio violations` to confirm."
+        )
+        return
+
+    if rule_index < 1 or rule_index > len(summary):
+        click.echo(
+            f"error: rule_index {rule_index} out of range (1-{len(summary)}). "
+            f"Run `sio violations` to see available rules."
+        )
+        raise SystemExit(2)
+
+    chosen = summary[rule_index - 1]
+    # Find the matching Rule (text + source location) from the parse step.
+    # The summary only carries text + counts, not the source file/line, so
+    # re-parse to locate the canonical (file, line) for audit.
+    from sio.mining.violation_detector import parse_rules  # noqa: PLC0415
+
+    matched_rule = None
+    for fp in rule_file_paths:
+        for rule in parse_rules(fp):
+            if rule.text == chosen["rule_text"]:
+                matched_rule = rule
+                break
+        if matched_rule:
+            break
+
+    try:
+        from rich.console import Console  # noqa: PLC0415
+        from rich.panel import Panel  # noqa: PLC0415
+
+        console = Console()
+        body = (
+            f"[bold]Rule #{rule_index}[/bold]: "
+            f"\"{chosen['rule_text']}\"\n\n"
+            f"[dim]Source:[/dim]   "
+            + (
+                f"{matched_rule.file_path}:{matched_rule.line_number}"
+                if matched_rule
+                else "(could not re-locate source — rule text may have changed)"
+            )
+            + f"\n[dim]Violations:[/dim]   {chosen['count']} across "
+            f"{chosen['sessions']} session(s)\n"
+            f"[dim]Last seen:[/dim]    {chosen.get('last_seen', '?')}\n"
+            f"[dim]Mode:[/dim]         [yellow]{mode}[/yellow]"
+        )
+        console.print(Panel(body, title="Promotion target", expand=False))
+        console.print(
+            "[yellow]Phase 1 scaffold — not yet writing.[/yellow] "
+            "Phases 2-5 will collect violation samples, extract a detection "
+            "pattern via DSPy, generate the hook script, register it in "
+            "~/.claude/settings.json, and verify against historical violations."
+        )
+    except ImportError:
+        click.echo(f"Rule #{rule_index}: {chosen['rule_text']}")
+        if matched_rule:
+            click.echo(
+                f"  source:    {matched_rule.file_path}:{matched_rule.line_number}"
+            )
+        click.echo(
+            f"  violations: {chosen['count']} across {chosen['sessions']} session(s)"
+        )
+        click.echo(f"  last seen:  {chosen.get('last_seen', '?')}")
+        click.echo(f"  mode:       {mode}")
+        click.echo(
+            "Phase 1 scaffold — not yet writing. Phases 2-5 will land hook generation."
+        )
+
+
 # ---------------------------------------------------------------------------
 # Instruction budget management (US4 — T041)
 # ---------------------------------------------------------------------------
