@@ -19,6 +19,6 @@ lives here.
 |---|---|
 | [Skill-side LLM delegation](prd-skill-side-llm-delegation.md) | draft |
 | [Local LM backend (Ollama)](prd-local-lm-backend.md) | draft |
-| [Install-orchestration regression after harness refactor](prd-install-orchestration-regression.md) | draft 🔴 high |
-| [Promote violated rule → PreToolUse hook](prd-violated-rule-to-pretooluse-hook.md) | draft (blocked by install-orchestration) |
+| [Install-orchestration regression after harness refactor](prd-install-orchestration-regression.md) | ✅ implemented 2026-05-04 |
+| [Promote violated rule → PreToolUse hook](prd-violated-rule-to-pretooluse-hook.md) | draft (now unblocked) |
 | [Fresh-machine SIO install test report + session handoff](prd-fresh-machine-install-handoff.md) | report (handoff doc, not a proposal) |

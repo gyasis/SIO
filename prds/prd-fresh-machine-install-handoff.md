@@ -142,11 +142,11 @@ PR #1 is merged + branch deleted. No open PRs.
 
 | PRD | Title | Severity / Status |
 |---|---|---|
-| [001](prd-skill-side-llm-delegation.md) | Skill-side LLM delegation | draft |
-| [002](prd-local-lm-backend.md) | Local LM backend (Ollama) | draft |
-| 003 | (not written — would be "context-grounded outputs" — gap surfaced today, deferred) | — |
-| [004](prd-install-orchestration-regression.md) | Install-orchestration regression after harness refactor | 🔴 high |
-| [005](prd-violated-rule-to-pretooluse-hook.md) | Promote violated rule → PreToolUse hook | draft (blocked by 004) |
+| [skill-side-llm-delegation](prd-skill-side-llm-delegation.md) | Skill-side LLM delegation | draft |
+| [local-lm-backend](prd-local-lm-backend.md) | Local LM backend (Ollama) | draft |
+| (not written) | "context-grounded outputs" — gap surfaced 2026-05-03, deferred | — |
+| [install-orchestration-regression](prd-install-orchestration-regression.md) | Install-orchestration regression after harness refactor | ✅ implemented 2026-05-04 |
+| [violated-rule-to-pretooluse-hook](prd-violated-rule-to-pretooluse-hook.md) | Promote violated rule → PreToolUse hook | draft (now unblocked) |
 
 ## What an incoming agent should do next
 

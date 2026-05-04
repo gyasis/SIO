@@ -1,9 +1,9 @@
 # PRD violated-rule-to-pretooluse-hook — Promote violated rule → PreToolUse hook
 
-**Status:** draft
+**Status:** draft (now unblocked — 2026-05-04)
 **Created:** 2026-05-03
 **Owner:** unassigned
-**Blocked by:** PRD install-orchestration-regression (hooks must exist before we can promote rules to hooks)
+**Was blocked by:** ~~PRD install-orchestration-regression~~ — implemented 2026-05-04, hook registration is wired, this PRD is now actionable.
 
 ## Problem
 

@@ -1,11 +1,42 @@
 # PRD install-orchestration-regression — Install-orchestration regression after harness refactor
 
-**Status:** draft
+**Status:** ✅ implemented (2026-05-04)
 **Created:** 2026-05-03
-**Owner:** unassigned
-**Severity:** 🔴 high — blocks SIO's own closed loop
+**Owner:** gyasis (with Claude Opus 4.7)
+**Severity:** ~~🔴 high — blocks SIO's own closed loop~~ — resolved
 
-## Problem
+## Implementation summary
+
+Landed across 5 commits on `main` (2026-05-03 → 2026-05-04):
+
+| Commit | Phase | Closes |
+|---|---|---|
+| `8defd49` | 1 — `pre_install`/`post_install` lifecycle on `HarnessAdapter` Protocol (no-op defaults) | (enables the rest) |
+| `b25e851` | 2 — `_register_hooks` ported into `ClaudeCodeAdapter.post_install` | gap: hooks not registered |
+| `462d549` | 3 — `sio.core.db.bootstrap.ensure_canonical_db_ready()` (canonical) + `pre_install` per-platform DB init | gaps: canonical schema, schema_version baseline, 004 migration, per-platform DB |
+| `08b22da` | 4 — `platform_config` row recorded in `post_install` after hooks land | gap: platform_config empty |
+| `e4b6f1c` | 5 — 12 regression tests in `tests/unit/test_install_orchestration.py` covering every gap + the PR #1 `cycle_id` regression | n/a — regression coverage |
+
+End-to-end verification on a fresh-install machine (2026-05-03) confirmed:
+
+- `~/.claude/settings.json` exists with all 5 SIO hook events registered
+- `~/.sio/claude-code/behavior_invocations.db` created with full schema
+- `~/.sio/sio.db` has `schema_version` row `1|applied|baseline` (was `n/a`)
+- `platform_config` table populated with `claude-code|1|1|1`
+- `sio status` reports `schema_version │ 1 (applied)` and `behavior_invocations 0 ↔ per-platform 0 ✓ in sync`
+- All 41 tests in scope pass (29 existing harness + 12 new orchestration regression)
+
+The closed loop is wired. Hooks will start capturing telemetry on
+the next Claude Code session restart, which is when `sio velocity`
+will start having data to measure.
+
+The 4 stale `TestInstallerHooks` tests in `tests/unit/test_hooks.py`
+that imported the deleted `installer.py` were removed in the same
+landing — they tested the same intent the new tests now cover.
+
+---
+
+## Original problem statement (archived for reference)
 
 Commit `bc39869 feat(harnesses): sio init bootstrap + adapter pattern
 (claude-code + 3 stubs)` introduced a new harness-adapter pattern in
