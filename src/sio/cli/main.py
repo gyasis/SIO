@@ -4439,6 +4439,25 @@ def promote_rule(rule_index: int, mode: str, since: str | None) -> None:
     ]
     samples = _pick_violation_samples(matching, n=10)
 
+    # Phase 3: feed (rule_text, samples) to the DSPy extractor → structured
+    # detection pattern. Lazy import so users without an LM configured can
+    # still run promote-rule and see the samples (they'll just hit a clean
+    # error on the extractor call).
+    pattern = None
+    pattern_error: str | None = None
+    if samples:
+        try:
+            from sio.promote_rule import extract_detection  # noqa: PLC0415
+
+            pattern = extract_detection(chosen["rule_text"], samples)
+        except RuntimeError as exc:
+            pattern_error = str(exc)
+        except Exception as exc:  # noqa: BLE001
+            # LM call can fail for many reasons (rate-limit, auth, network).
+            # Surface a short message and continue — the samples are already
+            # rendered above so the user has something to act on.
+            pattern_error = f"{type(exc).__name__}: {exc}"
+
     try:
         from rich.console import Console  # noqa: PLC0415
         from rich.panel import Panel  # noqa: PLC0415
@@ -4482,12 +4501,31 @@ def promote_rule(rule_index: int, mode: str, since: str | None) -> None:
                 )
             console.print(samples_tbl)
 
+        # Phase 3: render the extracted detection pattern (or the error)
+        if pattern is not None:
+            promotable_tag = (
+                "[green]promotable[/green]"
+                if pattern.promotable
+                else "[red]not promotable[/red] (rule isn't structurally enforceable)"
+            )
+            detection_body = (
+                f"[bold]Matcher tools:[/bold]      "
+                f"{', '.join(pattern.matcher_tools) if pattern.matcher_tools else '(none)'}\n"
+                f"[bold]Detection expr:[/bold]    [cyan]{pattern.detection_expr}[/cyan]\n"
+                f"[bold]Rationale:[/bold]         {pattern.rationale}\n"
+                f"[bold]Status:[/bold]            {promotable_tag}"
+            )
+            console.print(Panel(detection_body, title="Extracted detection pattern", expand=False))
+        elif pattern_error:
+            console.print(
+                f"[red]extractor error:[/red] {pattern_error}"
+            )
+
         console.print(
-            "[yellow]Phase 2 — samples collected, not yet writing.[/yellow] "
-            "Phase 3 will feed these samples to a DSPy module to extract a "
-            "structured detection pattern; Phase 4 generates the hook + "
-            "registers it in ~/.claude/settings.json; Phase 5 verifies the "
-            "detection against the historical violations above."
+            "[yellow]Phase 3 — detection pattern extracted, not yet writing.[/yellow] "
+            "Phase 4 generates the hook script + registers it in "
+            "~/.claude/settings.json; Phase 5 verifies the detection "
+            "against the historical violations above before promotion."
         )
     except ImportError:
         click.echo(f"Rule #{rule_index}: {chosen['rule_text']}")
