@@ -4531,8 +4531,56 @@ def promote_rule(rule_index: int, mode: str, since: str | None, write: bool) -> 
                 f"[red]extractor error:[/red] {pattern_error}"
             )
 
+        # Phase 5: replay the detection against ALL historical violations
+        # (not just the 10-sample subset Phase 3 saw) so the user gets a
+        # real coverage signal before --write commits the install. Free —
+        # no LM calls, just eval against the existing rows.
+        verification = None
+        if pattern is not None and pattern.promotable and matching:
+            try:
+                from sio.promote_rule import verify_against_history  # noqa: PLC0415
+
+                verification = verify_against_history(pattern, matching)
+                cov_pct = verification.coverage_rate * 100
+                cov_color = (
+                    "green" if cov_pct >= 60
+                    else "yellow" if cov_pct >= 30
+                    else "red"
+                )
+                cov_body = (
+                    f"[bold]Catches:[/bold]         "
+                    f"[{cov_color}]{verification.fires}[/{cov_color}] of "
+                    f"{verification.total} historical violations "
+                    f"([{cov_color}]{cov_pct:.0f}%[/{cov_color}])\n"
+                    f"[bold]Sessions:[/bold]        {len(verification.by_session)} "
+                    f"distinct\n"
+                    f"[bold]Example fires:[/bold]   "
+                    f"{len(verification.examples_fired)} sampled\n"
+                    f"[bold]Example misses:[/bold]  "
+                    f"{len(verification.examples_missed)} sampled"
+                )
+                console.print(
+                    Panel(cov_body, title="Detection coverage on historical data", expand=False)
+                )
+            except Exception as exc:  # noqa: BLE001
+                console.print(f"[yellow]verifier skipped:[/yellow] {exc}")
+
         # Phase 4: actually write the hook + register it (only when --write)
         if write and pattern is not None and pattern.promotable and matched_rule is not None:
+            # Coverage gate: warn loudly (but don't block) if the detection
+            # catches less than 30% of the historical violations. Below that
+            # threshold the LM probably extracted something off-target and
+            # the user should review the detection_expr before committing.
+            if verification is not None and verification.coverage_rate < 0.30:
+                console.print(
+                    f"[yellow]warning:[/yellow] coverage is only "
+                    f"{verification.coverage_rate * 100:.0f}% — the detection "
+                    f"caught {verification.fires} of {verification.total} historical "
+                    f"violations. The LM's detection_expr may be off-target. "
+                    f"Review the expression above and consider re-running with a "
+                    f"different rule index, or hand-edit the hook script after "
+                    f"writing."
+                )
             try:
                 from sio.promote_rule import generate_and_register  # noqa: PLC0415
 

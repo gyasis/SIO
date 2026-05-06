@@ -24,6 +24,10 @@ from sio.promote_rule.generator import (
     HookGenerationResult,
     generate_and_register,
 )
+from sio.promote_rule.verifier import (
+    VerificationResult,
+    verify_against_history,
+)
 
 __all__ = [
     "DetectionPattern",
@@ -31,4 +35,6 @@ __all__ = [
     "extract_detection",
     "HookGenerationResult",
     "generate_and_register",
+    "VerificationResult",
+    "verify_against_history",
 ]
