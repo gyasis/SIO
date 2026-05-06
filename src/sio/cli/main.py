@@ -4361,7 +4361,17 @@ def _discover_rule_files() -> list[str]:
     default=None,
     help="Only count violations after this ISO-8601 date.",
 )
-def promote_rule(rule_index: int, mode: str, since: str | None) -> None:
+@click.option(
+    "--write",
+    is_flag=True,
+    help=(
+        "Actually write the hook script + register it in "
+        "~/.claude/settings.json. Without this flag the command is a "
+        "preview — extracts the detection pattern and shows what "
+        "would be promoted, but writes nothing."
+    ),
+)
+def promote_rule(rule_index: int, mode: str, since: str | None, write: bool) -> None:
     """Promote a violated CLAUDE.md rule into a runtime PreToolUse hook.
 
     \b
@@ -4521,12 +4531,52 @@ def promote_rule(rule_index: int, mode: str, since: str | None) -> None:
                 f"[red]extractor error:[/red] {pattern_error}"
             )
 
-        console.print(
-            "[yellow]Phase 3 — detection pattern extracted, not yet writing.[/yellow] "
-            "Phase 4 generates the hook script + registers it in "
-            "~/.claude/settings.json; Phase 5 verifies the detection "
-            "against the historical violations above before promotion."
-        )
+        # Phase 4: actually write the hook + register it (only when --write)
+        if write and pattern is not None and pattern.promotable and matched_rule is not None:
+            try:
+                from sio.promote_rule import generate_and_register  # noqa: PLC0415
+
+                result = generate_and_register(
+                    pattern,
+                    rule_text=chosen["rule_text"],
+                    rule_source_file=matched_rule.file_path,
+                    rule_source_line=matched_rule.line_number,
+                    mode=mode,
+                )
+                wrote_body = (
+                    f"[bold]Hook script:[/bold]      "
+                    f"[green]{result.hook_path}[/green]\n"
+                    f"[bold]Settings.json:[/bold]    {result.settings_path}\n"
+                    f"[bold]Slug:[/bold]             {result.slug}\n"
+                    f"[bold]promoted_hooks id:[/bold] {result.promoted_hook_id}"
+                )
+                console.print(Panel(wrote_body, title="Promoted (mode=" + mode + ")", expand=False))
+                console.print(
+                    "[green]✓ Hook installed.[/green] Restart Claude Code so the "
+                    "harness picks up the new PreToolUse registration. The hook "
+                    "starts in [yellow]warn[/yellow] mode (logs to stderr, allows "
+                    "the call); flip to block by re-running with [bold]--mode "
+                    "block --write[/bold] after the violation count has decisively "
+                    "shrunk."
+                )
+            except Exception as exc:  # noqa: BLE001
+                console.print(f"[red]hook generation failed:[/red] {exc}")
+        elif write and pattern is None:
+            console.print(
+                "[red]cannot write:[/red] no detection pattern extracted "
+                "(see extractor error above)."
+            )
+        elif write and pattern is not None and not pattern.promotable:
+            console.print(
+                "[red]cannot write:[/red] extractor flagged this rule as not "
+                "structurally enforceable as a PreToolUse hook. Keep it as a "
+                "text rule in CLAUDE.md."
+            )
+        elif not write:
+            console.print(
+                "[yellow]Preview only — pass [bold]--write[/bold] to install the "
+                "hook + register it in ~/.claude/settings.json.[/yellow]"
+            )
     except ImportError:
         click.echo(f"Rule #{rule_index}: {chosen['rule_text']}")
         if matched_rule:

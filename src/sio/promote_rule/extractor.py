@@ -179,6 +179,15 @@ def extract_detection(
         else []
     )
     detection_expr = (prediction.detection_expr or "False").strip()
+    # The LM sometimes wraps its output in surrounding quotes (treats the
+    # expression as a JSON string literal). Strip them so eval() sees the
+    # actual expression — without this, eval returns the string itself
+    # which is always truthy and the hook fires on every call.
+    if len(detection_expr) >= 2 and (
+        (detection_expr.startswith('"') and detection_expr.endswith('"'))
+        or (detection_expr.startswith("'") and detection_expr.endswith("'"))
+    ):
+        detection_expr = detection_expr[1:-1]
     rationale = (prediction.rationale or "").strip()
 
     promotable = bool(matcher_tools) and detection_expr.lower() != "false"

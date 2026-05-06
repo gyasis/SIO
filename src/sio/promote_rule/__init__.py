@@ -20,9 +20,15 @@ from sio.promote_rule.extractor import (
     ExtractDetectionPattern,
     extract_detection,
 )
+from sio.promote_rule.generator import (
+    HookGenerationResult,
+    generate_and_register,
+)
 
 __all__ = [
     "DetectionPattern",
     "ExtractDetectionPattern",
     "extract_detection",
+    "HookGenerationResult",
+    "generate_and_register",
 ]
