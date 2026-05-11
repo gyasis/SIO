@@ -54,13 +54,25 @@ class TestEnvDetection:
 
     @patch.dict("os.environ", {"AZURE_OPENAI_API_KEY": "az-key-123"}, clear=True)
     @patch("dspy.LM")
-    def test_create_lm_azure_env_detection(self, mock_lm_cls):
+    def test_create_lm_azure_env_NOT_auto_detected(self, mock_lm_cls):
+        """Azure auto-detection was removed in the Azure→OpenAI migration
+        (commit 5f629e1). Azure provider must now be configured explicitly
+        via config.llm_model + config.llm_api_key_env="AZURE_OPENAI_API_KEY".
+
+        This test pins the new contract — Azure env-var alone does NOT
+        auto-detect; create_lm() returns None.
+        """
         from sio.core.dspy.lm_factory import create_lm
 
         mock_lm_cls.return_value = MagicMock()
         cfg = _make_config()  # no explicit model
         result = create_lm(cfg)
-        assert result is not None
+        assert result is None, (
+            "Azure should NOT be auto-detected from env alone — "
+            "use config.llm_model='azure/<deployment>' explicitly. "
+            "If you intended to re-enable Azure auto-detection, "
+            "update lm_factory.py and this test together."
+        )
 
     @patch.dict("os.environ", {"ANTHROPIC_API_KEY": "ant-key-123"}, clear=True)
     @patch("dspy.LM")
@@ -92,7 +104,8 @@ class TestEnvDetection:
 
 
 class TestEnvPriority:
-    """When multiple API keys are set, Azure > Anthropic > OpenAI."""
+    """When multiple API keys are set, OpenAI > Anthropic (Azure removed
+    from auto-detection in the Azure→OpenAI migration, commit 5f629e1)."""
 
     @patch.dict(
         "os.environ",
@@ -111,11 +124,13 @@ class TestEnvPriority:
         cfg = _make_config()
         result = create_lm(cfg)
         assert result is not None
-        # The first positional arg or 'model' kwarg should reference azure
+        # Post-migration priority: OPENAI wins when both OPENAI and ANTHROPIC
+        # keys are set (Azure is ignored by auto-detect — explicit config only).
         call_args = mock_lm_cls.call_args
-        all_args_str = str(call_args)
-        assert "azure" in all_args_str.lower(), (
-            f"Expected Azure provider to be selected, got: {call_args}"
+        all_args_str = str(call_args).lower()
+        assert "openai" in all_args_str and "azure" not in all_args_str, (
+            f"Expected OpenAI to win priority (Azure removed from "
+            f"auto-detection), got: {call_args}"
         )
 
 
