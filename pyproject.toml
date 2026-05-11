@@ -55,10 +55,11 @@ sio = "sio.cli.main:cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sio"]
-# Bundle the source-of-truth bootstrap content (skills + rules) inside the
-# Python package so `sio init` can stage them into a user's harness config
-# directory via importlib.resources, regardless of how the wheel was installed.
-force-include = { "skills" = "sio/_bootstrap/skills", "rules" = "sio/_bootstrap/rules" }
+# Bundle the source-of-truth bootstrap content (skills + rules + docs) inside
+# the Python package so `sio init` can stage them into a user's harness config
+# and ~/.sio/docs/ via importlib.resources, regardless of how the wheel was
+# installed.
+force-include = { "skills" = "sio/_bootstrap/skills", "rules" = "sio/_bootstrap/rules", "docs" = "sio/_bootstrap/docs" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit", "tests/integration"]

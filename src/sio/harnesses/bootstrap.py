@@ -83,6 +83,7 @@ _SIO_HOME_SUBDIRS = (
     "backups",
     "ground_truth",
     "optimized",
+    "docs",
 )
 
 
@@ -140,6 +141,33 @@ def seed_sio_home(
             report.add("would-create" if dry_run else "create", target, "subdir")
             if not dry_run:
                 target.mkdir(parents=True, exist_ok=True)
+
+    # Stage bundled docs into <sio_home>/docs/ for offline access.
+    # Skips files the user has edited (mtime newer than bundled copy unreadable
+    # via resources, so we treat "exists" as "preserve" — same idempotence
+    # contract as config.toml below).
+    docs_target = sio_home / "docs"
+    try:
+        docs_anchor = resources.files(_BOOTSTRAP_PKG).joinpath("docs")
+        if docs_anchor.is_dir():
+            for rel_path, text in _walk_resources(docs_anchor):
+                dest = docs_target / rel_path
+                if dest.exists():
+                    report.add("skip", dest, "docs file already present — preserved")
+                else:
+                    report.add(
+                        "would-create" if dry_run else "create",
+                        dest,
+                        "bundled doc",
+                    )
+                    if not dry_run:
+                        dest.parent.mkdir(parents=True, exist_ok=True)
+                        dest.write_text(text, encoding="utf-8")
+    except (FileNotFoundError, ModuleNotFoundError):
+        # Bundled docs missing (e.g., editable install without docs/ → wheel).
+        # Non-fatal: GH Pages is the canonical source; ~/.sio/docs/ is a
+        # convenience offline mirror.
+        report.add("skip", docs_target, "bundled docs unavailable — using GH Pages")
 
     # config.toml — never clobber a user-edited file
     cfg_path = sio_home / "config.toml"
