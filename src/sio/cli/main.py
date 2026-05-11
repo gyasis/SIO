@@ -1684,6 +1684,19 @@ def inspect(pattern_id):
     ),
 )
 @click.option(
+    "--recluster-threshold",
+    "recluster_threshold",
+    type=click.FloatRange(0.50, 0.99, clamp=True),
+    default=0.85,
+    show_default=True,
+    help=(
+        "Cosine-similarity threshold for the second clustering pass under "
+        "--strategy recluster|hybrid. Higher = tighter sub-clusters. "
+        "First pass uses 0.70; recluster uses 0.85 by default since the "
+        "Hop-1 error set is already theme-coherent."
+    ),
+)
+@click.option(
     "--within",
     "within_csv",
     default=None,
@@ -1723,6 +1736,7 @@ def suggest(
     preview,
     refine_term,
     hop2_strategy,
+    recluster_threshold,
     within_csv,
     use_cache,
     cache_ttl_hours,
@@ -1934,14 +1948,26 @@ def suggest(
         console.print(f"  Found {len(ranked)} patterns")
 
         # ---------------------------------------------------------------
-        # Hop-2 post-cluster narrowing (PRD: sio_multi_hop_search_2026-04-24)
-        # For 'recluster' and 'hybrid' strategies, after the cluster+rank pass
-        # we sub-select patterns whose description OR any sample error text
-        # matches at least one refine term. For pure 'recluster' (no pre-cluster
-        # narrowing) this is how Hop-2 kicks in at all. For 'hybrid' this is a
-        # second pass on an already-filtered-and-reclustered set, which may or
-        # may not prune further depending on how coherent the filtered clusters
-        # came out.
+        # Hop-2 sub-cluster decomposition (PRD: sio_multi_hop_search_2026-04-24,
+        # graduated L003; resolves drift documented in sio_ship_pickup B7
+        # and implemented in sio_v0_1_4_scope_2026-05-11).
+        #
+        # For 'recluster' and 'hybrid' the original L003 design promises
+        # *re-clustering* the Hop-1 set with tighter params — not just
+        # post-filtering patterns. Prior to v0.1.4 this block sub-selected
+        # patterns by description match, which collapsed `recluster` into
+        # "stricter filter" and made `hybrid` meaningless.
+        #
+        # Implementation:
+        #   1. Identify patterns whose description / sample errors match
+        #      any refine term (theme-coherent Hop-1 candidates).
+        #   2. Collect their underlying error set.
+        #   3. Re-invoke cluster_errors() on that set with a tighter
+        #      similarity threshold (--recluster-threshold, default 0.85
+        #      vs 0.70 on first pass).
+        #   4. Re-rank → these are the actual sub-clusters.
+        #   5. Fall back to plain pattern-filtering when the matching set is
+        #      too small to re-cluster meaningfully (< 2 errors).
         # ---------------------------------------------------------------
         if hop2_refine_terms and hop2_strategy.lower() in ("recluster", "hybrid"):
             error_index = {e.get("id"): e for e in errors_to_cluster}
@@ -1958,11 +1984,34 @@ def suggest(
                 return False
 
             pre_count = len(ranked)
-            ranked = [p for p in ranked if _pattern_matches_hop2(p)]
-            console.print(
-                f"  Hop-2 post-cluster narrowing: {pre_count} -> {len(ranked)} patterns"
-                f" (strategy={hop2_strategy.lower()})"
-            )
+            matching_patterns = [p for p in ranked if _pattern_matches_hop2(p)]
+
+            matching_eids: set = set()
+            for p in matching_patterns:
+                for eid in p.get("error_ids", []):
+                    matching_eids.add(eid)
+            matching_errors = [
+                error_index[eid] for eid in matching_eids if eid in error_index
+            ]
+
+            if len(matching_errors) < 2:
+                ranked = matching_patterns
+                console.print(
+                    f"  Hop-2 recluster fallback: only {len(matching_errors)}"
+                    f" theme-coherent error(s); using pattern-filter behavior."
+                    f" {pre_count} -> {len(ranked)} patterns."
+                )
+            else:
+                sub_clustered = cluster_errors(
+                    matching_errors, threshold=recluster_threshold
+                )
+                ranked = rank_patterns(sub_clustered)
+                console.print(
+                    f"  Hop-2 sub-cluster decomposition: {pre_count} patterns -> "
+                    f"{len(matching_errors)} theme-coherent errors -> "
+                    f"{len(ranked)} sub-cluster(s)"
+                    f" (threshold={recluster_threshold}, strategy={hop2_strategy.lower()})"
+                )
 
         # Preview mode: show pattern groupings and stop
         if preview:
