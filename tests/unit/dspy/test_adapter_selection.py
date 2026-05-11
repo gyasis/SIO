@@ -72,8 +72,19 @@ class TestProviderAdapterRouting:
         )
         assert getattr(adapter, "use_native_function_calling", None) is True
 
-    def test_azure_returns_chat_adapter_with_native_fc(self, monkeypatch):
-        """azure/* model → ChatAdapter(use_native_function_calling=True)."""
+    def test_azure_falls_through_to_unknown_branch(self, monkeypatch):
+        """azure/* model falls into the 'unknown provider' branch →
+        ChatAdapter(use_native_function_calling=False).
+
+        Azure was removed from explicit provider handling on 2026-04-24
+        after the Azure OpenAI endpoints were deactivated 2026-04-16
+        (see lm_factory.py docstring). Anything not in
+        ('openai', 'anthropic', 'ollama') falls through to the safe
+        default: ChatAdapter without native function calling.
+
+        If Azure support comes back, update lm_factory.py AND this test
+        together.
+        """
         import dspy  # noqa: PLC0415
 
         monkeypatch.delenv("SIO_FORCE_ADAPTER", raising=False)
@@ -82,9 +93,15 @@ class TestProviderAdapterRouting:
         lm = _make_lm("azure/DeepSeek-R1")
         adapter = get_adapter(lm)
         assert isinstance(adapter, dspy.ChatAdapter), (
-            f"Expected ChatAdapter for azure model, got {type(adapter).__name__}"
+            f"Expected ChatAdapter (unknown-provider fallback), got "
+            f"{type(adapter).__name__}"
         )
-        assert getattr(adapter, "use_native_function_calling", None) is True
+        assert getattr(adapter, "use_native_function_calling", None) is False, (
+            "azure/* should fall through to the unknown-provider branch which "
+            "yields ChatAdapter(use_native_function_calling=False). Re-enabling "
+            "Azure native FC means lm_factory.get_adapter() must add an explicit "
+            "branch and this assertion must flip back to True."
+        )
 
     def test_ollama_returns_json_adapter_without_native_fc(self, monkeypatch):
         """ollama/* model → JSONAdapter(use_native_function_calling=False)."""
