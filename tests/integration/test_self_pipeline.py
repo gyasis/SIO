@@ -239,7 +239,14 @@ class TestSelfPipelineIntegration:
             "sqlite3.OperationalError: no such table: patterns",
         ]
         md_content = _build_specstory_md(errors)
-        md_file = specstory_dir / "2026-04-02_10-00-00Z-sio-dev.md"
+        # SpecStory filename timestamps take precedence over mtime in
+        # `filter_files`, so a hardcoded date rots once it falls outside
+        # the test's `since="30 days"` window. Generate a recent filename
+        # to keep the test self-healing.
+        recent = (datetime.now(timezone.utc) - timedelta(days=2)).strftime(
+            "%Y-%m-%d_%H-%M-%SZ"
+        )
+        md_file = specstory_dir / f"{recent}-sio-dev.md"
         md_file.write_text(md_content, encoding="utf-8")
 
         result = run_mine(

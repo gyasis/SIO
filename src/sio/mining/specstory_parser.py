@@ -328,8 +328,12 @@ def _extract_inline_tool_calls(text: str) -> list[dict[str, Any]]:
                 tool_input = raw_input
             except (json.JSONDecodeError, ValueError) as e:
                 from sio.core.observability import log_failure  # noqa: PLC0415
+                # `file_path` is not available in this scope — the helper takes
+                # only `text`. Use a sentinel so the observability sink still
+                # gets a stable key without crashing the parser (regression
+                # fixed in v0.1.4 from a NameError that took down whole files).
                 log_failure(
-                    "parse_errors", str(file_path), e,
+                    "parse_errors", "<inline_tool_call>", e,
                     stage="tool_input_json", severity="debug",
                 )
                 tool_input = None  # discard malformed JSON
