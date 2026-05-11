@@ -163,7 +163,15 @@ class TestSeedSioHome:
         report = seed_sio_home(sio_home=sio_home)
 
         assert sio_home.is_dir()
-        for sub in ("datasets", "previews", "backups", "ground_truth", "optimized"):
+        # v0.1.4: docs/ subdir added for offline docs staging (~/.sio/docs/).
+        for sub in (
+            "datasets",
+            "previews",
+            "backups",
+            "ground_truth",
+            "optimized",
+            "docs",
+        ):
             assert (sio_home / sub).is_dir(), f"missing {sub}/"
         cfg = sio_home / "config.toml"
         assert cfg.is_file()
@@ -176,8 +184,12 @@ class TestSeedSioHome:
             stripped = line.strip()
             if stripped.startswith("model =") or stripped.startswith("api_key_env ="):
                 pytest.fail(f"shipped config.toml has un-commented provider line: {line!r}")
-        # 7 actions: data dir + 5 subdirs + config.toml
-        assert len(report.actions) == 7
+        # 8 actions: data dir + 6 subdirs + config.toml.
+        # (Docs staging adds 0 actions in dev installs where docs aren't
+        # bundled into sio/_bootstrap/docs/; the wheel ships them via
+        # [tool.hatch.build.targets.wheel.force-include] and the staging
+        # block then adds one action per docs file.)
+        assert len(report.actions) == 8
 
     def test_does_not_overwrite_existing_config(self, tmp_path: Path) -> None:
         from sio.harnesses.bootstrap import seed_sio_home
