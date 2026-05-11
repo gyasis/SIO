@@ -1,0 +1,109 @@
+# Changelog
+
+All notable changes to **self-improving-organism** are documented here.
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
+versioning follows [SemVer](https://semver.org/spec/v2.0.0.html).
+
+GitHub release pages (with full asset downloads) live at
+<https://github.com/gyasis/SIO/releases>.
+
+## [Unreleased]
+
+### Planned for v0.1.4
+- Bundle `docs/` inside the wheel so `~/.sio/docs/` works offline (in addition to GH Pages).
+- Resolve the `--strategy recluster` design/implementation drift documented in
+  pickup PRD `sio_ship_pickup_tomorrow_2026-05-02` (B7) — either implement the
+  original sub-cluster decomposition design from `L003_sio_multi_hop_search` or
+  rename to `filter-strict` to match current behavior.
+
+(PyPI token setup tracked separately in `sio_pypi_token_setup_2026-05-11`.)
+
+## [0.1.3] — 2026-05-02
+
+**Coverage fix release.** Ships the other 9 canonical skills that were
+referenced by `rules/tools/sio.md` but missing from the v0.1.2 wheel.
+
+### Added
+- 9 canonical skills bundled into `_bootstrap/skills/`:
+  `/sio-briefing`, `/sio-budget`, `/sio-codify-workflow`, `/sio-discover`,
+  `/sio-feedback`, `/sio-promote-flow`, `/sio-validate`, `/sio-velocity`,
+  `/sio-violations`. `iter_bootstrap_files()` now yields 20 files.
+
+### Changed
+- README sweep removes stale `sio install` references and the legacy
+  "10 skills" count.
+
+## [0.1.2] — 2026-05-02
+
+**Install hardening release.** Closes five silent-failure paths surfaced by
+two adversarial bug-hunter passes on v0.1.1.
+
+### Added
+- `sio doctor` subcommand — seven-check battery with copy-pasteable fix
+  commands for each failure.
+- `sio init --link-path` — explicit override for harness install location.
+
+### Fixed
+- **C2** — `iter_bootstrap_files()` raises `BootstrapMissingError` instead
+  of silently yielding zero and printing "install complete — 0 changes."
+- **C3** — Added `src/sio/_bootstrap/__init__.py` so `importlib.resources`
+  resolves to a real subpackage and isn't shadowed by another `sio/` on
+  `sys.path`.
+- **R2** — `sio init` prints a yellow restart-Claude-Code banner so
+  partners don't think slash commands missing live = install failed.
+- **R3** — `sio init --harness claude-code` auto-creates `~/.claude/` on
+  fresh boxes where Claude Code has never launched.
+
+### Removed
+- Legacy `sio install` command and `adapters/claude_code/installer.py`
+  (C1). The legacy installer silently skipped every skill via
+  `if not src.exists(): continue` and reported success. Replaced with a
+  stub that raises `ClickException` pointing at `sio init`.
+
+## [0.1.1] — 2026-05-02
+
+**Fresh-install patch.** `sio init` now creates `~/.sio/` and seeds
+`~/.sio/config.toml` before staging skills, so a fresh
+`pip install` + `sio init` leaves the user with everything the suggestion
+pipeline needs.
+
+### Added
+- `sio init` Step 0: creates `~/.sio/` and the `datasets/`, `previews/`,
+  `backups/`, `ground_truth/`, `optimized/` subdirs.
+- `~/.sio/config.toml` template seeded on first run, with all four LM
+  provider blocks (OpenAI, Anthropic, Azure, local Ollama) commented out
+  under a `# Quick start: uncomment ONE block` header.
+- `$SIO_HOME` honored for tests / alternate-config setups.
+
+### Fixed
+- v0.1.0 produced "no LM available" because `~/.sio/config.toml` was
+  never created. Failure mode of a fresh install is now a loud, clear
+  error from `lm_factory`, not silent.
+
+### Changed
+- `sio init` is non-destructive: never clobbers an existing user-edited
+  config.
+
+## [0.1.0] — 2026-05-02
+
+**First public release.** A closed-loop optimization layer for AI coding
+agents: mines session transcripts for recurring failure patterns,
+generates targeted improvement rules via DSPy, drops them back into the
+harness's instruction file — idempotent, reversible, observable.
+
+### Added
+- `sio init` harness bootstrap for Claude Code (stubs for cursor /
+  windsurf / opencode included).
+- Suggestion pipeline: `sio scan` (mine errors), `sio suggest` (generate
+  rules via DSPy), `sio review` / `sio apply` for human-in-the-loop.
+- Multi-hop search with `--strategy filter|recluster|hybrid` and
+  `--refine` terms (designed in graduated PRD `L003_sio_multi_hop_search`).
+- `sio trend` pattern-cluster growth view.
+- Distribution: `pip install git+https://github.com/gyasis/SIO.git@v0.1.0`
+  or direct wheel install from release assets.
+
+[Unreleased]: https://github.com/gyasis/SIO/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/gyasis/SIO/releases/tag/v0.1.3
+[0.1.2]: https://github.com/gyasis/SIO/releases/tag/v0.1.2
+[0.1.1]: https://github.com/gyasis/SIO/releases/tag/v0.1.1
+[0.1.0]: https://github.com/gyasis/SIO/releases/tag/v0.1.0
