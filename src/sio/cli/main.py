@@ -142,6 +142,31 @@ def init(
             )
             console.print(f"  {tag}[{color}]{action:<14}[/{color}] {path}  {reason}")
 
+        # Harness-agnostic canonical-DB bootstrap. Runs ONCE before any
+        # adapter so the canonical sio.db is ready (schema, schema_version
+        # baseline, 004 migration, split-brain backfill) regardless of
+        # which harness was selected. Skip on --uninstall (would create
+        # the very files we're about to remove) and --dry-run (read-only).
+        if not uninstall and not dry_run:
+            from sio.core.db.bootstrap import ensure_canonical_db_ready  # noqa: PLC0415
+
+            try:
+                canonical_db = ensure_canonical_db_ready()
+                console.print(
+                    f"  [green]{'ready':<14}[/green] {canonical_db}  "
+                    f"canonical DB schema verified"
+                )
+            except Exception as exc:  # noqa: BLE001
+                console.print(
+                    f"  [yellow]{'warn':<14}[/yellow] canonical DB bootstrap "
+                    f"failed: {exc} — continuing"
+                )
+        elif dry_run and not uninstall:
+            console.print(
+                "  [dim](dry-run)[/dim] [white]would-ready    [/white] "
+                "~/.sio/sio.db  canonical DB schema verify"
+            )
+
     if harness:
         try:
             adapters = [get_adapter(harness)]
@@ -196,10 +221,19 @@ def init(
             ir = adapter.uninstall(dry_run=dry_run)
         else:
             try:
+                # Lifecycle: pre_install (DB schema + migrations) →
+                # install (file staging) → post_install (hook registration
+                # + platform_config write). Default pre/post are no-op so
+                # harnesses without orchestration concerns are unaffected.
+                pre_ir = adapter.pre_install(dry_run=dry_run)
                 ir = adapter.install(dry_run=dry_run, force=force)
+                post_ir = adapter.post_install(dry_run=dry_run)
             except BootstrapMissingError as e:
                 console.print(f"[red]bootstrap missing:[/red] {e}")
                 raise SystemExit(3) from None
+            # Merge lifecycle reports into the main one for unified rendering
+            ir.changes = [*pre_ir.changes, *ir.changes, *post_ir.changes]
+            ir.errors = [*pre_ir.errors, *ir.errors, *post_ir.errors]
 
         for ch in ir.changes:
             tag = "[dim](dry-run)[/dim] " if dry_run else ""
@@ -4284,6 +4318,376 @@ def violations(since, fmt):
 
         if not summary:
             click.echo(f"\nAll rules are being followed. Checked {report['total_rules']} rules.")
+
+
+def _pick_violation_samples(
+    matching: list[dict],
+    n: int = 10,
+) -> list[dict]:
+    """Pick a varied subset of violations for downstream pattern extraction.
+
+    Greedy session-diversity selection: walk newest first, take the first
+    occurrence per session_id until we have ``n``. If the cap isn't
+    reached we fill with additional examples from already-seen sessions
+    (gives Phase 3 enough mass even when violations are concentrated in
+    a few sessions).
+
+    Inputs are dicts as produced by ``get_violation_report["violations"]``.
+    """
+    by_session: dict[str, dict] = {}
+    overflow: list[dict] = []
+
+    # Newest first
+    sorted_violations = sorted(
+        matching, key=lambda v: v.get("timestamp", ""), reverse=True
+    )
+
+    for v in sorted_violations:
+        sid = v.get("session_id", "")
+        if sid not in by_session:
+            by_session[sid] = v
+        else:
+            overflow.append(v)
+
+    samples = list(by_session.values())[:n]
+    if len(samples) < n:
+        samples.extend(overflow[: n - len(samples)])
+    return samples
+
+
+def _discover_rule_files() -> list[str]:
+    """Discover CLAUDE.md + rule files to scan for imperative rules.
+
+    Used by both ``sio violations`` and ``sio promote-rule`` so the
+    same set of files surfaces in the violation report and is then
+    pickable from by index.
+    """
+    from pathlib import Path  # noqa: PLC0415
+
+    rule_file_paths: list[str] = []
+
+    # CLAUDE.md candidates (user + cwd, dedup later)
+    for candidate in (Path.home() / ".claude" / "CLAUDE.md", Path.cwd() / "CLAUDE.md"):
+        if candidate.exists() and str(candidate) not in rule_file_paths:
+            rule_file_paths.append(str(candidate))
+
+    # ~/.claude/rules/ — markdown files
+    user_rules = Path.home() / ".claude" / "rules"
+    if user_rules.exists():
+        for md in sorted(user_rules.rglob("*.md")):
+            rule_file_paths.append(str(md))
+
+    # Project-level rules/
+    project_rules = Path.cwd() / "rules"
+    if project_rules.exists():
+        for md in sorted(project_rules.rglob("*.md")):
+            if str(md) not in rule_file_paths:
+                rule_file_paths.append(str(md))
+
+    return rule_file_paths
+
+
+# ---------------------------------------------------------------------------
+# Promote a violated rule into a runtime PreToolUse hook
+#   Phase 1 scaffold: resolves the rule by violation-report index and
+#   prints what would be promoted. Subsequent phases (2-5) will collect
+#   violation samples, extract the detection pattern via DSPy, generate
+#   the hook script, register it in settings.json, and verify against
+#   historical violations. See prds/prd-violated-rule-to-pretooluse-hook.md.
+# ---------------------------------------------------------------------------
+
+
+@cli.command(name="promote-rule")
+@click.argument("rule_index", type=int)
+@click.option(
+    "--mode",
+    type=click.Choice(["warn", "block"]),
+    default="warn",
+    help="warn: hook prints the rule + continues. block: hook prevents the call.",
+)
+@click.option(
+    "--since",
+    default=None,
+    help="Only count violations after this ISO-8601 date.",
+)
+@click.option(
+    "--write",
+    is_flag=True,
+    help=(
+        "Actually write the hook script + register it in "
+        "~/.claude/settings.json. Without this flag the command is a "
+        "preview — extracts the detection pattern and shows what "
+        "would be promoted, but writes nothing."
+    ),
+)
+def promote_rule(rule_index: int, mode: str, since: str | None, write: bool) -> None:
+    """Promote a violated CLAUDE.md rule into a runtime PreToolUse hook.
+
+    \b
+    Takes the 1-based index from the `sio violations` report:
+
+        sio violations          # prints the indexed report
+        sio promote-rule 1      # promotes row #1 to a hook
+
+    \b
+    Modes:
+      warn  (default) — hook prints the rule text + a soft warning, lets
+                        the call proceed. Use until the violation count
+                        is decisively shrinking.
+      block           — hook prevents the violating tool call entirely.
+                        Use only after a warn-mode soak.
+
+    Phase 1 scaffold: looks up the rule + prints what would be promoted.
+    Hook generation + registration land in subsequent phases. See
+    prds/prd-violated-rule-to-pretooluse-hook.md.
+    """
+    from sio.mining.violation_detector import get_violation_report  # noqa: PLC0415
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found. Run 'sio mine' first.")
+        raise SystemExit(2)
+
+    rule_file_paths = _discover_rule_files()
+    if not rule_file_paths:
+        click.echo("No instruction files found to scan.")
+        click.echo(
+            "  Checked: ~/.claude/CLAUDE.md, ./CLAUDE.md, ~/.claude/rules/, ./rules/"
+        )
+        raise SystemExit(2)
+
+    with _db_conn(db_path) as conn:
+        report = get_violation_report(conn, rule_file_paths, since=since)
+
+    summary = report["violation_summary"]
+    if not summary:
+        click.echo(
+            "All rules are being followed — nothing to promote. "
+            "Run `sio violations` to confirm."
+        )
+        return
+
+    if rule_index < 1 or rule_index > len(summary):
+        click.echo(
+            f"error: rule_index {rule_index} out of range (1-{len(summary)}). "
+            f"Run `sio violations` to see available rules."
+        )
+        raise SystemExit(2)
+
+    chosen = summary[rule_index - 1]
+    # Find the matching Rule (text + source location) from the parse step.
+    # The summary only carries text + counts, not the source file/line, so
+    # re-parse to locate the canonical (file, line) for audit.
+    from sio.mining.violation_detector import parse_rules  # noqa: PLC0415
+
+    matched_rule = None
+    for fp in rule_file_paths:
+        for rule in parse_rules(fp):
+            if rule.text == chosen["rule_text"]:
+                matched_rule = rule
+                break
+        if matched_rule:
+            break
+
+    # Phase 2: collect representative violation samples for this rule.
+    # Pull all violations matching the chosen rule_text, pick a varied
+    # subset (different sessions, varied tool_inputs) — this is what
+    # Phase 3's DSPy detection-pattern extractor will consume.
+    matching = [
+        v for v in report.get("violations", []) if v.get("rule_text") == chosen["rule_text"]
+    ]
+    samples = _pick_violation_samples(matching, n=10)
+
+    # Phase 3: feed (rule_text, samples) to the DSPy extractor → structured
+    # detection pattern. Lazy import so users without an LM configured can
+    # still run promote-rule and see the samples (they'll just hit a clean
+    # error on the extractor call).
+    pattern = None
+    pattern_error: str | None = None
+    if samples:
+        try:
+            from sio.promote_rule import extract_detection  # noqa: PLC0415
+
+            pattern = extract_detection(chosen["rule_text"], samples)
+        except RuntimeError as exc:
+            pattern_error = str(exc)
+        except Exception as exc:  # noqa: BLE001
+            # LM call can fail for many reasons (rate-limit, auth, network).
+            # Surface a short message and continue — the samples are already
+            # rendered above so the user has something to act on.
+            pattern_error = f"{type(exc).__name__}: {exc}"
+
+    try:
+        from rich.console import Console  # noqa: PLC0415
+        from rich.panel import Panel  # noqa: PLC0415
+
+        console = Console()
+        body = (
+            f"[bold]Rule #{rule_index}[/bold]: "
+            f"\"{chosen['rule_text']}\"\n\n"
+            f"[dim]Source:[/dim]   "
+            + (
+                f"{matched_rule.file_path}:{matched_rule.line_number}"
+                if matched_rule
+                else "(could not re-locate source — rule text may have changed)"
+            )
+            + f"\n[dim]Violations:[/dim]   {chosen['count']} across "
+            f"{chosen['sessions']} session(s)\n"
+            f"[dim]Last seen:[/dim]    {chosen.get('last_seen', '?')}\n"
+            f"[dim]Mode:[/dim]         [yellow]{mode}[/yellow]"
+        )
+        console.print(Panel(body, title="Promotion target", expand=False))
+
+        # Phase 2: render the collected samples that will feed Phase 3
+        if samples:
+            from rich.table import Table  # noqa: PLC0415
+
+            samples_tbl = Table(
+                title=f"Representative violations (sampled {len(samples)} of {len(matching)})",
+                show_lines=False,
+            )
+            samples_tbl.add_column("#", style="bold", width=3)
+            samples_tbl.add_column("session", max_width=12, style="dim")
+            samples_tbl.add_column("tool", style="cyan")
+            samples_tbl.add_column("input excerpt", overflow="fold", max_width=46)
+            samples_tbl.add_column("error excerpt", overflow="fold", max_width=46)
+            for i, s in enumerate(samples, 1):
+                tin = (s.get("tool_input") or "").strip().replace("\n", " ")[:80]
+                terr = (s.get("error_text") or "").strip().replace("\n", " ")[:80]
+                sid = (s.get("session_id") or "")[:8]
+                samples_tbl.add_row(
+                    str(i), sid, s.get("tool_name") or "?", tin or "—", terr or "—"
+                )
+            console.print(samples_tbl)
+
+        # Phase 3: render the extracted detection pattern (or the error)
+        if pattern is not None:
+            promotable_tag = (
+                "[green]promotable[/green]"
+                if pattern.promotable
+                else "[red]not promotable[/red] (rule isn't structurally enforceable)"
+            )
+            detection_body = (
+                f"[bold]Matcher tools:[/bold]      "
+                f"{', '.join(pattern.matcher_tools) if pattern.matcher_tools else '(none)'}\n"
+                f"[bold]Detection expr:[/bold]    [cyan]{pattern.detection_expr}[/cyan]\n"
+                f"[bold]Rationale:[/bold]         {pattern.rationale}\n"
+                f"[bold]Status:[/bold]            {promotable_tag}"
+            )
+            console.print(Panel(detection_body, title="Extracted detection pattern", expand=False))
+        elif pattern_error:
+            console.print(
+                f"[red]extractor error:[/red] {pattern_error}"
+            )
+
+        # Phase 5: replay the detection against ALL historical violations
+        # (not just the 10-sample subset Phase 3 saw) so the user gets a
+        # real coverage signal before --write commits the install. Free —
+        # no LM calls, just eval against the existing rows.
+        verification = None
+        if pattern is not None and pattern.promotable and matching:
+            try:
+                from sio.promote_rule import verify_against_history  # noqa: PLC0415
+
+                verification = verify_against_history(pattern, matching)
+                cov_pct = verification.coverage_rate * 100
+                cov_color = (
+                    "green" if cov_pct >= 60
+                    else "yellow" if cov_pct >= 30
+                    else "red"
+                )
+                cov_body = (
+                    f"[bold]Catches:[/bold]         "
+                    f"[{cov_color}]{verification.fires}[/{cov_color}] of "
+                    f"{verification.total} historical violations "
+                    f"([{cov_color}]{cov_pct:.0f}%[/{cov_color}])\n"
+                    f"[bold]Sessions:[/bold]        {len(verification.by_session)} "
+                    f"distinct\n"
+                    f"[bold]Example fires:[/bold]   "
+                    f"{len(verification.examples_fired)} sampled\n"
+                    f"[bold]Example misses:[/bold]  "
+                    f"{len(verification.examples_missed)} sampled"
+                )
+                console.print(
+                    Panel(cov_body, title="Detection coverage on historical data", expand=False)
+                )
+            except Exception as exc:  # noqa: BLE001
+                console.print(f"[yellow]verifier skipped:[/yellow] {exc}")
+
+        # Phase 4: actually write the hook + register it (only when --write)
+        if write and pattern is not None and pattern.promotable and matched_rule is not None:
+            # Coverage gate: warn loudly (but don't block) if the detection
+            # catches less than 30% of the historical violations. Below that
+            # threshold the LM probably extracted something off-target and
+            # the user should review the detection_expr before committing.
+            if verification is not None and verification.coverage_rate < 0.30:
+                console.print(
+                    f"[yellow]warning:[/yellow] coverage is only "
+                    f"{verification.coverage_rate * 100:.0f}% — the detection "
+                    f"caught {verification.fires} of {verification.total} historical "
+                    f"violations. The LM's detection_expr may be off-target. "
+                    f"Review the expression above and consider re-running with a "
+                    f"different rule index, or hand-edit the hook script after "
+                    f"writing."
+                )
+            try:
+                from sio.promote_rule import generate_and_register  # noqa: PLC0415
+
+                result = generate_and_register(
+                    pattern,
+                    rule_text=chosen["rule_text"],
+                    rule_source_file=matched_rule.file_path,
+                    rule_source_line=matched_rule.line_number,
+                    mode=mode,
+                )
+                wrote_body = (
+                    f"[bold]Hook script:[/bold]      "
+                    f"[green]{result.hook_path}[/green]\n"
+                    f"[bold]Settings.json:[/bold]    {result.settings_path}\n"
+                    f"[bold]Slug:[/bold]             {result.slug}\n"
+                    f"[bold]promoted_hooks id:[/bold] {result.promoted_hook_id}"
+                )
+                console.print(Panel(wrote_body, title="Promoted (mode=" + mode + ")", expand=False))
+                console.print(
+                    "[green]✓ Hook installed.[/green] Restart Claude Code so the "
+                    "harness picks up the new PreToolUse registration. The hook "
+                    "starts in [yellow]warn[/yellow] mode (logs to stderr, allows "
+                    "the call); flip to block by re-running with [bold]--mode "
+                    "block --write[/bold] after the violation count has decisively "
+                    "shrunk."
+                )
+            except Exception as exc:  # noqa: BLE001
+                console.print(f"[red]hook generation failed:[/red] {exc}")
+        elif write and pattern is None:
+            console.print(
+                "[red]cannot write:[/red] no detection pattern extracted "
+                "(see extractor error above)."
+            )
+        elif write and pattern is not None and not pattern.promotable:
+            console.print(
+                "[red]cannot write:[/red] extractor flagged this rule as not "
+                "structurally enforceable as a PreToolUse hook. Keep it as a "
+                "text rule in CLAUDE.md."
+            )
+        elif not write:
+            console.print(
+                "[yellow]Preview only — pass [bold]--write[/bold] to install the "
+                "hook + register it in ~/.claude/settings.json.[/yellow]"
+            )
+    except ImportError:
+        click.echo(f"Rule #{rule_index}: {chosen['rule_text']}")
+        if matched_rule:
+            click.echo(
+                f"  source:    {matched_rule.file_path}:{matched_rule.line_number}"
+            )
+        click.echo(
+            f"  violations: {chosen['count']} across {chosen['sessions']} session(s)"
+        )
+        click.echo(f"  last seen:  {chosen.get('last_seen', '?')}")
+        click.echo(f"  mode:       {mode}")
+        click.echo(
+            "Phase 1 scaffold — not yet writing. Phases 2-5 will land hook generation."
+        )
 
 
 # ---------------------------------------------------------------------------

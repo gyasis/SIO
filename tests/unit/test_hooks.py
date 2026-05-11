@@ -554,24 +554,6 @@ class TestUserPromptSubmit:
         assert len(sess["recent_scores"]) <= 10
 
 
-# ---------------------------------------------------------------------------
-# TestInstallerHooks — REMOVED in v0.1.4
-#
-# The legacy `sio.adapters.claude_code.installer` module was deleted in
-# v0.1.2 commit 9c4afdd (C1 fix: closed a silent-failure path where the
-# installer read SKILL.md from an unpackaged directory and reported
-# success). Bootstrap is now driven by `sio init` →
-# `sio.harnesses.bootstrap.iter_bootstrap_files()`, with coverage in
-# `tests/unit/test_harnesses.py`. The 4 hook-registration tests that
-# lived here were stale references to the removed module and have been
-# deleted. New installer-style coverage belongs in test_harnesses.py.
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# SessionStart hook tests
-# ---------------------------------------------------------------------------
-
 
 class TestSessionStart:
     """SessionStart hook injects SIO briefing at session start."""
