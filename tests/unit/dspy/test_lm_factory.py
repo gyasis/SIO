@@ -272,23 +272,42 @@ _DIRECT_LM_PATTERN = re.compile(r"dspy\.LM\s*\(")
 
 
 def test_no_direct_dspy_lm_calls_outside_factory():
-    """Zero lines in src/sio/ match dspy.LM( except in lm_factory.py (SC-022)."""
+    """Zero src/sio/ files contain dspy.LM( call sites outside lm_factory.py (SC-022).
+
+    Uses AST so docstrings/comments referencing the forbidden pattern (e.g.
+    a rule-documenting docstring in promote_rule/extractor.py) are excluded
+    by construction.
+    """
+    import ast  # noqa: PLC0415
+
     src_root = _src_sio_root()
     violations: list[str] = []
 
     for py_file in src_root.rglob("*.py"):
-        # Skip the canonical factory file
         if py_file.parts[-4:] == ("sio", "core", "dspy", "lm_factory.py"):
             continue
-        # Skip test files under src/ (should not exist, but be safe)
         if "test" in py_file.name.lower():
             continue
 
         text = py_file.read_text(encoding="utf-8")
-        for lineno, line in enumerate(text.splitlines(), start=1):
-            if _DIRECT_LM_PATTERN.search(line):
+        try:
+            tree = ast.parse(text, filename=str(py_file))
+        except SyntaxError:
+            continue
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if (
+                isinstance(func, ast.Attribute)
+                and func.attr == "LM"
+                and isinstance(func.value, ast.Name)
+                and func.value.id == "dspy"
+            ):
                 violations.append(
-                    f"{py_file.relative_to(src_root.parent.parent)}:{lineno}: {line.strip()}"
+                    f"{py_file.relative_to(src_root.parent.parent)}:{node.lineno}: "
+                    f"dspy.LM(...) call"
                 )
 
     assert not violations, (

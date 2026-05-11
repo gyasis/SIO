@@ -54,7 +54,15 @@ def _is_factory_file(py_file: Path, src_root: Path) -> bool:
 
 
 def test_no_direct_dspy_lm_outside_factory():
-    """Zero src/sio/**/*.py files contain dspy.LM( outside lm_factory.py (SC-022)."""
+    """Zero src/sio/**/*.py files contain dspy.LM( outside lm_factory.py (SC-022).
+
+    Uses AST so docstrings and comments are excluded by construction — the
+    previous line-based scan tripped on docstring continuation lines that
+    referenced ``dspy.LM(...)`` as a forbidden pattern (e.g. extractor.py:8
+    documenting the rule). AST inspection only sees actual call nodes.
+    """
+    import ast  # noqa: PLC0415
+
     src_root = _resolve_src_root()
     violations: list[str] = []
 
@@ -65,18 +73,25 @@ def test_no_direct_dspy_lm_outside_factory():
             continue  # test files are exempt
 
         text = py_file.read_text(encoding="utf-8", errors="replace")
-        for lineno, line in enumerate(text.splitlines(), start=1):
-            if _DIRECT_LM_CALL.search(line):
-                # Allow lines that are comments or docstrings
-                stripped = line.strip()
-                if (
-                    stripped.startswith("#")
-                    or stripped.startswith('"""')
-                    or stripped.startswith("'''")
-                ):
-                    continue
+        try:
+            tree = ast.parse(text, filename=str(py_file))
+        except SyntaxError:
+            continue  # skip unparseable files (none expected in src/)
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            # Match attribute access: dspy.LM(...)
+            if (
+                isinstance(func, ast.Attribute)
+                and func.attr == "LM"
+                and isinstance(func.value, ast.Name)
+                and func.value.id == "dspy"
+            ):
                 violations.append(
-                    f"{py_file.relative_to(src_root.parent.parent)}:{lineno}: {stripped}"
+                    f"{py_file.relative_to(src_root.parent.parent)}:{node.lineno}: "
+                    f"dspy.LM(...) call"
                 )
 
     assert not violations, (
