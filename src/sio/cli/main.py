@@ -3726,6 +3726,71 @@ def _display_optimization_diff(console, conn, result):
 # ---------------------------------------------------------------------------
 
 
+@cli.command("differential-flows")
+@click.option("--min-success", default=3, show_default=True, type=int,
+              help="Minimum successful events per flow_hash to qualify as a twin.")
+@click.option("--min-failure", default=3, show_default=True, type=int,
+              help="Minimum failed events per flow_hash to qualify as a twin.")
+@click.option("--per-cohort", default=5, show_default=True, type=int,
+              help="Samples drawn from each cohort (success / failure) per twin.")
+@click.option("--max-hashes", default=None, type=int,
+              help="Cap the number of twin-hashes processed (debug).")
+@click.option("-o", "--output", default=None,
+              help="Output JSONL path. Default: ~/.sio/differential/<ts>.jsonl.")
+@click.option("--positives-for-builder", is_flag=True, default=False,
+              help=(
+                  "Instead of paired-cohort JSONL, emit FLAT positive examples "
+                  "(one per successful sample) in the shape consumed by "
+                  "src/sio/export/dataset_builder.py. Wires T1.V.3 — populates "
+                  "the long-empty positive side of training datasets."
+              ))
+def differential_flows_cmd(min_success, min_failure, per_cohort, max_hashes,
+                           output, positives_for_builder):
+    """Find twin flows (same sequence, both success and failure outcomes).
+
+    Outputs paired success/failure samples by flow_hash. The differential
+    is the cheapest training signal SIO can produce — no LLM call required.
+
+    With --positives-for-builder: emit only successful rows in canonical
+    PatternToRule shape so the existing dataset_builder can append them
+    as positive examples (T1.V.3).
+
+    Examples:
+        sio differential-flows
+        sio differential-flows --min-success 5 --per-cohort 10
+        sio differential-flows --positives-for-builder
+    """
+    import datetime as _dt
+    from pathlib import Path
+    from sio.flows.differential import export_pairs, export_positives_for_dataset_builder
+
+    if output is None:
+        ts = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
+        suffix = "_positives" if positives_for_builder else "_pairs"
+        output = os.path.expanduser(f"~/.sio/differential/differential{suffix}_{ts}.jsonl")
+    out_path = Path(output)
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if positives_for_builder:
+        result = export_positives_for_dataset_builder(
+            db_path, out_path,
+            min_success=min_success, min_failure=min_failure,
+            per_cohort=per_cohort,
+        )
+        click.echo(f"Twins:          {result['twins']}")
+        click.echo(f"Positive rows:  {result['positive_rows_written']}")
+        click.echo(f"Output:         {result['path']}")
+    else:
+        result = export_pairs(
+            db_path, out_path,
+            min_success=min_success, min_failure=min_failure,
+            per_cohort=per_cohort, max_hashes=max_hashes,
+        )
+        click.echo(f"Twin hashes:   {result['twin_hashes']}")
+        click.echo(f"Rows written:  {result['rows_written']}")
+        click.echo(f"Output:        {result['path']}")
+
+
 @cli.group("analyze")
 def analyze_group():
     """Read-only diagnostics over the mined corpus."""
