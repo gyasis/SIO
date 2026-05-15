@@ -939,6 +939,21 @@ def run_mine(
                 exc,
             )
 
+        # --- Rules-snapshot stamping (T1.L.2): record which CLAUDE.md
+        # rules were active at mine time. Enables velocity to attribute
+        # error-rate deltas to specific rules landing.
+        try:
+            from sio.rules_snapshot import stamp_records  # noqa: PLC0415
+
+            stamp_records(error_records)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "stamp_records (active_rules) skipped for %s due to %s: %s",
+                file_path,
+                type(exc).__name__,
+                exc,
+            )
+
         for record in error_records:
             # --- Dedup: cross-format duplicate check --------------------------
             if _is_cross_format_duplicate(

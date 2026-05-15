@@ -599,6 +599,18 @@ def init_db(db_path: str) -> sqlite3.Connection:
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Migration T1.L.1 (PRD sio_backend_dead_loop_2026-05-15): add
+    # active_rules to error_records. Stores a JSON array of rule IDs that
+    # were ACTIVE in ~/.claude/rules/ at session-start time. Without this
+    # column ``sio velocity`` cannot attribute an error-rate change to a
+    # specific rule landing — every velocity report shows ``Rule Applied:
+    # none``. The companion snapshot mechanism (T1.L.2) populates this
+    # column from a hash of the rule file set captured at session start.
+    try:
+        conn.execute("ALTER TABLE error_records ADD COLUMN active_rules TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     # Create indexes
     for idx_sql in _INDEXES:
         conn.execute(idx_sql)
