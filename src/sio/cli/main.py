@@ -3808,6 +3808,57 @@ def promote_positives_cmd(since, min_confidence, dry_run):
         click.echo("Run `sio suggest-review` or `sio approve <id>` to promote them.")
 
 
+@cli.command("amplify")
+@click.option("-i", "--input", "input_path", required=True,
+              help="Input JSONL produced by `sio curate`.")
+@click.option("-o", "--output", "output_path", default=None,
+              help="Output JSONL path. Defaults to ~/.sio/amplified/<input>_amplified.jsonl.")
+@click.option("-n", "--n-per-row", default=10, show_default=True, type=int,
+              help="Synthetic variants to generate per input row.")
+@click.option("--min-judge-score", default=0.6, show_default=True, type=float,
+              help="Drop variants whose LLM-judge score is below this.")
+@click.option("--max-workers", default=8, show_default=True, type=int,
+              help="Thread-pool parallelism for LLM calls.")
+def amplify_cmd(input_path, output_path, n_per_row, min_judge_score, max_workers):
+    """Amplify a curated JSONL by synthesizing N variants per row.
+
+    Each input row is passed through Gemini Flash with a "preserve the
+    category" prompt to generate variants that vary surface features
+    (paths, tool names, phrasing) while keeping the same pattern_id.
+    An LLM-as-judge filter drops variants that drift to a different
+    category.
+
+    Output is a JSONL that includes the originals AND the synthesized
+    variants — can be consumed directly by ``sio optimize --trainset-file``.
+    """
+    from pathlib import Path  # noqa: PLC0415
+    from sio.amplify import amplify  # noqa: PLC0415
+
+    inp = Path(input_path).expanduser()
+    if not inp.exists():
+        click.echo(f"Input not found: {inp}", err=True)
+        raise SystemExit(1)
+
+    if output_path is None:
+        output_path = os.path.expanduser(
+            f"~/.sio/amplified/{inp.stem}_amplified.jsonl"
+        )
+    out = Path(output_path)
+
+    result = amplify(
+        input_path=inp,
+        output_path=out,
+        n_per_row=n_per_row,
+        min_judge_score=min_judge_score,
+        max_workers=max_workers,
+    )
+    click.echo(f"\nInput rows:       {result['input_rows']}")
+    click.echo(f"Total generated:  {result['total_generated']}")
+    click.echo(f"Kept (judge≥{min_judge_score}): {result['kept']}")
+    click.echo(f"Dropped:          {result['dropped']}")
+    click.echo(f"Output:           {result['path']}")
+
+
 @cli.command("optimize")
 @click.option(
     "--module",
