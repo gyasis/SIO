@@ -4521,17 +4521,130 @@ def collect_recall(query, session, project, runbook, label):
     default=False,
     help="Show per-skill effectiveness metrics.",
 )
-def velocity(error_type, window, fmt, skills):
+@click.option(
+    "--by-rule",
+    is_flag=True,
+    default=False,
+    help=(
+        "Show per-rule error-rate attribution (T1.L.3). For each rule "
+        "in ~/.claude/rules/, compute the error rate of records where "
+        "that rule was active vs not-active. Requires active_rules "
+        "column populated by recent mining."
+    ),
+)
+@click.option(
+    "--min-records",
+    default=10,
+    show_default=True,
+    type=int,
+    help="(With --by-rule) minimum 'with rule' records to include a rule.",
+)
+def velocity(error_type, window, fmt, skills, by_rule, min_records):
     """Show learning velocity trends — how error rates change after rules.
 
     Computes error frequency per type over a rolling window, measures
     correction decay after rule application, and flags ineffective rules.
 
+    With --by-rule: switches mode entirely — instead of per-error-type
+    trends, computes per-rule attribution from the active_rules column
+    on error_records (T1.L.3, PRD sio_backend_dead_loop_2026-05-15).
+
     Examples:
         sio velocity                          # All error types, 7-day window
         sio velocity --error-type unused_import
-        sio velocity --window 14 --format json
+        sio velocity --by-rule                # per-rule attribution
+        sio velocity --by-rule --format json  # machine-readable
     """
+    # --by-rule mode takes the per-rule attribution path
+    if by_rule:
+        from sio.core.metrics.velocity import compute_per_rule_velocity  # noqa: PLC0415
+
+        db_path = os.path.expanduser("~/.sio/sio.db")
+        if not os.path.exists(db_path):
+            click.echo("No database found. Run 'sio mine' first.")
+            return
+
+        with _db_conn(db_path) as conn:
+            results = compute_per_rule_velocity(
+                conn, window_days=window, min_after=min_records
+            )
+
+        if not results:
+            click.echo(
+                "No rules with >= {} active_rules-stamped records yet. "
+                "Run `sio mine` so future records get stamped."
+                .format(min_records)
+            )
+            return
+
+        if fmt == "json":
+            click.echo(_json.dumps(results, indent=2, default=str))
+            return
+
+        # Table output
+        try:
+            from rich.console import Console
+            from rich.table import Table
+
+            console = Console()
+            t = Table(
+                title=f"Per-rule velocity ({len(results)} rules, "
+                      f"min {min_records} active records)",
+                title_style="bold cyan",
+            )
+            t.add_column("Rule", style="cyan", overflow="fold")
+            t.add_column("With", justify="right")
+            t.add_column("Without", justify="right")
+            t.add_column("Best Δ (type)", justify="right")
+            t.add_column("Worst Δ (type)", justify="right")
+            for r in results[:30]:  # cap at 30
+                best = r["best_delta"]
+                worst = r["worst_delta"]
+                best_str = (
+                    f"[green]{best['delta_pct']:+.0f}%[/green] "
+                    f"({best['error_type']})"
+                    if best and best["delta_pct"] is not None and best["delta_pct"] < 0
+                    else (
+                        f"{best['delta_pct']:+.0f}% ({best['error_type']})"
+                        if best and best["delta_pct"] is not None
+                        else "-"
+                    )
+                )
+                worst_str = (
+                    f"[red]{worst['delta_pct']:+.0f}%[/red] "
+                    f"({worst['error_type']})"
+                    if worst and worst["delta_pct"] is not None and worst["delta_pct"] > 0
+                    else (
+                        f"{worst['delta_pct']:+.0f}% ({worst['error_type']})"
+                        if worst and worst["delta_pct"] is not None
+                        else "-"
+                    )
+                )
+                # Truncate rule_id for display
+                rid = r["rule_id"]
+                if len(rid) > 60:
+                    rid = rid[:57] + "..."
+                t.add_row(
+                    rid, str(r["with_count"]), str(r["without_count"]),
+                    best_str, worst_str,
+                )
+            console.print(t)
+            console.print(
+                f"\n[dim]Δ < 0 = errors decreased when rule is active. "
+                f"Δ > 0 = errors INCREASED (rule may be ineffective or causing harm).[/dim]"
+            )
+        except ImportError:
+            for r in results[:30]:
+                best = r["best_delta"]
+                worst = r["worst_delta"]
+                click.echo(
+                    f"{r['rule_id']:<60s} with={r['with_count']:5d} "
+                    f"without={r['without_count']:5d} "
+                    f"best={best['delta_pct']:+.0f}% worst={worst['delta_pct']:+.0f}%"
+                    if best and worst else f"{r['rule_id']}"
+                )
+        return
+
     from sio.core.metrics.velocity import (
         compute_velocity_snapshot,
         get_velocity_trends,

@@ -211,6 +211,124 @@ def compute_velocity_snapshot(
     }
 
 
+def compute_per_rule_velocity(
+    db: sqlite3.Connection,
+    window_days: int = 30,
+    min_after: int = 10,
+) -> list[dict]:
+    """Compute per-rule error-rate attribution from error_records.active_rules.
+
+    T1.L.3 (PRD sio_backend_dead_loop_2026-05-15). For each distinct rule
+    id appearing in ``error_records.active_rules``, compute:
+
+    * ``records_with_rule`` — count of errors where the JSON array
+      contains this rule id (the "AFTER rule landed" sample)
+    * ``records_without_rule`` — count of errors where the JSON array
+      exists but does NOT contain this rule id (the "BEFORE" sample)
+    * ``rate_with`` / ``rate_without`` — normalised over each sub-sample
+    * ``delta_pct`` — relative change ``(with - without) / without``
+    * ``sign`` — ``"good"`` if delta < 0 (errors decreased), ``"bad"`` if > 0
+
+    Rules with fewer than ``min_after`` records-with-rule are excluded —
+    statistical noise.
+
+    NOTE: this is a PROXY for true rule effectiveness. ``active_rules`` is
+    stamped at mine time, not at session-start time, so a rule edited
+    between session-time and mine-time will appear "active" for both
+    pre- and post-edit errors. T1.L (future) could use session-start
+    rule snapshots from the SessionStart hook for a tighter signal.
+    """
+    import json  # noqa: PLC0415
+
+    # Pull all (active_rules, error_type) pairs from records that have
+    # the column populated. JSON parsing happens in Python — sqlite's
+    # json_each is available but optional, and a few-thousand-row
+    # in-memory tally is fine.
+    rows = db.execute(
+        "SELECT active_rules, error_type FROM error_records "
+        "WHERE active_rules IS NOT NULL AND active_rules != ''"
+    ).fetchall()
+
+    if not rows:
+        return []
+
+    # rule_id -> {with_count, with_types_counter}
+    # universe of "without" = total_records - with_count for that rule_id
+    from collections import Counter  # noqa: PLC0415
+
+    total_records = len(rows)
+    rule_with_count: Counter = Counter()
+    rule_with_by_type: dict[str, Counter] = {}
+    total_by_type: Counter = Counter()
+    seen_rules: set[str] = set()
+
+    for r in rows:
+        ar_json = r[0]
+        et = r[1] or ""
+        total_by_type[et] += 1
+        try:
+            rule_ids = json.loads(ar_json)
+            if not isinstance(rule_ids, list):
+                continue
+        except Exception:
+            continue
+        for rid in rule_ids:
+            seen_rules.add(rid)
+            rule_with_count[rid] += 1
+            rule_with_by_type.setdefault(rid, Counter())[et] += 1
+
+    results: list[dict] = []
+    for rid in seen_rules:
+        with_n = rule_with_count[rid]
+        without_n = total_records - with_n
+        if with_n < min_after or without_n == 0:
+            continue
+        # By-type breakdown
+        with_types = rule_with_by_type.get(rid, Counter())
+        type_deltas: list[dict] = []
+        for etype, tot in total_by_type.most_common():
+            with_t = with_types.get(etype, 0)
+            without_t = tot - with_t
+            if with_n == 0 or without_n == 0:
+                continue
+            rate_with = with_t / with_n
+            rate_without = without_t / without_n
+            if rate_without == 0:
+                delta_pct = None
+            else:
+                delta_pct = ((rate_with - rate_without) / rate_without) * 100
+            type_deltas.append({
+                "error_type": etype,
+                "with_count": with_t,
+                "without_count": without_t,
+                "rate_with": rate_with,
+                "rate_without": rate_without,
+                "delta_pct": delta_pct,
+            })
+        # Overall aggregate rate is meaningless (records-with-rule ratio); we
+        # surface per-type deltas instead. Mark the rule by its best/worst
+        # type delta.
+        meaningful = [d for d in type_deltas if d["delta_pct"] is not None]
+        best = min(meaningful, key=lambda d: d["delta_pct"]) if meaningful else None
+        worst = max(meaningful, key=lambda d: d["delta_pct"]) if meaningful else None
+        results.append({
+            "rule_id": rid,
+            "with_count": with_n,
+            "without_count": without_n,
+            "by_type": type_deltas,
+            "best_delta": best,
+            "worst_delta": worst,
+        })
+
+    # Sort by "best" delta — biggest negative (most error-suppressing) first
+    results.sort(
+        key=lambda r: (
+            r["best_delta"]["delta_pct"] if r["best_delta"] else 0.0
+        )
+    )
+    return results
+
+
 def get_velocity_trends(
     db: sqlite3.Connection,
     error_type: str | None = None,
