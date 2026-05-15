@@ -72,6 +72,33 @@ def _is_skip_line(line: str) -> bool:
     return any(pat.match(line) for pat in _SKIP_LINE_PATTERNS)
 
 
+# System-reminder blocks injected by the rules-injector PreToolUse hook contain
+# the verbatim text of the rules they're enforcing. When violation_detector
+# keyword-searches an error record's context_before / context_after fields, the
+# rule's own injected text reads as a "mention" of the rule and inflates the
+# violation count.  (Symptom: ZENO RETRY-LOOP RULE counted 5044x across 58
+# sessions when actual violations are in the dozens.)
+#
+# Stripping these blocks from searchable text before keyword matching ensures
+# only real error context counts as evidence.
+_SYSTEM_REMINDER_PATTERN: re.Pattern[str] = re.compile(
+    r"<system-reminder>.*?</system-reminder>",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _strip_rule_injections(text: str) -> str:
+    """Remove any ``<system-reminder>...</system-reminder>`` blocks from *text*.
+
+    The rules-injector hook wraps every injected rule file in such a block.
+    Counting that text against the rule itself is self-referential and
+    produces the 1000x+ inflated violation counts observed in production.
+    """
+    if not text or "<system-reminder>" not in text:
+        return text
+    return _SYSTEM_REMINDER_PATTERN.sub("", text)
+
+
 def _has_imperative(line: str) -> bool:
     """Return True if the line contains imperative rule language."""
     return any(pat.search(line) for pat in _IMPERATIVE_PATTERNS)
@@ -95,100 +122,64 @@ def _clean_rule_text(line: str) -> str:
 # Common stop words and markdown artifacts to exclude from keyword extraction.
 _STOP_WORDS: frozenset[str] = frozenset(
     {
-        "a",
-        "an",
-        "the",
-        "is",
-        "are",
-        "was",
-        "were",
-        "be",
-        "been",
-        "being",
-        "have",
-        "has",
-        "had",
-        "do",
-        "does",
-        "did",
-        "will",
-        "would",
-        "shall",
-        "should",
-        "may",
-        "might",
-        "can",
-        "could",
-        "must",
-        "need",
-        "not",
-        "never",
-        "always",
-        "and",
-        "or",
-        "but",
-        "if",
-        "then",
-        "else",
-        "when",
-        "where",
-        "what",
-        "which",
-        "who",
-        "how",
-        "that",
-        "this",
-        "it",
-        "its",
-        "in",
-        "on",
-        "at",
-        "to",
-        "for",
-        "of",
-        "with",
-        "by",
-        "from",
-        "as",
-        "into",
-        "through",
-        "during",
-        "before",
-        "after",
-        "above",
-        "below",
-        "up",
-        "down",
-        "out",
-        "off",
-        "over",
-        "under",
-        "again",
-        "further",
-        "than",
-        "too",
-        "very",
-        "just",
-        "about",
-        "all",
-        "any",
-        "each",
-        "every",
-        "both",
-        "few",
-        "more",
-        "most",
-        "other",
-        "some",
-        "such",
-        "no",
-        "nor",
-        "only",
-        "same",
-        "so",
-        "also",
-        "use",
-        "using",
+        # Basic English function words
+        "a", "an", "the",
+        "is", "are", "was", "were", "be", "been", "being",
+        "have", "has", "had",
+        "do", "does", "did",
+        "will", "would", "shall", "should", "may", "might", "can", "could",
+        "must", "need", "not", "never", "always",
+        "and", "or", "but", "if", "then", "else",
+        "when", "where", "what", "which", "who", "how",
+        "that", "this", "it", "its",
+        "in", "on", "at", "to", "for", "of", "with", "by", "from", "as",
+        "into", "through", "during", "before", "after", "above", "below",
+        "up", "down", "out", "off", "over", "under", "again", "further",
+        "than", "too", "very", "just", "about",
+        "all", "any", "each", "every", "both", "few",
+        "more", "most", "other", "some", "such",
+        "no", "nor", "only", "same", "so", "also",
+        "use", "using",
+        # ------------------------------------------------------------------
+        # Rule/imperative noise (added 2026-05-13): these terms appear in
+        # almost every rule (BLOCKING, MANDATORY, RULE, etc.) AND in almost
+        # every error context, so matching on them produces false-positive
+        # violations at 1000x+ inflation. The observed effect:
+        #   ZENO RETRY-LOOP RULE → matches every error context that contains
+        #   "RETRY" or "LOOP" or "RULE" → 42,432 false violations.
+        # Excluding the structural/imperative vocabulary collapses these to
+        # the real (small) violation count.
+        # ------------------------------------------------------------------
+        # Rule-meta terms
+        "rule", "rules", "blocking", "mandatory", "required", "optional",
+        "origin", "note", "notes", "warning", "warnings", "exception",
+        "exemption", "exceptions", "exemptions", "trigger", "triggers",
+        "triggered", "triggering",
+        # Generic action verbs / status words appearing in both rules + errors
+        "fire", "fires", "firing", "fired",
+        "block", "blocks", "blocked", "blocking",
+        "fail", "fails", "failed", "failing", "failure", "failures",
+        "error", "errors", "errored",
+        "call", "calls", "called", "calling",
+        "run", "runs", "running", "ran",
+        "stop", "stops", "stopping", "stopped",
+        "start", "starts", "starting", "started",
+        "skip", "skips", "skipping", "skipped",
+        "drop", "drops", "dropping", "dropped",
+        "retry", "retries", "retrying", "retried",
+        "loop", "loops", "looping", "looped",
+        "violation", "violations", "violated", "violating",
+        # Pronoun-ish noise
+        "you", "your", "yours", "i", "me", "my", "we", "our", "us",
+        "they", "them", "their",
+        # Tool/agent meta terms (these appear in almost every error record)
+        "tool", "tools", "agent", "agents", "user", "users",
+        "claude", "session", "sessions",
+        # Time / counting
+        "time", "times", "once", "twice", "first", "second", "third",
+        "next", "last", "previous", "new", "old",
+        # Misc connective
+        "see", "via", "per", "etc",
     }
 )
 
@@ -344,6 +335,11 @@ def detect_violations(
 
     for error in error_records:
         # Build a combined searchable text from all relevant error fields.
+        # Strip <system-reminder> rule-injection blocks first — counting a
+        # rule's own injected text against itself is self-referential and
+        # was causing 1000x+ inflated violation counts (e.g. ZENO RETRY-LOOP
+        # RULE showed 5044 violations across 58 sessions when real
+        # violations are in the dozens).
         searchable_parts: list[str] = []
         for field in (
             "error_text",
@@ -355,7 +351,7 @@ def detect_violations(
         ):
             val = error.get(field)
             if val:
-                searchable_parts.append(str(val))
+                searchable_parts.append(_strip_rule_injections(str(val)))
         searchable = " ".join(searchable_parts)
         searchable_lower = searchable.lower()
 
@@ -364,25 +360,52 @@ def detect_violations(
             if not terms:
                 continue
 
-            matched = False
+            # Multi-keyword match policy (added 2026-05-13).
+            #
+            # Single-keyword matching was producing 1000x+ false positives:
+            # generic words common to many rules (RETRY, LOOP, HOOK, etc.)
+            # appear in many error contexts naturally, so a single-keyword
+            # hit on a long rule produced thousands of "violations" of
+            # rules the agent never actually broke.
+            #
+            # Policy:
+            #   - "Strong" terms (quoted phrases / compound patterns like
+            #     `git push --force` or `SELECT *`) → single match wins.
+            #   - Plain-word terms → require N distinct matches, where N
+            #     scales with the rule's base content-word count (computed
+            #     from the rule text itself, NOT the expanded variants
+            #     list, which inflates the count via plural/singular
+            #     pairs):
+            #         <=3 base content words: N=1  (short focused rule;
+            #             every word carries weight)
+            #         >3 base content words:  N=2  (longer rule has more
+            #             chance for spurious single-word matches)
+            base_content_words = {
+                w.lower()
+                for w in re.findall(r"\b[A-Za-z]{3,}\b", rule.text)
+                if w.lower() not in _STOP_WORDS
+            }
+            min_word_matches = 1 if len(base_content_words) <= 3 else 2
+
+            distinct_matches: set[str] = set()
+            has_strong_match = False  # quoted / compound term hit
+
             for term in terms:
                 term_lower = term.lower()
-                # For terms that are purely alphanumeric/underscores, use
-                # word-boundary regex to avoid substring false positives
-                # (e.g. "import" matching "important").
-                # For terms with special chars (like * or --), fall back
-                # to plain substring matching since \b won't work reliably.
                 if re.fullmatch(r"\w+", term_lower):
+                    # Plain word — requires word-boundary match
                     if re.search(
                         r"\b" + re.escape(term_lower) + r"\b",
                         searchable_lower,
                     ):
-                        matched = True
-                        break
+                        distinct_matches.add(term_lower)
                 else:
+                    # Compound / special-char term — single match is enough
                     if term_lower in searchable_lower:
-                        matched = True
+                        has_strong_match = True
                         break
+
+            matched = has_strong_match or len(distinct_matches) >= min_word_matches
 
             if matched:
                 violations.append(

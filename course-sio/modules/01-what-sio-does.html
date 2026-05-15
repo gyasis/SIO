@@ -1,0 +1,365 @@
+<section class="module" id="module-1">
+  <header class="module-header">
+    <span class="module-number">Module 1</span>
+    <h2 class="module-title">What SIO Does — Catching Your AI in the Act</h2>
+    <p class="module-subtitle">A flight data recorder for your AI agent. After every flight, it pulls the black box, finds the moments your copilot stalled, and writes a new line in the manual so the same maneuver never bites you twice.</p>
+  </header>
+
+  <!-- ============ SCREEN 1: THE HOOK ============ -->
+  <div class="module-screen">
+    <h3 class="screen-title">Your AI just lied to you. Again.</h3>
+
+    <p>Your AI agent confidently ran <code>sed -i</code> to fix one line in your <code>.env</code> file. It silently wiped the file. Last month it did the exact same thing on a different machine.</p>
+
+    <p>You wrote a note. You told it not to. And yet — next session, fresh context, <em>same mistake</em>.</p>
+
+    <div class="callout callout-warning">
+      <div class="callout-icon">⚠️</div>
+      <div class="callout-content">
+        <strong class="callout-title">The forgetting problem</strong>
+        <p>Every new session, your AI starts with no memory of yesterday&rsquo;s screw-ups. The only thing it remembers is whatever you put in its <span class="term" data-definition="CLAUDE.md is a plain-text instruction file the AI agent re-reads at the start of every session. Think of it as a sticky note on the fridge — whatever&rsquo;s on it, the agent will see; whatever isn&rsquo;t, it forgets.">CLAUDE.md</span> file. So who&rsquo;s writing those rules? You. By hand. Every time.</p>
+      </div>
+    </div>
+
+    <p><strong>SIO</strong> &mdash; the <em>Self-Improving Organism</em> &mdash; is the system that writes those rules <em>for</em> you, drafted from the actual mistakes your agent has already made.</p>
+  </div>
+
+  <!-- ============ SCREEN 2: THE METAPHOR + PIPELINE ============ -->
+  <div class="module-screen">
+    <h3 class="screen-title">The flight data recorder</h3>
+
+    <p>Commercial airliners carry a black box that records every control input, every warning, every gust of wind. After a rough landing, investigators don&rsquo;t guess &mdash; they read the tape.</p>
+
+    <p>SIO is that black box for your AI. A tiny <span class="term" data-definition="A hook is a small piece of code that the host program (in this case, Claude Code) runs automatically at a specific moment — like the way a doorbell triggers a chime. The hook itself doesn&rsquo;t change what the host is doing; it just gets notified.">hook</span> watches every <span class="term" data-definition="A tool call is when the AI agent uses one of its built-in tools — like Bash to run a shell command, Edit to change a file, or Read to open one. Each call is logged with what was tried and whether it worked.">tool call</span> your agent makes, copies the receipt into a tiny database, and lets a learning pipeline do the rest after the flight.</p>
+
+    <h4 class="screen-subtitle">The pipeline, end to end</h4>
+
+    <div class="step-cards">
+      <div class="step-card">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Sessions</strong>
+          <p>Raw recordings of every tool call your agent made &mdash; the input, the output, the error if there was one.</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Mine</strong>
+          <p>Sift the recordings for failures, user corrections, repeated attempts &mdash; the moments the agent stumbled.</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>Cluster</strong>
+          <p>Group similar stumbles together. &ldquo;Wiped a file with sed&rdquo; and &ldquo;wiped a file with perl -pi&rdquo; are the same lesson.</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <strong>Rank</strong>
+          <p>Patterns that hurt the most or recur the most float to the top. Rare flukes sink.</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <strong>Suggest</strong>
+          <p>Draft a plain-English rule for each top pattern &mdash; the kind of thing you&rsquo;d hand-write into CLAUDE.md.</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">6</div>
+        <div class="step-body">
+          <strong>Review</strong>
+          <p><strong>You</strong> read the draft. Approve it, edit it, or throw it out. SIO never writes without your say-so.</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">7</div>
+        <div class="step-body">
+          <strong>Apply</strong>
+          <p>Approved rules land in CLAUDE.md. Next session, the agent reads them. Same mistake &mdash; blocked.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout-info">
+      <div class="callout-icon">🔁</div>
+      <div class="callout-content">
+        <strong class="callout-title">This is a closed feedback loop</strong>
+        <p>The agent&rsquo;s output becomes input to a learner, the learner&rsquo;s output becomes input to the agent. Engineers call this a <span class="term" data-definition="A feedback loop is a system where the output of a process becomes the input to the same process — like a thermostat reading the room temperature, deciding to turn on the heat, which changes the temperature, which the thermostat reads again. SIO loops the agent&rsquo;s mistakes back into the rules the agent reads.">feedback loop</span>. The only part that isn&rsquo;t automatic is <em>you</em>, the approver in the middle. That&rsquo;s on purpose.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SCREEN 3: THE HOOK CODE ============ -->
+  <div class="module-screen">
+    <h3 class="screen-title">The whole thing starts with one tiny function</h3>
+
+    <p>Every time your AI calls a tool, Claude Code fires an event called <code>PostToolUse</code>. SIO listens for that event with the function below. It&rsquo;s 30 lines. That&rsquo;s the entire data-collection surface.</p>
+
+    <div class="translation-block animate-in">
+      <div class="translation-code">
+        <span class="translation-label">CODE</span>
+        <pre><code>"""PostToolUse hook handler — captures telemetry from Claude Code tool calls."""
+
+from __future__ import annotations
+import json, logging, os, sys
+from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
+from sio.core.constants import DEFAULT_PLATFORM as _DEFAULT_PLATFORM
+_DEFAULT_DB_DIR = os.path.expanduser(f"~/.sio/{_DEFAULT_PLATFORM}")
+
+
+def handle_post_tool_use(stdin_json: str, *, conn=None) -> str:
+    """Process a PostToolUse hook event.
+
+    Parses the JSON payload, logs the invocation to the database,
+    and always returns {"action": "allow"}.
+    """
+    try:
+        payload = json.loads(stdin_json)
+    except (json.JSONDecodeError, TypeError):
+        return json.dumps({"action": "allow"})
+
+    own_conn = conn is None
+    if own_conn:
+        db_path = os.path.join(_DEFAULT_DB_DIR, "behavior_invocations.db")
+        os.makedirs(_DEFAULT_DB_DIR, exist_ok=True)
+        conn = init_db(db_path)
+
+    session_id = payload.get("session_id", "unknown")
+    tool_name  = payload.get("tool_name", "unknown")
+    tool_input = json.dumps(payload.get("tool_input", {}))
+    tool_output = payload.get("tool_output", "")
+    error = payload.get("error")
+    user_message = payload.get("user_message", "[UNAVAILABLE]")
+
+    log_invocation(conn=conn, session_id=session_id, tool_name=tool_name,
+                   tool_input=tool_input, tool_output=tool_output,
+                   error=error, user_message=user_message,
+                   platform=_DEFAULT_PLATFORM)
+
+    return json.dumps({"action": "allow"})</code></pre>
+      </div>
+      <div class="translation-english">
+        <span class="translation-label">PLAIN ENGLISH</span>
+        <div class="translation-lines">
+          <p class="tl">Every time your AI uses a tool, Claude Code hands this function a little envelope of <span class="term" data-definition="Telemetry is data a program quietly emits about what it&rsquo;s doing — which tool ran, what input, did it error. Like a fitness tracker for software: it doesn&rsquo;t change your run, it just records it.">telemetry</span>: which tool, what input, what came back, and whether it errored.</p>
+          <p class="tl">If the envelope is garbage and can&rsquo;t even be parsed, the function shrugs and says <code>allow</code>. <strong>It never blocks the agent.</strong></p>
+          <p class="tl">Otherwise it opens a tiny <span class="term" data-definition="SQLite is a database that lives in a single file on your disk — no server, no setup. Think of it as a spreadsheet that programs can query like a real database. SIO uses one at ~/.sio/claude-code/behavior_invocations.db.">SQLite</span> file at <code>~/.sio/claude-code/behavior_invocations.db</code> and writes one new row: session ID, tool name, input, output, error, the last thing you said.</p>
+          <p class="tl">Then it returns <code>{"action": "allow"}</code> &mdash; unconditionally. SIO is a passive observer. The agent never even notices it was watched.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout-accent">
+      <div class="callout-icon">💡</div>
+      <div class="callout-content">
+        <strong class="callout-title">SIO is a passive observer, not a guard</strong>
+        <p>Hooks never block. They only watch and write. The agent stays fast; learning happens offline. If SIO itself ever crashes, your agent keeps right on working &mdash; it just stops getting smarter that day.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SCREEN 4: GROUP CHAT — TRACE THE INCIDENT ============ -->
+  <div class="module-screen">
+    <h3 class="screen-title">Watch the .env incident, live</h3>
+
+    <p>Here&rsquo;s the same <code>sed -i</code> disaster from the opening, replayed as a group chat between the four actors involved. Step through it and notice how the Hook never interrupts &mdash; it just takes notes.</p>
+
+    <div class="chat-window" id="chat-module1">
+      <div class="chat-messages">
+
+        <div class="chat-message" data-msg="0" data-sender="you" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-1)">Y</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-1)">You</span>
+            <p>Hey Claude, run <code>sed -i 's/foo/bar/' .env</code> for me.</p>
+          </div>
+        </div>
+
+        <div class="chat-message" data-msg="1" data-sender="claude" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-2)">C</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-2)">Claude Agent</span>
+            <p>On it. <em>(invokes the Bash tool: <code>sed -i 's/foo/bar/' .env</code>)</em></p>
+          </div>
+        </div>
+
+        <div class="chat-message" data-msg="2" data-sender="tool" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-3)">T</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-3)">Bash Tool → Hook</span>
+            <p>PostToolUse event. Payload: <code>{tool_name: "Bash", error: ".env emptied (0 bytes)"}</code></p>
+          </div>
+        </div>
+
+        <div class="chat-message" data-msg="3" data-sender="hook" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-4)">H</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-4)">Hook (post_tool_use.py)</span>
+            <p>Got it. <code>log_invocation(...)</code> &mdash; row written to <code>~/.sio/claude-code/behavior_invocations.db</code>.</p>
+          </div>
+        </div>
+
+        <div class="chat-message" data-msg="4" data-sender="hook" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-4)">H</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-4)">Hook → Claude</span>
+            <p><code>{"action": "allow"}</code> &mdash; I never block.</p>
+          </div>
+        </div>
+
+        <div class="chat-message" data-msg="5" data-sender="you" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-1)">Y</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-1)">You</span>
+            <p>NO &mdash; you wiped my .env! That&rsquo;s the second time this month! <em>(another row lands in the DB &mdash; user_correction event)</em></p>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="chat-typing" id="chat-module1-typing" style="display:none">
+        <div class="chat-avatar" id="chat-module1-typing-avatar">?</div>
+        <div class="chat-typing-dots">
+          <span class="typing-dot"></span>
+          <span class="typing-dot"></span>
+          <span class="typing-dot"></span>
+        </div>
+      </div>
+
+      <div class="chat-controls">
+        <button class="btn chat-next-btn">Next Message</button>
+        <button class="btn chat-all-btn">Play All</button>
+        <button class="btn chat-reset-btn">Replay</button>
+        <span class="chat-progress"></span>
+      </div>
+    </div>
+
+    <p>Two events landed in the database from that one disaster: the tool failure (<code>error: ".env emptied"</code>) and your correction. <strong>Both</strong> become training signal for the Miner in the next module.</p>
+  </div>
+
+  <!-- ============ SCREEN 5: WHY THE LOOP CLOSES ============ -->
+  <div class="module-screen">
+    <h3 class="screen-title">Why the loop only closes through you</h3>
+
+    <p>Lots of "self-improving" systems sound dangerous &mdash; an AI that rewrites its own rules with no human in the way. SIO is built differently. The hook captures freely, the pipeline drafts freely, but <strong>nothing reaches CLAUDE.md until you click approve</strong>.</p>
+
+    <div class="icon-rows">
+      <div class="icon-row">
+        <div class="icon-circle" style="background: var(--color-actor-1)">👁️</div>
+        <div>
+          <strong>Capture is automatic</strong>
+          <p>The Hook runs on every tool call. No prompts, no approvals. Cheap and silent.</p>
+        </div>
+      </div>
+      <div class="icon-row">
+        <div class="icon-circle" style="background: var(--color-actor-2)">🔬</div>
+        <div>
+          <strong>Mining is automatic</strong>
+          <p>The Miner re-reads the database whenever you run <code>sio scan</code>. Failures get clustered into patterns.</p>
+        </div>
+      </div>
+      <div class="icon-row">
+        <div class="icon-circle" style="background: var(--color-actor-3)">✍️</div>
+        <div>
+          <strong>Suggestions are automatic</strong>
+          <p>For each ranked pattern, the Suggester drafts a plain-English rule. You see the draft, not the rule.</p>
+        </div>
+      </div>
+      <div class="icon-row">
+        <div class="icon-circle" style="background: var(--color-actor-4)">✅</div>
+        <div>
+          <strong>Approval is manual &mdash; always</strong>
+          <p>You read each suggestion in <code>sio review</code>. Approve, edit, or kill. The agent never writes its own constitution.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout-accent">
+      <div class="callout-icon">🧠</div>
+      <div class="callout-content">
+        <strong class="callout-title">Your CLAUDE.md is the agent&rsquo;s long-term memory</strong>
+        <p>Every session, the agent re-reads it before doing anything else. A rule written today is in effect tomorrow &mdash; on every machine that syncs the file. That&rsquo;s why drafting rules is worth doing carefully, and why SIO bothers to involve you instead of just patching the file behind your back.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SCREEN 6: QUIZ ============ -->
+  <div class="module-screen">
+    <h3 class="screen-title">Check yourself</h3>
+
+    <p>Two scenarios. Pick what would actually happen, given what you just learned about how the hook and the pipeline are wired.</p>
+
+    <div class="quiz-container" id="quiz-module1">
+
+      <div class="quiz-question-block"
+           data-correct="opt-b"
+           data-explanation-right="Exactly. The hook is wrapped in defensive logic — bad payload returns allow, init failure would be swallowed too — and the return value is always {&quot;action&quot;: &quot;allow&quot;}. SIO is a passive observer. If it broke, the worst thing that happens is you stop learning that day; your agent keeps right on working."
+           data-explanation-wrong="Not quite. Look again at the very last line of handle_post_tool_use — it returns &quot;allow&quot; unconditionally, and even the JSON-parse failure path returns &quot;allow&quot;. SIO is built so that even when it crashes, the agent never stops.">
+        <h3 class="quiz-question">Your hook crashes mid-call, halfway through writing a row to the database. What happens to your AI agent?</h3>
+        <div class="quiz-options">
+          <button class="quiz-option" data-value="opt-a" onclick="selectOption(this)">
+            <div class="quiz-option-radio"></div>
+            <span>The agent halts &mdash; it can&rsquo;t proceed without confirmation from the hook.</span>
+          </button>
+          <button class="quiz-option" data-value="opt-b" onclick="selectOption(this)">
+            <div class="quiz-option-radio"></div>
+            <span>The agent keeps running. The hook is silent on failure and always returns "allow".</span>
+          </button>
+          <button class="quiz-option" data-value="opt-c" onclick="selectOption(this)">
+            <div class="quiz-option-radio"></div>
+            <span>The tool call gets retried automatically.</span>
+          </button>
+          <button class="quiz-option" data-value="opt-d" onclick="selectOption(this)">
+            <div class="quiz-option-radio"></div>
+            <span>Claude switches to a different model.</span>
+          </button>
+        </div>
+        <div class="quiz-feedback"></div>
+      </div>
+
+      <div class="quiz-question-block"
+           data-correct="opt-c"
+           data-explanation-right="Right. Trace the pipeline: a tool-call row is just a recording. It only becomes a CLAUDE.md rule after Mine groups it into a pattern, Rank pushes the pattern up, Suggest drafts a rule, and YOU approve in Review. Three of those steps are automatic; the approval step is not."
+           data-explanation-wrong="Not yet — that step is too early. A single tool-call row in the database isn&rsquo;t a rule, and not even a clustered pattern is a rule yet. Re-trace the seven-step pipeline and find the stage where YOU are in the loop.">
+        <h3 class="quiz-question">A tool-call row lands in the SIO database. At what point in the pipeline does it actually turn into a line in your CLAUDE.md?</h3>
+        <div class="quiz-options">
+          <button class="quiz-option" data-value="opt-a" onclick="selectOption(this)">
+            <div class="quiz-option-radio"></div>
+            <span>Immediately &mdash; the hook writes to CLAUDE.md as soon as it sees an error.</span>
+          </button>
+          <button class="quiz-option" data-value="opt-b" onclick="selectOption(this)">
+            <div class="quiz-option-radio"></div>
+            <span>After Mine clusters it with similar rows.</span>
+          </button>
+          <button class="quiz-option" data-value="opt-c" onclick="selectOption(this)">
+            <div class="quiz-option-radio"></div>
+            <span>After the pattern is clustered, ranked, drafted as a suggestion, and approved by you.</span>
+          </button>
+          <button class="quiz-option" data-value="opt-d" onclick="selectOption(this)">
+            <div class="quiz-option-radio"></div>
+            <span>Never &mdash; SIO only reports patterns; you write all the rules by hand.</span>
+          </button>
+        </div>
+        <div class="quiz-feedback"></div>
+      </div>
+
+      <button class="quiz-check-btn" onclick="checkQuiz('quiz-module1')">Check Answers</button>
+      <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module1')">Try Again</button>
+    </div>
+  </div>
+
+  <!-- ============ COMING UP ============ -->
+  <div class="module-screen module-screen-outro">
+    <h3 class="screen-title">Coming up: Meet the Actors</h3>
+    <p>You&rsquo;ve met the <strong>Hook</strong>. The next module introduces the other five characters in the SIO story &mdash; the <strong>Miner</strong>, <strong>Clusterer</strong>, <strong>Suggester</strong>, <strong>Reviewer</strong>, and <strong>Applier</strong> &mdash; and shows you which folder in <code>src/sio/</code> each one lives in.</p>
+  </div>
+
+</section>

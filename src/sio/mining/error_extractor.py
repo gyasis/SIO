@@ -115,6 +115,74 @@ _ADMISSION_PATTERNS: list[re.Pattern[str]] = [
 _GIT_PUSH_PATTERN: re.Pattern[str] = re.compile(r"\bgit\s+push\b", re.IGNORECASE)
 
 
+# Hook-success / guardrail-intervention signatures that look like tool failures
+# but are actually the guardrail working as designed. Filtering these at ingest
+# prevents them from polluting the top-N error pattern rankings, where they
+# crowd out genuine agent misbehavior.
+#
+# Each pattern targets the *error_text* (or its leading content) of a record
+# that would otherwise be classified as ``tool_failure``.  When a pattern
+# matches, the record is skipped entirely — it's downgraded to telemetry, not
+# an error.
+#
+# Add new entries here when a hook starts emitting recognizable block messages.
+_HOOK_BLOCK_PATTERNS: list[re.Pattern[str]] = [
+    # PreToolUse hooks denying tools (Read, Bash, Edit, etc.)
+    re.compile(r"\bPreToolUse:[A-Za-z]+\s+(?:hook\s+)?(?:denied|blocked)\b", re.IGNORECASE),
+    re.compile(r"\bHook\s+PreToolUse:[A-Za-z]+\s+denied\b", re.IGNORECASE),
+    # hhdev preflight hook (AP-010 / config.toml / patch-scope blocks)
+    re.compile(r"\bhhdev-preflight\b", re.IGNORECASE),
+    re.compile(r"\bAP-010\s+(?:block|preflight)\b", re.IGNORECASE),
+    # retry-guard circuit breaker (the hook's own block message, not the
+    # underlying repeated_attempt which we still want classified separately
+    # via the consecutive-tool detector below).
+    re.compile(r"\bretry-guard\b.*\bblock(?:ed|ing)?\b", re.IGNORECASE),
+    re.compile(r"\[retry-guard\]\s+BLOCK", re.IGNORECASE),
+    # docker-down-gate, batch-guard, cascade-shield, claudemd-cap, done-before-gate
+    re.compile(r"\bdocker-down-gate\b", re.IGNORECASE),
+    re.compile(r"\bbatch-guard\b.*\bblock(?:ed|ing)?\b", re.IGNORECASE),
+    re.compile(r"\bcascade-shield\b.*\bblock(?:ed|ing)?\b", re.IGNORECASE),
+    re.compile(r"\[claudemd-cap\]\s+BLOCK", re.IGNORECASE),
+    re.compile(r"\[done-before-gate\]", re.IGNORECASE),
+    # Generic "PreToolUse:<Tool> hook error:" from settings.json command hooks
+    re.compile(r"\bPreToolUse:[A-Za-z]+\s+hook\s+error\b", re.IGNORECASE),
+]
+
+# Rule-injection echoes: when a rule's own text appears verbatim in an error
+# record's context (because the rules-injector hook emitted a system-reminder
+# right before a tool call that then failed), the rule text gets counted as a
+# "violation mention." These tags identify the BLOCKING rule headers that
+# should NOT count as evidence of violation.
+_RULE_INJECTION_HEADERS: list[re.Pattern[str]] = [
+    re.compile(r"ZENO\s+RETRY-LOOP\s+RULE", re.IGNORECASE),
+    re.compile(r"HOOK-BYPASS\s+RULE", re.IGNORECASE),
+    re.compile(r"DBT/CUBE\s+SOURCE\s+BINDING", re.IGNORECASE),
+    re.compile(r"CONFIG\.TOML\s+BINDING\s+\+\s+HH_WORKTREE_MODE", re.IGNORECASE),
+]
+
+
+def _is_hook_block_noise(error_text: str | None) -> bool:
+    """Return True when ``error_text`` is a hook-success block message rather
+    than a real tool failure.  Used to skip ingestion of guardrail interventions
+    that would otherwise pollute error rankings.
+    """
+    if not error_text:
+        return False
+    for pat in _HOOK_BLOCK_PATTERNS:
+        if pat.search(error_text):
+            return True
+    # If the entire error_text is dominated by rule-injection headers (i.e.
+    # the "failure" is actually the rules-injector having emitted a rule
+    # block that the tool response captured), skip it.  We require at least
+    # one rule-injection header AND total length < 4 KB to avoid suppressing
+    # real failures that happen to mention a rule name.
+    if len(error_text) < 4096:
+        for pat in _RULE_INJECTION_HEADERS:
+            if pat.search(error_text):
+                return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -305,21 +373,28 @@ def extract_errors(
         # 1. tool_failure
         # ------------------------------------------------------------------
         if error:  # non-None and non-empty
-            user_msg = _last_human_message(parsed_messages, idx)
-            records.append(
-                _build_record(
-                    msg=msg,
-                    idx=idx,
-                    messages=parsed_messages,
-                    source_file=source_file,
-                    source_type=source_type,
-                    error_type="tool_failure",
-                    error_text=error,
-                    tool_name=tool_name,
-                    user_message=user_msg,
-                    mined_at=mined_at,
+            # Denoise: skip hook-success block messages and rule-injection
+            # echoes. These are guardrail interventions working as designed,
+            # not agent failures. Filtering them at ingest prevents them
+            # from polluting the top-N pattern rankings.
+            if _is_hook_block_noise(error):
+                pass  # skip ingestion
+            else:
+                user_msg = _last_human_message(parsed_messages, idx)
+                records.append(
+                    _build_record(
+                        msg=msg,
+                        idx=idx,
+                        messages=parsed_messages,
+                        source_file=source_file,
+                        source_type=source_type,
+                        error_type="tool_failure",
+                        error_text=error,
+                        tool_name=tool_name,
+                        user_message=user_msg,
+                        mined_at=mined_at,
+                    )
                 )
-            )
 
         # ------------------------------------------------------------------
         # 2. user_correction  (human messages only)

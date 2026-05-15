@@ -1,0 +1,237 @@
+<section class="module" id="module-5">
+  <header class="module-header">
+    <span class="module-number">Module 5</span>
+    <h2 class="module-title">Closing the Loop — Apply Safely or Not At All</h2>
+    <p class="module-subtitle">The three gates between a generated suggestion and a real change on disk.</p>
+  </header>
+
+  <!-- SCREEN 1: The surgical timeout metaphor -->
+  <div class="screen">
+    <div class="metaphor-card">
+      <div class="metaphor-icon">🩺</div>
+      <h3>The Surgical Timeout</h3>
+      <p>Before any operation, the surgical team pauses. They read the chart aloud, confirm the procedure, confirm the site. Only then does the first cut happen — and a copy of the patient's pre-op state is filed away, kept for ten patients back.</p>
+      <p>If something goes wrong, the surgeon can rewind to before the cut.</p>
+    </div>
+
+    <div class="callout aha">
+      <strong>SIO's Applier works the same way.</strong> It never writes without a <span class="term" data-tip="A snapshot of the file taken just before the change, so you can restore it.">backup</span>, never writes outside permitted directories, and never writes a rule the human didn't approve.
+    </div>
+  </div>
+
+  <!-- SCREEN 2: The hook — a string in a database -->
+  <div class="screen">
+    <h3>A rule has been generated. Now what?</h3>
+    <p>The DSPy brain just produced this string and dropped it in the <code>suggestions</code> table:</p>
+
+    <div class="code-callout">
+      <code>"Never use <span class="term" data-tip="An old-school command-line tool for editing files in-place. Notorious for silently wiping files on this machine.">sed -i</span> — use the Edit tool instead."</code>
+    </div>
+
+    <p>Nothing has touched your <code>CLAUDE.md</code> yet. So what's the path from <em>"suggestion in a database"</em> to <em>"rule in your config file"</em> — and how does SIO make sure that path is reversible?</p>
+
+    <div class="callout teal">
+      <strong>Three gates.</strong> Human approval. Path validation. Atomic backup. Each one lives in its own file. Each one alone could stop a bad write.
+    </div>
+  </div>
+
+  <!-- SCREEN 3: Gate 1 — Human approval -->
+  <div class="screen">
+    <h3>Gate 1 — The approval status check</h3>
+    <p>Before the Applier touches disk, it checks one field on the suggestion row: <code>status</code>. If the status isn't <span class="term" data-tip="A suggestion the human reviewed and accepted via `sio suggest-review`.">approved</span> or <span class="term" data-tip="A suggestion the system pre-approved because it matches a high-confidence pattern. Still passes through path validation and backup.">auto_approved</span>, the function bails.</p>
+
+    <div class="translation-block">
+      <div class="translation-code">
+<pre><code>def apply_change(db, suggestion_id, config=None, force=False) -> dict:
+    row = db.execute(
+        "SELECT * FROM suggestions WHERE id = ?", (suggestion_id,)
+    ).fetchone()
+
+    if row is None:
+        return {"success": False, "reason": "Suggestion not found"}
+
+    suggestion = dict(row)
+
+    if suggestion["status"] not in ("approved", "auto_approved"):
+        return {
+            "success": False,
+            "reason": f"Suggestion is not approved (status: {suggestion['status']})",
+        }
+    # ... budget check, similarity merge, atomic write with backup</code></pre>
+      </div>
+      <div class="translation-english">
+        <p><strong>Look up the suggestion by ID.</strong> If it doesn't exist, return a failure dict — no exception, no surprise.</p>
+        <p><strong>Read the status field.</strong> If it's anything other than <code>approved</code> or <code>auto_approved</code>, refuse the operation.</p>
+        <p>A suggestion in <code>pending</code> state <em>cannot be applied</em> even if you pass its ID directly to <code>sio apply</code>. The <span class="term" data-tip="A safety pattern where the system pauses for a person to review before doing something risky.">human-in-the-loop</span> gate is enforced in code, not just in the CLI.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 4: Gate 2 — Path validation -->
+  <div class="screen">
+    <h3>Gate 2 — The path allowlist</h3>
+    <p>Even an approved suggestion can't write just anywhere. The Applier validates the target path against a tiny <span class="term" data-tip="A list of explicitly permitted destinations. Anything not on the list is rejected by default.">allowlist</span>: your home <code>~/.sio</code>, your home <code>~/.claude</code>, or your current working directory.</p>
+
+    <div class="translation-block">
+      <div class="translation-code">
+<pre><code>_ALLOWED_ROOTS: list[Path] = [
+    Path.home() / ".sio",
+    Path.home() / ".claude",
+]
+
+def _validate_target_path(path: Path, *, extra_roots: tuple[Path, ...] = ()) -> str | None:
+    """Return an error message if path is outside allowed roots or cwd."""
+    resolved = path.resolve()
+    allowed = (*_ALLOWED_ROOTS, Path.cwd(), *extra_roots)
+    for root in allowed:
+        try:
+            resolved.relative_to(root.resolve())
+            return None
+        except ValueError:
+            continue
+    return (
+        f"Target path {resolved} is outside allowed directories: "
+        f"{', '.join(str(r) for r in allowed)}"
+    )</code></pre>
+      </div>
+      <div class="translation-english">
+        <p>This is the <strong>kill switch</strong>. <code>resolve()</code> turns any sneaky path — like <code>../../etc/passwd</code> — into an absolute path. No tricks.</p>
+        <p>Then we walk through each allowed root and ask: is the target inside this folder? If yes, return <code>None</code> (meaning "no error, you may proceed").</p>
+        <p>If nothing matches, return an error string. The Applier <strong>will not</strong> write if this returns anything but <code>None</code>. No matter how the suggestion's <code>target_file</code> got into the database, this seatbelt catches it before disk.</p>
+      </div>
+    </div>
+
+    <div class="callout warning">
+      <strong>This defends against <span class="term" data-tip="An attack where a malicious filename like '../../etc/passwd' tries to escape its intended folder.">path traversal</span>.</strong> Even if a generated rule somehow contained a hostile target, it can't write outside the sandbox.
+    </div>
+  </div>
+
+  <!-- SCREEN 5: Gate 3 — Budget + atomic backup -->
+  <div class="screen">
+    <h3>Gate 3 — Budget check + atomic backup</h3>
+    <p>Once approval and path pass, two final checks: is there room in the file, and is the old version safely copied aside?</p>
+
+    <div class="translation-block">
+      <div class="translation-code">
+<pre><code>"""sio.applier.budget -- instruction budget management for config files.
+
+Public API
+----------
+    count_meaningful_lines(file_path) -> int
+    check_budget(file_path, new_rule_lines, config) -> BudgetResult
+    trigger_consolidation(file_path, config) -> bool
+"""
+
+class BudgetResult(NamedTuple):
+    status: str  # 'ok' | 'consolidate' | 'blocked'
+    current_lines: int
+    cap: int
+    message: str</code></pre>
+      </div>
+      <div class="translation-english">
+        <p>Every instruction file has a <span class="term" data-tip="A maximum size for a config file. SIO refuses to grow CLAUDE.md beyond this — too many rules and the LLM stops reading them.">budget cap</span>. Before adding a rule, SIO counts the meaningful lines in your <code>CLAUDE.md</code>.</p>
+        <p>Three outcomes: <code>ok</code> (write it), <code>consolidate</code> (merge similar rules first), or <code>blocked</code> (refuse — you're at capacity).</p>
+        <p>Then the <span class="term" data-tip="A write that either fully succeeds or leaves the file untouched — never a half-written mess.">atomic write</span> happens: the old file is copied to <code>~/.sio/backups/</code> with a timestamp, then the new content is written. The last 10 backups are kept.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 6: Data flow animation -->
+  <div class="screen">
+    <h3>Trace one suggestion from database to disk</h3>
+    <p>Follow a single packet from "pending in the table" all the way to "live in your config" — and notice every gate it passes through.</p>
+
+    <div class="flow-animation" data-steps='[
+      {"actor": "Suggestion (pending)", "icon": "📝", "tip": "A row in the suggestions table. Status: pending. Has done nothing yet."},
+      {"actor": "sio suggest-review", "icon": "👀", "tip": "The CLI shows you the rule, the evidence, and the confidence score."},
+      {"actor": "You — approve / reject / defer", "icon": "🧑", "tip": "Human-in-the-loop. Nothing moves without your call."},
+      {"actor": "Suggestion (approved)", "icon": "✅", "tip": "Status flips to approved. Now eligible for apply."},
+      {"actor": "sio apply <id>", "icon": "⚙️", "tip": "Kicks off the Applier — runs the three gates in order."},
+      {"actor": "Gate: path validation", "icon": "🛡️", "tip": "Is the target inside ~/.sio, ~/.claude, or cwd? If not — STOP."},
+      {"actor": "Gate: budget check", "icon": "📏", "tip": "Is there room in CLAUDE.md? If not — STOP and ask to consolidate."},
+      {"actor": "Gate: backup + atomic write", "icon": "💾", "tip": "Copy old file to ~/.sio/backups/ with timestamp. Then write."},
+      {"actor": "CLAUDE.md (updated) + backup file", "icon": "📂", "tip": "The new rule lives in your config. The old version lives in ~/.sio/backups/ — reversible."}
+    ]'></div>
+
+    <div class="callout aha">
+      <strong>Three gates, all enforced in code.</strong> Human approval lives in <code>writer.py</code>. Path validation lives in <code>writer.py</code>. Atomic backup lives in <code>writer.py</code>. Even if one gate had a bug, the others would still defend the system.
+    </div>
+  </div>
+
+  <!-- SCREEN 7: Rollback -->
+  <div class="screen">
+    <h3>Every apply is reversible</h3>
+    <p>The Applier writes a row to the <code>applied_changes</code> table for every successful write — including the <span class="term" data-tip="A side-by-side comparison showing exactly what changed between the old and new version of a file.">diff</span> before and after. That's what makes the undo button work.</p>
+
+    <div class="translation-block">
+      <div class="translation-code">
+<pre><code>"""sio.applier.rollback — revert applied changes.
+
+Public API
+----------
+    rollback_change(db, change_id) -> dict
+"""</code></pre>
+      </div>
+      <div class="translation-english">
+        <p>One function. One job. <code>rollback_change</code> takes a change ID, looks up the stored diff, and restores the file to its pre-write state.</p>
+        <p>You can experiment fearlessly: try an apply, look at the result, run <code>sio apply --rollback &lt;id&gt;</code> if you don't like it. The pre-write snapshot is already in the database.</p>
+      </div>
+    </div>
+
+    <div class="callout aha">
+      <strong>sio apply is reversible.</strong> The backup folder is your time machine. The <code>applied_changes</code> table is the index telling you which file to put back where.
+    </div>
+  </div>
+
+  <!-- SCREEN 8: Quiz -->
+  <div class="screen">
+    <h3>Check your understanding</h3>
+
+    <!-- Quiz 1: spot the bug -->
+    <div class="quiz-card" data-quiz-type="spot-bug">
+      <p class="quiz-prompt"><strong>Spot the bug.</strong> Imagine someone wrote a "minimal" applier like this:</p>
+<pre><code>path = Path(suggestion["target_file"])
+path.write_text(new_content)</code></pre>
+      <p class="quiz-question">What's the safety-critical omission?</p>
+      <div class="quiz-options">
+        <button class="quiz-option" data-correct="false" data-explain="Exception handling matters too, but it's not the safety-critical omission. A crash here is recoverable. An overwrite of /etc/passwd or a lost CLAUDE.md is not.">Missing exception handling around the write</button>
+        <button class="quiz-option" data-correct="true" data-explain="Exactly. Without `_validate_target_path` the write could land anywhere on disk. Without backing up the old file first, there's no rollback. Both gates are missing here — and both live in writer.py for exactly this reason.">No path validation AND no backup of the previous file</button>
+        <button class="quiz-option" data-correct="false" data-explain="Logging is nice but it doesn't prevent destructive writes. The gates are about preventing damage, not recording it.">Missing log statement before the write</button>
+      </div>
+    </div>
+
+    <!-- Quiz 2: scenario -->
+    <div class="quiz-card" data-quiz-type="scenario">
+      <p class="quiz-prompt"><strong>You ran <code>sio apply 142</code>.</strong> The output says:</p>
+      <pre><code>BLOCKED: instruction file at capacity</code></pre>
+      <p class="quiz-question">What is SIO telling you to do?</p>
+      <div class="quiz-options">
+        <button class="quiz-option" data-correct="false" data-explain="Force-applying would defeat the budget check — and the budget exists because LLMs stop reading config files that grow too long. The cap is protecting your agent's behavior, not annoying you.">Re-run with <code>--force</code> to bypass the check</button>
+        <button class="quiz-option" data-correct="true" data-explain="Right. The budget refuses to grow CLAUDE.md until similar existing rules are merged. SIO **prevents** unbounded growth of your config — `sio dedupe` finds consolidation opportunities so the new rule can land without the file getting bloated.">Run <code>sio dedupe</code> to find rules that can be consolidated</button>
+        <button class="quiz-option" data-correct="false" data-explain="Deleting your config wouldn't help — and SIO would never ask you to. The budget check is asking for cleanup, not destruction.">Delete <code>CLAUDE.md</code> and start over</button>
+      </div>
+    </div>
+
+    <!-- Quiz 3: multi-choice -->
+    <div class="quiz-card" data-quiz-type="multi-choice">
+      <p class="quiz-question"><strong>Where are pre-apply backups stored?</strong></p>
+      <div class="quiz-options">
+        <button class="quiz-option" data-correct="false" data-explain="/tmp gets wiped on reboot. SIO needs backups to survive — they're your rollback insurance.">In <code>/tmp</code></button>
+        <button class="quiz-option" data-correct="false" data-explain="SIO doesn't assume your project is a git repo. The backup mechanism has to work even outside version control.">In a git stash</button>
+        <button class="quiz-option" data-correct="true" data-explain="Yes. Each apply copies the old file to `~/.sio/backups/` with a timestamp. The last 10 backups are kept — old enough to recover from a bad run, new enough not to balloon your disk.">In <code>~/.sio/backups/</code> with last-10 retention</button>
+        <button class="quiz-option" data-correct="false" data-explain="If backups were discarded, rollback couldn't exist. The whole point of the third gate is that the old version survives the write.">Nowhere — they're discarded after the write</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 9: CTA -->
+  <div class="screen final-cta">
+    <h3>Your turn.</h3>
+    <p>You've seen all four organs: the eyes that watch sessions, the librarian that clusters them, the brain that drafts rules, and the gates that decide what reaches your config.</p>
+
+    <div class="cta-block">
+      <p>Point SIO at your own session history and see what it finds:</p>
+      <pre><code>sio mine --since '24 hours'</code></pre>
+    </div>
+  </div>
+</section>

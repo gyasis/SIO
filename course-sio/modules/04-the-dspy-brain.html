@@ -1,0 +1,376 @@
+<section class="module" id="module-4">
+  <header class="module-header">
+    <span class="module-number">Module 4</span>
+    <h1 class="module-title">The DSPy Brain — How a Pattern Becomes a Rule</h1>
+    <p class="module-subtitle">From a cluster of errors to a sentence sharp enough to prevent the next one.</p>
+  </header>
+
+  <!-- ============================================================
+       SCREEN 1 — Opening hook + vending machine metaphor
+       ============================================================ -->
+  <div class="module-screen">
+    <h2 class="screen-title">The vending machine that learns</h2>
+
+    <p>In the last module, the <strong>Clusterer</strong> grouped 23 separate errors — all of them <code>sed -i</code> wiping out <code>.env</code> files — into a single <em>pattern</em>. Now somebody has to actually write the sentence:</p>
+
+    <div class="callout callout-info">
+      <div class="callout-icon">📝</div>
+      <div class="callout-content">
+        <strong class="callout-title">The job</strong>
+        <p>"Never use <code>sed -i</code> — use the Edit tool instead, because it's atomic and shows diffs."</p>
+      </div>
+    </div>
+
+    <p>Who does that? Not a human (that's the whole point — SIO is supposed to write rules <em>itself</em>). And how does it not produce a useless platitude like <em>"always be careful with files"</em>?</p>
+
+    <p>Picture a <strong>vending machine with a worn-in panel</strong>. Most machines just dispense whatever button you press. This one is different: every time someone presses <strong>B4</strong> and complains the chips were stale, it <em>retrains itself</em> so that next time you press B4 you get the good bag.</p>
+
+    <div class="icon-rows">
+      <div class="icon-row">
+        <div class="icon-circle" style="background: var(--color-actor-1)">🤖</div>
+        <div>
+          <strong>The machine</strong>
+          <p>The <span class="term" data-definition="A Large Language Model — the AI that reads text and writes text back. GPT-4o-mini and Claude are LLMs.">LLM</span> (OpenAI, Anthropic, etc.) — the thing that actually writes the rule.</p>
+        </div>
+      </div>
+      <div class="icon-row">
+        <div class="icon-circle" style="background: var(--color-actor-2)">🔧</div>
+        <div>
+          <strong>The retraining</strong>
+          <p><span class="term" data-definition="A Python framework that lets you describe what an LLM should do as typed inputs/outputs (a Signature), and then automatically improve the prompt against labeled examples.">DSPy</span> <span class="term" data-definition="In DSPy, an optimizer is a process that runs your module against labeled examples, tries many prompt variants, and keeps the version that scores highest. It does NOT change the LLM's weights — only the prompt.">optimization</span> — running thousands of prompt variations and keeping the winner.</p>
+        </div>
+      </div>
+      <div class="icon-row">
+        <div class="icon-circle" style="background: var(--color-actor-3)">✅</div>
+        <div>
+          <strong>The good bag</strong>
+          <p>A rule that survives the <span class="term" data-definition="A check the rule has to pass before it gets saved — for example: 'does this mention the actual command?' or 'is this under 3 sentences?' Generic platitudes fail these checks.">quality gates</span> — concrete, specific, actionable.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       SCREEN 2 — Shift 1: prompts are typed (Signatures)
+       ============================================================ -->
+  <div class="module-screen">
+    <h2 class="screen-title">Shift #1 — Prompts are typed contracts</h2>
+
+    <p>Most people think of a prompt as a paragraph you paste into ChatGPT. DSPy disagrees. A prompt is a <strong><span class="term" data-definition="In DSPy, a Signature is a typed class that declares what an LLM call takes in and what it returns. The docstring inside it tells the LLM how to behave. You don't write the prompt directly — DSPy builds it from the signature.">signature</span></strong>: <em>inputs in, outputs out, docstring tells the LLM how</em>.</p>
+
+    <div class="translation-block animate-in">
+      <div class="translation-code">
+        <span class="translation-label">CODE</span>
+<pre><code><span class="code-line"><span class="code-keyword">class</span> <span class="code-function">PatternToRule</span>(dspy.Signature):</span>
+<span class="code-line">    <span class="code-string">"""Generate a concise CLAUDE.md rule that prevents the given error pattern.</span></span>
+<span class="code-line"><span class="code-string">    The rule must be actionable, file-path-safe, and &lt;= 3 sentences.</span></span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-string">    CRITICAL — required specificity (B5 grounding directives):</span></span>
+<span class="code-line"><span class="code-string">    - The rule TITLE must reference the SPECIFIC tokens from `pattern_description`</span></span>
+<span class="code-line"><span class="code-string">      (tool name, env var, path, command — whatever recurs in `Common phrases:`).</span></span>
+<span class="code-line"><span class="code-string">      Generic titles like "Always check inputs" or "Verify configuration" are</span></span>
+<span class="code-line"><span class="code-string">      WRONG — they lose the discriminating signal that justifies the rule.</span></span>
+<span class="code-line"><span class="code-string">    - The rule BODY must cite the concrete failure observed in `example_errors`.</span></span>
+<span class="code-line"><span class="code-string">    - If `example_errors` shows an env var, file path, or command literal,</span></span>
+<span class="code-line"><span class="code-string">      that literal MUST appear verbatim in the rule.</span></span>
+<span class="code-line"><span class="code-string">    """</span></span>
+<span class="code-line">    <span class="code-comment"># input fields: pattern_description, example_errors, project_context</span></span>
+<span class="code-line">    <span class="code-comment"># output fields: rule_title, rule_body, rule_rationale</span></span>
+</code></pre>
+      </div>
+      <div class="translation-english">
+        <span class="translation-label">PLAIN ENGLISH</span>
+        <div class="translation-lines">
+          <p class="tl">A <strong>Signature</strong> is a typed contract for an LLM. Inputs go in, outputs come out, and the <span class="term" data-definition="A docstring is the triple-quoted text right under a function or class definition in Python. Normally it's a comment for humans. In DSPy, it's part of the prompt sent to the LLM.">docstring</span> tells the LLM <em>how</em>.</p>
+          <p class="tl">The "B5 grounding directives" are explicit <strong>anti-platitude rules</strong>: don't say "always check inputs" — name the actual command (<code>sed -i</code>, <code>$ZENO_DIR</code>, whatever).</p>
+          <p class="tl">The docstring itself <em>is</em> the prompt. There's no separate prompt template file. This is the whole point of DSPy — and it's why this docstring is so detailed.</p>
+          <p class="tl">DSPy fills in the inputs (the pattern, the examples), sends the whole thing to the LLM, and parses the three outputs back out.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout-accent">
+      <div class="callout-icon">💡</div>
+      <div class="callout-content">
+        <strong class="callout-title">Aha — The docstring IS the prompt</strong>
+        <p>When you change a Signature's docstring, you've changed how the LLM behaves. There is no separate "prompt.txt" file anywhere. That's the entire point of DSPy: prompts live as <em>typed code</em>, not as throwaway strings.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       SCREEN 3 — The single source of LLM construction
+       ============================================================ -->
+  <div class="module-screen">
+    <h2 class="screen-title">One door, every LLM call walks through it</h2>
+
+    <p>Across the whole SIO codebase, there is <strong>exactly one function</strong> that constructs an LLM. Every call routes through it. A grep test in the test suite literally fails the build if anyone bypasses it.</p>
+
+    <div class="translation-block animate-in">
+      <div class="translation-code">
+        <span class="translation-label">CODE — lm_factory.py</span>
+<pre><code><span class="code-line"><span class="code-string">"""LM backend factory — single-source dspy.LM construction (FR-041, SC-022).</span></span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-string">All dspy.LM(...) construction happens here. No other file in src/sio/ may</span></span>
+<span class="code-line"><span class="code-string">construct dspy.LM directly; the grep test in test_lm_factory.py enforces this.</span></span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-string">Environment overrides:</span></span>
+<span class="code-line"><span class="code-string">  SIO_TASK_LM       — model string for get_task_lm()  (default: openai/gpt-4o-mini)</span></span>
+<span class="code-line"><span class="code-string">  SIO_REFLECTION_LM — model string for get_reflection_lm() (default: openai/gpt-5)</span></span>
+<span class="code-line"><span class="code-string">"""</span></span>
+<span class="code-line"><span class="code-keyword">import</span> os, dspy, litellm</span>
+<span class="code-line">litellm.drop_params = <span class="code-keyword">True</span></span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-keyword">def</span> <span class="code-function">get_task_lm</span>() -&gt; dspy.LM:</span>
+<span class="code-line">    <span class="code-string">"""LM used for normal module forward passes. Cheap, fast, cached."""</span></span>
+<span class="code-line">    model = os.environ.get(<span class="code-string">"SIO_TASK_LM"</span>, <span class="code-string">"openai/gpt-4o-mini"</span>)</span>
+<span class="code-line">    <span class="code-keyword">return</span> dspy.LM(model, cache=<span class="code-keyword">True</span>, temperature=<span class="code-number">0.0</span>, max_tokens=<span class="code-number">4096</span>)</span>
+</code></pre>
+      </div>
+      <div class="translation-english">
+        <span class="translation-label">PLAIN ENGLISH</span>
+        <div class="translation-lines">
+          <p class="tl">Every LLM call in SIO routes through <code>get_task_lm()</code>. Why?</p>
+          <p class="tl">So you can swap models with one <span class="term" data-definition="An environment variable — a setting you can change without editing code. Set SIO_TASK_LM=anthropic/claude-3-5-sonnet in your shell and SIO will use Claude instead of GPT.">environment variable</span>: <code>SIO_TASK_LM=anthropic/claude-3-5-sonnet</code> — done. No code changes.</p>
+          <p class="tl">And a single <span class="term" data-definition="A simple test that searches the codebase for a forbidden pattern and fails the build if it finds it. Here: 'no file outside lm_factory.py is allowed to write dspy.LM(...)'.">grep test</span> enforces it: nobody can sneak in a direct <code>dspy.LM(...)</code> call elsewhere — the build breaks.</p>
+          <p class="tl"><code><span class="term" data-definition="A Python library that gives you one common interface to call any LLM provider — OpenAI, Anthropic, Gemini, Ollama, etc. DSPy uses litellm under the hood.">litellm</span>.drop_params = True</code> says: if a model doesn't support a parameter, silently drop it instead of crashing. Makes provider swaps painless.</p>
+          <p class="tl"><strong>Single point of LLM construction = single point of safety.</strong></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       SCREEN 4 — Group chat: how a pattern becomes a rule
+       ============================================================ -->
+  <div class="module-screen">
+    <h2 class="screen-title">Watch a rule get born</h2>
+
+    <p>Follow the conversation. The Pattern arrives from the Clusterer. By the end, a saved suggestion exists in the database — scored, validated, ready for human review.</p>
+
+    <div class="chat-window" id="chat-module4">
+      <div class="chat-messages">
+        <div class="chat-message" data-msg="0" data-sender="pattern" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-1)">P</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-1)">Pattern</span>
+            <p>Hey Suggester — 23 errors here, all about <code>sed -i</code> wiping out <code>.env</code> files on WSL2. Common phrase: "sed -i" + "permission denied" + ".env".</p>
+          </div>
+        </div>
+
+        <div class="chat-message" data-msg="1" data-sender="suggester" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-2)">S</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-2)">Suggester (DSPy Module)</span>
+            <p>Got it. I need a task LM. <code>lm_factory</code>, hand me one?</p>
+          </div>
+        </div>
+
+        <div class="chat-message" data-msg="2" data-sender="factory" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-3)">F</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-3)">lm_factory.get_task_lm()</span>
+            <p>Here: <code>openai/gpt-4o-mini</code>, temp=0.0, cache=on, 4096 tokens. Same one everybody uses.</p>
+          </div>
+        </div>
+
+        <div class="chat-message" data-msg="3" data-sender="suggester" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-2)">S</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-2)">Suggester (DSPy Module)</span>
+            <p>Building prompt from the <code>PatternToRule</code> signature… inputs filled in… sending to the API.</p>
+          </div>
+        </div>
+
+        <div class="chat-message" data-msg="4" data-sender="api" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-4)">A</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-4)">OpenAI / Anthropic API</span>
+            <p>rule_title: <em>"Never use <code>sed -i</code> on .env files (WSL2 wipe risk)"</em><br>rule_body: <em>"sed -i has silently wiped .env files on WSL2 due to a temp-file rename race. Use the Edit tool instead — it's atomic and shows a diff."</em></p>
+          </div>
+        </div>
+
+        <div class="chat-message" data-msg="5" data-sender="gates" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-5)">Q</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-5)">Quality Gates</span>
+            <p>Checking… title mentions <code>sed -i</code>? ✓ &nbsp; Cites concrete failure? ✓ &nbsp; Under 3 sentences? ✓ &nbsp; <span class="term" data-definition="Protected Health Information — patient names, dates of birth, MRNs, etc. Quality gates strip these out before saving a rule.">PHI</span>-free? ✓ &nbsp; Score: <strong>0.87</strong>.</p>
+          </div>
+        </div>
+
+        <div class="chat-message" data-msg="6" data-sender="suggester" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-2)">S</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-2)">Suggester (DSPy Module)</span>
+            <p>Saving suggestion #142 to <code>~/.sio/sio.db</code> with confidence 0.87. Status: pending human review.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="chat-typing" id="chat-module4-typing" style="display:none">
+        <div class="chat-avatar" id="chat-module4-typing-avatar">?</div>
+        <div class="chat-typing-dots">
+          <span class="typing-dot"></span>
+          <span class="typing-dot"></span>
+          <span class="typing-dot"></span>
+        </div>
+      </div>
+
+      <div class="chat-controls">
+        <button class="btn chat-next-btn">Next Message</button>
+        <button class="btn chat-all-btn">Play All</button>
+        <button class="btn chat-reset-btn">Replay</button>
+        <span class="chat-progress"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       SCREEN 5 — Shift 2: prompts are optimizable + 3 optimizers
+       ============================================================ -->
+  <div class="module-screen">
+    <h2 class="screen-title">Shift #2 — Prompts are optimizable</h2>
+
+    <p>Here's the part that breaks most people's mental model: in DSPy, you can <em>train the prompt</em>. Not the model — the prompt itself.</p>
+
+    <div class="callout callout-accent">
+      <div class="callout-icon">⚡</div>
+      <div class="callout-content">
+        <strong class="callout-title">Aha — Optimizers don't fine-tune the model. They fine-tune the prompt.</strong>
+        <p>No model weights are updated. DSPy runs your module against a corpus of labeled examples, mutates the prompt (rewording instructions, adding <span class="term" data-definition="Example input/output pairs included directly in the prompt to show the LLM what good answers look like. 'Few-shot' = a few examples, vs. 'zero-shot' = no examples.">few-shot</span> examples), and keeps the version that scores highest. The result is a JSON file at <code>~/.sio/optimized/</code> — a "trained prompt" you can ship.</p>
+      </div>
+    </div>
+
+    <p>SIO ships with three optimizers. You pick one with a flag: <code>sio optimize --optimizer gepa</code>.</p>
+
+    <div class="pattern-cards">
+      <div class="pattern-card" style="border-top: 3px solid var(--color-actor-1)">
+        <div class="pattern-icon" style="background: var(--color-actor-1)">🔍</div>
+        <h4 class="pattern-title"><span class="term" data-definition="GEPA (Generative Evolutionary Prompt Adaptation) is DSPy's reflective optimizer. It uses a second, more powerful LLM to critique the first one's output and rewrite the prompt accordingly.">GEPA</span> <em style="font-weight:normal">(default)</em></h4>
+        <p class="pattern-desc"><strong>Reflective.</strong> Uses a second, smarter LM to critique the first one's output and suggest a better prompt. Slow but best quality. The default for SIO.</p>
+      </div>
+      <div class="pattern-card" style="border-top: 3px solid var(--color-actor-2)">
+        <div class="pattern-icon" style="background: var(--color-actor-2)">🧪</div>
+        <h4 class="pattern-title"><span class="term" data-definition="MIPROv2 (Multi-prompt Instruction Proposal Optimizer) uses Bayesian search to try many instruction variants and pick the highest-scoring one. Best when you have plenty of labeled examples.">MIPROv2</span></h4>
+        <p class="pattern-desc"><strong>Bayesian search</strong> over instruction variants. Good when you have 50+ labeled examples to score against. Methodical, broad coverage.</p>
+      </div>
+      <div class="pattern-card" style="border-top: 3px solid var(--color-actor-3)">
+        <div class="pattern-icon" style="background: var(--color-actor-3)">⚡</div>
+        <h4 class="pattern-title"><span class="term" data-definition="BootstrapFewShot generates synthetic example input/output pairs from your training set and inserts the best ones directly into the prompt. Fast and works with very little labeled data.">BootstrapFewShot</span></h4>
+        <p class="pattern-desc"><strong>Few-shot bootstrapping.</strong> Generates synthetic examples from your trainset and embeds the best ones in the prompt. Fast, works with minimal data.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       SCREEN 6 — Quiz
+       ============================================================ -->
+  <div class="module-screen">
+    <h2 class="screen-title">Check yourself</h2>
+    <p>Two questions. They test whether the two big shifts actually landed.</p>
+
+    <div class="quiz-container" id="quiz-module4">
+
+      <div class="quiz-question-block"
+           data-correct="option-b"
+           data-explanation-right="Exactly. Centralizing dspy.LM(...) construction means you get model + caching + temperature defaults in one place, you can swap providers with one env var, and a single grep test enforces the rule. That's the whole 'single point of safety' move."
+           data-explanation-wrong="Not quite — performance and licensing aren't the driver here, and DSPy itself doesn't require it. The real reason is centralization: one place to set model defaults, swap providers via env var, and one grep test that fails the build if anyone bypasses the factory.">
+        <h3 class="quiz-question">Why does SIO require all <code>dspy.LM(...)</code> calls to go through <code>lm_factory.py</code>?</h3>
+        <div class="quiz-options">
+          <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+            <div class="quiz-option-radio"></div>
+            <span>Performance — calling DSPy through a factory is faster than calling it directly.</span>
+          </button>
+          <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+            <div class="quiz-option-radio"></div>
+            <span>So model, caching, and temperature defaults are centralized — and one grep test enforces it across the codebase.</span>
+          </button>
+          <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+            <div class="quiz-option-radio"></div>
+            <span>The DSPy library refuses to run unless you wrap it in a factory.</span>
+          </button>
+          <button class="quiz-option" data-value="option-d" onclick="selectOption(this)">
+            <div class="quiz-option-radio"></div>
+            <span>For OpenAI licensing compliance.</span>
+          </button>
+        </div>
+        <div class="quiz-feedback"></div>
+      </div>
+
+      <div class="scenario-block">
+        <div class="scenario-context">
+          <span class="scenario-label">Scenario</span>
+          <p>SIO produces a new rule and it reads: <em>"Always check your inputs before running commands."</em> Your stomach drops — that's exactly the kind of platitude the system is supposed to prevent. <strong>What went wrong, and where would you look to fix it?</strong></p>
+        </div>
+        <div class="quiz-question-block"
+             data-correct="option-b"
+             data-explanation-right="Spot on. The B5 grounding directives in the PatternToRule signature failed — the LLM produced a generic platitude instead of citing the actual command (e.g., 'sed -i'). The fix is either to strengthen the few-shot examples in the signature's docstring, or to run sio optimize --optimizer gepa against a larger gold-standard corpus so the optimized prompt embeds better examples."
+             data-explanation-wrong="Not quite. The model choice and the database aren't the issue — the problem is upstream, in the contract that tells the LLM how to behave. The Signature's docstring (with its B5 grounding directives) is supposed to forbid generic titles. Either the few-shot examples are too weak, or the optimizer hasn't been run against a good corpus yet.">
+          <div class="quiz-options">
+            <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+              <div class="quiz-option-radio"></div>
+              <span>The model is too small — swap <code>SIO_TASK_LM</code> to a bigger model and try again.</span>
+            </button>
+            <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+              <div class="quiz-option-radio"></div>
+              <span>The B5 grounding directives in <code>PatternToRule</code> failed. Fix the few-shot examples in the signature's docstring, and/or run <code>sio optimize --optimizer gepa</code> against a larger gold corpus.</span>
+            </button>
+            <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+              <div class="quiz-option-radio"></div>
+              <span>The database column for <code>rule_title</code> is too short — truncation made it generic.</span>
+            </button>
+            <button class="quiz-option" data-value="option-d" onclick="selectOption(this)">
+              <div class="quiz-option-radio"></div>
+              <span>The Clusterer grouped unrelated errors — re-run clustering with a tighter similarity threshold.</span>
+            </button>
+          </div>
+          <div class="quiz-feedback"></div>
+        </div>
+      </div>
+
+      <button class="quiz-check-btn" onclick="checkQuiz('quiz-module4')">Check Answers</button>
+      <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module4')">Try Again</button>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       SCREEN 7 — Bridge to next module
+       ============================================================ -->
+  <div class="module-screen">
+    <h2 class="screen-title">What just happened</h2>
+
+    <div class="step-cards">
+      <div class="step-card">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>A Pattern arrived</strong>
+          <p>23 errors clustered into one signal — "<code>sed -i</code> wipes on <code>.env</code>".</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>The Suggester filled in a typed Signature</strong>
+          <p><code>PatternToRule</code> — inputs in, three structured outputs out. The docstring did the prompting.</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>Every LLM call went through <code>lm_factory</code></strong>
+          <p>One door. One grep test. One env var to swap providers.</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <strong>Quality gates scored it</strong>
+          <p>The platitude detector, the literal-citation check, the PHI check. 0.87. Saved.</p>
+        </div>
+      </div>
+    </div>
+
+    <p>But the rule still has to <em>go somewhere</em>. A human has to approve it. It has to land in <code>CLAUDE.md</code> without trashing the file that's already there. That's the next module — closing the loop, without breaking anything.</p>
+  </div>
+
+</section>

@@ -1,0 +1,345 @@
+<section class="module" id="module-2" style="background: var(--color-bg)">
+  <div class="module-content">
+
+    <header class="module-header animate-in">
+      <span class="module-number">02</span>
+      <h1 class="module-title">Meet the Actors</h1>
+      <p class="module-subtitle">SIO isn't one program — it's a newsroom of seven small specialists, each with one job.</p>
+    </header>
+
+    <div class="module-body">
+
+      <!-- SCREEN 1: The newsroom metaphor -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The Newsroom</h2>
+        <p>Before we trace the pipeline, who's actually on the team? When you run <code>sio mine --since '7 days'</code>, eight separate Python <span class="term" data-definition="A package is a folder of related Python code that ships as one unit. Like a department in a company — every file inside shares the same focus. When you say 'install a package,' you're asking pip to drop one of these folders into your project.">packages</span> light up.</p>
+
+        <p>Think of SIO as a small newsroom. Every part of the paper has a different person. Knowing which one to blame when something looks wrong is half the debugging battle.</p>
+
+        <div class="icon-rows stagger-children">
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-1)">📞</div>
+            <div>
+              <strong>The Hook</strong> — wire-service stringer
+              <p>Phones in raw events from the field the second they happen.</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-2)">📰</div>
+            <div>
+              <strong>The Miner</strong> — desk editor
+              <p>Reads the wires for stories — failures, corrections, undos.</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-3)">🗂️</div>
+            <div>
+              <strong>The Clusterer</strong> — section editor
+              <p>Groups related stories into a single beat.</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-4)">✍️</div>
+            <div>
+              <strong>The Suggester</strong> — columnist
+              <p>Writes the op-ed — the actual rule that fixes the pattern.</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-5)">🛂</div>
+            <div>
+              <strong>The Reviewer</strong> — publisher
+              <p>Holds veto power. Nothing prints without their nod.</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-1)">🖨️</div>
+            <div>
+              <strong>The Applier</strong> — press operator
+              <p>Actually prints the paper — writes the rule to disk.</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-3)">🧠</div>
+            <div>
+              <strong>The Brain</strong> — language-model wiring
+              <p>Powers the columnist. Handles every LLM call.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 2: The cast as a file tree -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">One Folder Per Actor</h2>
+        <p>Open the SIO repo and look inside <code>src/sio/</code>. Each actor is exactly one folder. The folder name <em>is</em> the actor's name.</p>
+
+        <div class="file-tree">
+          <div class="ft-folder open">
+            <span class="ft-name">src/sio/</span>
+            <span class="ft-desc">The whole newsroom</span>
+            <div class="ft-children">
+              <div class="ft-folder">
+                <span class="ft-name">adapters/claude_code/hooks/</span>
+                <span class="ft-desc">The Hook — stringer</span>
+              </div>
+              <div class="ft-folder">
+                <span class="ft-name">mining/</span>
+                <span class="ft-desc">The Miner — desk editor</span>
+              </div>
+              <div class="ft-folder">
+                <span class="ft-name">clustering/</span>
+                <span class="ft-desc">The Clusterer — section editor</span>
+              </div>
+              <div class="ft-folder">
+                <span class="ft-name">suggestions/</span>
+                <span class="ft-desc">The Suggester — columnist</span>
+              </div>
+              <div class="ft-folder">
+                <span class="ft-name">review/</span>
+                <span class="ft-desc">The Reviewer — publisher</span>
+              </div>
+              <div class="ft-folder">
+                <span class="ft-name">applier/</span>
+                <span class="ft-desc">The Applier — press operator</span>
+              </div>
+              <div class="ft-folder">
+                <span class="ft-name">cli/</span>
+                <span class="ft-desc">The Switchboard — the <code>sio</code> command</span>
+              </div>
+              <div class="ft-folder">
+                <span class="ft-name">core/dspy/</span>
+                <span class="ft-desc">The Brain — LLM wiring + optimizers</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-accent">
+          <div class="callout-icon">💡</div>
+          <div class="callout-content">
+            <strong class="callout-title">Read the import path — that's the actor.</strong>
+            <p>When you see an error like <code>sio.clustering.pattern_clusterer</code>, Python is literally telling you: in the SIO project, the <strong>clustering</strong> actor, the <strong>pattern_clusterer</strong> file. The namespacing maps one-to-one to responsibilities. No more guessing where to look.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 3: The Miner's job description -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">What the Miner Actually Reads For</h2>
+        <p>Every actor's job is documented in the docstring at the top of its main file. The <strong>Miner</strong> opens with this — it tells you exactly which five things it watches for in your transcripts.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+<pre><code><span class="code-line"><span class="code-comment">"""Error extractor — classifies parsed conversation messages into five error</span></span>
+<span class="code-line"><span class="code-comment">categories and emits ErrorRecord dicts suitable for insertion into the v2</span></span>
+<span class="code-line"><span class="code-comment">``error_records`` table.</span></span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-comment">Error types detected</span></span>
+<span class="code-line"><span class="code-comment">--------------------</span></span>
+<span class="code-line"><span class="code-comment">tool_failure       — assistant message whose ``error`` field is non-null</span></span>
+<span class="code-line"><span class="code-comment">user_correction    — human message containing correction phrasing</span></span>
+<span class="code-line"><span class="code-comment">repeated_attempt   — same tool_name called 3+ consecutive times with similar input</span></span>
+<span class="code-line"><span class="code-comment">undo               — human message containing undo / revert signals</span></span>
+<span class="code-line"><span class="code-comment">agent_admission    — assistant message where the AI admits a mistake</span></span>
+<span class="code-line"><span class="code-comment">"""</span></span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">The Miner reads your chat transcripts and tags any message that smells like trouble.</p>
+              <p class="tl">It only cares about five flavors of trouble — anything else gets ignored.</p>
+              <p class="tl"><strong>tool_failure</strong> — the AI ran a command and it crashed.</p>
+              <p class="tl"><strong>user_correction</strong> — you typed "no, that's wrong" (or anything that sounds like it).</p>
+              <p class="tl"><strong>repeated_attempt</strong> — the AI tried the same thing three times in a row. Definitely stuck.</p>
+              <p class="tl"><strong>undo</strong> — you asked the AI to revert or roll back.</p>
+              <p class="tl"><strong>agent_admission</strong> — the AI itself said "oops, I was wrong."</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 4: The Clusterer's job -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">What the Clusterer Does Next</h2>
+        <p>Once the Miner hands over a pile of tagged errors, the <strong>Clusterer</strong> groups the ones that mean the same thing — even if the words are different. It uses an <span class="term" data-definition="An embedding is a list of numbers that represents the 'meaning' of a piece of text. Two sentences with similar meanings get similar number lists, even if they use totally different words. It's how computers compare ideas instead of just letters.">embedding</span> for each error and measures <span class="term" data-definition="Cosine similarity is a math trick for asking 'how close in meaning are these two embeddings?' It returns a score between 0 (totally unrelated) and 1 (identical). SIO treats anything 0.70 or higher as the same cluster.">cosine similarity</span>.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+<pre><code><span class="code-line"><span class="code-comment">"""Embedding-based error pattern clusterer.</span></span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-comment">Groups a list of error record dicts into semantic clusters using cosine</span></span>
+<span class="code-line"><span class="code-comment">similarity on fastembed embeddings.  The public API is a single function:</span></span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-comment">    cluster_errors(errors, threshold=0.70) -&gt; list[dict]</span></span>
+<span class="code-line"><span class="code-comment">"""</span></span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">This file's only job: take a bag of errors and sort them into themed piles.</p>
+              <p class="tl">It uses a math trick to ask "are these two errors saying the same thing?" — even if the wording differs.</p>
+              <p class="tl">The whole feature is exposed as one function — feed it errors, get back clusters.</p>
+              <p class="tl">The default threshold (0.70) is how picky it is. Higher = tighter, more piles. Lower = looser, fewer piles.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 5: The Applier's seatbelt -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The Applier Is the Only Actor That Touches Disk</h2>
+        <p>Everything upstream — Hook, Miner, Clusterer, Suggester, Reviewer — is read-only or talks to a database. Only the <strong>Applier</strong> can edit your actual config files. And before it does, it checks one thing.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+<pre><code><span class="code-line">_ALLOWED_ROOTS: <span class="code-function">list</span>[Path] = [</span>
+<span class="code-line">    Path.home() / <span class="code-string">".sio"</span>,</span>
+<span class="code-line">    Path.home() / <span class="code-string">".claude"</span>,</span>
+<span class="code-line">]</span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-keyword">def</span> <span class="code-function">_validate_target_path</span>(path: Path, *, extra_roots: <span class="code-function">tuple</span>[Path, ...] = ()) -&gt; <span class="code-function">str</span> | <span class="code-keyword">None</span>:</span>
+<span class="code-line">    <span class="code-comment">"""Return an error message if path is outside allowed roots or cwd."""</span></span>
+<span class="code-line">    resolved = path.resolve()</span>
+<span class="code-line">    allowed = (*_ALLOWED_ROOTS, Path.cwd(), *extra_roots)</span>
+<span class="code-line">    <span class="code-keyword">for</span> root <span class="code-keyword">in</span> allowed:</span>
+<span class="code-line">        <span class="code-keyword">try</span>:</span>
+<span class="code-line">            resolved.relative_to(root.resolve())</span>
+<span class="code-line">            <span class="code-keyword">return</span> <span class="code-keyword">None</span></span>
+<span class="code-line">        <span class="code-keyword">except</span> ValueError:</span>
+<span class="code-line">            <span class="code-keyword">continue</span></span>
+<span class="code-line">    <span class="code-keyword">return</span> <span class="code-string">f"Target path {resolved} is outside allowed directories"</span></span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">There's a short list of folders SIO is allowed to write inside: its own <code>~/.sio/</code> and the Claude config folder <code>~/.claude/</code>. That's it.</p>
+              <p class="tl">Before SIO writes <em>anything</em> to disk, it asks: is the target file inside one of these allowed folders (or the folder you're currently in)?</p>
+              <p class="tl">It tries each allowed folder in turn. If the path fits inside one, it's safe — return "no error."</p>
+              <p class="tl">If none of them match, refuse the write and return an error message instead.</p>
+              <p class="tl">This is the seatbelt. Even a buggy Suggester writing nonsense rules can't trash <code>/etc/passwd</code> because the Applier won't let it.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-info">
+          <div class="callout-icon">🛡️</div>
+          <div class="callout-content">
+            <strong class="callout-title">The Applier is the only actor with write permission to your config.</strong>
+            <p>Everything upstream is read-only or database-only. This is intentional — engineers call it a <span class="term" data-definition="The narrow set of files or systems that a single piece of code is allowed to affect. A small blast radius means: even if this part breaks badly, it can only mess up a tiny corner of your system — not your whole machine.">narrow blast radius</span>. When you see a permission error from SIO, you almost always look in <code>src/sio/applier/</code> first.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 6: Drag-and-drop quiz -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Match the Folder to the Job</h2>
+        <p>Drag each folder name to the responsibility it owns. If you can do this from memory, you'll never get lost reading a SIO stack trace again.</p>
+
+        <div class="dnd-container" id="dnd-actors">
+          <div class="dnd-chips">
+            <div class="dnd-chip" draggable="true" data-answer="hook"><code>adapters/claude_code/hooks/</code></div>
+            <div class="dnd-chip" draggable="true" data-answer="miner"><code>mining/</code></div>
+            <div class="dnd-chip" draggable="true" data-answer="clusterer"><code>clustering/</code></div>
+            <div class="dnd-chip" draggable="true" data-answer="suggester"><code>suggestions/</code></div>
+            <div class="dnd-chip" draggable="true" data-answer="reviewer"><code>review/</code></div>
+            <div class="dnd-chip" draggable="true" data-answer="applier"><code>applier/</code></div>
+            <div class="dnd-chip" draggable="true" data-answer="brain"><code>core/dspy/</code></div>
+          </div>
+          <div class="dnd-zones">
+            <div class="dnd-zone" data-correct="hook">
+              <p class="dnd-zone-label">Captures raw tool calls as the AI runs</p>
+              <div class="dnd-zone-target">Drop folder here</div>
+            </div>
+            <div class="dnd-zone" data-correct="miner">
+              <p class="dnd-zone-label">Scans transcripts for failures, corrections, and admissions</p>
+              <div class="dnd-zone-target">Drop folder here</div>
+            </div>
+            <div class="dnd-zone" data-correct="clusterer">
+              <p class="dnd-zone-label">Groups similar errors using embeddings</p>
+              <div class="dnd-zone-target">Drop folder here</div>
+            </div>
+            <div class="dnd-zone" data-correct="suggester">
+              <p class="dnd-zone-label">Drafts the actual rule text using an LLM</p>
+              <div class="dnd-zone-target">Drop folder here</div>
+            </div>
+            <div class="dnd-zone" data-correct="reviewer">
+              <p class="dnd-zone-label">Asks the human to approve before anything ships</p>
+              <div class="dnd-zone-target">Drop folder here</div>
+            </div>
+            <div class="dnd-zone" data-correct="applier">
+              <p class="dnd-zone-label">Writes to CLAUDE.md <span class="term" data-definition="An atomic write means the file either fully updates or doesn't change at all — never half-written. It's like saving a Google Doc: you never see a 'half-saved' state. Engineers do this by writing to a temp file first, then renaming it into place.">atomically</span></p>
+              <div class="dnd-zone-target">Drop folder here</div>
+            </div>
+            <div class="dnd-zone" data-correct="brain">
+              <p class="dnd-zone-label">Wires up the language model and optimizers</p>
+              <div class="dnd-zone-target">Drop folder here</div>
+            </div>
+          </div>
+          <div style="display:flex; gap: var(--space-3); margin-top: var(--space-4);">
+            <button class="btn quiz-check-btn" onclick="checkDnD('dnd-actors')">Check Matches</button>
+            <button class="btn quiz-reset-btn" onclick="resetDnD('dnd-actors')">Reset</button>
+          </div>
+          <div class="dnd-feedback" id="dnd-actors-feedback"></div>
+        </div>
+      </section>
+
+      <!-- SCREEN 7: Scenario quiz -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">A Real Error Message</h2>
+        <p>Now use what you learned. Here's an error that could land in your terminal tomorrow.</p>
+
+        <div class="quiz-container" id="quiz-module2">
+          <div class="scenario-block">
+            <div class="scenario-context">
+              <span class="scenario-label">Scenario</span>
+              <p>An error message reads:</p>
+              <pre style="background: var(--color-bg-code); color: #F38BA8; padding: var(--space-4); border-radius: var(--radius-sm); margin-top: var(--space-3); font-size: var(--text-sm);"><code>sio.applier.writer.PermissionError: target outside allowed roots</code></pre>
+              <p style="margin-top: var(--space-3);">Where do you look first?</p>
+            </div>
+
+            <div class="quiz-question-block"
+                 data-correct="opt-applier"
+                 data-explanation-right="Exactly. The import path tells you the actor: sio → applier → writer. And we just learned the Applier has a seatbelt — _validate_target_path — that rejects any write outside ~/.sio/, ~/.claude/, or your current folder. Open src/sio/applier/writer.py and you'll find the exact function that fired this error."
+                 data-explanation-wrong="Not quite — re-read the import path in the error. The convention is sio.&lt;actor&gt;.&lt;file&gt;. The actor named there is where the error came from. The Miner and Suggester never touch your filesystem directly, so they can't produce a path-permission error.">
+              <div class="quiz-options">
+                <button class="quiz-option" data-value="opt-miner" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span><code>src/sio/mining/</code> — maybe it failed reading a transcript</span>
+                </button>
+                <button class="quiz-option" data-value="opt-suggester" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span><code>src/sio/suggestions/</code> — the LLM probably generated a bad path</span>
+                </button>
+                <button class="quiz-option" data-value="opt-applier" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span><code>src/sio/applier/writer.py</code> — the path-validation seatbelt rejected the write</span>
+                </button>
+                <button class="quiz-option" data-value="opt-cli" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span><code>src/sio/cli/</code> — the command must have been typed wrong</span>
+                </button>
+              </div>
+              <div class="quiz-feedback"></div>
+            </div>
+          </div>
+
+          <button class="quiz-check-btn" onclick="checkQuiz('quiz-module2')">Check Answer</button>
+          <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module2')">Try Again</button>
+        </div>
+
+        <div class="callout callout-accent" style="margin-top: var(--space-8);">
+          <div class="callout-icon">🧭</div>
+          <div class="callout-content">
+            <strong class="callout-title">Next up: the upstream half of the newsroom.</strong>
+            <p>You've met the cast. In the next module, we zoom into the two earliest actors — the <strong>Miner</strong> and the <strong>Clusterer</strong> — and watch a real transcript turn into a single ranked error pattern.</p>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</section>

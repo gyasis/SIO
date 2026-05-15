@@ -1,0 +1,1766 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIO — Teach Your AI Agent to Stop Making the Same Mistake Twice</title>
+
+  <!-- Google Fonts: Bricolage Grotesque · DM Sans · JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400;1,9..40,500&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css">
+
+  <style>
+    :root {
+      --color-accent:       #2A7B9B;
+      --color-accent-hover: #1F6280;
+      --color-accent-light: #E4F2F7;
+      --color-accent-muted: #5A9DB8;
+    }
+  </style>
+
+  <script src="main.js" defer></script>
+</head>
+<body>
+
+  <nav class="nav" id="nav">
+    <div class="progress-bar" id="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+    <div class="nav-inner">
+      <span class="nav-title">SIO — Self-Improving Organism</span>
+      <div class="nav-dots" id="nav-dots" role="tablist">
+        <button class="nav-dot" data-target="module-1" data-tooltip="What SIO Does" role="tab" aria-label="Module 1: What SIO Does"></button>
+        <button class="nav-dot" data-target="module-2" data-tooltip="Meet the Actors" role="tab" aria-label="Module 2: Meet the Actors"></button>
+        <button class="nav-dot" data-target="module-3" data-tooltip="From Sessions to Patterns" role="tab" aria-label="Module 3: From Sessions to Patterns"></button>
+        <button class="nav-dot" data-target="module-4" data-tooltip="The DSPy Brain" role="tab" aria-label="Module 4: The DSPy Brain"></button>
+        <button class="nav-dot" data-target="module-5" data-tooltip="Closing the Loop" role="tab" aria-label="Module 5: Closing the Loop"></button>
+      </div>
+    </div>
+  </nav>
+
+  <main id="main">
+    <!-- modules/*.html content is assembled here by build.sh -->
+<section class="module" id="module-1">
+  <header class="module-header">
+    <span class="module-number">Module 1</span>
+    <h2 class="module-title">What SIO Does — Catching Your AI in the Act</h2>
+    <p class="module-subtitle">A flight data recorder for your AI agent. After every flight, it pulls the black box, finds the moments your copilot stalled, and writes a new line in the manual so the same maneuver never bites you twice.</p>
+  </header>
+
+  <!-- ============ SCREEN 1: THE HOOK ============ -->
+  <div class="module-screen">
+    <h3 class="screen-title">Your AI just lied to you. Again.</h3>
+
+    <p>Your AI agent confidently ran <code>sed -i</code> to fix one line in your <code>.env</code> file. It silently wiped the file. Last month it did the exact same thing on a different machine.</p>
+
+    <p>You wrote a note. You told it not to. And yet — next session, fresh context, <em>same mistake</em>.</p>
+
+    <div class="callout callout-warning">
+      <div class="callout-icon">⚠️</div>
+      <div class="callout-content">
+        <strong class="callout-title">The forgetting problem</strong>
+        <p>Every new session, your AI starts with no memory of yesterday&rsquo;s screw-ups. The only thing it remembers is whatever you put in its <span class="term" data-definition="CLAUDE.md is a plain-text instruction file the AI agent re-reads at the start of every session. Think of it as a sticky note on the fridge — whatever&rsquo;s on it, the agent will see; whatever isn&rsquo;t, it forgets.">CLAUDE.md</span> file. So who&rsquo;s writing those rules? You. By hand. Every time.</p>
+      </div>
+    </div>
+
+    <p><strong>SIO</strong> &mdash; the <em>Self-Improving Organism</em> &mdash; is the system that writes those rules <em>for</em> you, drafted from the actual mistakes your agent has already made.</p>
+  </div>
+
+  <!-- ============ SCREEN 2: THE METAPHOR + PIPELINE ============ -->
+  <div class="module-screen">
+    <h3 class="screen-title">The flight data recorder</h3>
+
+    <p>Commercial airliners carry a black box that records every control input, every warning, every gust of wind. After a rough landing, investigators don&rsquo;t guess &mdash; they read the tape.</p>
+
+    <p>SIO is that black box for your AI. A tiny <span class="term" data-definition="A hook is a small piece of code that the host program (in this case, Claude Code) runs automatically at a specific moment — like the way a doorbell triggers a chime. The hook itself doesn&rsquo;t change what the host is doing; it just gets notified.">hook</span> watches every <span class="term" data-definition="A tool call is when the AI agent uses one of its built-in tools — like Bash to run a shell command, Edit to change a file, or Read to open one. Each call is logged with what was tried and whether it worked.">tool call</span> your agent makes, copies the receipt into a tiny database, and lets a learning pipeline do the rest after the flight.</p>
+
+    <h4 class="screen-subtitle">The pipeline, end to end</h4>
+
+    <div class="step-cards">
+      <div class="step-card">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Sessions</strong>
+          <p>Raw recordings of every tool call your agent made &mdash; the input, the output, the error if there was one.</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Mine</strong>
+          <p>Sift the recordings for failures, user corrections, repeated attempts &mdash; the moments the agent stumbled.</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>Cluster</strong>
+          <p>Group similar stumbles together. &ldquo;Wiped a file with sed&rdquo; and &ldquo;wiped a file with perl -pi&rdquo; are the same lesson.</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <strong>Rank</strong>
+          <p>Patterns that hurt the most or recur the most float to the top. Rare flukes sink.</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <strong>Suggest</strong>
+          <p>Draft a plain-English rule for each top pattern &mdash; the kind of thing you&rsquo;d hand-write into CLAUDE.md.</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">6</div>
+        <div class="step-body">
+          <strong>Review</strong>
+          <p><strong>You</strong> read the draft. Approve it, edit it, or throw it out. SIO never writes without your say-so.</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">7</div>
+        <div class="step-body">
+          <strong>Apply</strong>
+          <p>Approved rules land in CLAUDE.md. Next session, the agent reads them. Same mistake &mdash; blocked.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout-info">
+      <div class="callout-icon">🔁</div>
+      <div class="callout-content">
+        <strong class="callout-title">This is a closed feedback loop</strong>
+        <p>The agent&rsquo;s output becomes input to a learner, the learner&rsquo;s output becomes input to the agent. Engineers call this a <span class="term" data-definition="A feedback loop is a system where the output of a process becomes the input to the same process — like a thermostat reading the room temperature, deciding to turn on the heat, which changes the temperature, which the thermostat reads again. SIO loops the agent&rsquo;s mistakes back into the rules the agent reads.">feedback loop</span>. The only part that isn&rsquo;t automatic is <em>you</em>, the approver in the middle. That&rsquo;s on purpose.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SCREEN 3: THE HOOK CODE ============ -->
+  <div class="module-screen">
+    <h3 class="screen-title">The whole thing starts with one tiny function</h3>
+
+    <p>Every time your AI calls a tool, Claude Code fires an event called <code>PostToolUse</code>. SIO listens for that event with the function below. It&rsquo;s 30 lines. That&rsquo;s the entire data-collection surface.</p>
+
+    <div class="translation-block animate-in">
+      <div class="translation-code">
+        <span class="translation-label">CODE</span>
+        <pre><code>"""PostToolUse hook handler — captures telemetry from Claude Code tool calls."""
+
+from __future__ import annotations
+import json, logging, os, sys
+from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
+from sio.core.constants import DEFAULT_PLATFORM as _DEFAULT_PLATFORM
+_DEFAULT_DB_DIR = os.path.expanduser(f"~/.sio/{_DEFAULT_PLATFORM}")
+
+
+def handle_post_tool_use(stdin_json: str, *, conn=None) -> str:
+    """Process a PostToolUse hook event.
+
+    Parses the JSON payload, logs the invocation to the database,
+    and always returns {"action": "allow"}.
+    """
+    try:
+        payload = json.loads(stdin_json)
+    except (json.JSONDecodeError, TypeError):
+        return json.dumps({"action": "allow"})
+
+    own_conn = conn is None
+    if own_conn:
+        db_path = os.path.join(_DEFAULT_DB_DIR, "behavior_invocations.db")
+        os.makedirs(_DEFAULT_DB_DIR, exist_ok=True)
+        conn = init_db(db_path)
+
+    session_id = payload.get("session_id", "unknown")
+    tool_name  = payload.get("tool_name", "unknown")
+    tool_input = json.dumps(payload.get("tool_input", {}))
+    tool_output = payload.get("tool_output", "")
+    error = payload.get("error")
+    user_message = payload.get("user_message", "[UNAVAILABLE]")
+
+    log_invocation(conn=conn, session_id=session_id, tool_name=tool_name,
+                   tool_input=tool_input, tool_output=tool_output,
+                   error=error, user_message=user_message,
+                   platform=_DEFAULT_PLATFORM)
+
+    return json.dumps({"action": "allow"})</code></pre>
+      </div>
+      <div class="translation-english">
+        <span class="translation-label">PLAIN ENGLISH</span>
+        <div class="translation-lines">
+          <p class="tl">Every time your AI uses a tool, Claude Code hands this function a little envelope of <span class="term" data-definition="Telemetry is data a program quietly emits about what it&rsquo;s doing — which tool ran, what input, did it error. Like a fitness tracker for software: it doesn&rsquo;t change your run, it just records it.">telemetry</span>: which tool, what input, what came back, and whether it errored.</p>
+          <p class="tl">If the envelope is garbage and can&rsquo;t even be parsed, the function shrugs and says <code>allow</code>. <strong>It never blocks the agent.</strong></p>
+          <p class="tl">Otherwise it opens a tiny <span class="term" data-definition="SQLite is a database that lives in a single file on your disk — no server, no setup. Think of it as a spreadsheet that programs can query like a real database. SIO uses one at ~/.sio/claude-code/behavior_invocations.db.">SQLite</span> file at <code>~/.sio/claude-code/behavior_invocations.db</code> and writes one new row: session ID, tool name, input, output, error, the last thing you said.</p>
+          <p class="tl">Then it returns <code>{"action": "allow"}</code> &mdash; unconditionally. SIO is a passive observer. The agent never even notices it was watched.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout-accent">
+      <div class="callout-icon">💡</div>
+      <div class="callout-content">
+        <strong class="callout-title">SIO is a passive observer, not a guard</strong>
+        <p>Hooks never block. They only watch and write. The agent stays fast; learning happens offline. If SIO itself ever crashes, your agent keeps right on working &mdash; it just stops getting smarter that day.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SCREEN 4: GROUP CHAT — TRACE THE INCIDENT ============ -->
+  <div class="module-screen">
+    <h3 class="screen-title">Watch the .env incident, live</h3>
+
+    <p>Here&rsquo;s the same <code>sed -i</code> disaster from the opening, replayed as a group chat between the four actors involved. Step through it and notice how the Hook never interrupts &mdash; it just takes notes.</p>
+
+    <div class="chat-window" id="chat-module1">
+      <div class="chat-messages">
+
+        <div class="chat-message" data-msg="0" data-sender="you" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-1)">Y</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-1)">You</span>
+            <p>Hey Claude, run <code>sed -i 's/foo/bar/' .env</code> for me.</p>
+          </div>
+        </div>
+
+        <div class="chat-message" data-msg="1" data-sender="claude" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-2)">C</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-2)">Claude Agent</span>
+            <p>On it. <em>(invokes the Bash tool: <code>sed -i 's/foo/bar/' .env</code>)</em></p>
+          </div>
+        </div>
+
+        <div class="chat-message" data-msg="2" data-sender="tool" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-3)">T</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-3)">Bash Tool → Hook</span>
+            <p>PostToolUse event. Payload: <code>{tool_name: "Bash", error: ".env emptied (0 bytes)"}</code></p>
+          </div>
+        </div>
+
+        <div class="chat-message" data-msg="3" data-sender="hook" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-4)">H</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-4)">Hook (post_tool_use.py)</span>
+            <p>Got it. <code>log_invocation(...)</code> &mdash; row written to <code>~/.sio/claude-code/behavior_invocations.db</code>.</p>
+          </div>
+        </div>
+
+        <div class="chat-message" data-msg="4" data-sender="hook" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-4)">H</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-4)">Hook → Claude</span>
+            <p><code>{"action": "allow"}</code> &mdash; I never block.</p>
+          </div>
+        </div>
+
+        <div class="chat-message" data-msg="5" data-sender="you" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-1)">Y</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-1)">You</span>
+            <p>NO &mdash; you wiped my .env! That&rsquo;s the second time this month! <em>(another row lands in the DB &mdash; user_correction event)</em></p>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="chat-typing" id="chat-module1-typing" style="display:none">
+        <div class="chat-avatar" id="chat-module1-typing-avatar">?</div>
+        <div class="chat-typing-dots">
+          <span class="typing-dot"></span>
+          <span class="typing-dot"></span>
+          <span class="typing-dot"></span>
+        </div>
+      </div>
+
+      <div class="chat-controls">
+        <button class="btn chat-next-btn">Next Message</button>
+        <button class="btn chat-all-btn">Play All</button>
+        <button class="btn chat-reset-btn">Replay</button>
+        <span class="chat-progress"></span>
+      </div>
+    </div>
+
+    <p>Two events landed in the database from that one disaster: the tool failure (<code>error: ".env emptied"</code>) and your correction. <strong>Both</strong> become training signal for the Miner in the next module.</p>
+  </div>
+
+  <!-- ============ SCREEN 5: WHY THE LOOP CLOSES ============ -->
+  <div class="module-screen">
+    <h3 class="screen-title">Why the loop only closes through you</h3>
+
+    <p>Lots of "self-improving" systems sound dangerous &mdash; an AI that rewrites its own rules with no human in the way. SIO is built differently. The hook captures freely, the pipeline drafts freely, but <strong>nothing reaches CLAUDE.md until you click approve</strong>.</p>
+
+    <div class="icon-rows">
+      <div class="icon-row">
+        <div class="icon-circle" style="background: var(--color-actor-1)">👁️</div>
+        <div>
+          <strong>Capture is automatic</strong>
+          <p>The Hook runs on every tool call. No prompts, no approvals. Cheap and silent.</p>
+        </div>
+      </div>
+      <div class="icon-row">
+        <div class="icon-circle" style="background: var(--color-actor-2)">🔬</div>
+        <div>
+          <strong>Mining is automatic</strong>
+          <p>The Miner re-reads the database whenever you run <code>sio scan</code>. Failures get clustered into patterns.</p>
+        </div>
+      </div>
+      <div class="icon-row">
+        <div class="icon-circle" style="background: var(--color-actor-3)">✍️</div>
+        <div>
+          <strong>Suggestions are automatic</strong>
+          <p>For each ranked pattern, the Suggester drafts a plain-English rule. You see the draft, not the rule.</p>
+        </div>
+      </div>
+      <div class="icon-row">
+        <div class="icon-circle" style="background: var(--color-actor-4)">✅</div>
+        <div>
+          <strong>Approval is manual &mdash; always</strong>
+          <p>You read each suggestion in <code>sio review</code>. Approve, edit, or kill. The agent never writes its own constitution.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout-accent">
+      <div class="callout-icon">🧠</div>
+      <div class="callout-content">
+        <strong class="callout-title">Your CLAUDE.md is the agent&rsquo;s long-term memory</strong>
+        <p>Every session, the agent re-reads it before doing anything else. A rule written today is in effect tomorrow &mdash; on every machine that syncs the file. That&rsquo;s why drafting rules is worth doing carefully, and why SIO bothers to involve you instead of just patching the file behind your back.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SCREEN 6: QUIZ ============ -->
+  <div class="module-screen">
+    <h3 class="screen-title">Check yourself</h3>
+
+    <p>Two scenarios. Pick what would actually happen, given what you just learned about how the hook and the pipeline are wired.</p>
+
+    <div class="quiz-container" id="quiz-module1">
+
+      <div class="quiz-question-block"
+           data-correct="opt-b"
+           data-explanation-right="Exactly. The hook is wrapped in defensive logic — bad payload returns allow, init failure would be swallowed too — and the return value is always {&quot;action&quot;: &quot;allow&quot;}. SIO is a passive observer. If it broke, the worst thing that happens is you stop learning that day; your agent keeps right on working."
+           data-explanation-wrong="Not quite. Look again at the very last line of handle_post_tool_use — it returns &quot;allow&quot; unconditionally, and even the JSON-parse failure path returns &quot;allow&quot;. SIO is built so that even when it crashes, the agent never stops.">
+        <h3 class="quiz-question">Your hook crashes mid-call, halfway through writing a row to the database. What happens to your AI agent?</h3>
+        <div class="quiz-options">
+          <button class="quiz-option" data-value="opt-a" onclick="selectOption(this)">
+            <div class="quiz-option-radio"></div>
+            <span>The agent halts &mdash; it can&rsquo;t proceed without confirmation from the hook.</span>
+          </button>
+          <button class="quiz-option" data-value="opt-b" onclick="selectOption(this)">
+            <div class="quiz-option-radio"></div>
+            <span>The agent keeps running. The hook is silent on failure and always returns "allow".</span>
+          </button>
+          <button class="quiz-option" data-value="opt-c" onclick="selectOption(this)">
+            <div class="quiz-option-radio"></div>
+            <span>The tool call gets retried automatically.</span>
+          </button>
+          <button class="quiz-option" data-value="opt-d" onclick="selectOption(this)">
+            <div class="quiz-option-radio"></div>
+            <span>Claude switches to a different model.</span>
+          </button>
+        </div>
+        <div class="quiz-feedback"></div>
+      </div>
+
+      <div class="quiz-question-block"
+           data-correct="opt-c"
+           data-explanation-right="Right. Trace the pipeline: a tool-call row is just a recording. It only becomes a CLAUDE.md rule after Mine groups it into a pattern, Rank pushes the pattern up, Suggest drafts a rule, and YOU approve in Review. Three of those steps are automatic; the approval step is not."
+           data-explanation-wrong="Not yet — that step is too early. A single tool-call row in the database isn&rsquo;t a rule, and not even a clustered pattern is a rule yet. Re-trace the seven-step pipeline and find the stage where YOU are in the loop.">
+        <h3 class="quiz-question">A tool-call row lands in the SIO database. At what point in the pipeline does it actually turn into a line in your CLAUDE.md?</h3>
+        <div class="quiz-options">
+          <button class="quiz-option" data-value="opt-a" onclick="selectOption(this)">
+            <div class="quiz-option-radio"></div>
+            <span>Immediately &mdash; the hook writes to CLAUDE.md as soon as it sees an error.</span>
+          </button>
+          <button class="quiz-option" data-value="opt-b" onclick="selectOption(this)">
+            <div class="quiz-option-radio"></div>
+            <span>After Mine clusters it with similar rows.</span>
+          </button>
+          <button class="quiz-option" data-value="opt-c" onclick="selectOption(this)">
+            <div class="quiz-option-radio"></div>
+            <span>After the pattern is clustered, ranked, drafted as a suggestion, and approved by you.</span>
+          </button>
+          <button class="quiz-option" data-value="opt-d" onclick="selectOption(this)">
+            <div class="quiz-option-radio"></div>
+            <span>Never &mdash; SIO only reports patterns; you write all the rules by hand.</span>
+          </button>
+        </div>
+        <div class="quiz-feedback"></div>
+      </div>
+
+      <button class="quiz-check-btn" onclick="checkQuiz('quiz-module1')">Check Answers</button>
+      <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module1')">Try Again</button>
+    </div>
+  </div>
+
+  <!-- ============ COMING UP ============ -->
+  <div class="module-screen module-screen-outro">
+    <h3 class="screen-title">Coming up: Meet the Actors</h3>
+    <p>You&rsquo;ve met the <strong>Hook</strong>. The next module introduces the other five characters in the SIO story &mdash; the <strong>Miner</strong>, <strong>Clusterer</strong>, <strong>Suggester</strong>, <strong>Reviewer</strong>, and <strong>Applier</strong> &mdash; and shows you which folder in <code>src/sio/</code> each one lives in.</p>
+  </div>
+
+</section>
+<section class="module" id="module-2" style="background: var(--color-bg)">
+  <div class="module-content">
+
+    <header class="module-header animate-in">
+      <span class="module-number">02</span>
+      <h1 class="module-title">Meet the Actors</h1>
+      <p class="module-subtitle">SIO isn't one program — it's a newsroom of seven small specialists, each with one job.</p>
+    </header>
+
+    <div class="module-body">
+
+      <!-- SCREEN 1: The newsroom metaphor -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The Newsroom</h2>
+        <p>Before we trace the pipeline, who's actually on the team? When you run <code>sio mine --since '7 days'</code>, eight separate Python <span class="term" data-definition="A package is a folder of related Python code that ships as one unit. Like a department in a company — every file inside shares the same focus. When you say 'install a package,' you're asking pip to drop one of these folders into your project.">packages</span> light up.</p>
+
+        <p>Think of SIO as a small newsroom. Every part of the paper has a different person. Knowing which one to blame when something looks wrong is half the debugging battle.</p>
+
+        <div class="icon-rows stagger-children">
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-1)">📞</div>
+            <div>
+              <strong>The Hook</strong> — wire-service stringer
+              <p>Phones in raw events from the field the second they happen.</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-2)">📰</div>
+            <div>
+              <strong>The Miner</strong> — desk editor
+              <p>Reads the wires for stories — failures, corrections, undos.</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-3)">🗂️</div>
+            <div>
+              <strong>The Clusterer</strong> — section editor
+              <p>Groups related stories into a single beat.</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-4)">✍️</div>
+            <div>
+              <strong>The Suggester</strong> — columnist
+              <p>Writes the op-ed — the actual rule that fixes the pattern.</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-5)">🛂</div>
+            <div>
+              <strong>The Reviewer</strong> — publisher
+              <p>Holds veto power. Nothing prints without their nod.</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-1)">🖨️</div>
+            <div>
+              <strong>The Applier</strong> — press operator
+              <p>Actually prints the paper — writes the rule to disk.</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-3)">🧠</div>
+            <div>
+              <strong>The Brain</strong> — language-model wiring
+              <p>Powers the columnist. Handles every LLM call.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 2: The cast as a file tree -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">One Folder Per Actor</h2>
+        <p>Open the SIO repo and look inside <code>src/sio/</code>. Each actor is exactly one folder. The folder name <em>is</em> the actor's name.</p>
+
+        <div class="file-tree">
+          <div class="ft-folder open">
+            <span class="ft-name">src/sio/</span>
+            <span class="ft-desc">The whole newsroom</span>
+            <div class="ft-children">
+              <div class="ft-folder">
+                <span class="ft-name">adapters/claude_code/hooks/</span>
+                <span class="ft-desc">The Hook — stringer</span>
+              </div>
+              <div class="ft-folder">
+                <span class="ft-name">mining/</span>
+                <span class="ft-desc">The Miner — desk editor</span>
+              </div>
+              <div class="ft-folder">
+                <span class="ft-name">clustering/</span>
+                <span class="ft-desc">The Clusterer — section editor</span>
+              </div>
+              <div class="ft-folder">
+                <span class="ft-name">suggestions/</span>
+                <span class="ft-desc">The Suggester — columnist</span>
+              </div>
+              <div class="ft-folder">
+                <span class="ft-name">review/</span>
+                <span class="ft-desc">The Reviewer — publisher</span>
+              </div>
+              <div class="ft-folder">
+                <span class="ft-name">applier/</span>
+                <span class="ft-desc">The Applier — press operator</span>
+              </div>
+              <div class="ft-folder">
+                <span class="ft-name">cli/</span>
+                <span class="ft-desc">The Switchboard — the <code>sio</code> command</span>
+              </div>
+              <div class="ft-folder">
+                <span class="ft-name">core/dspy/</span>
+                <span class="ft-desc">The Brain — LLM wiring + optimizers</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-accent">
+          <div class="callout-icon">💡</div>
+          <div class="callout-content">
+            <strong class="callout-title">Read the import path — that's the actor.</strong>
+            <p>When you see an error like <code>sio.clustering.pattern_clusterer</code>, Python is literally telling you: in the SIO project, the <strong>clustering</strong> actor, the <strong>pattern_clusterer</strong> file. The namespacing maps one-to-one to responsibilities. No more guessing where to look.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 3: The Miner's job description -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">What the Miner Actually Reads For</h2>
+        <p>Every actor's job is documented in the docstring at the top of its main file. The <strong>Miner</strong> opens with this — it tells you exactly which five things it watches for in your transcripts.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+<pre><code><span class="code-line"><span class="code-comment">"""Error extractor — classifies parsed conversation messages into five error</span></span>
+<span class="code-line"><span class="code-comment">categories and emits ErrorRecord dicts suitable for insertion into the v2</span></span>
+<span class="code-line"><span class="code-comment">``error_records`` table.</span></span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-comment">Error types detected</span></span>
+<span class="code-line"><span class="code-comment">--------------------</span></span>
+<span class="code-line"><span class="code-comment">tool_failure       — assistant message whose ``error`` field is non-null</span></span>
+<span class="code-line"><span class="code-comment">user_correction    — human message containing correction phrasing</span></span>
+<span class="code-line"><span class="code-comment">repeated_attempt   — same tool_name called 3+ consecutive times with similar input</span></span>
+<span class="code-line"><span class="code-comment">undo               — human message containing undo / revert signals</span></span>
+<span class="code-line"><span class="code-comment">agent_admission    — assistant message where the AI admits a mistake</span></span>
+<span class="code-line"><span class="code-comment">"""</span></span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">The Miner reads your chat transcripts and tags any message that smells like trouble.</p>
+              <p class="tl">It only cares about five flavors of trouble — anything else gets ignored.</p>
+              <p class="tl"><strong>tool_failure</strong> — the AI ran a command and it crashed.</p>
+              <p class="tl"><strong>user_correction</strong> — you typed "no, that's wrong" (or anything that sounds like it).</p>
+              <p class="tl"><strong>repeated_attempt</strong> — the AI tried the same thing three times in a row. Definitely stuck.</p>
+              <p class="tl"><strong>undo</strong> — you asked the AI to revert or roll back.</p>
+              <p class="tl"><strong>agent_admission</strong> — the AI itself said "oops, I was wrong."</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 4: The Clusterer's job -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">What the Clusterer Does Next</h2>
+        <p>Once the Miner hands over a pile of tagged errors, the <strong>Clusterer</strong> groups the ones that mean the same thing — even if the words are different. It uses an <span class="term" data-definition="An embedding is a list of numbers that represents the 'meaning' of a piece of text. Two sentences with similar meanings get similar number lists, even if they use totally different words. It's how computers compare ideas instead of just letters.">embedding</span> for each error and measures <span class="term" data-definition="Cosine similarity is a math trick for asking 'how close in meaning are these two embeddings?' It returns a score between 0 (totally unrelated) and 1 (identical). SIO treats anything 0.70 or higher as the same cluster.">cosine similarity</span>.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+<pre><code><span class="code-line"><span class="code-comment">"""Embedding-based error pattern clusterer.</span></span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-comment">Groups a list of error record dicts into semantic clusters using cosine</span></span>
+<span class="code-line"><span class="code-comment">similarity on fastembed embeddings.  The public API is a single function:</span></span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-comment">    cluster_errors(errors, threshold=0.70) -&gt; list[dict]</span></span>
+<span class="code-line"><span class="code-comment">"""</span></span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">This file's only job: take a bag of errors and sort them into themed piles.</p>
+              <p class="tl">It uses a math trick to ask "are these two errors saying the same thing?" — even if the wording differs.</p>
+              <p class="tl">The whole feature is exposed as one function — feed it errors, get back clusters.</p>
+              <p class="tl">The default threshold (0.70) is how picky it is. Higher = tighter, more piles. Lower = looser, fewer piles.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 5: The Applier's seatbelt -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The Applier Is the Only Actor That Touches Disk</h2>
+        <p>Everything upstream — Hook, Miner, Clusterer, Suggester, Reviewer — is read-only or talks to a database. Only the <strong>Applier</strong> can edit your actual config files. And before it does, it checks one thing.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+<pre><code><span class="code-line">_ALLOWED_ROOTS: <span class="code-function">list</span>[Path] = [</span>
+<span class="code-line">    Path.home() / <span class="code-string">".sio"</span>,</span>
+<span class="code-line">    Path.home() / <span class="code-string">".claude"</span>,</span>
+<span class="code-line">]</span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-keyword">def</span> <span class="code-function">_validate_target_path</span>(path: Path, *, extra_roots: <span class="code-function">tuple</span>[Path, ...] = ()) -&gt; <span class="code-function">str</span> | <span class="code-keyword">None</span>:</span>
+<span class="code-line">    <span class="code-comment">"""Return an error message if path is outside allowed roots or cwd."""</span></span>
+<span class="code-line">    resolved = path.resolve()</span>
+<span class="code-line">    allowed = (*_ALLOWED_ROOTS, Path.cwd(), *extra_roots)</span>
+<span class="code-line">    <span class="code-keyword">for</span> root <span class="code-keyword">in</span> allowed:</span>
+<span class="code-line">        <span class="code-keyword">try</span>:</span>
+<span class="code-line">            resolved.relative_to(root.resolve())</span>
+<span class="code-line">            <span class="code-keyword">return</span> <span class="code-keyword">None</span></span>
+<span class="code-line">        <span class="code-keyword">except</span> ValueError:</span>
+<span class="code-line">            <span class="code-keyword">continue</span></span>
+<span class="code-line">    <span class="code-keyword">return</span> <span class="code-string">f"Target path {resolved} is outside allowed directories"</span></span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">There's a short list of folders SIO is allowed to write inside: its own <code>~/.sio/</code> and the Claude config folder <code>~/.claude/</code>. That's it.</p>
+              <p class="tl">Before SIO writes <em>anything</em> to disk, it asks: is the target file inside one of these allowed folders (or the folder you're currently in)?</p>
+              <p class="tl">It tries each allowed folder in turn. If the path fits inside one, it's safe — return "no error."</p>
+              <p class="tl">If none of them match, refuse the write and return an error message instead.</p>
+              <p class="tl">This is the seatbelt. Even a buggy Suggester writing nonsense rules can't trash <code>/etc/passwd</code> because the Applier won't let it.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-info">
+          <div class="callout-icon">🛡️</div>
+          <div class="callout-content">
+            <strong class="callout-title">The Applier is the only actor with write permission to your config.</strong>
+            <p>Everything upstream is read-only or database-only. This is intentional — engineers call it a <span class="term" data-definition="The narrow set of files or systems that a single piece of code is allowed to affect. A small blast radius means: even if this part breaks badly, it can only mess up a tiny corner of your system — not your whole machine.">narrow blast radius</span>. When you see a permission error from SIO, you almost always look in <code>src/sio/applier/</code> first.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 6: Drag-and-drop quiz -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Match the Folder to the Job</h2>
+        <p>Drag each folder name to the responsibility it owns. If you can do this from memory, you'll never get lost reading a SIO stack trace again.</p>
+
+        <div class="dnd-container" id="dnd-actors">
+          <div class="dnd-chips">
+            <div class="dnd-chip" draggable="true" data-answer="hook"><code>adapters/claude_code/hooks/</code></div>
+            <div class="dnd-chip" draggable="true" data-answer="miner"><code>mining/</code></div>
+            <div class="dnd-chip" draggable="true" data-answer="clusterer"><code>clustering/</code></div>
+            <div class="dnd-chip" draggable="true" data-answer="suggester"><code>suggestions/</code></div>
+            <div class="dnd-chip" draggable="true" data-answer="reviewer"><code>review/</code></div>
+            <div class="dnd-chip" draggable="true" data-answer="applier"><code>applier/</code></div>
+            <div class="dnd-chip" draggable="true" data-answer="brain"><code>core/dspy/</code></div>
+          </div>
+          <div class="dnd-zones">
+            <div class="dnd-zone" data-correct="hook">
+              <p class="dnd-zone-label">Captures raw tool calls as the AI runs</p>
+              <div class="dnd-zone-target">Drop folder here</div>
+            </div>
+            <div class="dnd-zone" data-correct="miner">
+              <p class="dnd-zone-label">Scans transcripts for failures, corrections, and admissions</p>
+              <div class="dnd-zone-target">Drop folder here</div>
+            </div>
+            <div class="dnd-zone" data-correct="clusterer">
+              <p class="dnd-zone-label">Groups similar errors using embeddings</p>
+              <div class="dnd-zone-target">Drop folder here</div>
+            </div>
+            <div class="dnd-zone" data-correct="suggester">
+              <p class="dnd-zone-label">Drafts the actual rule text using an LLM</p>
+              <div class="dnd-zone-target">Drop folder here</div>
+            </div>
+            <div class="dnd-zone" data-correct="reviewer">
+              <p class="dnd-zone-label">Asks the human to approve before anything ships</p>
+              <div class="dnd-zone-target">Drop folder here</div>
+            </div>
+            <div class="dnd-zone" data-correct="applier">
+              <p class="dnd-zone-label">Writes to CLAUDE.md <span class="term" data-definition="An atomic write means the file either fully updates or doesn't change at all — never half-written. It's like saving a Google Doc: you never see a 'half-saved' state. Engineers do this by writing to a temp file first, then renaming it into place.">atomically</span></p>
+              <div class="dnd-zone-target">Drop folder here</div>
+            </div>
+            <div class="dnd-zone" data-correct="brain">
+              <p class="dnd-zone-label">Wires up the language model and optimizers</p>
+              <div class="dnd-zone-target">Drop folder here</div>
+            </div>
+          </div>
+          <div style="display:flex; gap: var(--space-3); margin-top: var(--space-4);">
+            <button class="btn quiz-check-btn" onclick="checkDnD('dnd-actors')">Check Matches</button>
+            <button class="btn quiz-reset-btn" onclick="resetDnD('dnd-actors')">Reset</button>
+          </div>
+          <div class="dnd-feedback" id="dnd-actors-feedback"></div>
+        </div>
+      </section>
+
+      <!-- SCREEN 7: Scenario quiz -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">A Real Error Message</h2>
+        <p>Now use what you learned. Here's an error that could land in your terminal tomorrow.</p>
+
+        <div class="quiz-container" id="quiz-module2">
+          <div class="scenario-block">
+            <div class="scenario-context">
+              <span class="scenario-label">Scenario</span>
+              <p>An error message reads:</p>
+              <pre style="background: var(--color-bg-code); color: #F38BA8; padding: var(--space-4); border-radius: var(--radius-sm); margin-top: var(--space-3); font-size: var(--text-sm);"><code>sio.applier.writer.PermissionError: target outside allowed roots</code></pre>
+              <p style="margin-top: var(--space-3);">Where do you look first?</p>
+            </div>
+
+            <div class="quiz-question-block"
+                 data-correct="opt-applier"
+                 data-explanation-right="Exactly. The import path tells you the actor: sio → applier → writer. And we just learned the Applier has a seatbelt — _validate_target_path — that rejects any write outside ~/.sio/, ~/.claude/, or your current folder. Open src/sio/applier/writer.py and you'll find the exact function that fired this error."
+                 data-explanation-wrong="Not quite — re-read the import path in the error. The convention is sio.&lt;actor&gt;.&lt;file&gt;. The actor named there is where the error came from. The Miner and Suggester never touch your filesystem directly, so they can't produce a path-permission error.">
+              <div class="quiz-options">
+                <button class="quiz-option" data-value="opt-miner" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span><code>src/sio/mining/</code> — maybe it failed reading a transcript</span>
+                </button>
+                <button class="quiz-option" data-value="opt-suggester" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span><code>src/sio/suggestions/</code> — the LLM probably generated a bad path</span>
+                </button>
+                <button class="quiz-option" data-value="opt-applier" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span><code>src/sio/applier/writer.py</code> — the path-validation seatbelt rejected the write</span>
+                </button>
+                <button class="quiz-option" data-value="opt-cli" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span><code>src/sio/cli/</code> — the command must have been typed wrong</span>
+                </button>
+              </div>
+              <div class="quiz-feedback"></div>
+            </div>
+          </div>
+
+          <button class="quiz-check-btn" onclick="checkQuiz('quiz-module2')">Check Answer</button>
+          <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module2')">Try Again</button>
+        </div>
+
+        <div class="callout callout-accent" style="margin-top: var(--space-8);">
+          <div class="callout-icon">🧭</div>
+          <div class="callout-content">
+            <strong class="callout-title">Next up: the upstream half of the newsroom.</strong>
+            <p>You've met the cast. In the next module, we zoom into the two earliest actors — the <strong>Miner</strong> and the <strong>Clusterer</strong> — and watch a real transcript turn into a single ranked error pattern.</p>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</section>
+<section class="module" id="module-3" style="background: var(--color-bg-warm)">
+  <div class="module-content">
+    <header class="module-header animate-in">
+      <span class="module-number">03</span>
+      <h1 class="module-title">From Sessions to Patterns</h1>
+      <p class="module-subtitle">How raw conversational mess becomes a signal — without a single AI token.</p>
+    </header>
+
+    <div class="module-body">
+
+      <!-- SCREEN 1: HOOK — gold panning -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Panning for gold in a river of chatter</h2>
+        <p>Your <span class="term" data-definition="A folder on your machine where the SpecStory extension saves every Claude Code conversation as a markdown file. SIO reads from here as one of its raw inputs.">~/.specstory/</span> folder has <strong>4,000 markdown files</strong>. Your Claude Code <span class="term" data-definition="JSONL means one JSON object per line. Claude Code saves each session's full message stream this way so it can be replayed or analyzed.">JSONL</span> transcripts add hundreds more. How does SIO go from <em>"thousands of conversations"</em> to <em>"you keep doing X — let's fix it"</em>?</p>
+
+        <p>Imagine a gold-panning operation by a river. The river is your daily transcripts — mostly noise. A <strong>sieve</strong> catches only five specific shapes of "rock." A <strong>sorter</strong> piles up matching rocks. One rock alone is a complaint. Twenty rocks in one pile is a <em>pattern</em> worth a rule.</p>
+
+        <div class="icon-rows stagger-children">
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-2)">🌊</div>
+            <div>
+              <strong>The river</strong>
+              <p>Raw session transcripts — SpecStory markdown + Claude Code JSONL</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-4)">🪣</div>
+            <div>
+              <strong>The sieve (Miner)</strong>
+              <p>Catches only five shapes of "rock" — the five error types</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-3)">⚖️</div>
+            <div>
+              <strong>The sorter (Clusterer)</strong>
+              <p>Groups similar rocks into piles using semantic similarity</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-info">
+          <div class="callout-icon">🔍</div>
+          <div class="callout-content">
+            <strong class="callout-title">Both stages are deterministic</strong>
+            <p>No LLM reads your transcripts here. The Miner is <span class="term" data-definition="A regular expression — a tiny pattern language for matching text. For example, the pattern 'no,?\s+actually' matches the phrases 'no actually' or 'no, actually' anywhere in a message.">regex</span> matching. The Clusterer is math on <span class="term" data-definition="An embedding is a list of numbers (a vector) that represents the meaning of a piece of text. Texts that mean similar things end up as nearby vectors.">embeddings</span>. Cheap, fast, repeatable.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 2: THE FIVE ERROR SHAPES -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The five shapes of "rock"</h2>
+        <p>The Miner scans each parsed message and asks one question: <em>does this match one of five known error shapes?</em> If yes, emit an <strong>ErrorRecord</strong>. If no, drop it.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+            <pre><code><span class="code-comment">"""Error extractor — classifies parsed conversation messages into five error</span>
+<span class="code-comment">categories and emits ErrorRecord dicts.</span>
+
+<span class="code-comment">Error types detected</span>
+<span class="code-comment">--------------------</span>
+<span class="code-comment">tool_failure       — assistant message whose ``error`` field is non-null</span>
+<span class="code-comment">user_correction    — human message containing correction phrasing</span>
+<span class="code-comment">repeated_attempt   — same tool_name called 3+ consecutive times with similar input</span>
+<span class="code-comment">undo               — human message containing undo / revert signals</span>
+<span class="code-comment">agent_admission    — assistant message where the AI admits a mistake</span>
+<span class="code-comment">                    (e.g. "I made a mistake", "I should have", "my apologies")</span>
+<span class="code-comment">"""</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl"><strong>tool_failure</strong> — the AI tried to do something and the tool returned an error (a failed shell command, a 404, a syntax error).</p>
+              <p class="tl"><strong>user_correction</strong> — you typed "no, actually…" or "that's wrong." A human-supplied course-correction.</p>
+              <p class="tl"><strong>repeated_attempt</strong> — the AI called the <em>same</em> tool three times in a row with nearly-identical input. A retry loop.</p>
+              <p class="tl"><strong>undo</strong> — you asked it to revert or back out. A stronger correction than a verbal "no."</p>
+              <p class="tl"><strong>agent_admission</strong> — the AI itself said "my apologies" or "I made a mistake." Self-reported failure.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-accent">
+          <div class="callout-icon">💡</div>
+          <div class="callout-content">
+            <strong class="callout-title">No LLM has read your code yet</strong>
+            <p>Detection is pure pattern matching — regex plus structural inspection of the JSON. SIO can mine months of history offline, on a plane, with the API down. The LLM only enters in the <em>next</em> module.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 3: HOW user_correction WORKS -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Inside a detector: <code>user_correction</code></h2>
+        <p>Each error type is just a list of regex patterns. The Miner walks every human message and checks each pattern. One match → emit an ErrorRecord. Here's the real list:</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+            <pre><code><span class="code-property">_CORRECTION_PATTERNS</span>: <span class="code-function">list</span>[re.Pattern[<span class="code-function">str</span>]] = [
+    re.<span class="code-function">compile</span>(<span class="code-string">r"\bno,?\s+actually\b"</span>, re.IGNORECASE),
+    re.<span class="code-function">compile</span>(<span class="code-string">r"(?:^|(?&lt;=\s)|\A)no,"</span>, re.IGNORECASE),
+    <span class="code-comment"># ... "that's wrong", "I meant", "stop", "undo that", etc.</span>
+]</code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Make a list called <code>_CORRECTION_PATTERNS</code>. Each item is a compiled regex.</p>
+              <p class="tl">First pattern matches "no actually" or "no, actually" anywhere in the message. Case-insensitive.</p>
+              <p class="tl">Second pattern matches a "no," at the very start of a message or after whitespace.</p>
+              <p class="tl">More patterns follow — "that's wrong," "I meant," "stop," "undo that."</p>
+            </div>
+          </div>
+        </div>
+
+        <p>The Miner does not understand <em>what</em> you were correcting. It only notices the <strong>shape</strong> of correction language. That's enough — and it's why this stage is so fast.</p>
+      </section>
+
+      <!-- SCREEN 4: PIPELINE FLOW -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The pipeline, end to end</h2>
+        <p>Watch one error travel from a raw transcript file all the way to a stored pattern. Click <strong>Next Step</strong> to advance.</p>
+
+        <div class="flow-animation" data-steps='[
+          {"highlight":"flow-actor-1","label":"JSONL transcript on disk — thousands of messages, mostly noise."},
+          {"highlight":"flow-actor-2","label":"Parser reads the file line by line, normalizing each message.","packet":true,"from":"actor-1","to":"actor-2"},
+          {"highlight":"flow-actor-3","label":"Error extractor checks each message against the five regex sieves.","packet":true,"from":"actor-2","to":"actor-3"},
+          {"highlight":"flow-actor-4","label":"A tool_failure is detected: sed -i wiped the .env file. Saved as an ErrorRecord.","packet":true,"from":"actor-3","to":"actor-4"},
+          {"highlight":"flow-actor-5","label":"Clusterer embeds the error text and compares cosine similarity to existing centroids.","packet":true,"from":"actor-4","to":"actor-5"},
+          {"highlight":"flow-actor-6","label":"A second similar error joins the cluster. Pattern stored: sed -i wipe (12 errors, 5 sessions).","packet":true,"from":"actor-5","to":"actor-6"}
+        ]'>
+          <div class="flow-actors">
+            <div class="flow-actor" id="flow-actor-1">
+              <div class="flow-actor-icon">📄</div>
+              <span>JSONL Files</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-2">
+              <div class="flow-actor-icon">🪚</div>
+              <span>Parsers</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-3">
+              <div class="flow-actor-icon">🪣</div>
+              <span>Error Extractor</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-4">
+              <div class="flow-actor-icon">🗃️</div>
+              <span>error_records</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-5">
+              <div class="flow-actor-icon">⚖️</div>
+              <span>Clusterer</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-6">
+              <div class="flow-actor-icon">💎</div>
+              <span>patterns</span>
+            </div>
+          </div>
+          <div class="flow-packet" id="flow-packet"></div>
+          <div class="flow-step-label" id="flow-label">Click "Next Step" to follow one error through the pipeline.</div>
+          <div class="flow-controls">
+            <button class="btn flow-next-btn">Next Step</button>
+            <button class="btn flow-reset-btn">Restart</button>
+            <span class="flow-progress"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 5: CLUSTERER CONTRACT -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The Clusterer's contract</h2>
+        <p>Once the Miner has produced a stack of raw errors, the Clusterer's job is to <strong>group ones that mean the same thing</strong>. Its public API is a single function: feed it errors, get back patterns.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+            <pre><code><span class="code-comment">"""Groups a list of error record dicts into semantic clusters using cosine</span>
+<span class="code-comment">similarity on fastembed embeddings.  The public API is a single function:</span>
+
+<span class="code-comment">    cluster_errors(errors, threshold=0.70) -&gt; list[dict]</span>
+
+<span class="code-comment">Pattern dict schema</span>
+<span class="code-comment">-------------------</span>
+<span class="code-comment">pattern_id   : str   — centroid-hash slug (format: ``&lt;top_term&gt;_&lt;hex10&gt;``)</span>
+<span class="code-comment">description  : str   — representative error text (first error's text)</span>
+<span class="code-comment">error_count  : int   — number of errors in the cluster</span>
+<span class="code-comment">session_count: int   — number of distinct session_ids in the cluster</span>
+<span class="code-comment">rank_score   : float — 0.0 initially; downstream ranker sets this</span>
+<span class="code-comment">"""</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Call <code>cluster_errors</code> with a list of errors. Anything with <span class="term" data-definition="Cosine similarity measures how close two vectors point in the same direction. 1.0 means identical meaning, 0.0 means unrelated. SIO's default threshold of 0.70 means 'roughly the same idea.'">cosine similarity</span> above 0.70 ends up in the same pile.</p>
+              <p class="tl">Each output pattern gets a unique id built from its top term plus a short hash.</p>
+              <p class="tl">It carries a <em>representative</em> error text (the first one in the cluster) so you have something human-readable to read.</p>
+              <p class="tl">It counts how many errors landed in this pile, and how many distinct sessions they came from.</p>
+              <p class="tl"><code>rank_score</code> starts at zero. A later stage (the Ranker) will sort patterns by importance.</p>
+            </div>
+          </div>
+        </div>
+
+        <p>The magic word is <strong>threshold=0.70</strong>. SIO uses <span class="term" data-definition="fastembed is a small Python library that runs sentence-embedding models locally using ONNX. It turns a piece of text into a list of ~384 numbers representing its meaning — no API call, no cost.">fastembed</span> to turn each error's text into a vector, then asks: <em>is this vector within 0.70 of any cluster's center?</em> Yes → join the cluster. No → start a new one.</p>
+      </section>
+
+      <!-- SCREEN 6: CENTROID STORAGE -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Storing the centroid — a small but clever trick</h2>
+        <p>Every cluster has a <span class="term" data-definition="The centroid is the average position of all vectors in a cluster — the 'center of mass.' New errors are compared to the centroid, not to every member of the cluster.">centroid</span>: the average vector of all its errors. SIO packs that centroid into a compact <span class="term" data-definition="BLOB stands for Binary Large OBject — a column type in SQLite that stores raw bytes. Faster and smaller than storing 384 numbers as text.">BLOB</span> and saves it in SQLite.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+            <pre><code><span class="code-keyword">def</span> <span class="code-function">_pack_centroid</span>(vec: np.ndarray, model_hash: <span class="code-function">bytes</span>) -&gt; <span class="code-function">bytes</span>:
+    <span class="code-comment">"""Pack vec into the R-9 BLOB format.</span>
+
+<span class="code-comment">    Format: [dim: uint32_le (4 bytes)] [model_hash: 8 bytes] [vector: float32[dim]]</span>
+<span class="code-comment">    """</span>
+    <span class="code-keyword">if</span> <span class="code-function">len</span>(model_hash) != <span class="code-number">8</span>:
+        <span class="code-keyword">raise</span> ValueError(<span class="code-string">f"model_hash must be exactly 8 bytes, got {len(model_hash)}"</span>)
+    dim = <span class="code-function">len</span>(vec)
+    header = struct.<span class="code-function">pack</span>(<span class="code-string">"&lt;I"</span>, dim) + model_hash
+    floats = vec.<span class="code-function">astype</span>(np.float32).<span class="code-function">tobytes</span>()
+    <span class="code-keyword">return</span> header + floats</code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Take the cluster's average vector and a short hash identifying which embedding model produced it.</p>
+              <p class="tl">First 4 bytes: the vector's dimension (e.g. 384). Next 8 bytes: the model hash so we know if we ever swap models.</p>
+              <p class="tl">Safety check: the model hash must be exactly 8 bytes, no more, no less.</p>
+              <p class="tl">Then dump the raw floating-point numbers as bytes. Done. One row in SQLite holds the whole centroid.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-accent">
+          <div class="callout-icon">💡</div>
+          <div class="callout-content">
+            <strong class="callout-title">The centroid is your savings account</strong>
+            <p>Once a centroid is stored as a BLOB, every new error compares against the saved vector. SIO never re-embeds the whole corpus to ask "is this familiar?" That's how the same script can run nightly on years of history without blowing up.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 7: GROUP CHAT — the three actors talking -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Listen in: Miner ↔ Clusterer</h2>
+        <p>Step through a real handoff. Click <strong>Next Message</strong> to advance the conversation.</p>
+
+        <div class="chat-window" id="chat-module3">
+          <div class="chat-messages">
+            <div class="chat-message" data-msg="0" data-sender="session" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-2)">S</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-2)">Session Transcript</span>
+                <p>Here's 4,000 messages from last week. Most of it is fine. Some of it isn't.</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="1" data-sender="miner" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-4)">M</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-4)">Miner</span>
+                <p>Scanning for tool_failure, user_correction, repeated_attempt, undo, agent_admission… pure regex, no AI.</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="2" data-sender="miner" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-4)">M</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-4)">Miner</span>
+                <p>Found 73 raw errors. Sending them over.</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="3" data-sender="clusterer" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-3)">C</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-3)">Clusterer</span>
+                <p>Embedding each one with fastembed. Two errors with cosine similarity above 0.70 are the "same idea."</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="4" data-sender="clusterer" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-3)">C</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-3)">Clusterer</span>
+                <p>Stored 12 patterns. Top one: <code>sed -i wipe</code> — 12 errors across 5 sessions. That's the signal.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="chat-typing" id="chat-typing-3" style="display:none">
+            <div class="chat-avatar" id="chat-module3-typing-avatar">?</div>
+            <div class="chat-typing-dots">
+              <span class="typing-dot"></span>
+              <span class="typing-dot"></span>
+              <span class="typing-dot"></span>
+            </div>
+          </div>
+
+          <div class="chat-controls">
+            <button class="btn chat-next-btn">Next Message</button>
+            <button class="btn chat-all-btn">Play All</button>
+            <button class="btn chat-reset-btn">Replay</button>
+            <span class="chat-progress"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 8: QUIZ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Check your intuition</h2>
+
+        <div class="quiz-container" id="quiz-module3">
+
+          <div class="quiz-question-block"
+               data-correct="one-pattern"
+               data-explanation-right="Exactly. The error texts are nearly identical structurally — 'sed -i' + 'file emptied.' fastembed sees them as the same idea (cosine sim well above 0.70), so they cluster together. The pattern is 'sed -i wipe' — not 'wipe .env specifically.' That's how SIO generalizes a rule from a recurring shape rather than memorizing one file path."
+               data-explanation-wrong="Not quite. Yes, the filenames differ — but the Clusterer doesn't pattern-match on filenames; it embeds the whole error text. Two strings that say almost the same thing about sed -i wiping a file have nearly-identical embeddings, so they end up in one cluster. The resulting pattern will be 'sed -i wipe' generally, not 'wipe of .env specifically.'">
+            <h3 class="quiz-question">You see two error records side-by-side: (A) <code>sed -i 's/foo/bar/' .env → file emptied</code> and (B) <code>sed -i 's/x/y/' .bashrc → file emptied</code>. Should the Clusterer group these into one pattern or two?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="one-pattern" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>One pattern — they're the same idea, just different filenames.</span>
+              </button>
+              <button class="quiz-option" data-value="two-patterns" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Two patterns — different filenames means different errors.</span>
+              </button>
+              <button class="quiz-option" data-value="depends-shell" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>It depends on the user's shell configuration.</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="scenario-block">
+            <div class="scenario-context">
+              <span class="scenario-label">Scenario</span>
+              <p>You just ran <code>sio patterns</code> and one row shows <code>error_count: 1, session_count: 1</code>. Should you ask SIO to write a CLAUDE.md rule for it?</p>
+            </div>
+            <div class="quiz-question-block"
+                 data-correct="probably-not"
+                 data-explanation-right="Right. One occurrence in one session is noise, not a pattern. SIO's Ranker scores by frequency × recency × session spread — rare events score low and get filtered out before they ever reach the Suggester. The system is designed to ignore singletons until they actually recur."
+                 data-explanation-wrong="Not quite. A single error in a single session is statistically indistinguishable from a one-off mistake. SIO ranks patterns by frequency, recency, AND session spread — a one-off scores low and gets filtered before the Suggester ever sees it. Wait until it shows up again across sessions before writing a rule.">
+              <h3 class="quiz-question">What do you do?</h3>
+              <div class="quiz-options">
+                <button class="quiz-option" data-value="probably-not" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span>Probably not — single occurrence is noise; wait for it to recur.</span>
+                </button>
+                <button class="quiz-option" data-value="yes-immediately" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span>Yes, immediately — every error deserves a rule.</span>
+                </button>
+                <button class="quiz-option" data-value="delete-the-row" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span>Delete the row from the database to clean up the table.</span>
+                </button>
+              </div>
+              <div class="quiz-feedback"></div>
+            </div>
+          </div>
+
+          <div class="quiz-question-block"
+               data-correct="no-llm"
+               data-explanation-right="Correct. The whole Mining + Clustering pipeline runs locally — regex for detection, fastembed (ONNX models on your machine) for embeddings, NumPy for cosine math. Zero API tokens. The LLM only enters the picture when the Suggester writes a rule, which is the next module."
+               data-explanation-wrong="Not quite. The interesting design choice here is that no LLM is involved yet. Detection is regex matching against the JSONL. Clustering is fastembed (a small ONNX model running locally) plus NumPy cosine math. You could mine months of history on a plane with the API down — and that's the point.">
+            <h3 class="quiz-question">During Mining + Clustering, how many calls does SIO make to a large language model API?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="no-llm" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Zero — both stages are deterministic and run locally.</span>
+              </button>
+              <button class="quiz-option" data-value="one-per-error" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>One LLM call per error, to classify it into a category.</span>
+              </button>
+              <button class="quiz-option" data-value="one-per-cluster" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>One LLM call per cluster, to summarize the pattern.</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <button class="quiz-check-btn" onclick="checkQuiz('quiz-module3')">Check Answers</button>
+          <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module3')">Try Again</button>
+        </div>
+
+        <p style="margin-top: var(--space-8); color: var(--color-text-secondary)">Next up: the LLM finally wakes up. The <strong>Suggester</strong> takes these patterns and uses <span class="term" data-definition="DSPy is a Python framework that lets you define language-model-powered functions as 'modules' — programmable, optimizable, and version-controlled. SIO uses it to generate CLAUDE.md rules from patterns.">DSPy</span> to write the actual rule text you'll add to CLAUDE.md.</p>
+      </section>
+
+    </div>
+  </div>
+</section>
+<section class="module" id="module-4">
+  <header class="module-header">
+    <span class="module-number">Module 4</span>
+    <h1 class="module-title">The DSPy Brain — How a Pattern Becomes a Rule</h1>
+    <p class="module-subtitle">From a cluster of errors to a sentence sharp enough to prevent the next one.</p>
+  </header>
+
+  <!-- ============================================================
+       SCREEN 1 — Opening hook + vending machine metaphor
+       ============================================================ -->
+  <div class="module-screen">
+    <h2 class="screen-title">The vending machine that learns</h2>
+
+    <p>In the last module, the <strong>Clusterer</strong> grouped 23 separate errors — all of them <code>sed -i</code> wiping out <code>.env</code> files — into a single <em>pattern</em>. Now somebody has to actually write the sentence:</p>
+
+    <div class="callout callout-info">
+      <div class="callout-icon">📝</div>
+      <div class="callout-content">
+        <strong class="callout-title">The job</strong>
+        <p>"Never use <code>sed -i</code> — use the Edit tool instead, because it's atomic and shows diffs."</p>
+      </div>
+    </div>
+
+    <p>Who does that? Not a human (that's the whole point — SIO is supposed to write rules <em>itself</em>). And how does it not produce a useless platitude like <em>"always be careful with files"</em>?</p>
+
+    <p>Picture a <strong>vending machine with a worn-in panel</strong>. Most machines just dispense whatever button you press. This one is different: every time someone presses <strong>B4</strong> and complains the chips were stale, it <em>retrains itself</em> so that next time you press B4 you get the good bag.</p>
+
+    <div class="icon-rows">
+      <div class="icon-row">
+        <div class="icon-circle" style="background: var(--color-actor-1)">🤖</div>
+        <div>
+          <strong>The machine</strong>
+          <p>The <span class="term" data-definition="A Large Language Model — the AI that reads text and writes text back. GPT-4o-mini and Claude are LLMs.">LLM</span> (OpenAI, Anthropic, etc.) — the thing that actually writes the rule.</p>
+        </div>
+      </div>
+      <div class="icon-row">
+        <div class="icon-circle" style="background: var(--color-actor-2)">🔧</div>
+        <div>
+          <strong>The retraining</strong>
+          <p><span class="term" data-definition="A Python framework that lets you describe what an LLM should do as typed inputs/outputs (a Signature), and then automatically improve the prompt against labeled examples.">DSPy</span> <span class="term" data-definition="In DSPy, an optimizer is a process that runs your module against labeled examples, tries many prompt variants, and keeps the version that scores highest. It does NOT change the LLM's weights — only the prompt.">optimization</span> — running thousands of prompt variations and keeping the winner.</p>
+        </div>
+      </div>
+      <div class="icon-row">
+        <div class="icon-circle" style="background: var(--color-actor-3)">✅</div>
+        <div>
+          <strong>The good bag</strong>
+          <p>A rule that survives the <span class="term" data-definition="A check the rule has to pass before it gets saved — for example: 'does this mention the actual command?' or 'is this under 3 sentences?' Generic platitudes fail these checks.">quality gates</span> — concrete, specific, actionable.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       SCREEN 2 — Shift 1: prompts are typed (Signatures)
+       ============================================================ -->
+  <div class="module-screen">
+    <h2 class="screen-title">Shift #1 — Prompts are typed contracts</h2>
+
+    <p>Most people think of a prompt as a paragraph you paste into ChatGPT. DSPy disagrees. A prompt is a <strong><span class="term" data-definition="In DSPy, a Signature is a typed class that declares what an LLM call takes in and what it returns. The docstring inside it tells the LLM how to behave. You don't write the prompt directly — DSPy builds it from the signature.">signature</span></strong>: <em>inputs in, outputs out, docstring tells the LLM how</em>.</p>
+
+    <div class="translation-block animate-in">
+      <div class="translation-code">
+        <span class="translation-label">CODE</span>
+<pre><code><span class="code-line"><span class="code-keyword">class</span> <span class="code-function">PatternToRule</span>(dspy.Signature):</span>
+<span class="code-line">    <span class="code-string">"""Generate a concise CLAUDE.md rule that prevents the given error pattern.</span></span>
+<span class="code-line"><span class="code-string">    The rule must be actionable, file-path-safe, and &lt;= 3 sentences.</span></span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-string">    CRITICAL — required specificity (B5 grounding directives):</span></span>
+<span class="code-line"><span class="code-string">    - The rule TITLE must reference the SPECIFIC tokens from `pattern_description`</span></span>
+<span class="code-line"><span class="code-string">      (tool name, env var, path, command — whatever recurs in `Common phrases:`).</span></span>
+<span class="code-line"><span class="code-string">      Generic titles like "Always check inputs" or "Verify configuration" are</span></span>
+<span class="code-line"><span class="code-string">      WRONG — they lose the discriminating signal that justifies the rule.</span></span>
+<span class="code-line"><span class="code-string">    - The rule BODY must cite the concrete failure observed in `example_errors`.</span></span>
+<span class="code-line"><span class="code-string">    - If `example_errors` shows an env var, file path, or command literal,</span></span>
+<span class="code-line"><span class="code-string">      that literal MUST appear verbatim in the rule.</span></span>
+<span class="code-line"><span class="code-string">    """</span></span>
+<span class="code-line">    <span class="code-comment"># input fields: pattern_description, example_errors, project_context</span></span>
+<span class="code-line">    <span class="code-comment"># output fields: rule_title, rule_body, rule_rationale</span></span>
+</code></pre>
+      </div>
+      <div class="translation-english">
+        <span class="translation-label">PLAIN ENGLISH</span>
+        <div class="translation-lines">
+          <p class="tl">A <strong>Signature</strong> is a typed contract for an LLM. Inputs go in, outputs come out, and the <span class="term" data-definition="A docstring is the triple-quoted text right under a function or class definition in Python. Normally it's a comment for humans. In DSPy, it's part of the prompt sent to the LLM.">docstring</span> tells the LLM <em>how</em>.</p>
+          <p class="tl">The "B5 grounding directives" are explicit <strong>anti-platitude rules</strong>: don't say "always check inputs" — name the actual command (<code>sed -i</code>, <code>$ZENO_DIR</code>, whatever).</p>
+          <p class="tl">The docstring itself <em>is</em> the prompt. There's no separate prompt template file. This is the whole point of DSPy — and it's why this docstring is so detailed.</p>
+          <p class="tl">DSPy fills in the inputs (the pattern, the examples), sends the whole thing to the LLM, and parses the three outputs back out.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout-accent">
+      <div class="callout-icon">💡</div>
+      <div class="callout-content">
+        <strong class="callout-title">Aha — The docstring IS the prompt</strong>
+        <p>When you change a Signature's docstring, you've changed how the LLM behaves. There is no separate "prompt.txt" file anywhere. That's the entire point of DSPy: prompts live as <em>typed code</em>, not as throwaway strings.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       SCREEN 3 — The single source of LLM construction
+       ============================================================ -->
+  <div class="module-screen">
+    <h2 class="screen-title">One door, every LLM call walks through it</h2>
+
+    <p>Across the whole SIO codebase, there is <strong>exactly one function</strong> that constructs an LLM. Every call routes through it. A grep test in the test suite literally fails the build if anyone bypasses it.</p>
+
+    <div class="translation-block animate-in">
+      <div class="translation-code">
+        <span class="translation-label">CODE — lm_factory.py</span>
+<pre><code><span class="code-line"><span class="code-string">"""LM backend factory — single-source dspy.LM construction (FR-041, SC-022).</span></span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-string">All dspy.LM(...) construction happens here. No other file in src/sio/ may</span></span>
+<span class="code-line"><span class="code-string">construct dspy.LM directly; the grep test in test_lm_factory.py enforces this.</span></span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-string">Environment overrides:</span></span>
+<span class="code-line"><span class="code-string">  SIO_TASK_LM       — model string for get_task_lm()  (default: openai/gpt-4o-mini)</span></span>
+<span class="code-line"><span class="code-string">  SIO_REFLECTION_LM — model string for get_reflection_lm() (default: openai/gpt-5)</span></span>
+<span class="code-line"><span class="code-string">"""</span></span>
+<span class="code-line"><span class="code-keyword">import</span> os, dspy, litellm</span>
+<span class="code-line">litellm.drop_params = <span class="code-keyword">True</span></span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-keyword">def</span> <span class="code-function">get_task_lm</span>() -&gt; dspy.LM:</span>
+<span class="code-line">    <span class="code-string">"""LM used for normal module forward passes. Cheap, fast, cached."""</span></span>
+<span class="code-line">    model = os.environ.get(<span class="code-string">"SIO_TASK_LM"</span>, <span class="code-string">"openai/gpt-4o-mini"</span>)</span>
+<span class="code-line">    <span class="code-keyword">return</span> dspy.LM(model, cache=<span class="code-keyword">True</span>, temperature=<span class="code-number">0.0</span>, max_tokens=<span class="code-number">4096</span>)</span>
+</code></pre>
+      </div>
+      <div class="translation-english">
+        <span class="translation-label">PLAIN ENGLISH</span>
+        <div class="translation-lines">
+          <p class="tl">Every LLM call in SIO routes through <code>get_task_lm()</code>. Why?</p>
+          <p class="tl">So you can swap models with one <span class="term" data-definition="An environment variable — a setting you can change without editing code. Set SIO_TASK_LM=anthropic/claude-3-5-sonnet in your shell and SIO will use Claude instead of GPT.">environment variable</span>: <code>SIO_TASK_LM=anthropic/claude-3-5-sonnet</code> — done. No code changes.</p>
+          <p class="tl">And a single <span class="term" data-definition="A simple test that searches the codebase for a forbidden pattern and fails the build if it finds it. Here: 'no file outside lm_factory.py is allowed to write dspy.LM(...)'.">grep test</span> enforces it: nobody can sneak in a direct <code>dspy.LM(...)</code> call elsewhere — the build breaks.</p>
+          <p class="tl"><code><span class="term" data-definition="A Python library that gives you one common interface to call any LLM provider — OpenAI, Anthropic, Gemini, Ollama, etc. DSPy uses litellm under the hood.">litellm</span>.drop_params = True</code> says: if a model doesn't support a parameter, silently drop it instead of crashing. Makes provider swaps painless.</p>
+          <p class="tl"><strong>Single point of LLM construction = single point of safety.</strong></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       SCREEN 4 — Group chat: how a pattern becomes a rule
+       ============================================================ -->
+  <div class="module-screen">
+    <h2 class="screen-title">Watch a rule get born</h2>
+
+    <p>Follow the conversation. The Pattern arrives from the Clusterer. By the end, a saved suggestion exists in the database — scored, validated, ready for human review.</p>
+
+    <div class="chat-window" id="chat-module4">
+      <div class="chat-messages">
+        <div class="chat-message" data-msg="0" data-sender="pattern" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-1)">P</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-1)">Pattern</span>
+            <p>Hey Suggester — 23 errors here, all about <code>sed -i</code> wiping out <code>.env</code> files on WSL2. Common phrase: "sed -i" + "permission denied" + ".env".</p>
+          </div>
+        </div>
+
+        <div class="chat-message" data-msg="1" data-sender="suggester" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-2)">S</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-2)">Suggester (DSPy Module)</span>
+            <p>Got it. I need a task LM. <code>lm_factory</code>, hand me one?</p>
+          </div>
+        </div>
+
+        <div class="chat-message" data-msg="2" data-sender="factory" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-3)">F</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-3)">lm_factory.get_task_lm()</span>
+            <p>Here: <code>openai/gpt-4o-mini</code>, temp=0.0, cache=on, 4096 tokens. Same one everybody uses.</p>
+          </div>
+        </div>
+
+        <div class="chat-message" data-msg="3" data-sender="suggester" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-2)">S</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-2)">Suggester (DSPy Module)</span>
+            <p>Building prompt from the <code>PatternToRule</code> signature… inputs filled in… sending to the API.</p>
+          </div>
+        </div>
+
+        <div class="chat-message" data-msg="4" data-sender="api" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-4)">A</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-4)">OpenAI / Anthropic API</span>
+            <p>rule_title: <em>"Never use <code>sed -i</code> on .env files (WSL2 wipe risk)"</em><br>rule_body: <em>"sed -i has silently wiped .env files on WSL2 due to a temp-file rename race. Use the Edit tool instead — it's atomic and shows a diff."</em></p>
+          </div>
+        </div>
+
+        <div class="chat-message" data-msg="5" data-sender="gates" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-5)">Q</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-5)">Quality Gates</span>
+            <p>Checking… title mentions <code>sed -i</code>? ✓ &nbsp; Cites concrete failure? ✓ &nbsp; Under 3 sentences? ✓ &nbsp; <span class="term" data-definition="Protected Health Information — patient names, dates of birth, MRNs, etc. Quality gates strip these out before saving a rule.">PHI</span>-free? ✓ &nbsp; Score: <strong>0.87</strong>.</p>
+          </div>
+        </div>
+
+        <div class="chat-message" data-msg="6" data-sender="suggester" style="display:none">
+          <div class="chat-avatar" style="background: var(--color-actor-2)">S</div>
+          <div class="chat-bubble">
+            <span class="chat-sender" style="color: var(--color-actor-2)">Suggester (DSPy Module)</span>
+            <p>Saving suggestion #142 to <code>~/.sio/sio.db</code> with confidence 0.87. Status: pending human review.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="chat-typing" id="chat-module4-typing" style="display:none">
+        <div class="chat-avatar" id="chat-module4-typing-avatar">?</div>
+        <div class="chat-typing-dots">
+          <span class="typing-dot"></span>
+          <span class="typing-dot"></span>
+          <span class="typing-dot"></span>
+        </div>
+      </div>
+
+      <div class="chat-controls">
+        <button class="btn chat-next-btn">Next Message</button>
+        <button class="btn chat-all-btn">Play All</button>
+        <button class="btn chat-reset-btn">Replay</button>
+        <span class="chat-progress"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       SCREEN 5 — Shift 2: prompts are optimizable + 3 optimizers
+       ============================================================ -->
+  <div class="module-screen">
+    <h2 class="screen-title">Shift #2 — Prompts are optimizable</h2>
+
+    <p>Here's the part that breaks most people's mental model: in DSPy, you can <em>train the prompt</em>. Not the model — the prompt itself.</p>
+
+    <div class="callout callout-accent">
+      <div class="callout-icon">⚡</div>
+      <div class="callout-content">
+        <strong class="callout-title">Aha — Optimizers don't fine-tune the model. They fine-tune the prompt.</strong>
+        <p>No model weights are updated. DSPy runs your module against a corpus of labeled examples, mutates the prompt (rewording instructions, adding <span class="term" data-definition="Example input/output pairs included directly in the prompt to show the LLM what good answers look like. 'Few-shot' = a few examples, vs. 'zero-shot' = no examples.">few-shot</span> examples), and keeps the version that scores highest. The result is a JSON file at <code>~/.sio/optimized/</code> — a "trained prompt" you can ship.</p>
+      </div>
+    </div>
+
+    <p>SIO ships with three optimizers. You pick one with a flag: <code>sio optimize --optimizer gepa</code>.</p>
+
+    <div class="pattern-cards">
+      <div class="pattern-card" style="border-top: 3px solid var(--color-actor-1)">
+        <div class="pattern-icon" style="background: var(--color-actor-1)">🔍</div>
+        <h4 class="pattern-title"><span class="term" data-definition="GEPA (Generative Evolutionary Prompt Adaptation) is DSPy's reflective optimizer. It uses a second, more powerful LLM to critique the first one's output and rewrite the prompt accordingly.">GEPA</span> <em style="font-weight:normal">(default)</em></h4>
+        <p class="pattern-desc"><strong>Reflective.</strong> Uses a second, smarter LM to critique the first one's output and suggest a better prompt. Slow but best quality. The default for SIO.</p>
+      </div>
+      <div class="pattern-card" style="border-top: 3px solid var(--color-actor-2)">
+        <div class="pattern-icon" style="background: var(--color-actor-2)">🧪</div>
+        <h4 class="pattern-title"><span class="term" data-definition="MIPROv2 (Multi-prompt Instruction Proposal Optimizer) uses Bayesian search to try many instruction variants and pick the highest-scoring one. Best when you have plenty of labeled examples.">MIPROv2</span></h4>
+        <p class="pattern-desc"><strong>Bayesian search</strong> over instruction variants. Good when you have 50+ labeled examples to score against. Methodical, broad coverage.</p>
+      </div>
+      <div class="pattern-card" style="border-top: 3px solid var(--color-actor-3)">
+        <div class="pattern-icon" style="background: var(--color-actor-3)">⚡</div>
+        <h4 class="pattern-title"><span class="term" data-definition="BootstrapFewShot generates synthetic example input/output pairs from your training set and inserts the best ones directly into the prompt. Fast and works with very little labeled data.">BootstrapFewShot</span></h4>
+        <p class="pattern-desc"><strong>Few-shot bootstrapping.</strong> Generates synthetic examples from your trainset and embeds the best ones in the prompt. Fast, works with minimal data.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       SCREEN 6 — Quiz
+       ============================================================ -->
+  <div class="module-screen">
+    <h2 class="screen-title">Check yourself</h2>
+    <p>Two questions. They test whether the two big shifts actually landed.</p>
+
+    <div class="quiz-container" id="quiz-module4">
+
+      <div class="quiz-question-block"
+           data-correct="option-b"
+           data-explanation-right="Exactly. Centralizing dspy.LM(...) construction means you get model + caching + temperature defaults in one place, you can swap providers with one env var, and a single grep test enforces the rule. That's the whole 'single point of safety' move."
+           data-explanation-wrong="Not quite — performance and licensing aren't the driver here, and DSPy itself doesn't require it. The real reason is centralization: one place to set model defaults, swap providers via env var, and one grep test that fails the build if anyone bypasses the factory.">
+        <h3 class="quiz-question">Why does SIO require all <code>dspy.LM(...)</code> calls to go through <code>lm_factory.py</code>?</h3>
+        <div class="quiz-options">
+          <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+            <div class="quiz-option-radio"></div>
+            <span>Performance — calling DSPy through a factory is faster than calling it directly.</span>
+          </button>
+          <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+            <div class="quiz-option-radio"></div>
+            <span>So model, caching, and temperature defaults are centralized — and one grep test enforces it across the codebase.</span>
+          </button>
+          <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+            <div class="quiz-option-radio"></div>
+            <span>The DSPy library refuses to run unless you wrap it in a factory.</span>
+          </button>
+          <button class="quiz-option" data-value="option-d" onclick="selectOption(this)">
+            <div class="quiz-option-radio"></div>
+            <span>For OpenAI licensing compliance.</span>
+          </button>
+        </div>
+        <div class="quiz-feedback"></div>
+      </div>
+
+      <div class="scenario-block">
+        <div class="scenario-context">
+          <span class="scenario-label">Scenario</span>
+          <p>SIO produces a new rule and it reads: <em>"Always check your inputs before running commands."</em> Your stomach drops — that's exactly the kind of platitude the system is supposed to prevent. <strong>What went wrong, and where would you look to fix it?</strong></p>
+        </div>
+        <div class="quiz-question-block"
+             data-correct="option-b"
+             data-explanation-right="Spot on. The B5 grounding directives in the PatternToRule signature failed — the LLM produced a generic platitude instead of citing the actual command (e.g., 'sed -i'). The fix is either to strengthen the few-shot examples in the signature's docstring, or to run sio optimize --optimizer gepa against a larger gold-standard corpus so the optimized prompt embeds better examples."
+             data-explanation-wrong="Not quite. The model choice and the database aren't the issue — the problem is upstream, in the contract that tells the LLM how to behave. The Signature's docstring (with its B5 grounding directives) is supposed to forbid generic titles. Either the few-shot examples are too weak, or the optimizer hasn't been run against a good corpus yet.">
+          <div class="quiz-options">
+            <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+              <div class="quiz-option-radio"></div>
+              <span>The model is too small — swap <code>SIO_TASK_LM</code> to a bigger model and try again.</span>
+            </button>
+            <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+              <div class="quiz-option-radio"></div>
+              <span>The B5 grounding directives in <code>PatternToRule</code> failed. Fix the few-shot examples in the signature's docstring, and/or run <code>sio optimize --optimizer gepa</code> against a larger gold corpus.</span>
+            </button>
+            <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+              <div class="quiz-option-radio"></div>
+              <span>The database column for <code>rule_title</code> is too short — truncation made it generic.</span>
+            </button>
+            <button class="quiz-option" data-value="option-d" onclick="selectOption(this)">
+              <div class="quiz-option-radio"></div>
+              <span>The Clusterer grouped unrelated errors — re-run clustering with a tighter similarity threshold.</span>
+            </button>
+          </div>
+          <div class="quiz-feedback"></div>
+        </div>
+      </div>
+
+      <button class="quiz-check-btn" onclick="checkQuiz('quiz-module4')">Check Answers</button>
+      <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module4')">Try Again</button>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       SCREEN 7 — Bridge to next module
+       ============================================================ -->
+  <div class="module-screen">
+    <h2 class="screen-title">What just happened</h2>
+
+    <div class="step-cards">
+      <div class="step-card">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>A Pattern arrived</strong>
+          <p>23 errors clustered into one signal — "<code>sed -i</code> wipes on <code>.env</code>".</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>The Suggester filled in a typed Signature</strong>
+          <p><code>PatternToRule</code> — inputs in, three structured outputs out. The docstring did the prompting.</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>Every LLM call went through <code>lm_factory</code></strong>
+          <p>One door. One grep test. One env var to swap providers.</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <strong>Quality gates scored it</strong>
+          <p>The platitude detector, the literal-citation check, the PHI check. 0.87. Saved.</p>
+        </div>
+      </div>
+    </div>
+
+    <p>But the rule still has to <em>go somewhere</em>. A human has to approve it. It has to land in <code>CLAUDE.md</code> without trashing the file that's already there. That's the next module — closing the loop, without breaking anything.</p>
+  </div>
+
+</section>
+<section class="module" id="module-5">
+  <header class="module-header">
+    <span class="module-number">Module 5</span>
+    <h2 class="module-title">Closing the Loop — Apply Safely or Not At All</h2>
+    <p class="module-subtitle">The three gates between a generated suggestion and a real change on disk.</p>
+  </header>
+
+  <!-- SCREEN 1: The surgical timeout metaphor -->
+  <div class="screen">
+    <div class="metaphor-card">
+      <div class="metaphor-icon">🩺</div>
+      <h3>The Surgical Timeout</h3>
+      <p>Before any operation, the surgical team pauses. They read the chart aloud, confirm the procedure, confirm the site. Only then does the first cut happen — and a copy of the patient's pre-op state is filed away, kept for ten patients back.</p>
+      <p>If something goes wrong, the surgeon can rewind to before the cut.</p>
+    </div>
+
+    <div class="callout aha">
+      <strong>SIO's Applier works the same way.</strong> It never writes without a <span class="term" data-tip="A snapshot of the file taken just before the change, so you can restore it.">backup</span>, never writes outside permitted directories, and never writes a rule the human didn't approve.
+    </div>
+  </div>
+
+  <!-- SCREEN 2: The hook — a string in a database -->
+  <div class="screen">
+    <h3>A rule has been generated. Now what?</h3>
+    <p>The DSPy brain just produced this string and dropped it in the <code>suggestions</code> table:</p>
+
+    <div class="code-callout">
+      <code>"Never use <span class="term" data-tip="An old-school command-line tool for editing files in-place. Notorious for silently wiping files on this machine.">sed -i</span> — use the Edit tool instead."</code>
+    </div>
+
+    <p>Nothing has touched your <code>CLAUDE.md</code> yet. So what's the path from <em>"suggestion in a database"</em> to <em>"rule in your config file"</em> — and how does SIO make sure that path is reversible?</p>
+
+    <div class="callout teal">
+      <strong>Three gates.</strong> Human approval. Path validation. Atomic backup. Each one lives in its own file. Each one alone could stop a bad write.
+    </div>
+  </div>
+
+  <!-- SCREEN 3: Gate 1 — Human approval -->
+  <div class="screen">
+    <h3>Gate 1 — The approval status check</h3>
+    <p>Before the Applier touches disk, it checks one field on the suggestion row: <code>status</code>. If the status isn't <span class="term" data-tip="A suggestion the human reviewed and accepted via `sio suggest-review`.">approved</span> or <span class="term" data-tip="A suggestion the system pre-approved because it matches a high-confidence pattern. Still passes through path validation and backup.">auto_approved</span>, the function bails.</p>
+
+    <div class="translation-block">
+      <div class="translation-code">
+<pre><code>def apply_change(db, suggestion_id, config=None, force=False) -> dict:
+    row = db.execute(
+        "SELECT * FROM suggestions WHERE id = ?", (suggestion_id,)
+    ).fetchone()
+
+    if row is None:
+        return {"success": False, "reason": "Suggestion not found"}
+
+    suggestion = dict(row)
+
+    if suggestion["status"] not in ("approved", "auto_approved"):
+        return {
+            "success": False,
+            "reason": f"Suggestion is not approved (status: {suggestion['status']})",
+        }
+    # ... budget check, similarity merge, atomic write with backup</code></pre>
+      </div>
+      <div class="translation-english">
+        <p><strong>Look up the suggestion by ID.</strong> If it doesn't exist, return a failure dict — no exception, no surprise.</p>
+        <p><strong>Read the status field.</strong> If it's anything other than <code>approved</code> or <code>auto_approved</code>, refuse the operation.</p>
+        <p>A suggestion in <code>pending</code> state <em>cannot be applied</em> even if you pass its ID directly to <code>sio apply</code>. The <span class="term" data-tip="A safety pattern where the system pauses for a person to review before doing something risky.">human-in-the-loop</span> gate is enforced in code, not just in the CLI.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 4: Gate 2 — Path validation -->
+  <div class="screen">
+    <h3>Gate 2 — The path allowlist</h3>
+    <p>Even an approved suggestion can't write just anywhere. The Applier validates the target path against a tiny <span class="term" data-tip="A list of explicitly permitted destinations. Anything not on the list is rejected by default.">allowlist</span>: your home <code>~/.sio</code>, your home <code>~/.claude</code>, or your current working directory.</p>
+
+    <div class="translation-block">
+      <div class="translation-code">
+<pre><code>_ALLOWED_ROOTS: list[Path] = [
+    Path.home() / ".sio",
+    Path.home() / ".claude",
+]
+
+def _validate_target_path(path: Path, *, extra_roots: tuple[Path, ...] = ()) -> str | None:
+    """Return an error message if path is outside allowed roots or cwd."""
+    resolved = path.resolve()
+    allowed = (*_ALLOWED_ROOTS, Path.cwd(), *extra_roots)
+    for root in allowed:
+        try:
+            resolved.relative_to(root.resolve())
+            return None
+        except ValueError:
+            continue
+    return (
+        f"Target path {resolved} is outside allowed directories: "
+        f"{', '.join(str(r) for r in allowed)}"
+    )</code></pre>
+      </div>
+      <div class="translation-english">
+        <p>This is the <strong>kill switch</strong>. <code>resolve()</code> turns any sneaky path — like <code>../../etc/passwd</code> — into an absolute path. No tricks.</p>
+        <p>Then we walk through each allowed root and ask: is the target inside this folder? If yes, return <code>None</code> (meaning "no error, you may proceed").</p>
+        <p>If nothing matches, return an error string. The Applier <strong>will not</strong> write if this returns anything but <code>None</code>. No matter how the suggestion's <code>target_file</code> got into the database, this seatbelt catches it before disk.</p>
+      </div>
+    </div>
+
+    <div class="callout warning">
+      <strong>This defends against <span class="term" data-tip="An attack where a malicious filename like '../../etc/passwd' tries to escape its intended folder.">path traversal</span>.</strong> Even if a generated rule somehow contained a hostile target, it can't write outside the sandbox.
+    </div>
+  </div>
+
+  <!-- SCREEN 5: Gate 3 — Budget + atomic backup -->
+  <div class="screen">
+    <h3>Gate 3 — Budget check + atomic backup</h3>
+    <p>Once approval and path pass, two final checks: is there room in the file, and is the old version safely copied aside?</p>
+
+    <div class="translation-block">
+      <div class="translation-code">
+<pre><code>"""sio.applier.budget -- instruction budget management for config files.
+
+Public API
+----------
+    count_meaningful_lines(file_path) -> int
+    check_budget(file_path, new_rule_lines, config) -> BudgetResult
+    trigger_consolidation(file_path, config) -> bool
+"""
+
+class BudgetResult(NamedTuple):
+    status: str  # 'ok' | 'consolidate' | 'blocked'
+    current_lines: int
+    cap: int
+    message: str</code></pre>
+      </div>
+      <div class="translation-english">
+        <p>Every instruction file has a <span class="term" data-tip="A maximum size for a config file. SIO refuses to grow CLAUDE.md beyond this — too many rules and the LLM stops reading them.">budget cap</span>. Before adding a rule, SIO counts the meaningful lines in your <code>CLAUDE.md</code>.</p>
+        <p>Three outcomes: <code>ok</code> (write it), <code>consolidate</code> (merge similar rules first), or <code>blocked</code> (refuse — you're at capacity).</p>
+        <p>Then the <span class="term" data-tip="A write that either fully succeeds or leaves the file untouched — never a half-written mess.">atomic write</span> happens: the old file is copied to <code>~/.sio/backups/</code> with a timestamp, then the new content is written. The last 10 backups are kept.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 6: Data flow animation -->
+  <div class="screen">
+    <h3>Trace one suggestion from database to disk</h3>
+    <p>Follow a single packet from "pending in the table" all the way to "live in your config" — and notice every gate it passes through.</p>
+
+    <div class="flow-animation" data-steps='[
+      {"actor": "Suggestion (pending)", "icon": "📝", "tip": "A row in the suggestions table. Status: pending. Has done nothing yet."},
+      {"actor": "sio suggest-review", "icon": "👀", "tip": "The CLI shows you the rule, the evidence, and the confidence score."},
+      {"actor": "You — approve / reject / defer", "icon": "🧑", "tip": "Human-in-the-loop. Nothing moves without your call."},
+      {"actor": "Suggestion (approved)", "icon": "✅", "tip": "Status flips to approved. Now eligible for apply."},
+      {"actor": "sio apply <id>", "icon": "⚙️", "tip": "Kicks off the Applier — runs the three gates in order."},
+      {"actor": "Gate: path validation", "icon": "🛡️", "tip": "Is the target inside ~/.sio, ~/.claude, or cwd? If not — STOP."},
+      {"actor": "Gate: budget check", "icon": "📏", "tip": "Is there room in CLAUDE.md? If not — STOP and ask to consolidate."},
+      {"actor": "Gate: backup + atomic write", "icon": "💾", "tip": "Copy old file to ~/.sio/backups/ with timestamp. Then write."},
+      {"actor": "CLAUDE.md (updated) + backup file", "icon": "📂", "tip": "The new rule lives in your config. The old version lives in ~/.sio/backups/ — reversible."}
+    ]'></div>
+
+    <div class="callout aha">
+      <strong>Three gates, all enforced in code.</strong> Human approval lives in <code>writer.py</code>. Path validation lives in <code>writer.py</code>. Atomic backup lives in <code>writer.py</code>. Even if one gate had a bug, the others would still defend the system.
+    </div>
+  </div>
+
+  <!-- SCREEN 7: Rollback -->
+  <div class="screen">
+    <h3>Every apply is reversible</h3>
+    <p>The Applier writes a row to the <code>applied_changes</code> table for every successful write — including the <span class="term" data-tip="A side-by-side comparison showing exactly what changed between the old and new version of a file.">diff</span> before and after. That's what makes the undo button work.</p>
+
+    <div class="translation-block">
+      <div class="translation-code">
+<pre><code>"""sio.applier.rollback — revert applied changes.
+
+Public API
+----------
+    rollback_change(db, change_id) -> dict
+"""</code></pre>
+      </div>
+      <div class="translation-english">
+        <p>One function. One job. <code>rollback_change</code> takes a change ID, looks up the stored diff, and restores the file to its pre-write state.</p>
+        <p>You can experiment fearlessly: try an apply, look at the result, run <code>sio apply --rollback &lt;id&gt;</code> if you don't like it. The pre-write snapshot is already in the database.</p>
+      </div>
+    </div>
+
+    <div class="callout aha">
+      <strong>sio apply is reversible.</strong> The backup folder is your time machine. The <code>applied_changes</code> table is the index telling you which file to put back where.
+    </div>
+  </div>
+
+  <!-- SCREEN 8: Quiz -->
+  <div class="screen">
+    <h3>Check your understanding</h3>
+
+    <!-- Quiz 1: spot the bug -->
+    <div class="quiz-card" data-quiz-type="spot-bug">
+      <p class="quiz-prompt"><strong>Spot the bug.</strong> Imagine someone wrote a "minimal" applier like this:</p>
+<pre><code>path = Path(suggestion["target_file"])
+path.write_text(new_content)</code></pre>
+      <p class="quiz-question">What's the safety-critical omission?</p>
+      <div class="quiz-options">
+        <button class="quiz-option" data-correct="false" data-explain="Exception handling matters too, but it's not the safety-critical omission. A crash here is recoverable. An overwrite of /etc/passwd or a lost CLAUDE.md is not.">Missing exception handling around the write</button>
+        <button class="quiz-option" data-correct="true" data-explain="Exactly. Without `_validate_target_path` the write could land anywhere on disk. Without backing up the old file first, there's no rollback. Both gates are missing here — and both live in writer.py for exactly this reason.">No path validation AND no backup of the previous file</button>
+        <button class="quiz-option" data-correct="false" data-explain="Logging is nice but it doesn't prevent destructive writes. The gates are about preventing damage, not recording it.">Missing log statement before the write</button>
+      </div>
+    </div>
+
+    <!-- Quiz 2: scenario -->
+    <div class="quiz-card" data-quiz-type="scenario">
+      <p class="quiz-prompt"><strong>You ran <code>sio apply 142</code>.</strong> The output says:</p>
+      <pre><code>BLOCKED: instruction file at capacity</code></pre>
+      <p class="quiz-question">What is SIO telling you to do?</p>
+      <div class="quiz-options">
+        <button class="quiz-option" data-correct="false" data-explain="Force-applying would defeat the budget check — and the budget exists because LLMs stop reading config files that grow too long. The cap is protecting your agent's behavior, not annoying you.">Re-run with <code>--force</code> to bypass the check</button>
+        <button class="quiz-option" data-correct="true" data-explain="Right. The budget refuses to grow CLAUDE.md until similar existing rules are merged. SIO **prevents** unbounded growth of your config — `sio dedupe` finds consolidation opportunities so the new rule can land without the file getting bloated.">Run <code>sio dedupe</code> to find rules that can be consolidated</button>
+        <button class="quiz-option" data-correct="false" data-explain="Deleting your config wouldn't help — and SIO would never ask you to. The budget check is asking for cleanup, not destruction.">Delete <code>CLAUDE.md</code> and start over</button>
+      </div>
+    </div>
+
+    <!-- Quiz 3: multi-choice -->
+    <div class="quiz-card" data-quiz-type="multi-choice">
+      <p class="quiz-question"><strong>Where are pre-apply backups stored?</strong></p>
+      <div class="quiz-options">
+        <button class="quiz-option" data-correct="false" data-explain="/tmp gets wiped on reboot. SIO needs backups to survive — they're your rollback insurance.">In <code>/tmp</code></button>
+        <button class="quiz-option" data-correct="false" data-explain="SIO doesn't assume your project is a git repo. The backup mechanism has to work even outside version control.">In a git stash</button>
+        <button class="quiz-option" data-correct="true" data-explain="Yes. Each apply copies the old file to `~/.sio/backups/` with a timestamp. The last 10 backups are kept — old enough to recover from a bad run, new enough not to balloon your disk.">In <code>~/.sio/backups/</code> with last-10 retention</button>
+        <button class="quiz-option" data-correct="false" data-explain="If backups were discarded, rollback couldn't exist. The whole point of the third gate is that the old version survives the write.">Nowhere — they're discarded after the write</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 9: CTA -->
+  <div class="screen final-cta">
+    <h3>Your turn.</h3>
+    <p>You've seen all four organs: the eyes that watch sessions, the librarian that clusters them, the brain that drafts rules, and the gates that decide what reaches your config.</p>
+
+    <div class="cta-block">
+      <p>Point SIO at your own session history and see what it finds:</p>
+      <pre><code>sio mine --since '24 hours'</code></pre>
+    </div>
+  </div>
+</section>
+  </main>
+
+</body>
+</html>

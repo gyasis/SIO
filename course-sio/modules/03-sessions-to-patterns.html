@@ -1,0 +1,396 @@
+<section class="module" id="module-3" style="background: var(--color-bg-warm)">
+  <div class="module-content">
+    <header class="module-header animate-in">
+      <span class="module-number">03</span>
+      <h1 class="module-title">From Sessions to Patterns</h1>
+      <p class="module-subtitle">How raw conversational mess becomes a signal — without a single AI token.</p>
+    </header>
+
+    <div class="module-body">
+
+      <!-- SCREEN 1: HOOK — gold panning -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Panning for gold in a river of chatter</h2>
+        <p>Your <span class="term" data-definition="A folder on your machine where the SpecStory extension saves every Claude Code conversation as a markdown file. SIO reads from here as one of its raw inputs.">~/.specstory/</span> folder has <strong>4,000 markdown files</strong>. Your Claude Code <span class="term" data-definition="JSONL means one JSON object per line. Claude Code saves each session's full message stream this way so it can be replayed or analyzed.">JSONL</span> transcripts add hundreds more. How does SIO go from <em>"thousands of conversations"</em> to <em>"you keep doing X — let's fix it"</em>?</p>
+
+        <p>Imagine a gold-panning operation by a river. The river is your daily transcripts — mostly noise. A <strong>sieve</strong> catches only five specific shapes of "rock." A <strong>sorter</strong> piles up matching rocks. One rock alone is a complaint. Twenty rocks in one pile is a <em>pattern</em> worth a rule.</p>
+
+        <div class="icon-rows stagger-children">
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-2)">🌊</div>
+            <div>
+              <strong>The river</strong>
+              <p>Raw session transcripts — SpecStory markdown + Claude Code JSONL</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-4)">🪣</div>
+            <div>
+              <strong>The sieve (Miner)</strong>
+              <p>Catches only five shapes of "rock" — the five error types</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-3)">⚖️</div>
+            <div>
+              <strong>The sorter (Clusterer)</strong>
+              <p>Groups similar rocks into piles using semantic similarity</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-info">
+          <div class="callout-icon">🔍</div>
+          <div class="callout-content">
+            <strong class="callout-title">Both stages are deterministic</strong>
+            <p>No LLM reads your transcripts here. The Miner is <span class="term" data-definition="A regular expression — a tiny pattern language for matching text. For example, the pattern 'no,?\s+actually' matches the phrases 'no actually' or 'no, actually' anywhere in a message.">regex</span> matching. The Clusterer is math on <span class="term" data-definition="An embedding is a list of numbers (a vector) that represents the meaning of a piece of text. Texts that mean similar things end up as nearby vectors.">embeddings</span>. Cheap, fast, repeatable.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 2: THE FIVE ERROR SHAPES -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The five shapes of "rock"</h2>
+        <p>The Miner scans each parsed message and asks one question: <em>does this match one of five known error shapes?</em> If yes, emit an <strong>ErrorRecord</strong>. If no, drop it.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+            <pre><code><span class="code-comment">"""Error extractor — classifies parsed conversation messages into five error</span>
+<span class="code-comment">categories and emits ErrorRecord dicts.</span>
+
+<span class="code-comment">Error types detected</span>
+<span class="code-comment">--------------------</span>
+<span class="code-comment">tool_failure       — assistant message whose ``error`` field is non-null</span>
+<span class="code-comment">user_correction    — human message containing correction phrasing</span>
+<span class="code-comment">repeated_attempt   — same tool_name called 3+ consecutive times with similar input</span>
+<span class="code-comment">undo               — human message containing undo / revert signals</span>
+<span class="code-comment">agent_admission    — assistant message where the AI admits a mistake</span>
+<span class="code-comment">                    (e.g. "I made a mistake", "I should have", "my apologies")</span>
+<span class="code-comment">"""</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl"><strong>tool_failure</strong> — the AI tried to do something and the tool returned an error (a failed shell command, a 404, a syntax error).</p>
+              <p class="tl"><strong>user_correction</strong> — you typed "no, actually…" or "that's wrong." A human-supplied course-correction.</p>
+              <p class="tl"><strong>repeated_attempt</strong> — the AI called the <em>same</em> tool three times in a row with nearly-identical input. A retry loop.</p>
+              <p class="tl"><strong>undo</strong> — you asked it to revert or back out. A stronger correction than a verbal "no."</p>
+              <p class="tl"><strong>agent_admission</strong> — the AI itself said "my apologies" or "I made a mistake." Self-reported failure.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-accent">
+          <div class="callout-icon">💡</div>
+          <div class="callout-content">
+            <strong class="callout-title">No LLM has read your code yet</strong>
+            <p>Detection is pure pattern matching — regex plus structural inspection of the JSON. SIO can mine months of history offline, on a plane, with the API down. The LLM only enters in the <em>next</em> module.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 3: HOW user_correction WORKS -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Inside a detector: <code>user_correction</code></h2>
+        <p>Each error type is just a list of regex patterns. The Miner walks every human message and checks each pattern. One match → emit an ErrorRecord. Here's the real list:</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+            <pre><code><span class="code-property">_CORRECTION_PATTERNS</span>: <span class="code-function">list</span>[re.Pattern[<span class="code-function">str</span>]] = [
+    re.<span class="code-function">compile</span>(<span class="code-string">r"\bno,?\s+actually\b"</span>, re.IGNORECASE),
+    re.<span class="code-function">compile</span>(<span class="code-string">r"(?:^|(?&lt;=\s)|\A)no,"</span>, re.IGNORECASE),
+    <span class="code-comment"># ... "that's wrong", "I meant", "stop", "undo that", etc.</span>
+]</code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Make a list called <code>_CORRECTION_PATTERNS</code>. Each item is a compiled regex.</p>
+              <p class="tl">First pattern matches "no actually" or "no, actually" anywhere in the message. Case-insensitive.</p>
+              <p class="tl">Second pattern matches a "no," at the very start of a message or after whitespace.</p>
+              <p class="tl">More patterns follow — "that's wrong," "I meant," "stop," "undo that."</p>
+            </div>
+          </div>
+        </div>
+
+        <p>The Miner does not understand <em>what</em> you were correcting. It only notices the <strong>shape</strong> of correction language. That's enough — and it's why this stage is so fast.</p>
+      </section>
+
+      <!-- SCREEN 4: PIPELINE FLOW -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The pipeline, end to end</h2>
+        <p>Watch one error travel from a raw transcript file all the way to a stored pattern. Click <strong>Next Step</strong> to advance.</p>
+
+        <div class="flow-animation" data-steps='[
+          {"highlight":"flow-actor-1","label":"JSONL transcript on disk — thousands of messages, mostly noise."},
+          {"highlight":"flow-actor-2","label":"Parser reads the file line by line, normalizing each message.","packet":true,"from":"actor-1","to":"actor-2"},
+          {"highlight":"flow-actor-3","label":"Error extractor checks each message against the five regex sieves.","packet":true,"from":"actor-2","to":"actor-3"},
+          {"highlight":"flow-actor-4","label":"A tool_failure is detected: sed -i wiped the .env file. Saved as an ErrorRecord.","packet":true,"from":"actor-3","to":"actor-4"},
+          {"highlight":"flow-actor-5","label":"Clusterer embeds the error text and compares cosine similarity to existing centroids.","packet":true,"from":"actor-4","to":"actor-5"},
+          {"highlight":"flow-actor-6","label":"A second similar error joins the cluster. Pattern stored: sed -i wipe (12 errors, 5 sessions).","packet":true,"from":"actor-5","to":"actor-6"}
+        ]'>
+          <div class="flow-actors">
+            <div class="flow-actor" id="flow-actor-1">
+              <div class="flow-actor-icon">📄</div>
+              <span>JSONL Files</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-2">
+              <div class="flow-actor-icon">🪚</div>
+              <span>Parsers</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-3">
+              <div class="flow-actor-icon">🪣</div>
+              <span>Error Extractor</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-4">
+              <div class="flow-actor-icon">🗃️</div>
+              <span>error_records</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-5">
+              <div class="flow-actor-icon">⚖️</div>
+              <span>Clusterer</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-6">
+              <div class="flow-actor-icon">💎</div>
+              <span>patterns</span>
+            </div>
+          </div>
+          <div class="flow-packet" id="flow-packet"></div>
+          <div class="flow-step-label" id="flow-label">Click "Next Step" to follow one error through the pipeline.</div>
+          <div class="flow-controls">
+            <button class="btn flow-next-btn">Next Step</button>
+            <button class="btn flow-reset-btn">Restart</button>
+            <span class="flow-progress"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 5: CLUSTERER CONTRACT -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The Clusterer's contract</h2>
+        <p>Once the Miner has produced a stack of raw errors, the Clusterer's job is to <strong>group ones that mean the same thing</strong>. Its public API is a single function: feed it errors, get back patterns.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+            <pre><code><span class="code-comment">"""Groups a list of error record dicts into semantic clusters using cosine</span>
+<span class="code-comment">similarity on fastembed embeddings.  The public API is a single function:</span>
+
+<span class="code-comment">    cluster_errors(errors, threshold=0.70) -&gt; list[dict]</span>
+
+<span class="code-comment">Pattern dict schema</span>
+<span class="code-comment">-------------------</span>
+<span class="code-comment">pattern_id   : str   — centroid-hash slug (format: ``&lt;top_term&gt;_&lt;hex10&gt;``)</span>
+<span class="code-comment">description  : str   — representative error text (first error's text)</span>
+<span class="code-comment">error_count  : int   — number of errors in the cluster</span>
+<span class="code-comment">session_count: int   — number of distinct session_ids in the cluster</span>
+<span class="code-comment">rank_score   : float — 0.0 initially; downstream ranker sets this</span>
+<span class="code-comment">"""</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Call <code>cluster_errors</code> with a list of errors. Anything with <span class="term" data-definition="Cosine similarity measures how close two vectors point in the same direction. 1.0 means identical meaning, 0.0 means unrelated. SIO's default threshold of 0.70 means 'roughly the same idea.'">cosine similarity</span> above 0.70 ends up in the same pile.</p>
+              <p class="tl">Each output pattern gets a unique id built from its top term plus a short hash.</p>
+              <p class="tl">It carries a <em>representative</em> error text (the first one in the cluster) so you have something human-readable to read.</p>
+              <p class="tl">It counts how many errors landed in this pile, and how many distinct sessions they came from.</p>
+              <p class="tl"><code>rank_score</code> starts at zero. A later stage (the Ranker) will sort patterns by importance.</p>
+            </div>
+          </div>
+        </div>
+
+        <p>The magic word is <strong>threshold=0.70</strong>. SIO uses <span class="term" data-definition="fastembed is a small Python library that runs sentence-embedding models locally using ONNX. It turns a piece of text into a list of ~384 numbers representing its meaning — no API call, no cost.">fastembed</span> to turn each error's text into a vector, then asks: <em>is this vector within 0.70 of any cluster's center?</em> Yes → join the cluster. No → start a new one.</p>
+      </section>
+
+      <!-- SCREEN 6: CENTROID STORAGE -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Storing the centroid — a small but clever trick</h2>
+        <p>Every cluster has a <span class="term" data-definition="The centroid is the average position of all vectors in a cluster — the 'center of mass.' New errors are compared to the centroid, not to every member of the cluster.">centroid</span>: the average vector of all its errors. SIO packs that centroid into a compact <span class="term" data-definition="BLOB stands for Binary Large OBject — a column type in SQLite that stores raw bytes. Faster and smaller than storing 384 numbers as text.">BLOB</span> and saves it in SQLite.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+            <pre><code><span class="code-keyword">def</span> <span class="code-function">_pack_centroid</span>(vec: np.ndarray, model_hash: <span class="code-function">bytes</span>) -&gt; <span class="code-function">bytes</span>:
+    <span class="code-comment">"""Pack vec into the R-9 BLOB format.</span>
+
+<span class="code-comment">    Format: [dim: uint32_le (4 bytes)] [model_hash: 8 bytes] [vector: float32[dim]]</span>
+<span class="code-comment">    """</span>
+    <span class="code-keyword">if</span> <span class="code-function">len</span>(model_hash) != <span class="code-number">8</span>:
+        <span class="code-keyword">raise</span> ValueError(<span class="code-string">f"model_hash must be exactly 8 bytes, got {len(model_hash)}"</span>)
+    dim = <span class="code-function">len</span>(vec)
+    header = struct.<span class="code-function">pack</span>(<span class="code-string">"&lt;I"</span>, dim) + model_hash
+    floats = vec.<span class="code-function">astype</span>(np.float32).<span class="code-function">tobytes</span>()
+    <span class="code-keyword">return</span> header + floats</code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Take the cluster's average vector and a short hash identifying which embedding model produced it.</p>
+              <p class="tl">First 4 bytes: the vector's dimension (e.g. 384). Next 8 bytes: the model hash so we know if we ever swap models.</p>
+              <p class="tl">Safety check: the model hash must be exactly 8 bytes, no more, no less.</p>
+              <p class="tl">Then dump the raw floating-point numbers as bytes. Done. One row in SQLite holds the whole centroid.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-accent">
+          <div class="callout-icon">💡</div>
+          <div class="callout-content">
+            <strong class="callout-title">The centroid is your savings account</strong>
+            <p>Once a centroid is stored as a BLOB, every new error compares against the saved vector. SIO never re-embeds the whole corpus to ask "is this familiar?" That's how the same script can run nightly on years of history without blowing up.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 7: GROUP CHAT — the three actors talking -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Listen in: Miner ↔ Clusterer</h2>
+        <p>Step through a real handoff. Click <strong>Next Message</strong> to advance the conversation.</p>
+
+        <div class="chat-window" id="chat-module3">
+          <div class="chat-messages">
+            <div class="chat-message" data-msg="0" data-sender="session" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-2)">S</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-2)">Session Transcript</span>
+                <p>Here's 4,000 messages from last week. Most of it is fine. Some of it isn't.</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="1" data-sender="miner" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-4)">M</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-4)">Miner</span>
+                <p>Scanning for tool_failure, user_correction, repeated_attempt, undo, agent_admission… pure regex, no AI.</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="2" data-sender="miner" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-4)">M</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-4)">Miner</span>
+                <p>Found 73 raw errors. Sending them over.</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="3" data-sender="clusterer" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-3)">C</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-3)">Clusterer</span>
+                <p>Embedding each one with fastembed. Two errors with cosine similarity above 0.70 are the "same idea."</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="4" data-sender="clusterer" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-3)">C</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-3)">Clusterer</span>
+                <p>Stored 12 patterns. Top one: <code>sed -i wipe</code> — 12 errors across 5 sessions. That's the signal.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="chat-typing" id="chat-typing-3" style="display:none">
+            <div class="chat-avatar" id="chat-module3-typing-avatar">?</div>
+            <div class="chat-typing-dots">
+              <span class="typing-dot"></span>
+              <span class="typing-dot"></span>
+              <span class="typing-dot"></span>
+            </div>
+          </div>
+
+          <div class="chat-controls">
+            <button class="btn chat-next-btn">Next Message</button>
+            <button class="btn chat-all-btn">Play All</button>
+            <button class="btn chat-reset-btn">Replay</button>
+            <span class="chat-progress"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 8: QUIZ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Check your intuition</h2>
+
+        <div class="quiz-container" id="quiz-module3">
+
+          <div class="quiz-question-block"
+               data-correct="one-pattern"
+               data-explanation-right="Exactly. The error texts are nearly identical structurally — 'sed -i' + 'file emptied.' fastembed sees them as the same idea (cosine sim well above 0.70), so they cluster together. The pattern is 'sed -i wipe' — not 'wipe .env specifically.' That's how SIO generalizes a rule from a recurring shape rather than memorizing one file path."
+               data-explanation-wrong="Not quite. Yes, the filenames differ — but the Clusterer doesn't pattern-match on filenames; it embeds the whole error text. Two strings that say almost the same thing about sed -i wiping a file have nearly-identical embeddings, so they end up in one cluster. The resulting pattern will be 'sed -i wipe' generally, not 'wipe of .env specifically.'">
+            <h3 class="quiz-question">You see two error records side-by-side: (A) <code>sed -i 's/foo/bar/' .env → file emptied</code> and (B) <code>sed -i 's/x/y/' .bashrc → file emptied</code>. Should the Clusterer group these into one pattern or two?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="one-pattern" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>One pattern — they're the same idea, just different filenames.</span>
+              </button>
+              <button class="quiz-option" data-value="two-patterns" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Two patterns — different filenames means different errors.</span>
+              </button>
+              <button class="quiz-option" data-value="depends-shell" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>It depends on the user's shell configuration.</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="scenario-block">
+            <div class="scenario-context">
+              <span class="scenario-label">Scenario</span>
+              <p>You just ran <code>sio patterns</code> and one row shows <code>error_count: 1, session_count: 1</code>. Should you ask SIO to write a CLAUDE.md rule for it?</p>
+            </div>
+            <div class="quiz-question-block"
+                 data-correct="probably-not"
+                 data-explanation-right="Right. One occurrence in one session is noise, not a pattern. SIO's Ranker scores by frequency × recency × session spread — rare events score low and get filtered out before they ever reach the Suggester. The system is designed to ignore singletons until they actually recur."
+                 data-explanation-wrong="Not quite. A single error in a single session is statistically indistinguishable from a one-off mistake. SIO ranks patterns by frequency, recency, AND session spread — a one-off scores low and gets filtered before the Suggester ever sees it. Wait until it shows up again across sessions before writing a rule.">
+              <h3 class="quiz-question">What do you do?</h3>
+              <div class="quiz-options">
+                <button class="quiz-option" data-value="probably-not" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span>Probably not — single occurrence is noise; wait for it to recur.</span>
+                </button>
+                <button class="quiz-option" data-value="yes-immediately" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span>Yes, immediately — every error deserves a rule.</span>
+                </button>
+                <button class="quiz-option" data-value="delete-the-row" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span>Delete the row from the database to clean up the table.</span>
+                </button>
+              </div>
+              <div class="quiz-feedback"></div>
+            </div>
+          </div>
+
+          <div class="quiz-question-block"
+               data-correct="no-llm"
+               data-explanation-right="Correct. The whole Mining + Clustering pipeline runs locally — regex for detection, fastembed (ONNX models on your machine) for embeddings, NumPy for cosine math. Zero API tokens. The LLM only enters the picture when the Suggester writes a rule, which is the next module."
+               data-explanation-wrong="Not quite. The interesting design choice here is that no LLM is involved yet. Detection is regex matching against the JSONL. Clustering is fastembed (a small ONNX model running locally) plus NumPy cosine math. You could mine months of history on a plane with the API down — and that's the point.">
+            <h3 class="quiz-question">During Mining + Clustering, how many calls does SIO make to a large language model API?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="no-llm" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Zero — both stages are deterministic and run locally.</span>
+              </button>
+              <button class="quiz-option" data-value="one-per-error" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>One LLM call per error, to classify it into a category.</span>
+              </button>
+              <button class="quiz-option" data-value="one-per-cluster" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>One LLM call per cluster, to summarize the pattern.</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <button class="quiz-check-btn" onclick="checkQuiz('quiz-module3')">Check Answers</button>
+          <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module3')">Try Again</button>
+        </div>
+
+        <p style="margin-top: var(--space-8); color: var(--color-text-secondary)">Next up: the LLM finally wakes up. The <strong>Suggester</strong> takes these patterns and uses <span class="term" data-definition="DSPy is a Python framework that lets you define language-model-powered functions as 'modules' — programmable, optimizable, and version-controlled. SIO uses it to generate CLAUDE.md rules from patterns.">DSPy</span> to write the actual rule text you'll add to CLAUDE.md.</p>
+      </section>
+
+    </div>
+  </div>
+</section>
