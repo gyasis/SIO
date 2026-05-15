@@ -2404,6 +2404,109 @@ def reject(suggestion_id, note):
         raise SystemExit(1)
 
 
+@cli.command(name="promote-to-gold")
+@click.argument("invocation_id", type=int, required=False, default=None)
+@click.option(
+    "--all-eligible",
+    is_flag=True,
+    default=False,
+    help="Bulk-promote ALL invocations with user_satisfied=1 AND correct_outcome=1.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Show what would be promoted without writing.",
+)
+def promote_to_gold_cmd(invocation_id, all_eligible, dry_run):
+    """Promote behavior_invocations to gold_standards for DSPy training.
+
+    A row is eligible when user_satisfied=1 AND correct_outcome=1.
+    Use --all-eligible to bulk-promote, or pass an INVOCATION_ID for one row.
+    """
+    from sio.core.arena.gold_standards import promote_to_gold as do_promote
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found.")
+        raise SystemExit(1)
+
+    if invocation_id is None and not all_eligible:
+        click.echo(
+            "Usage: sio promote-to-gold <INVOCATION_ID> | --all-eligible "
+            "[--dry-run]"
+        )
+        raise SystemExit(1)
+
+    with _db_conn(db_path) as conn:
+        if all_eligible:
+            rows = conn.execute(
+                "SELECT id FROM behavior_invocations "
+                "WHERE user_satisfied=1 AND correct_outcome=1"
+            ).fetchall()
+            if not rows:
+                click.echo(
+                    "No eligible invocations found "
+                    "(need user_satisfied=1 AND correct_outcome=1)."
+                )
+                click.echo(
+                    "Hint: invocations may not have been labeled yet. "
+                    "See `sio review` to label them."
+                )
+                raise SystemExit(1)
+            if dry_run:
+                click.echo(
+                    f"DRY RUN — would attempt to promote {len(rows)} "
+                    "eligible invocations."
+                )
+                return
+            promoted = 0
+            skipped = 0
+            for row in rows:
+                gid = do_promote(row["id"], db_path=conn)
+                if gid:
+                    promoted += 1
+                else:
+                    skipped += 1
+            click.echo(
+                f"Promoted: {promoted}  Skipped "
+                f"(already in gold_standards): {skipped}"
+            )
+        else:
+            if dry_run:
+                inv = conn.execute(
+                    "SELECT id, user_satisfied, correct_outcome "
+                    "FROM behavior_invocations WHERE id=?",
+                    (invocation_id,),
+                ).fetchone()
+                if inv is None:
+                    click.echo(f"Invocation {invocation_id} not found.")
+                    raise SystemExit(1)
+                eligible = (
+                    inv["user_satisfied"] == 1 and inv["correct_outcome"] == 1
+                )
+                click.echo(
+                    f"DRY RUN — invocation {invocation_id}: "
+                    f"user_satisfied={inv['user_satisfied']} "
+                    f"correct_outcome={inv['correct_outcome']} "
+                    f"eligible={eligible}"
+                )
+                return
+            gid = do_promote(invocation_id, db_path=conn)
+            if gid:
+                click.echo(
+                    f"Invocation {invocation_id} promoted to "
+                    f"gold_standards (ID: {gid})."
+                )
+            else:
+                click.echo(
+                    f"Invocation {invocation_id} NOT promoted. "
+                    "Needs user_satisfied=1 AND correct_outcome=1, "
+                    "or may already be promoted."
+                )
+                raise SystemExit(1)
+
+
 @cli.command("apply")
 @click.argument("suggestion_id", type=int, required=False, default=None)
 @click.option(
