@@ -3022,13 +3022,23 @@ def sio_status(plain: bool = False):
                 except Exception:
                     training_data["optimized_modules"] = "n/a"
                 try:
-                    training_data["active_module"] = conn.execute(
-                        "SELECT module_name FROM optimized_modules WHERE is_active = 1 LIMIT 1"
-                    ).fetchone()
+                    # Try newer column ``module_name`` first; fall back to
+                    # the legacy ``module_type`` column that all current rows
+                    # actually populate.
+                    try:
+                        row = conn.execute(
+                            "SELECT module_name FROM optimized_modules "
+                            "WHERE is_active = 1 "
+                            "ORDER BY id DESC LIMIT 1"
+                        ).fetchone()
+                    except Exception:
+                        row = conn.execute(
+                            "SELECT module_type FROM optimized_modules "
+                            "WHERE is_active = 1 "
+                            "ORDER BY id DESC LIMIT 1"
+                        ).fetchone()
                     training_data["active_module"] = (
-                        training_data["active_module"][0]
-                        if training_data["active_module"]
-                        else "none"
+                        row[0] if row else "none"
                     )
                 except Exception:
                     training_data["active_module"] = "n/a"

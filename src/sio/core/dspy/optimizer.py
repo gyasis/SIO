@@ -634,10 +634,20 @@ def _resolve_signature(module_name: str):
 
 
 def _build_trainset(db_path: str, module_name: str, limit: int, offset: int = 0):
-    """Load gold_standards rows and convert to dspy.Example objects.
+    """Load training examples for the given module and convert to dspy.Example.
 
-    Each gold row with a populated dspy_example_json is deserialized.
-    Rows without that field use the available columns directly.
+    Routing by module_name:
+    - ``suggestion_generator`` → reads from ``ground_truth`` table where
+      ``label='positive'`` (the table populated by ``sio approve``).
+      Built from columns: error_examples_json, error_type, pattern_summary,
+      target_surface, rule_title, prevention_instructions, rationale.
+    - All other modules → reads from ``gold_standards`` (legacy path,
+      populated by ``sio promote-to-gold``).
+
+    Rationale: The ``suggestion_generator`` signature operates on error-pattern
+    inputs and produces rule-text outputs — the exact shape of the
+    ``ground_truth`` table. ``gold_standards`` was designed for the
+    skill-routing modules (recall_router etc.) which take user_message inputs.
     """
     import json  # noqa: PLC0415
     import sqlite3  # noqa: PLC0415
@@ -647,13 +657,43 @@ def _build_trainset(db_path: str, module_name: str, limit: int, offset: int = 0)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
-        rows = conn.execute(
-            "SELECT * FROM gold_standards ORDER BY id ASC LIMIT ? OFFSET ?",
-            (limit, offset),
-        ).fetchall()
+        if module_name == "suggestion_generator":
+            rows = conn.execute(
+                "SELECT * FROM ground_truth WHERE label='positive' "
+                "ORDER BY id ASC LIMIT ? OFFSET ?",
+                (limit, offset),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM gold_standards ORDER BY id ASC LIMIT ? OFFSET ?",
+                (limit, offset),
+            ).fetchall()
     finally:
         conn.close()
 
+    # suggestion_generator path — build Examples from ground_truth columns
+    if module_name == "suggestion_generator":
+        examples = []
+        for row in rows:
+            ex = dspy.Example(
+                error_examples=row["error_examples_json"] or "[]",
+                error_type=row["error_type"] or "",
+                pattern_summary=row["pattern_summary"] or "",
+                tool_input_context="{}",  # not stored in ground_truth
+                target_surface=row["target_surface"] or "claude_md_rule",
+                rule_title=row["rule_title"] or "",
+                prevention_instructions=row["prevention_instructions"] or "",
+                rationale=row["rationale"] or "",
+            ).with_inputs(
+                "error_examples",
+                "error_type",
+                "pattern_summary",
+                "tool_input_context",
+            )
+            examples.append(ex)
+        return examples
+
+    # Legacy gold_standards path (other modules)
     examples = []
     for row in rows:
         # Try dspy_example_json first
