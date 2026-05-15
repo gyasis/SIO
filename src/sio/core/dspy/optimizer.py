@@ -809,6 +809,33 @@ def _record_optimization_run(
     return cur.lastrowid
 
 
+def _load_trainset_from_jsonl(path: str) -> list:
+    """Load a curated trainset produced by ``sio curate``.
+
+    Each line is a JSON dict in the ``sio.curate.to_dspy_example`` shape:
+    ``{"inputs": [...], "data": {...}}``. Returns a list of dspy.Example
+    objects with ``.with_inputs(...)`` set to the declared inputs.
+    """
+    import json  # noqa: PLC0415
+
+    import dspy  # noqa: PLC0415
+
+    examples: list = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            obj = json.loads(line)
+            inputs = obj.get("inputs", [])
+            data = obj.get("data", obj)
+            # Drop the _meta key — DSPy doesn't need it
+            data = {k: v for k, v in data.items() if k != "_meta"}
+            ex = dspy.Example(**data).with_inputs(*inputs)
+            examples.append(ex)
+    return examples
+
+
 def _save_artifact(compiled_program, artifact_path: str) -> None:
     """Persist a compiled DSPy program to JSON."""
     import json  # noqa: PLC0415
@@ -829,6 +856,7 @@ def run_optimize(
     trainset_size: int = 200,
     valset_size: int = 50,
     db_path: str | None = None,
+    trainset_file: str | None = None,
 ) -> dict:
     """Run GEPA optimization on gold_standards and persist the compiled program.
 
@@ -838,6 +866,10 @@ def run_optimize(
         trainset_size: Max gold_standards rows to use for training.
         valset_size: Max gold_standards rows to use for validation.
         db_path: Path to sio.db (default: SIO_DB_PATH env or ~/.sio/sio.db).
+        trainset_file: Optional path to a curated JSONL produced by
+            ``sio curate``. When set, the trainset is loaded from this file
+            instead of the live ground_truth table — recommended to avoid
+            concept-drift in production runs.
 
     Returns:
         dict with keys: artifact (str path), score (float), optimizer (str name).
@@ -880,13 +912,18 @@ def run_optimize(
     # Validate module
     sig_cls = _resolve_signature(module_name)
 
-    # Build trainset
-    trainset = _build_trainset(db_path, module_name, limit=trainset_size, offset=0)
+    # Build trainset — either from a curated JSONL file (preferred) or live DB
+    if trainset_file:
+        all_examples = _load_trainset_from_jsonl(trainset_file)
+        trainset = all_examples[:trainset_size]
+        valset = all_examples[trainset_size : trainset_size + valset_size]
+    else:
+        trainset = _build_trainset(db_path, module_name, limit=trainset_size, offset=0)
+        valset = _build_trainset(db_path, module_name, limit=valset_size, offset=trainset_size)
+
     if len(trainset) < _MIN_TRAINSET:
         raise InsufficientData(f"trainset has {len(trainset)} examples; need >= {_MIN_TRAINSET}")
 
-    # Build valset (from rows after trainset)
-    valset = _build_trainset(db_path, module_name, limit=valset_size, offset=trainset_size)
     if not valset:
         # Reuse part of trainset as valset when gold corpus is small
         split = max(1, len(trainset) // 3)

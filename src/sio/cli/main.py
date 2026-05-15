@@ -3623,6 +3623,191 @@ def _display_optimization_diff(console, conn, result):
 # ---------------------------------------------------------------------------
 
 
+@cli.command("curate")
+@click.option("--since", default="7 days", show_default=True,
+              help='Time window: "7 days", "30 days", or ISO date.')
+@click.option("--emphasis", is_flag=True, default=False,
+              help='Require !! or ?? in user_message (frustration markers).')
+@click.option("--classified", is_flag=True, default=False,
+              help='Require pattern_id NOT NULL (skip unclassified records).')
+@click.option("--pattern", default=None,
+              help='Exact pattern_id slug to filter on.')
+@click.option("--pattern-prefix", default=None,
+              help='LIKE prefix for pattern_id (e.g. tool_failure__).')
+@click.option("--error-type", "error_types", multiple=True,
+              help='Restrict to error_type(s). Repeat flag for multiple.')
+@click.option("--exclude-corrections/--include-corrections", default=True,
+              show_default=True, help='Drop user_correction rows.')
+@click.option("--exclude-cascade/--include-cascade", default=True,
+              show_default=True, help='Drop cascade-failure rows.')
+@click.option("--has-positive-recovery", is_flag=True, default=False,
+              help='Require a positive_records event within --recovery-window-seconds.')
+@click.option("--recovery-window-seconds", default=600, show_default=True, type=int)
+@click.option("--limit", default=None, type=int,
+              help='Max rows to emit (DESC by timestamp; newest first).')
+@click.option("-o", "--output", default=None,
+              help='Output JSONL path. Defaults to ~/.sio/curated/<timestamp>.jsonl.')
+def curate_cmd(
+    since, emphasis, classified, pattern, pattern_prefix, error_types,
+    exclude_corrections, exclude_cascade, has_positive_recovery,
+    recovery_window_seconds, limit, output,
+):
+    """Produce a curated training dataset (JSONL + preview .md).
+
+    Wraps the filter chain in ``sio.curate``. Outputs a JSONL of canonical
+    PatternToRule dspy.Example shapes plus a Markdown preview with row
+    count, category distribution, and 10 sample rows.
+
+    The curated file is consumed by ``sio optimize --trainset-file <path>``.
+    """
+    import datetime as _dt  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    from sio.curate import CurateFilters, curate  # noqa: PLC0415
+
+    filters = CurateFilters(
+        since=since,
+        emphasis=emphasis,
+        classified=classified,
+        pattern=pattern,
+        pattern_prefix=pattern_prefix,
+        error_types=tuple(error_types),
+        exclude_corrections=exclude_corrections,
+        exclude_cascade=exclude_cascade,
+        has_positive_recovery=has_positive_recovery,
+        recovery_window_seconds=recovery_window_seconds,
+        limit=limit,
+    )
+
+    if output is None:
+        ts = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
+        output = os.path.expanduser(f"~/.sio/curated/curated_{ts}.jsonl")
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    out = curate(db_path, filters, Path(output))
+    click.echo(f"Rows:    {out['rows']}")
+    click.echo(f"JSONL:   {out['jsonl_path']}")
+    click.echo(f"Preview: {out['preview_path']}")
+    if out["rows"] == 0:
+        click.echo(
+            "\nWARNING: 0 rows — filters too tight. "
+            "Try widening --since or removing --emphasis / --has-positive-recovery."
+        )
+        raise SystemExit(1)
+
+
+@cli.command("promote-positives")
+@click.option("--since", default="7 days", show_default=True,
+              help="Time window of positive_records to consider.")
+@click.option("--min-confidence", default=0.0, show_default=True, type=float,
+              help="Drop positives with sentiment_score below this.")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Show what would be promoted without writing.")
+def promote_positives_cmd(since, min_confidence, dry_run):
+    """Promote positive_records to ground_truth(label='pending').
+
+    Wires up the 1,702-row positive_records table (built but never joined
+    into trainsets) so that confirmations/gratitude/session_success events
+    flow into the review queue. From there ``sio approve`` lifts them to
+    label='positive' and they enter the next ``sio optimize`` trainset.
+
+    Bridges the session_id schema gap (error_records uses bare UUIDs,
+    positive_records uses ``<path>:<hash>``) via the shared source_file.
+    """
+    from datetime import datetime, timezone, timedelta  # noqa: PLC0415
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found.")
+        raise SystemExit(1)
+
+    # Resolve --since
+    n_str, _, unit = since.partition(" ")
+    delta = (
+        timedelta(days=int(n_str))
+        if unit.startswith("day")
+        else timedelta(hours=int(n_str))
+        if unit.startswith("hour")
+        else timedelta(days=7)
+    )
+    cutoff = (datetime.now(timezone.utc) - delta).isoformat()
+
+    with _db_conn(db_path) as conn:
+        # Find positive_records with a preceding error_records row in the
+        # same source_file (the bridge), within a recovery window.
+        rows = conn.execute(
+            """
+            SELECT p.id AS pos_id, p.source_file, p.timestamp AS pos_ts,
+                   p.signal_type, p.signal_text, p.sentiment_score,
+                   er.id AS err_id, er.error_type, er.error_text,
+                   er.pattern_id, er.tool_name
+            FROM positive_records p
+            JOIN error_records er ON er.source_file = p.source_file
+            WHERE p.timestamp >= ?
+              AND p.signal_type IN ('confirmation','session_success','implicit_approval')
+              AND COALESCE(p.sentiment_score, 1.0) >= ?
+              AND er.timestamp < p.timestamp
+              AND (julianday(p.timestamp) - julianday(er.timestamp))*86400 < 600
+              AND NOT EXISTS (SELECT 1 FROM ground_truth gt
+                              WHERE gt.pattern_id = er.pattern_id
+                                AND gt.label = 'pending'
+                                AND gt.source = 'positive_record')
+            ORDER BY p.timestamp DESC
+            """,
+            (cutoff, min_confidence),
+        ).fetchall()
+
+        if not rows:
+            click.echo(
+                "No new positive_record→error_record pairs match. "
+                "Try widening --since or lowering --min-confidence."
+            )
+            raise SystemExit(1)
+
+        click.echo(f"Found {len(rows)} (positive, error) pairs to promote.")
+        if dry_run:
+            for r in rows[:10]:
+                click.echo(
+                    f"  [{r['signal_type']}] {r['pattern_id']} <- "
+                    f"{(r['signal_text'] or '')[:60]}"
+                )
+            click.echo(f"  ... (+{max(0,len(rows)-10)} more)")
+            click.echo("DRY RUN — nothing written.")
+            return
+
+        # Insert into ground_truth as label='pending'
+        from datetime import datetime as _dt  # noqa: PLC0415
+        now = _dt.now(timezone.utc).isoformat()
+        inserted = 0
+        for r in rows:
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO ground_truth
+                        (pattern_id, error_examples_json, error_type,
+                         pattern_summary, target_surface, rule_title,
+                         prevention_instructions, rationale, label, source,
+                         created_at)
+                    VALUES (?, ?, ?, ?, 'claude_md_rule', ?, '', '', 'pending',
+                            'positive_record', ?)
+                    """,
+                    (
+                        r["pattern_id"] or "tool_failure__unclassified",
+                        '[{"error_text": "' + (r["error_text"] or "").replace('"', '\\"')[:300] + '"}]',
+                        r["error_type"],
+                        f"User-confirmed recovery: {(r['signal_text'] or '')[:200]}",
+                        f"Recovery-paired rule for {r['pattern_id'] or 'unclassified'}",
+                        now,
+                    ),
+                )
+                inserted += 1
+            except Exception as exc:  # noqa: BLE001
+                click.echo(f"  skipped one: {exc}", err=True)
+        conn.commit()
+        click.echo(f"Inserted {inserted} new ground_truth rows (label='pending').")
+        click.echo("Run `sio suggest-review` or `sio approve <id>` to promote them.")
+
+
 @cli.command("optimize")
 @click.option(
     "--module",
@@ -3658,12 +3843,43 @@ def _display_optimization_diff(console, conn, result):
     is_flag=True,
     help="Print config and exit without running optimization.",
 )
-def optimize_cmd(module_name, optimizer_name, trainset_size, valset_size, dry_run):
+@click.option(
+    "--trainset-file",
+    default=None,
+    help=(
+        "Path to a curated JSONL produced by `sio curate`. "
+        "When set, the optimizer reads trainset from this file instead of "
+        "the live ground_truth table — recommended to avoid concept drift."
+    ),
+)
+@click.option(
+    "--baseline-against",
+    default=None,
+    type=int,
+    help=(
+        "Compare the new optimization score against an existing "
+        "optimized_modules.id. If new score < baseline, refuse to mark active "
+        "(treats the new artifact as a candidate, not a promotion)."
+    ),
+)
+def optimize_cmd(
+    module_name,
+    optimizer_name,
+    trainset_size,
+    valset_size,
+    dry_run,
+    trainset_file,
+    baseline_against,
+):
     """Run prompt optimization against the gold_standards corpus.
 
     Uses GEPA (or mipro/bootstrap in Wave 6) to compile an optimized
     DSPy program and save the artifact to ~/.sio/optimized/.
     Records the run in the optimized_modules table.
+
+    Use ``--trainset-file <path>`` to point at a curated JSONL produced by
+    ``sio curate`` — this is the recommended path for production runs to
+    avoid concept-drift in the trainset.
     """
     from rich.console import Console  # noqa: PLC0415
 
@@ -3671,10 +3887,12 @@ def optimize_cmd(module_name, optimizer_name, trainset_size, valset_size, dry_ru
 
     if dry_run:
         console.print("[bold]Dry run — config:[/bold]")
-        console.print(f"  module:        {module_name}")
-        console.print(f"  optimizer:     {optimizer_name}")
-        console.print(f"  trainset_size: {trainset_size}")
-        console.print(f"  valset_size:   {valset_size}")
+        console.print(f"  module:           {module_name}")
+        console.print(f"  optimizer:        {optimizer_name}")
+        console.print(f"  trainset_size:    {trainset_size}")
+        console.print(f"  valset_size:      {valset_size}")
+        console.print(f"  trainset_file:    {trainset_file or '(live ground_truth)'}")
+        console.print(f"  baseline_against: {baseline_against or '(none)'}")
         raise SystemExit(0)
 
     from sio.core.dspy.optimizer import (  # noqa: PLC0415
@@ -3695,12 +3913,14 @@ def optimize_cmd(module_name, optimizer_name, trainset_size, valset_size, dry_ru
             optimizer_name=optimizer_name,
             trainset_size=trainset_size,
             valset_size=valset_size,
+            trainset_file=trainset_file,
         )
     except InsufficientData as exc:
         console.print(
             f"[red]Insufficient data:[/red] {exc}\n"
-            "Run [bold]sio mine[/bold] and promote invocations with "
-            "[bold]sio promote-to-gold[/bold] first."
+            "Run [bold]sio curate --emphasis --classified[/bold] to build a "
+            "curated trainset, OR [bold]sio promote-positives[/bold] to "
+            "wire positive_records into the review queue."
         )
         raise SystemExit(1)
     except (UnknownOptimizer, NotImplementedError) as exc:
@@ -3714,6 +3934,44 @@ def optimize_cmd(module_name, optimizer_name, trainset_size, valset_size, dry_ru
     console.print(f"  artifact: {result['artifact']}")
     console.print(f"  score:    {result['score']:.4f}")
     console.print(f"  optimizer: {result['optimizer']}")
+
+    # --baseline-against gate: refuse to promote if score regresses
+    if baseline_against is not None:
+        import sqlite3 as _sql  # noqa: PLC0415
+        db_path = os.path.expanduser("~/.sio/sio.db")
+        with _sql.connect(db_path) as _c:
+            _c.row_factory = _sql.Row
+            row = _c.execute(
+                "SELECT metric_after, module_type FROM optimized_modules WHERE id=?",
+                (baseline_against,),
+            ).fetchone()
+            if row is None:
+                console.print(
+                    f"[yellow]--baseline-against id={baseline_against} not found; "
+                    f"skipping comparison.[/yellow]"
+                )
+            else:
+                baseline_score = row["metric_after"] or 0.0
+                new_score = result["score"]
+                delta = new_score - baseline_score
+                if delta < 0:
+                    console.print(
+                        f"[red]REGRESSION:[/red] new score {new_score:.4f} < "
+                        f"baseline {baseline_score:.4f} (Δ {delta:+.4f}). "
+                        "Marking new module as INACTIVE."
+                    )
+                    _c.execute(
+                        "UPDATE optimized_modules SET is_active=0 "
+                        "WHERE module_type=? AND created_at=("
+                        "SELECT MAX(created_at) FROM optimized_modules WHERE module_type=?)",
+                        (module_name, module_name),
+                    )
+                    _c.commit()
+                else:
+                    console.print(
+                        f"[green]Δ {delta:+.4f} vs baseline {baseline_score:.4f}[/green] "
+                        "— promotion confirmed."
+                    )
 
 
 # ---------------------------------------------------------------------------
