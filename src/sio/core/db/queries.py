@@ -225,6 +225,7 @@ _ERROR_RECORD_COLS = [
     "mined_at",
     "is_subagent",
     "parent_session_id",
+    "pattern_id",  # added 2026-05-15 so classify-on-mine hook writes through
 ]
 
 # Default values for cols that have NOT NULL constraints and may be absent in
