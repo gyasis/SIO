@@ -921,6 +921,24 @@ def run_mine(
             rec.setdefault("is_subagent", file_is_subagent)
             rec.setdefault("parent_session_id", file_parent_session_id)
 
+        # --- Classify-on-mine: stamp pattern_id BEFORE INSERT ---------------
+        # repeated_attempt: deterministic (tool_name); tool_failure: LLM
+        # (Gemini Flash, parallel). Free to fail — records get
+        # ``<type>__unclassified`` so the pipeline still completes.
+        # See sio.clustering.classifier.tag_records and PRD
+        # sio_backend_dead_loop_2026-05-15 for the Router design.
+        try:
+            from sio.clustering.classifier import tag_records  # noqa: PLC0415
+
+            tag_records(error_records)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "tag_records skipped for %s due to %s: %s",
+                file_path,
+                type(exc).__name__,
+                exc,
+            )
+
         for record in error_records:
             # --- Dedup: cross-format duplicate check --------------------------
             if _is_cross_format_duplicate(
