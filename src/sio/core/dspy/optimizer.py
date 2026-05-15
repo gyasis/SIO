@@ -637,61 +637,50 @@ def _build_trainset(db_path: str, module_name: str, limit: int, offset: int = 0)
     """Load training examples for the given module and convert to dspy.Example.
 
     Routing by module_name:
-    - ``suggestion_generator`` → reads from ``ground_truth`` table where
-      ``label='positive'`` (the table populated by ``sio approve``).
-      Built from columns: error_examples_json, error_type, pattern_summary,
-      target_surface, rule_title, prevention_instructions, rationale.
+    - ``suggestion_generator`` → delegates to
+      ``sio.ground_truth.corpus.load_training_corpus`` which maps the
+      ``ground_truth`` table to the CANONICAL 3-input ``PatternToRule``
+      signature (per Round 2 audit C-R2.6, commit b9cecf1 — user-confirmed
+      Direction A: pattern_description / example_errors / project_context →
+      rule_title / rule_body / rule_rationale).
     - All other modules → reads from ``gold_standards`` (legacy path,
       populated by ``sio promote-to-gold``).
 
-    Rationale: The ``suggestion_generator`` signature operates on error-pattern
-    inputs and produces rule-text outputs — the exact shape of the
-    ``ground_truth`` table. ``gold_standards`` was designed for the
-    skill-routing modules (recall_router etc.) which take user_message inputs.
+    History: an earlier revision of this function emitted dspy.Example
+    objects with the LEGACY 4-input shape (error_examples / error_type /
+    pattern_summary / tool_input_context). That mismatched the compiled
+    ``ChainOfThought(PatternToRule)`` and caused DSPy to log
+    "Present: []. Missing: [pattern_description, example_errors,
+    project_context]" while still trivially scoring 1.0 on a lazy metric.
+    The canonical loader at ``sio.ground_truth.corpus`` is the single source
+    of truth for ground_truth → dspy.Example mapping.
     """
     import json  # noqa: PLC0415
     import sqlite3  # noqa: PLC0415
 
     import dspy  # noqa: PLC0415
 
+    if module_name == "suggestion_generator":
+        from sio.ground_truth.corpus import load_training_corpus  # noqa: PLC0415
+
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            all_examples = load_training_corpus(conn)
+        finally:
+            conn.close()
+        # Apply limit/offset slicing on the loaded examples
+        return all_examples[offset : offset + limit]
+
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
-        if module_name == "suggestion_generator":
-            rows = conn.execute(
-                "SELECT * FROM ground_truth WHERE label='positive' "
-                "ORDER BY id ASC LIMIT ? OFFSET ?",
-                (limit, offset),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT * FROM gold_standards ORDER BY id ASC LIMIT ? OFFSET ?",
-                (limit, offset),
-            ).fetchall()
+        rows = conn.execute(
+            "SELECT * FROM gold_standards ORDER BY id ASC LIMIT ? OFFSET ?",
+            (limit, offset),
+        ).fetchall()
     finally:
         conn.close()
-
-    # suggestion_generator path — build Examples from ground_truth columns
-    if module_name == "suggestion_generator":
-        examples = []
-        for row in rows:
-            ex = dspy.Example(
-                error_examples=row["error_examples_json"] or "[]",
-                error_type=row["error_type"] or "",
-                pattern_summary=row["pattern_summary"] or "",
-                tool_input_context="{}",  # not stored in ground_truth
-                target_surface=row["target_surface"] or "claude_md_rule",
-                rule_title=row["rule_title"] or "",
-                prevention_instructions=row["prevention_instructions"] or "",
-                rationale=row["rationale"] or "",
-            ).with_inputs(
-                "error_examples",
-                "error_type",
-                "pattern_summary",
-                "tool_input_context",
-            )
-            examples.append(ex)
-        return examples
 
     # Legacy gold_standards path (other modules)
     examples = []
@@ -916,20 +905,26 @@ def run_optimize(
     # Build program: ChainOfThought over PatternToRule
     program = dspy.ChainOfThought(sig_cls)
 
-    # Shared metric: reward any non-empty rule_body
-    # GEPA requires (gold, pred, trace, pred_name, pred_trace) extended signature;
-    # BootstrapFewShot and MIPROv2 use the standard (gold, pred, trace) form.
+    # Shared metric: use the canonical multi-dimensional ``suggestion_quality_metric``
+    # (specificity + actionability + surface_accuracy, weighted, 0-1 float).
+    # Replaces the prior trivial ``1.0 if pred.rule_body else 0.0`` which always
+    # returned 1.0 (the LM always populates rule_body) and caused GEPA to exit
+    # early at iteration 10 with "All subsample scores perfect."
+    # GEPA needs an extended (gold, pred, trace, pred_name, pred_trace) signature;
+    # BootstrapFewShot / MIPROv2 use the standard (gold, pred, trace).
+    from sio.core.dspy.metrics import suggestion_quality_metric  # noqa: PLC0415
+
     def _gepa_metric(  # noqa: ANN001, ANN202
         gold, pred, trace=None, pred_name=None, pred_trace=None
     ):
         try:
-            return 1.0 if getattr(pred, "rule_body", None) else 0.0
+            return float(suggestion_quality_metric(gold, pred, trace=None))
         except Exception:
             return 0.0
 
     def _standard_metric(gold, pred, trace=None):  # noqa: ANN001, ANN202
         try:
-            return 1.0 if getattr(pred, "rule_body", None) else 0.0
+            return float(suggestion_quality_metric(gold, pred, trace=None))
         except Exception:
             return 0.0
 
