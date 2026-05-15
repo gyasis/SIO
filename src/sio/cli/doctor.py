@@ -51,7 +51,94 @@ def run_doctor() -> DoctorReport:
     report.checks.append(_check_config_toml())
     report.checks.append(_check_bootstrap_resolves())
     report.checks.append(_check_harness_install())
+    report.checks.append(_check_dspy_alive())
     return report
+
+
+def _check_dspy_alive() -> CheckResult:
+    """T0.3 (PRD sio_backend_dead_loop_2026-05-15) — is the DSPy
+    optimization pipeline actually producing artifacts, or is it silently
+    failing into a template fallback?
+
+    Healthy = at least one row in ``optimized_modules`` with
+    ``is_active=1`` for the ``suggestion_generator`` module, AND its
+    ``metric_after`` is a real float in (0.0, 1.0) exclusive (rules out
+    both the stub 0.0 and the trivial-metric 1.0 cases).
+    """
+    import sqlite3  # noqa: PLC0415
+
+    db_path = Path.home() / ".sio" / "sio.db"
+    if not db_path.exists():
+        return CheckResult(
+            name="DSPy pipeline (suggestion_generator)",
+            status="warn",
+            detail="~/.sio/sio.db not found — no optimization history yet",
+            fix_hint="Run `sio mine` then `sio optimize --module suggestion_generator`",
+        )
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT id, optimizer_used, metric_after, training_count, created_at "
+            "FROM optimized_modules "
+            "WHERE module_type='suggestion_generator' AND is_active=1 "
+            "ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        conn.close()
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult(
+            name="DSPy pipeline (suggestion_generator)",
+            status="error",
+            detail=f"DB query failed: {exc}",
+            fix_hint="Check ~/.sio/sio.db schema with `sio db check`",
+        )
+
+    if row is None:
+        return CheckResult(
+            name="DSPy pipeline (suggestion_generator)",
+            status="error",
+            detail="No active suggestion_generator module — `sio suggest` is "
+                   "falling back to templates",
+            fix_hint=(
+                "Set up an LM (~/.sio/config.toml + secrets.env), then run "
+                "`sio curate --emphasis --classified` and `sio optimize "
+                "--trainset-file <path>`"
+            ),
+        )
+
+    score = row["metric_after"]
+    if score is None:
+        return CheckResult(
+            name="DSPy pipeline (suggestion_generator)",
+            status="warn",
+            detail=f"active module id={row['id']} but metric_after is NULL",
+            fix_hint="Re-run `sio optimize` and verify the metric is recorded",
+        )
+    # Trivial-metric guard — if score is exactly 1.0 AND training_count was
+    # small (< 5 historical), the optimizer likely tripped the lazy-metric
+    # bug surfaced 2026-05-15. Score of 1.0 is rarely legitimate for the
+    # suggestion task.
+    if score >= 0.999:
+        return CheckResult(
+            name="DSPy pipeline (suggestion_generator)",
+            status="warn",
+            detail=(
+                f"active module id={row['id']} score={score:.4f} — "
+                "suspiciously perfect; likely a lazy-metric. Verify "
+                "suggestion_quality_metric is wired"
+            ),
+            fix_hint="Inspect src/sio/core/dspy/optimizer.py _gepa_metric",
+        )
+    return CheckResult(
+        name="DSPy pipeline (suggestion_generator)",
+        status="ok",
+        detail=(
+            f"active module id={row['id']} score={score:.4f} "
+            f"({row['optimizer_used']}, train={row['training_count']}) "
+            f"@ {row['created_at'][:19]}"
+        ),
+    )
 
 
 # ---------------------------------------------------------------------- checks
