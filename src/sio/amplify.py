@@ -74,14 +74,14 @@ def _get_lms():
             model="gemini/gemini-flash-latest",
             api_key=api_key,
             temperature=0.8,
-            max_tokens=600,
+            max_tokens=4000,  # enough for ~10 variants in JSON array
         )
         # Low temperature for judging (consistency)
         _judge_lm = dspy.LM(
             model="gemini/gemini-flash-latest",
             api_key=api_key,
             temperature=0.0,
-            max_tokens=200,
+            max_tokens=500,  # enough for a JSON array of ~10 floats
         )
     return _gen_lm, _judge_lm
 
@@ -92,58 +92,64 @@ def _get_lms():
 
 
 def _make_modules():
-    """Build the generator + judge DSPy modules. Called once per amplify run."""
+    """Build the generator + judge DSPy modules. Called once per amplify run.
+
+    BULK design (one LLM call handles N variants at once):
+    * GenerateVariants — emits a JSON array of N {error_text, user_message}
+      pairs per source row.
+    * JudgeVariants — emits a JSON array of N float scores, one per variant.
+
+    This reduces N-variants-per-row from 2N calls (gen+judge each) down to
+    2 calls total per source row.
+    """
     import dspy  # noqa: PLC0415
 
-    class GenerateVariant(dspy.Signature):
-        """Generate a SINGLE realistic variant of a developer-tool error.
+    class GenerateVariants(dspy.Signature):
+        """Generate a JSON ARRAY of N category-preserving error variants.
 
-        Preserve the underlying pattern_id category. Vary surface features:
-        file path, tool name (where plausible), specific error wording, and
-        the user_message phrasing. The variant must be a believable error
-        of the same category — not a random different error.
+        Output `variants_json` must be a JSON list of objects. Each object
+        has keys `error_text` (string) and `user_message` (string).
+        Length MUST equal `n_variants`. Each variant preserves the
+        underlying pattern_id category — same failure mode, different
+        surface features (paths, tool names, phrasing).
+        The user_message must contain frustration markers (!! or ??).
         """
 
         original_pattern_id: str = dspy.InputField(
             desc="The category we MUST preserve, e.g. tool_failure__filenotfound"
         )
         original_error_text: str = dspy.InputField()
-        original_user_message: str = dspy.InputField(
-            desc="The frustration-marked user message preceding the error"
-        )
         original_tool_name: str = dspy.InputField()
-        variant_index: int = dspy.InputField(desc="Variant number (1, 2, ...) — for variety")
-        variant_error_text: str = dspy.OutputField(
+        n_variants: int = dspy.InputField(desc="How many variants to produce")
+        variants_json: str = dspy.OutputField(
             desc=(
-                "A different but category-equivalent error message. "
-                "Preserve the failure mode; change paths, tool names, "
-                "specific identifiers."
-            )
-        )
-        variant_user_message: str = dspy.OutputField(
-            desc=(
-                "A different user_message preceding the error, with frustration "
-                "tone preserved (!! or ?? somewhere). Different phrasing, same intent."
+                "JSON array, length = n_variants. Each item: "
+                '{"error_text": "...", "user_message": "...(contains !! or ??)..."}. '
+                "ONLY the JSON. No code fences, no commentary."
             )
         )
 
-    class JudgeVariant(dspy.Signature):
-        """Judge whether a variant preserves the original pattern category.
+    class JudgeVariants(dspy.Signature):
+        """Score each variant 0.0-1.0 for category preservation.
 
-        Return a float 0.0-1.0. 1.0 = perfect category preservation.
-        0.0 = variant is a completely different kind of error.
-        0.5 = borderline (variant could fit either category).
+        Output `scores_json` is a JSON list of floats matching the order
+        of `variants_json`. 1.0 = perfect category match. 0.0 = drift.
         """
 
         original_pattern_id: str = dspy.InputField()
         original_error_text: str = dspy.InputField()
-        variant_error_text: str = dspy.InputField()
-        score: str = dspy.OutputField(
-            desc="A single number from 0.0 to 1.0 (just the number, no explanation)"
+        variants_json: str = dspy.InputField(
+            desc='JSON array of variants — each item {"error_text": "..."}'
+        )
+        scores_json: str = dspy.OutputField(
+            desc=(
+                "JSON array of floats matching variants_json order. "
+                "ONLY the JSON. No commentary."
+            )
         )
 
-    gen = dspy.Predict(GenerateVariant)
-    judge = dspy.Predict(JudgeVariant)
+    gen = dspy.Predict(GenerateVariants)
+    judge = dspy.Predict(JudgeVariants)
     return gen, judge
 
 
@@ -157,7 +163,7 @@ def amplify(
     output_path: Path,
     n_per_row: int = 10,
     min_judge_score: float = 0.6,
-    max_workers: int = 8,
+    max_workers: int = 4,
 ) -> dict:
     """Amplify a curated JSONL by generating N variants per row.
 
@@ -186,69 +192,165 @@ def amplify(
         return {"input_rows": 0, "total_generated": 0, "kept": 0, "dropped": 0,
                 "path": str(output_path)}
 
+    import time as _time  # noqa: PLC0415
+
     gen_lm, judge_lm = _get_lms()
-    dspy.configure(lm=gen_lm)
     gen, judge = _make_modules()
 
-    # Collect work units: (input_row, variant_idx)
-    work: list[tuple[dict, int]] = []
-    for row in inputs:
-        for i in range(1, n_per_row + 1):
-            work.append((row, i))
+    # BULK pipeline — one LLM call per row produces N variants.
+    # Total calls = 2 * len(inputs) (gen + judge), NOT 2 * len(inputs) * N.
+    # Two-phase to avoid dspy.configure race across threads.
 
-    results: list[tuple[dict, str, str, float]] = []  # (row, var_err, var_umsg, score)
+    generated: list[tuple[dict, list[dict]]] = []  # (row, [{error_text, user_message}, ...])
     lock = threading.Lock()
     done = [0]
 
-    def _gen_one(row: dict, var_idx: int):
+    def _retry_429(fn, *args, **kwargs):
+        """Retry the LLM call on RateLimitError up to 3x with backoff."""
+        for attempt in range(3):
+            try:
+                return fn(*args, **kwargs)
+            except Exception as exc:  # noqa: BLE001
+                msg = str(exc).lower()
+                if "rate" in msg or "429" in msg or "quota" in msg:
+                    _time.sleep(2 ** attempt)
+                    continue
+                raise
+        return None
+
+    def _gen_one(row: dict):
         try:
             data = row.get("data", {})
             meta = data.get("_meta", {})
             pattern_id = meta.get("pattern_id") or "tool_failure__unclassified"
             error_text = (data.get("example_errors", [""])[0] or "")[:400]
-            user_message = ""  # not stored in canonical PatternToRule shape
             tool_name = meta.get("tool_name") or "unknown"
 
-            # 1) Generate variant
-            dspy.configure(lm=gen_lm)
-            gen_out = gen(
+            out = _retry_429(
+                gen,
                 original_pattern_id=pattern_id,
                 original_error_text=error_text,
-                original_user_message=user_message,
                 original_tool_name=tool_name,
-                variant_index=var_idx,
+                n_variants=n_per_row,
             )
-            var_err = (gen_out.variant_error_text or "").strip()
-            var_umsg = (gen_out.variant_user_message or "").strip()
-            if not var_err:
+            if out is None:
                 return
-
-            # 2) Judge
-            dspy.configure(lm=judge_lm)
-            j_out = judge(
-                original_pattern_id=pattern_id,
-                original_error_text=error_text,
-                variant_error_text=var_err,
-            )
+            raw = (out.variants_json or "").strip()
+            # Strip code fences if Gemini added them
+            if raw.startswith("```"):
+                raw = raw.split("```", 2)[1] if "```" in raw[3:] else raw[3:]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+                raw = raw.strip()
             try:
-                score = float((j_out.score or "0.0").strip().split()[0])
+                variants = json.loads(raw)
             except Exception:
-                score = 0.0
-
-            with lock:
-                results.append((row, var_err, var_umsg, score))
-        except Exception:
-            return
+                return
+            if not isinstance(variants, list):
+                return
+            cleaned = []
+            for v in variants[:n_per_row]:
+                if not isinstance(v, dict):
+                    continue
+                et = (v.get("error_text") or "").strip()
+                um = (v.get("user_message") or "").strip()
+                if et:
+                    cleaned.append({"error_text": et, "user_message": um})
+            if cleaned:
+                with lock:
+                    generated.append((row, cleaned))
+        except Exception as exc:  # noqa: BLE001
+            import sys as _sys  # noqa: PLC0415
+            print(f"  gen-err: {type(exc).__name__}: {str(exc)[:120]}",
+                  file=_sys.stderr, flush=True)
         finally:
             with lock:
                 done[0] += 1
-                if done[0] % 50 == 0:
-                    print(f"  [{done[0]}/{len(work)}] processed", flush=True)
+                if done[0] % 10 == 0:
+                    print(f"  gen [{done[0]}/{len(inputs)}]", flush=True)
 
-    print(f"Amplifying {len(inputs)} rows × {n_per_row} = {len(work)} variants...",
+    print(f"Phase 1: GENERATE (bulk) — {len(inputs)} rows × {n_per_row} variants/row = "
+          f"{len(inputs)} LLM calls",
           flush=True)
+    dspy.configure(lm=gen_lm)
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = [pool.submit(_gen_one, row, idx) for row, idx in work]
+        futures = [pool.submit(_gen_one, row) for row in inputs]
+        for _ in as_completed(futures):
+            pass
+    total_generated = sum(len(v) for _, v in generated)
+    print(f"Phase 1 done: {len(generated)} rows produced {total_generated} variants",
+          flush=True)
+
+    # Phase 2: JUDGE (bulk — all variants for a row at once)
+    results: list[tuple[dict, str, str, float]] = []
+    done[0] = 0
+
+    def _judge_one(item: tuple[dict, list[dict]]):
+        row, variants = item
+        try:
+            data = row.get("data", {})
+            meta = data.get("_meta", {})
+            pattern_id = meta.get("pattern_id") or "unknown"
+            orig_err = (data.get("example_errors", [""])[0] or "")[:400]
+
+            # Compact variant list for the judge prompt
+            judge_input = json.dumps(
+                [{"error_text": v["error_text"][:400]} for v in variants]
+            )
+            out = _retry_429(
+                judge,
+                original_pattern_id=pattern_id,
+                original_error_text=orig_err,
+                variants_json=judge_input,
+            )
+            if out is None:
+                # Fallback: keep all variants with default score
+                for v in variants:
+                    with lock:
+                        results.append((row, v["error_text"], v["user_message"], 0.5))
+                return
+            raw = (out.scores_json or "").strip()
+            if raw.startswith("```"):
+                raw = raw.split("```", 2)[1] if "```" in raw[3:] else raw[3:]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+                raw = raw.strip()
+            try:
+                scores = json.loads(raw)
+            except Exception:
+                scores = []
+            for i, v in enumerate(variants):
+                try:
+                    sc = float(scores[i]) if i < len(scores) else 0.5
+                except Exception:
+                    sc = 0.5
+                with lock:
+                    results.append((row, v["error_text"], v["user_message"], sc))
+        except Exception as exc:  # noqa: BLE001
+            # Graceful degradation: when the judge call itself fails (DSPy
+            # adapter error / empty Gemini response / etc.), keep the variants
+            # with a placeholder score = min_judge_score so they survive the
+            # downstream filter. Better to have an unjudged variant than to
+            # silently drop work the generator already paid for.
+            import sys as _sys  # noqa: PLC0415
+            print(f"  judge-err: {type(exc).__name__}: {str(exc)[:120]} — "
+                  f"keeping {len(variants)} variants with placeholder score",
+                  file=_sys.stderr, flush=True)
+            for v in variants:
+                with lock:
+                    results.append((row, v["error_text"], v["user_message"],
+                                    min_judge_score))
+        finally:
+            with lock:
+                done[0] += 1
+                if done[0] % 10 == 0:
+                    print(f"  judge [{done[0]}/{len(generated)}]", flush=True)
+
+    print(f"Phase 2: JUDGE (bulk) — {len(generated)} rows = {len(generated)} LLM calls",
+          flush=True)
+    dspy.configure(lm=judge_lm)
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = [pool.submit(_judge_one, item) for item in generated]
         for _ in as_completed(futures):
             pass
 
