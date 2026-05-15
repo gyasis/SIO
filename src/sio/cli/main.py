@@ -2547,7 +2547,30 @@ def promote_to_gold_cmd(invocation_id, all_eligible, dry_run):
     default=False,
     help="[NOT SUPPORTED] Backups are required for safety; this flag is rejected.",
 )
-def apply_suggestion(suggestion_id, experiment, force, rollback_id, merge, yes, no_backup):
+@click.option(
+    "--auto-threshold",
+    type=float,
+    default=None,
+    help=(
+        "BULK MODE: auto-apply ALL pending suggestions with confidence >= "
+        "this threshold. Cannot combine with a positional SUGGESTION_ID. "
+        "Recommended: 0.9 for conservative auto-apply."
+    ),
+)
+@click.option(
+    "--skip-dupes/--no-skip-dupes",
+    default=True,
+    show_default=True,
+    help=(
+        "(With --auto-threshold) skip suggestions whose target rule "
+        "duplicates an existing one in ~/.claude/rules/. Reuses sio dedupe "
+        "logic at threshold 0.85."
+    ),
+)
+def apply_suggestion(
+    suggestion_id, experiment, force, rollback_id, merge, yes, no_backup,
+    auto_threshold, skip_dupes,
+):
     """Apply an approved suggestion to its target file.
 
     Checks the instruction budget before applying. Uses delta-based
@@ -2573,6 +2596,86 @@ def apply_suggestion(suggestion_id, experiment, force, rollback_id, merge, yes, 
             err=True,
         )
         raise SystemExit(1)
+
+    # BULK MODE: --auto-threshold N applies ALL pending suggestions
+    # whose confidence ≥ N. Optional --skip-dupes filters out suggestions
+    # whose proposed rule duplicates an existing one. T2.A from PRD
+    # sio_backend_dead_loop_2026-05-15.
+    if auto_threshold is not None:
+        if suggestion_id is not None:
+            click.echo(
+                "Error: --auto-threshold cannot combine with a positional "
+                "SUGGESTION_ID. Pass either one suggestion OR --auto-threshold.",
+                err=True,
+            )
+            raise SystemExit(1)
+        if rollback_id is not None:
+            click.echo("Error: --auto-threshold cannot combine with --rollback.",
+                       err=True)
+            raise SystemExit(1)
+
+        db_path = os.path.expanduser("~/.sio/sio.db")
+        if not os.path.exists(db_path):
+            click.echo("No database found.")
+            raise SystemExit(1)
+
+        with _db_conn(db_path) as conn:
+            rows = conn.execute(
+                "SELECT id, confidence FROM suggestions "
+                "WHERE status='pending' AND confidence >= ? "
+                "ORDER BY confidence DESC",
+                (auto_threshold,),
+            ).fetchall()
+
+        if not rows:
+            click.echo(
+                f"No pending suggestions with confidence >= {auto_threshold}."
+            )
+            raise SystemExit(0)
+
+        click.echo(
+            f"Bulk-apply: {len(rows)} pending suggestions with "
+            f"confidence >= {auto_threshold:.2f}"
+        )
+        if not yes:
+            if not click.confirm(
+                f"Apply all {len(rows)} suggestions? "
+                f"(skip-dupes={skip_dupes})"
+            ):
+                click.echo("Cancelled.")
+                raise SystemExit(0)
+
+        from sio.core.applier.writer import apply_suggestion as do_apply  # noqa: PLC0415
+
+        applied = 0
+        skipped_dupes = 0
+        failed = 0
+        for r in rows:
+            sid = r["id"] if hasattr(r, "keys") else r[0]
+            try:
+                # When skip_dupes is on, the writer's built-in similarity
+                # check (>80% match → merge or skip) gives us free duplicate
+                # filtering without a second pass.
+                ok = do_apply(
+                    suggestion_id=sid,
+                    db_path=db_path,
+                    experiment_branch=experiment,
+                    force=force,
+                    consent_merge=False if skip_dupes else merge,
+                )
+                if ok:
+                    applied += 1
+                else:
+                    skipped_dupes += 1
+            except Exception as exc:  # noqa: BLE001
+                click.echo(f"  failed id={sid}: {str(exc)[:120]}", err=True)
+                failed += 1
+
+        click.echo(
+            f"Applied: {applied}  Skipped (dupes/merge-conflict): "
+            f"{skipped_dupes}  Failed: {failed}"
+        )
+        raise SystemExit(0 if failed == 0 else 1)
 
     # Handle rollback path — does not require suggestion_id
     if rollback_id is not None:
@@ -3621,6 +3724,67 @@ def _display_optimization_diff(console, conn, result):
 # ---------------------------------------------------------------------------
 # sio optimize — GEPA closed-loop optimizer (T044 / FR-036, FR-038)
 # ---------------------------------------------------------------------------
+
+
+@cli.group("analyze")
+def analyze_group():
+    """Read-only diagnostics over the mined corpus."""
+
+
+@analyze_group.command("same-error")
+@click.option("--min-count", default=3, show_default=True, type=int,
+              help="Minimum repetition count to surface.")
+@click.option("--since", default=None,
+              help='Time window, e.g. "30 days", "1 week".')
+@click.option("--limit", default=30, show_default=True, type=int,
+              help="Max findings to display.")
+@click.option("--with-context", is_flag=True, default=False,
+              help="Include up to 3 context_before snippets per finding.")
+def analyze_same_error_cmd(min_count, since, limit, with_context):
+    """Find error signatures repeated >= N times across sessions.
+
+    The unit of analysis is the normalised error_text signature_hash —
+    same hash space as sio.clustering.classifier. Surfaces the cognitive
+    failure modes: the same error hitting the agent N times implies the
+    agent failed to learn from each occurrence.
+
+    Examples:
+        sio analyze same-error
+        sio analyze same-error --min-count 5 --since "7 days"
+        sio analyze same-error --with-context  # include agent intent
+    """
+    from sio.analyze import same_error_analysis
+
+    db_path = os.path.expanduser("~/.sio/sio.db")
+    if not os.path.exists(db_path):
+        click.echo("No database found.")
+        raise SystemExit(1)
+
+    findings = same_error_analysis(
+        db_path=db_path,
+        min_count=min_count,
+        since=since,
+        limit=limit,
+        with_context=with_context,
+    )
+
+    if not findings:
+        click.echo(f"No error signatures repeated >= {min_count} times.")
+        return
+
+    click.echo(f"Found {len(findings)} signatures repeated >= {min_count} times.")
+    click.echo("")
+    for i, f in enumerate(findings, 1):
+        click.echo(f"## {i}. {f['signature_hash']}  count={f['count']}  "
+                   f"sessions={f['session_count']}")
+        click.echo(f"     tools: {f['tools']}")
+        click.echo(f"     types: {f['error_types']}")
+        click.echo(f"     first: {f['first_seen'][:19]}  last: {f['last_seen'][:19]}")
+        click.echo(f"     sample: {f['sample_error']!r}")
+        if with_context and f["contexts"]:
+            for c in f["contexts"]:
+                click.echo(f"     context: {c!r}")
+        click.echo("")
 
 
 @cli.command("curate")

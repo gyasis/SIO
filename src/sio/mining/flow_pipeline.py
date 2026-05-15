@@ -254,9 +254,33 @@ def query_flows(
         count = row["count"]
         success_rate = row["success_rate"]
 
-        if count >= 10 and success_rate >= 80:
+        # Confidence tiers — re-calibrated 2026-05-15 (PRD T4.2) after
+        # observing zero flows reached HIGH/MEDIUM in production. The old
+        # 80%/60% success-rate thresholds assumed users explicitly say
+        # "great" / "perfect" after most flows. In practice they don't —
+        # they just move on. Empirical floor: a successful flow run rarely
+        # exceeds 50% explicit-success-signal rate. Re-tuned thresholds:
+        #   HIGH:   count ≥ 20  AND success_rate ≥ 40%
+        #   MEDIUM: count ≥ 10  AND success_rate ≥ 20%
+        #   LOW:    everything else
+        # Override via env: SIO_FLOW_CONFIDENCE_HIGH="count,rate" etc.
+        import os as _os  # noqa: PLC0415
+
+        def _parse_tier(env_var: str, default: tuple) -> tuple:
+            raw = _os.environ.get(env_var, "")
+            if not raw:
+                return default
+            try:
+                c_str, r_str = raw.split(",", 1)
+                return (int(c_str.strip()), float(r_str.strip()))
+            except Exception:
+                return default
+
+        high_c, high_r = _parse_tier("SIO_FLOW_CONFIDENCE_HIGH", (20, 40.0))
+        med_c, med_r = _parse_tier("SIO_FLOW_CONFIDENCE_MEDIUM", (10, 20.0))
+        if count >= high_c and success_rate >= high_r:
             confidence = "HIGH"
-        elif count >= 5 and success_rate >= 60:
+        elif count >= med_c and success_rate >= med_r:
             confidence = "MEDIUM"
         else:
             confidence = "LOW"
