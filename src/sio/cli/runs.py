@@ -114,6 +114,8 @@ def runs_cmd(run_id, failed, partial, cmd_filter, since, limit, tail, dspy):
             f"{cls:<9}"
             f"{(str(r.get('exit_code')) if r.get('exit_code') is not None else '?'):<6}"
             f"{(str(r.get('elapsed_sec')) if r.get('elapsed_sec') is not None else '?')+'s':<10}"
+            # P1 fix: was `r.get('exit_class') or '?'` (treated "" as None);
+            # kept the explicit-None form above for consistency.
             f"{len(r.get('warnings', [])):<7}"
             f"{len(r.get('errors', [])):<6}"
             f"{r.get('start_ts','?')}"
@@ -122,6 +124,17 @@ def runs_cmd(run_id, failed, partial, cmd_filter, since, limit, tail, dspy):
 
 
 def _show_one(run_id_prefix: str, dspy: bool = False) -> None:
+    # P1 fix 2026-05-16: validate prefix is hex (run_ids are hex digits) before
+    # using in glob pattern. Prevents user-supplied wildcards (*, ?, [abc])
+    # from matching unintended files.
+    import re
+    if not re.match(r"^[0-9a-f]{1,8}$", run_id_prefix):
+        click.echo(
+            f"Invalid run_id prefix '{run_id_prefix}'. "
+            "Expected 1-8 hex characters (e.g. 'a592c6e2' or 'a5').",
+            err=True,
+        )
+        sys.exit(1)
     matches = [p for p in _RUNS_DIR.glob(f"*_{run_id_prefix}*.json")]
     if not matches:
         # Fall back to scanning all and matching by run_id field

@@ -16,6 +16,7 @@ import json
 import os
 import secrets
 import sys
+import threading
 import time
 import traceback
 from contextlib import contextmanager
@@ -107,6 +108,14 @@ class RunLog:
         self.outputs: dict[str, Any] = {}
         self.pid = os.getpid()
         self._path = _RUNS_DIR / f"{_ts_compact()}_{cmd}_{self.run_id}.json"
+        # P1 fix 2026-05-16: protects warnings/stages/errors lists against
+        # concurrent mutation from heartbeat daemon thread vs main-thread flush.
+        # Audit-confirmed bug: to_dict() iterates self.stages/warnings via list
+        # comprehension while HB thread .appends, causing RuntimeError:
+        # "list changed size during iteration".
+        self._lock = threading.RLock()
+        # P1 fix: idempotent finalize.
+        self._finalized = False
 
     # ---- stage API ---------------------------------------------------
     @contextmanager
@@ -121,7 +130,7 @@ class RunLog:
             # leaves the last completed stage visible.
             self._flush_partial()
 
-    # ---- event API ---------------------------------------------------
+    # ---- event API (thread-safe per P1 fix) --------------------------
     def warn(self, code: str, msg: str, stage: Optional[str] = None) -> None:
         entry = {
             "code": code,
@@ -129,7 +138,8 @@ class RunLog:
             "stage": stage,
             "ts": _utc_iso(),
         }
-        self.warnings.append(entry)
+        with self._lock:
+            self.warnings.append(entry)
         print(
             f"[WARN run={self.run_id}"
             f"{f' stage={stage}' if stage else ''}] {code}: {msg}",
@@ -145,7 +155,8 @@ class RunLog:
             "trace": traceback.format_exc()[:4000],
             "ts": _utc_iso(),
         }
-        self.errors.append(entry)
+        with self._lock:
+            self.errors.append(entry)
         print(
             f"[ERROR run={self.run_id}"
             f"{f' stage={stage}' if stage else ''}] {code}: {exc}",
@@ -153,7 +164,8 @@ class RunLog:
         )
 
     def output(self, key: str, value: Any) -> None:
-        self.outputs[key] = value
+        with self._lock:
+            self.outputs[key] = value
 
     # ---- exit class --------------------------------------------------
     def compute_exit_class(self, raised: bool) -> str:
@@ -169,13 +181,27 @@ class RunLog:
 
     # ---- flush -------------------------------------------------------
     def _flush_partial(self) -> None:
-        """Write current state — called after every stage."""
+        """Write current state — called after every stage. THREAD-SAFE.
+
+        P1 fix 2026-05-16: catches ALL exceptions (was only OSError, missing
+        the RuntimeError from concurrent list mutation by HB thread).
+        Snapshots state under lock to avoid mid-iteration size change.
+        """
         try:
-            self._path.write_text(json.dumps(self.to_dict(), indent=2))
-        except OSError:
-            pass  # don't take down the user's pipeline over a log
+            with self._lock:
+                snapshot = self.to_dict()
+            self._path.write_text(json.dumps(snapshot, indent=2))
+        except Exception:
+            # Bare Exception is intentional: a flush error MUST NEVER take
+            # down the user's pipeline. Logging is a side-effect.
+            pass
 
     def finalize(self, exit_code: int, raised: bool = False) -> int:
+        # P1 fix: idempotent. Double-finalize was producing two [RUN] lines
+        # on the SystemExit path.
+        if self._finalized:
+            return self.exit_code if self.exit_code is not None else exit_code
+        self._finalized = True
         self.end_ts = _utc_iso()
         self.exit_code = exit_code
         # Override exit code for partial-success
@@ -204,20 +230,22 @@ class RunLog:
         return final_code
 
     def to_dict(self) -> dict:
+        # P1 fix: snapshot mutable lists via list() copy to prevent
+        # iteration-during-mutation errors from heartbeat thread.
         return {
             "run_id": self.run_id,
             "cmd": self.cmd,
-            "argv": self.argv,
+            "argv": list(self.argv),
             "pid": self.pid,
             "start_ts": self.start_ts,
             "end_ts": self.end_ts,
             "exit_code": self.exit_code,
             "exit_class": self.exit_class,
             "elapsed_sec": round(time.time() - self.start_mono, 3),
-            "stages": [s.to_dict() for s in self.stages],
-            "warnings": self.warnings,
-            "errors": self.errors,
-            "outputs": self.outputs,
+            "stages": [s.to_dict() for s in list(self.stages)],
+            "warnings": list(self.warnings),
+            "errors": list(self.errors),
+            "outputs": dict(self.outputs),
         }
 
 

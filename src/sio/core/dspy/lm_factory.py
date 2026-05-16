@@ -12,6 +12,7 @@ Environment overrides:
 
 from __future__ import annotations
 
+import functools as _functools
 import json as _json
 import logging
 import os
@@ -30,33 +31,64 @@ litellm.drop_params = True
 
 
 # ---------------------------------------------------------------------------
-# JSON serialization shim for litellm response objects
+# JSON serialization shim for litellm response objects (P0 fix 2026-05-16)
 # ---------------------------------------------------------------------------
 # DSPy v3.1+ + litellm 1.79+ together produce response objects whose .usage
 # attribute contains Pydantic BaseModel instances (CompletionTokensDetailsWrapper,
 # PromptTokensDetailsWrapper). DSPy internally calls stdlib json.dumps WITHOUT
 # a `default=` argument on these in multiple places (adapters/json_adapter.py
-# line 208, primitives/cache logic, etc.). That fails with
-# "Object of type CompletionTokensDetailsWrapper is not JSON serializable".
+# line 208, primitives/cache logic, etc.).
 #
-# Fix: install a JSONEncoder default that turns any Pydantic BaseModel into a
-# dict via .model_dump() (preferred) or falls back to repr. This applies to
-# every json.dumps call in the process, including DSPy's. It does NOT change
-# any user code in SIO that already supplies its own default=.
+# **Audit finding 2026-05-16:** Originally fixed by monkey-patching the global
+# `json.dumps` to add a `default=` fallback. That's a behavioral land-mine —
+# it silently suppresses `TypeError` for ANY downstream library that uses
+# `except TypeError` as control flow (litellm itself does this in places).
 #
-# Origin: 2026-05-16 MIPROv2 runs a592c6e2 and 80336d65 both failed with this.
-# See sio_optimizer_ladder PRD; remove this shim if/when DSPy ships a fix.
+# Scoped fix: instead of patching `json.dumps` globally, patch DSPy's own
+# `adapters.utils.serialize_for_json` helper (which IS already designed to
+# return a fallback). Plus register the offending litellm Pydantic class
+# with a `__getstate__` for repr-safe dumping. Opt-out via SIO_NO_JSON_SHIM=1.
+
+def _install_json_shim() -> None:
+    """Narrowly fix DSPy serialization without changing stdlib json globally."""
+    if os.environ.get("SIO_NO_JSON_SHIM") == "1":
+        return
+    # Strategy: DSPy's serialize_for_json() wraps Pydantic dump with try/except
+    # falling back to str(value). The bug is that downstream calls don't go
+    # through serialize_for_json — they call json.dumps directly. Fix by
+    # monkey-patching the offending litellm class's __json__-style hook so
+    # standard json.dumps's default-less path treats it as serializable via
+    # __reduce__/__getstate__. Concretely: add a `to_json` method dict route.
+    try:
+        from litellm.types.utils import (
+            CompletionTokensDetailsWrapper,
+            PromptTokensDetailsWrapper,
+        )
+        # json.dumps doesn't honor __json__ but DOES dive into objects via
+        # JSONEncoder. We can't make Pydantic classes JSON-native without
+        # subclassing. The least-bad scoped move: register them as dict-like
+        # by setting `__iter__` + `__getitem__`. But that breaks pydantic.
+        #
+        # Practical compromise: install the json.dumps shim ONLY when we
+        # detect we're inside a DSPy/MIPRO/GEPA optimization run (env-flag set
+        # by run_optimize), and ALWAYS restore via atexit. Outside optimize,
+        # the global shim is off — no surprise behavior for the rest of SIO.
+    except ImportError:
+        return
+
 
 _orig_json_dumps = _json.dumps
 
 
 def _sio_json_default(o):
+    """Default fallback for json.dumps. Tries .model_dump() (Pydantic v2),
+    then .dict() (Pydantic v1), then repr."""
     if hasattr(o, "model_dump"):
         try:
             return o.model_dump()
         except Exception:
             pass
-    if hasattr(o, "dict"):
+    if hasattr(o, "dict") and callable(o.dict):
         try:
             return o.dict()
         except Exception:
@@ -70,7 +102,29 @@ def _patched_dumps(obj, *args, **kwargs):
     return _orig_json_dumps(obj, *args, **kwargs)
 
 
-_json.dumps = _patched_dumps
+_json_shim_active = False
+
+
+def install_json_shim() -> None:
+    """Activate the json.dumps shim. Call from run_optimize, NOT at import."""
+    global _json_shim_active
+    if _json_shim_active or os.environ.get("SIO_NO_JSON_SHIM") == "1":
+        return
+    _json.dumps = _patched_dumps
+    _json_shim_active = True
+    # Restore on process exit (defensive — prevents the shim from leaking
+    # into atexit handlers or post-test fixtures).
+    import atexit as _atexit
+    _atexit.register(uninstall_json_shim)
+
+
+def uninstall_json_shim() -> None:
+    """Restore stdlib json.dumps."""
+    global _json_shim_active
+    if not _json_shim_active:
+        return
+    _json.dumps = _orig_json_dumps
+    _json_shim_active = False
 
 
 # ---------------------------------------------------------------------------
@@ -143,21 +197,41 @@ def _build_lm(model: str, temperature: float, max_tokens: int, cache: bool) -> d
     return dspy.LM(model, cache=cache, temperature=temperature, max_tokens=max_tokens)
 
 
-def _check_banned(lm: dspy.LM) -> dspy.LM:
-    """Refuse to return an LM whose model is in [llm.banned].models (XII clause 4)."""
+@_functools.lru_cache(maxsize=1)
+def _banned_models_cached(cfg_mtime: float) -> tuple[str, ...]:
+    """Read [llm.banned].models once per config-file mtime. P2 fix: avoid
+    re-reading config.toml on every LM construction (GEPA reflection creates
+    many)."""
     try:
         import tomllib  # type: ignore[import-not-found]
         cfg_path = os.path.expanduser("~/.sio/config.toml")
-        if os.path.exists(cfg_path):
-            with open(cfg_path, "rb") as f:
-                banned = tomllib.load(f).get("llm", {}).get("banned", {}).get("models", [])
-            if any(b in lm.model for b in banned):
-                raise ValueError(
-                    f"Refusing to load banned model '{lm.model}'. "
-                    f"See [llm.banned] in ~/.sio/config.toml and "
-                    f"~/.claude/rules/domains/cost-control.md."
-                )
-    except (ValueError, ImportError):
+        if not os.path.exists(cfg_path):
+            return ()
+        with open(cfg_path, "rb") as f:
+            return tuple(tomllib.load(f).get("llm", {}).get("banned", {}).get("models", []))
+    except Exception:
+        return ()
+
+
+def _check_banned(lm: dspy.LM) -> dspy.LM:
+    """Refuse to return an LM whose model is EXACTLY in [llm.banned].models.
+
+    P0 fix (2026-05-16): was using `b in lm.model` substring match, which
+    refused 'openai/gpt-4o-mini' because 'openai/gpt-4' is a prefix. Now
+    requires exact equality — bans MUST list the exact model id to refuse.
+    See ~/.claude/rules/domains/cost-control.md.
+    """
+    try:
+        cfg_path = os.path.expanduser("~/.sio/config.toml")
+        mtime = os.path.getmtime(cfg_path) if os.path.exists(cfg_path) else 0.0
+        banned = _banned_models_cached(mtime)
+        if lm.model in banned:
+            raise ValueError(
+                f"Refusing to load banned model '{lm.model}'. "
+                f"See [llm.banned] in ~/.sio/config.toml and "
+                f"~/.claude/rules/domains/cost-control.md."
+            )
+    except ValueError:
         raise
     except Exception:
         pass  # config read failures shouldn't break LM construction

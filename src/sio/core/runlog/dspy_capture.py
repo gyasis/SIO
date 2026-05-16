@@ -67,7 +67,12 @@ def _truncate(s: Any, n: int = 8000) -> str:
 
 
 def install() -> None:
-    """Monkey-patch dspy.LM.__call__ for one-shot capture. Idempotent."""
+    """Monkey-patch dspy.LM.__call__ for one-shot capture. Idempotent.
+
+    P1 fix 2026-05-16: capture _ORIG_LM_CALL FRESH every install (not cached
+    from first-ever invocation). Prevents leaking intermediate patches across
+    process-shared runs (e.g. pytest running two @runlogged tests).
+    """
     global _INSTALLED, _ORIG_LM_CALL
     if _INSTALLED:
         return
@@ -76,8 +81,8 @@ def install() -> None:
     except ImportError:
         return  # DSPy not present in this env; nothing to capture
 
-    if _ORIG_LM_CALL is None:
-        _ORIG_LM_CALL = dspy.LM.__call__
+    # Capture FRESH each install — don't reuse stale cached original
+    _ORIG_LM_CALL = dspy.LM.__call__
 
     def _wrapped(self, *args, **kwargs):  # noqa: ANN001, ANN202
         rl = current()
@@ -98,12 +103,18 @@ def install() -> None:
             usage = None
             text_out: Any = result
             try:
-                # dspy.LM history pattern — the last entry usually has usage
-                if hasattr(self, "history") and self.history:
-                    last = self.history[-1]
-                    usage = last.get("usage") if isinstance(last, dict) else None
-                    if not text_out and isinstance(last, dict):
-                        text_out = last.get("response") or last.get("output")
+                # P1 fix: snapshot history via list() to avoid
+                # IndexError on concurrent append from multi-threaded
+                # GEPA workers; use `is None` not `not` to avoid
+                # overwriting empty-list/dict completions (which are
+                # falsy but valid).
+                if hasattr(self, "history"):
+                    hist_snapshot = list(self.history)
+                    if hist_snapshot:
+                        last = hist_snapshot[-1]
+                        usage = last.get("usage") if isinstance(last, dict) else None
+                        if text_out is None and isinstance(last, dict):
+                            text_out = last.get("response") or last.get("output")
             except Exception:
                 pass
             _append_record({

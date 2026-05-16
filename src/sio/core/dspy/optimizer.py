@@ -889,7 +889,10 @@ def run_optimize(
         get_adapter,
         get_reflection_lm,
         get_task_lm,
+        install_json_shim,
     )
+    # Scoped: only active during this optimize run, auto-uninstalled at exit
+    install_json_shim()
 
     # Resolve DB path
     if db_path is None:
