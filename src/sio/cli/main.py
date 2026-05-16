@@ -6628,6 +6628,10 @@ def trend(granularity, top_n, num_windows, pattern_filter, grep_term):
 from sio.cli.runs import runs_cmd as _runs_cmd  # noqa: E402
 cli.add_command(_runs_cmd)
 
+# Register sio render (turn optimized module into deployable skill)
+from sio.cli.render import render_cmd as _render_cmd  # noqa: E402
+cli.add_command(_render_cmd)
+
 
 if __name__ == "__main__":
     cli()
