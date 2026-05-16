@@ -21,7 +21,7 @@ import functools
 import sys
 from typing import Callable
 
-from . import dspy_capture, logging_filter
+from . import dspy_capture, logging_filter, tqdm_hook
 from .writer import RunLog, current, reset_current, set_current
 
 
@@ -34,8 +34,10 @@ def runlogged(cmd_name: str):
             argv = sys.argv[1:] if len(sys.argv) > 1 else []
             rl = RunLog(cmd_name, argv)
             tok = set_current(rl)
-            # XIII clauses 3 + 7: capture stdlib logger warnings + DSPy I/O
+            # XIII clauses 3 + 6 + 7: capture stdlib logger warnings,
+            # tqdm progress (auto-ETA), and DSPy I/O
             logging_filter.install()
+            tqdm_hook.install()
             dspy_capture.install()
             raised = False
             try:
@@ -58,9 +60,10 @@ def runlogged(cmd_name: str):
             finally:
                 if not raised:
                     rl.finalize(0, raised=False)
-                # Uninstall capture/filter so subprocesses don't double-write
+                # Uninstall capture/filter/tqdm so subprocesses don't double-write
                 try:
                     dspy_capture.uninstall()
+                    tqdm_hook.uninstall()
                     logging_filter.uninstall()
                 except Exception:
                     pass

@@ -1010,6 +1010,36 @@ def run_optimize(
         # Configurable via env so we can dial up/down without code change.
         _gepa_auto = os.environ.get("SIO_GEPA_BUDGET", "light")
         _gepa_threads = int(os.environ.get("SIO_GEPA_THREADS", "8"))
+        # Cost-warning banner (Principle XII clause 1) — show BEFORE GEPA spins up.
+        # Light: ~$5-8, Medium: ~$15-25, Heavy: ~$40-80 with gpt-5 reflection.
+        _BUDGET_BANNER = {
+            "light":  ("LIGHT",  "$5-8",   "~30-60 min"),
+            "medium": ("MEDIUM", "$15-25", "~90-150 min"),
+            "heavy":  ("HEAVY",  "$40-80", "~3-5 hours"),
+        }
+        _b = _BUDGET_BANNER.get(_gepa_auto)
+        if _b is not None:
+            _tier, _cost, _eta = _b
+            _msg_lines = [
+                "",
+                "=" * 70,
+                f"  GEPA BUDGET: {_tier}  |  EST. COST: {_cost}  |  EST. TIME: {_eta}",
+                f"  reflection_lm = {reflection_lm_obj.model}",
+                f"  trainset_size = {len(trainset)}, valset_size = {len(valset)}",
+                "  (override via SIO_GEPA_BUDGET=light|medium|heavy)",
+                "=" * 70,
+                "",
+            ]
+            for ln in _msg_lines:
+                print(ln, flush=True)
+            if _gepa_auto in ("medium", "heavy"):
+                # Bigger banner for expensive tiers; agents/users see this loudly
+                print(
+                    f"⚠  HIGH-COST BUDGET TIER '{_gepa_auto}' — confirm via "
+                    f"SIO_GEPA_BUDGET env. Set to 'light' for cheaper test "
+                    f"first per XII clause 3.",
+                    flush=True,
+                )
         try:
             compiled = dspy.GEPA(
                 metric=_gepa_metric,
@@ -1017,9 +1047,28 @@ def run_optimize(
                 auto=_gepa_auto,  # was: max_full_evals=1 (DEMO!)
                 reflection_minibatch_size=3,  # was: min(2, len(trainset))
                 num_threads=_gepa_threads,  # was: 1
-                track_stats=True,  # observability
+                track_stats=True,  # observability — populates detailed_results
                 seed=0,  # reproducibility (XV)
             ).compile(program, trainset=trainset, valset=valset)
+            # B: post-compile, extract detailed_results into the run log
+            # so `sio runs <id>` shows candidate lineage + per-candidate scores
+            # without re-running GEPA.
+            try:
+                from sio.core.runlog import current as _runlog_current  # noqa: PLC0415
+                rl = _runlog_current()
+                if rl is not None and hasattr(compiled, "detailed_results"):
+                    dr = compiled.detailed_results
+                    rl.output("gepa_detailed_results", {
+                        "n_candidates": len(getattr(dr, "candidates", [])),
+                        "val_aggregate_scores": list(getattr(dr, "val_aggregate_scores", [])),
+                        "best_idx": getattr(dr, "best_idx", None),
+                        "discovery_eval_counts": list(getattr(dr, "discovery_eval_counts", [])),
+                        "total_metric_calls": getattr(dr, "total_metric_calls", None),
+                        "num_full_val_evals": getattr(dr, "num_full_val_evals", None),
+                        "seed": getattr(dr, "seed", None),
+                    })
+            except Exception:
+                pass  # detailed_results extraction is observability — don't crash
         except Exception as exc:
             raise OptimizationError(f"GEPA compile failed: {exc}") from exc
 
