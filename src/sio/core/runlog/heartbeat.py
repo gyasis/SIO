@@ -38,14 +38,32 @@ class Heartbeat:
 
     def _loop(self) -> None:
         start = time.time()
+        last_llm = 0
         while not self._stop.wait(self.interval):
             elapsed = int(time.time() - start)
             since_progress = int(time.time() - self._last_progress)
             self.stage.heartbeats += 1
+            # P2 fix 2026-05-16: bump progress-marker when llm_calls advances,
+            # avoiding spurious HUNG_STAGE during long active runs.
+            if self.stage.llm_calls > last_llm:
+                self._last_progress = time.time()
+                last_llm = self.stage.llm_calls
+                since_progress = 0
+            # Build progress/eta suffix if stage has set_progress() been called
+            extra = ""
+            if (self.stage.progress_current is not None
+                    and self.stage.progress_total):
+                cur = self.stage.progress_current
+                tot = self.stage.progress_total
+                frac = cur / tot if tot else 0.0
+                eta = int(elapsed * (1 - frac) / frac) if frac > 0 else None
+                extra = f" progress={cur}/{tot} ({frac:.0%})"
+                if eta is not None:
+                    extra += f" eta={eta//60}m{eta%60:02d}s"
             print(
                 f"[HB run={self.run.run_id} stage={self.stage.name} "
                 f"elapsed={elapsed}s since_progress={since_progress}s "
-                f"llm_calls={self.stage.llm_calls}]",
+                f"llm_calls={self.stage.llm_calls}{extra}]",
                 file=sys.stderr,
                 flush=True,
             )

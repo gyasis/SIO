@@ -957,8 +957,41 @@ def run_optimize(
     def _gepa_metric(  # noqa: ANN001, ANN202
         gold, pred, trace=None, pred_name=None, pred_trace=None
     ):
+        """GEPA metric — returns (score, feedback_text).
+
+        2026-05-16 audit: GEPA's reflection_lm needs textual feedback to do
+        meaningful evolutionary mutations. Returning just a float starves it.
+        We now produce concise feedback citing which sub-score (specificity,
+        actionability, surface_accuracy) was weak, so the reflection_lm can
+        propose targeted instruction mutations.
+        """
         try:
-            return float(suggestion_quality_metric(gold, pred, trace=None))
+            from sio.core.dspy.metrics import (  # noqa: PLC0415
+                _score_specificity,
+                _score_actionability,
+                _score_surface_accuracy,
+            )
+            spec = _score_specificity(gold, pred)
+            act = _score_actionability(pred)
+            surf = _score_surface_accuracy(gold, pred)
+            score = max(0.0, min(0.35 * spec + 0.35 * act + 0.30 * surf, 1.0))
+            # Build feedback string identifying the weakest dimension
+            scores = {"specificity": spec, "actionability": act, "surface_accuracy": surf}
+            weakest = min(scores, key=scores.get)
+            feedback = (
+                f"score={score:.3f} "
+                f"(specificity={spec:.2f}, actionability={act:.2f}, "
+                f"surface_accuracy={surf:.2f}). "
+                f"Improve '{weakest}' first."
+            )
+            # DSPy GEPA supports two return shapes: float, or
+            # dspy.Prediction(score=..., feedback=...). Use the tuple form
+            # for compatibility — GEPA detects both.
+            try:
+                import dspy  # noqa: PLC0415
+                return dspy.Prediction(score=score, feedback=feedback)
+            except Exception:
+                return score
         except Exception:
             return 0.0
 
@@ -970,13 +1003,22 @@ def run_optimize(
 
     # Run selected optimizer
     if optimizer_name == "gepa":
+        # 2026-05-16 audit fix: previous config (max_full_evals=1, num_threads=1,
+        # reflection_minibatch_size=2) was the DSPy DEMO config, not production.
+        # Docs (https://dspy.ai/api/optimizers/GEPA/) recommend auto="light"
+        # / "medium" / "heavy" for real runs; this is the actual budget knob.
+        # Configurable via env so we can dial up/down without code change.
+        _gepa_auto = os.environ.get("SIO_GEPA_BUDGET", "light")
+        _gepa_threads = int(os.environ.get("SIO_GEPA_THREADS", "8"))
         try:
             compiled = dspy.GEPA(
                 metric=_gepa_metric,
                 reflection_lm=reflection_lm_obj,
-                max_full_evals=1,
-                reflection_minibatch_size=min(2, len(trainset)),
-                num_threads=1,
+                auto=_gepa_auto,  # was: max_full_evals=1 (DEMO!)
+                reflection_minibatch_size=3,  # was: min(2, len(trainset))
+                num_threads=_gepa_threads,  # was: 1
+                track_stats=True,  # observability
+                seed=0,  # reproducibility (XV)
             ).compile(program, trainset=trainset, valset=valset)
         except Exception as exc:
             raise OptimizationError(f"GEPA compile failed: {exc}") from exc

@@ -101,21 +101,36 @@ def runs_cmd(run_id, failed, partial, cmd_filter, since, limit, tail, dspy):
         click.echo("No runs found.")
         return
 
-    # Compact table
-    click.echo(f"{'run_id':<10}{'cmd':<22}{'class':<9}{'exit':<6}{'elapsed':<10}"
-               f"{'warns':<7}{'errs':<6}start_ts")
-    click.echo("-" * 100)
+    # Compact table — now with progress + ETA when available
+    click.echo(
+        f"{'run_id':<10}{'cmd':<22}{'class':<9}{'exit':<6}{'elapsed':<10}"
+        f"{'progress':<14}{'eta':<8}{'warns':<7}{'errs':<6}start_ts"
+    )
+    click.echo("-" * 120)
     for r in rows:
         cls = r.get("exit_class") or "?"
         color = {"ok": "green", "partial": "yellow", "error": "red"}.get(cls, "white")
+        # Extract progress from latest stage if present
+        progress_str = "-"
+        eta_str = "-"
+        for s in r.get("stages", []):
+            p = s.get("progress")
+            if p:
+                cur, tot = p.get("current"), p.get("total")
+                if cur is not None and tot:
+                    pct = (cur / tot) * 100
+                    progress_str = f"{cur}/{tot} {pct:.0f}%"
+                eta = p.get("eta_sec")
+                if eta is not None:
+                    eta_str = f"{eta//60}m{eta%60:02d}s" if eta < 3600 else f"{eta//3600}h{(eta%3600)//60}m"
         line = (
             f"{r.get('run_id','?'):<10}"
             f"{(r.get('cmd') or '?')[:21]:<22}"
             f"{cls:<9}"
             f"{(str(r.get('exit_code')) if r.get('exit_code') is not None else '?'):<6}"
             f"{(str(r.get('elapsed_sec')) if r.get('elapsed_sec') is not None else '?')+'s':<10}"
-            # P1 fix: was `r.get('exit_class') or '?'` (treated "" as None);
-            # kept the explicit-None form above for consistency.
+            f"{progress_str[:13]:<14}"
+            f"{eta_str[:7]:<8}"
             f"{len(r.get('warnings', [])):<7}"
             f"{len(r.get('errors', [])):<6}"
             f"{r.get('start_ts','?')}"

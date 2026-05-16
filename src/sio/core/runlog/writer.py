@@ -58,6 +58,9 @@ class Stage:
         self.llm_cost_usd: float = 0.0
         self.heartbeats: int = 0
         self.notes: list[str] = []
+        # P2 fix 2026-05-16: progress + ETA for long optimizer runs
+        self.progress_current: Optional[int] = None  # e.g. 212
+        self.progress_total: Optional[int] = None    # e.g. 250
 
     def set_rows(self, rows_in: int, rows_out: int) -> None:
         self.rows_in = rows_in
@@ -77,16 +80,35 @@ class Stage:
     def note(self, msg: str) -> None:
         self.notes.append(msg)
 
+    def set_progress(self, current: int, total: int) -> None:
+        """Update progress fraction. Triggers ETA computation in to_dict."""
+        self.progress_current = current
+        self.progress_total = total
+
     def to_dict(self) -> dict:
+        elapsed_s = (self.end_ts or time.time()) - self.start_ts
+        progress_frac: Optional[float] = None
+        eta_s: Optional[int] = None
+        if (self.progress_current is not None and self.progress_total
+                and self.progress_total > 0):
+            progress_frac = self.progress_current / self.progress_total
+            if progress_frac > 0:
+                eta_s = int(elapsed_s * (1 - progress_frac) / progress_frac)
         return {
             "name": self.name,
-            "ms": int(((self.end_ts or time.time()) - self.start_ts) * 1000),
+            "ms": int(elapsed_s * 1000),
             "rows_in": self.rows_in,
             "rows_out": self.rows_out,
             "llm_calls": self.llm_calls,
             "llm_cost_usd": round(self.llm_cost_usd, 6),
             "heartbeats": self.heartbeats,
             "notes": self.notes,
+            "progress": {
+                "current": self.progress_current,
+                "total": self.progress_total,
+                "fraction": round(progress_frac, 4) if progress_frac is not None else None,
+                "eta_sec": eta_s,
+            } if self.progress_current is not None else None,
         }
 
 
