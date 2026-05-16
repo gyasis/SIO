@@ -128,10 +128,25 @@ def install() -> None:
                 "completion": _truncate(text_out, 12000),
                 "ok": True,
             })
-            # Charge the active stage with an LM call
-            if rl.stages:
-                stage = rl.stages[-1]
-                stage.add_llm(calls=1, cost_usd=0.0)
+            # XII clause 2: append-only ~/.sio/usage.log with computed cost
+            try:
+                from sio.core.cost import record_call, estimate_call  # noqa: PLC0415
+                in_tok = int((usage or {}).get("prompt_tokens", 0) or 0)
+                out_tok = int((usage or {}).get("completion_tokens", 0) or 0)
+                model_name = getattr(self, "model", "?")
+                cost = estimate_call(model_name, in_tok, out_tok)
+                record_call(
+                    model=model_name, role="task_or_reflection",
+                    in_tokens=in_tok, out_tokens=out_tok, cost_usd=cost,
+                    run_id=rl.run_id, cmd=rl.cmd, latency_ms=latency_ms,
+                )
+                # Charge the active stage with an LM call AND actual cost
+                if rl.stages:
+                    rl.stages[-1].add_llm(calls=1, cost_usd=cost)
+            except Exception:
+                # Cost capture is observability; never crash the pipeline
+                if rl.stages:
+                    rl.stages[-1].add_llm(calls=1, cost_usd=0.0)
             return result
         except Exception as exc:
             latency_ms = int((time.time() - start) * 1000)

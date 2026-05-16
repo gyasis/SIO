@@ -4191,6 +4191,35 @@ def amplify_cmd(input_path, output_path, n_per_row, min_judge_score, max_workers
         "(treats the new artifact as a candidate, not a promotion)."
     ),
 )
+@click.option(
+    "--task-mode",
+    type=click.Choice(["work", "cheap", "free", "personal", "personal-strong"]),
+    default=None,
+    help=(
+        "LM tier for the task LM (per-example evals). "
+        "work=gemini-pro, cheap=gemini-flash, free=ollama, personal=gpt-4o-mini, "
+        "personal-strong=gpt-5. Overrides SIO_TASK_LM."
+    ),
+)
+@click.option(
+    "--reflection-mode",
+    type=click.Choice(["work", "cheap", "free", "personal", "personal-strong"]),
+    default=None,
+    help=(
+        "LM tier for the reflection LM (GEPA's critic). "
+        "Same tiers as --task-mode. Overrides SIO_REFLECTION_LM. "
+        "personal-strong (gpt-5) requires explicit opt-in per Principle XII."
+    ),
+)
+@click.option(
+    "--gepa-budget",
+    type=click.Choice(["light", "medium", "heavy"]),
+    default=None,
+    help=(
+        "GEPA budget tier (auto=light|medium|heavy). Overrides SIO_GEPA_BUDGET. "
+        "light=$5-8, medium=$15-25, heavy=$40-80 (with gpt-5 reflection)."
+    ),
+)
 @runlogged("optimize")
 def optimize_cmd(
     module_name,
@@ -4200,6 +4229,9 @@ def optimize_cmd(
     dry_run,
     trainset_file,
     baseline_against,
+    task_mode,
+    reflection_mode,
+    gepa_budget,
 ):
     """Run prompt optimization against the gold_standards corpus.
 
@@ -4214,6 +4246,35 @@ def optimize_cmd(
     from rich.console import Console  # noqa: PLC0415
 
     console = Console()
+
+    # T4 (XII clause 3 / XIV LM split): resolve --task-mode / --reflection-mode
+    # into env vars that lm_factory honors. This wraps the env-var contract
+    # in CLI-flag ergonomics for the multi-train driver.
+    _MODE_TO_MODEL = {
+        "task": {
+            "work":            "gemini/gemini-pro-latest",
+            "cheap":           "gemini/gemini-flash-latest",
+            "free":            "ollama_chat/qwen3-coder:30b",
+            "personal":        "openai/gpt-4o-mini",
+            "personal-strong": "openai/gpt-5",
+        },
+        "reflection": {
+            "work":            "gemini/gemini-pro-latest",
+            "cheap":           "gemini/gemini-flash-latest",
+            "free":            "ollama_chat/deepseek-r1:32b",
+            "personal":        "openai/gpt-4o-mini",
+            "personal-strong": "openai/gpt-5",
+        },
+    }
+    if task_mode:
+        os.environ["SIO_TASK_LM"] = _MODE_TO_MODEL["task"][task_mode]
+        console.print(f"  [dim]--task-mode={task_mode} → SIO_TASK_LM={os.environ['SIO_TASK_LM']}[/dim]")
+    if reflection_mode:
+        os.environ["SIO_REFLECTION_LM"] = _MODE_TO_MODEL["reflection"][reflection_mode]
+        console.print(f"  [dim]--reflection-mode={reflection_mode} → SIO_REFLECTION_LM={os.environ['SIO_REFLECTION_LM']}[/dim]")
+    if gepa_budget:
+        os.environ["SIO_GEPA_BUDGET"] = gepa_budget
+        console.print(f"  [dim]--gepa-budget={gepa_budget} → SIO_GEPA_BUDGET={gepa_budget}[/dim]")
 
     if dry_run:
         console.print("[bold]Dry run — config:[/bold]")
@@ -6631,6 +6692,14 @@ cli.add_command(_runs_cmd)
 # Register sio render (turn optimized module into deployable skill)
 from sio.cli.render import render_cmd as _render_cmd  # noqa: E402
 cli.add_command(_render_cmd)
+
+# Register sio costs (XII transparency)
+from sio.cli.costs import costs_cmd as _costs_cmd  # noqa: E402
+cli.add_command(_costs_cmd)
+
+# Register sio multi-train (parallel multi-surface optimizer driver)
+from sio.cli.multi_train import multi_train_cmd as _multi_train_cmd  # noqa: E402
+cli.add_command(_multi_train_cmd)
 
 
 if __name__ == "__main__":

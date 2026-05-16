@@ -22,6 +22,8 @@ from sio.core.runlog import current as _runlog_current, runlogged
 @click.argument("module_id", required=False, type=int)
 @click.option("--active", "use_active", is_flag=True,
               help="Render the currently-active optimized module.")
+@click.option("--all-active", "all_active", is_flag=True,
+              help="Render EVERY active optimized module (one skill per module_type).")
 @click.option("--format", "fmt", default="skill",
               type=click.Choice(["skill", "system-prompt", "claude-md", "json-prompt"]),
               show_default=True)
@@ -32,7 +34,7 @@ from sio.core.runlog import current as _runlog_current, runlogged
 @click.option("--dry-run", is_flag=True,
               help="Print to stdout instead of writing to disk.")
 @runlogged("render")
-def render_cmd(module_id, use_active, fmt, output_path, skill_name, dry_run):
+def render_cmd(module_id, use_active, all_active, fmt, output_path, skill_name, dry_run):
     """Render an optimized DSPy module as a skill / prompt / rule file."""
     from sio.render import (  # noqa: PLC0415
         load_artifact, load_module_metadata,
@@ -40,12 +42,46 @@ def render_cmd(module_id, use_active, fmt, output_path, skill_name, dry_run):
     )
     from sio.render.reader import find_active_module  # noqa: PLC0415
 
-    if not module_id and not use_active:
-        click.echo("Specify either MODULE_ID or --active.", err=True)
+    if not module_id and not use_active and not all_active:
+        click.echo("Specify either MODULE_ID, --active, or --all-active.", err=True)
         raise SystemExit(1)
+
+    # --all-active: iterate every distinct module_type with an active row
+    if all_active:
+        import sqlite3, os as _os  # noqa: PLC0415
+        db = _os.path.expanduser("~/.sio/sio.db")
+        conn = sqlite3.connect(db); conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT id, module_type FROM optimized_modules "
+            "WHERE is_active = 1 GROUP BY module_type "
+            "ORDER BY id DESC"
+        ).fetchall()
+        conn.close()
+        if not rows:
+            click.echo("No active modules to render.", err=True)
+            raise SystemExit(1)
+        click.echo(f"Rendering {len(rows)} active module(s) as skills...\n")
+        for r in rows:
+            mtype = r["module_type"]
+            # Derive a safe skill name from module_type
+            skill_name_local = f"sio-{mtype.replace('_', '-')}"
+            out = _os.path.expanduser(f"~/.claude/skills/{skill_name_local}.md")
+            _render_one(r["id"], "skill", out, skill_name_local, dry_run=False)
+        click.echo(f"\n✓ All-active render complete — {len(rows)} skill(s) written.")
+        return
+
     if use_active:
         module_id = find_active_module()
 
+    _render_one(module_id, fmt, output_path, skill_name, dry_run)
+
+
+def _render_one(module_id, fmt, output_path, skill_name, dry_run):
+    """Render a single module — extracted so --all-active can reuse."""
+    from sio.render import (  # noqa: PLC0415
+        load_artifact, load_module_metadata,
+        render_skill, render_system_prompt, render_claude_md, render_json_prompt,
+    )
     rl = _runlog_current()
     with rl.stage("load_metadata"):
         meta = load_module_metadata(module_id)
