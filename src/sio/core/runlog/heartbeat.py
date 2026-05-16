@@ -67,6 +67,12 @@ class Heartbeat:
                 file=sys.stderr,
                 flush=True,
             )
+            # 2026-05-16 fix: also flush the run-log file every heartbeat so
+            # `sio runs <id>` works DURING long runs, not just after.
+            try:
+                self.run._flush_partial()
+            except Exception:
+                pass
             if since_progress > self.hung_after:
                 self.run.warn(
                     "HUNG_STAGE",

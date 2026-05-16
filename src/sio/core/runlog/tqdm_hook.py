@@ -49,7 +49,13 @@ def install() -> None:
 
 
 def _maybe_record(t) -> None:
-    """If a RunLog stage is active, write its progress fields."""
+    """If a RunLog stage is active, write its progress fields.
+
+    2026-05-16 fix: prefer the LARGEST tqdm bar (outer optimization budget,
+    e.g. 250 rollouts in GEPA) over inner per-eval bars (e.g. 50 valset items
+    that reset to 0 each minibatch). Updates only if the new bar's total is
+    >= the existing one, so inner-loop bars don't clobber outer progress.
+    """
     rl = current()
     if rl is None or not rl.stages:
         return
@@ -57,7 +63,13 @@ def _maybe_record(t) -> None:
         stage = rl.stages[-1]
         total = getattr(t, "total", None)
         n = getattr(t, "n", None)
-        if total is not None and n is not None and total > 0:
+        if total is None or n is None or total <= 0:
+            return
+        # Only overwrite if new total is at least as big as current — keeps
+        # outer-loop bar (e.g. "250 rollouts") visible while inner-loop bars
+        # (e.g. "50 valset items") flicker beneath it.
+        existing_total = stage.progress_total
+        if existing_total is None or int(total) >= int(existing_total):
             stage.set_progress(int(n), int(total))
     except Exception:
         pass  # observability must NEVER kill the user's pipeline
