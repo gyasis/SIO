@@ -11,6 +11,7 @@ import click
 
 from sio.core.constants import DEFAULT_PLATFORM
 from sio.core.observability import log_failure
+from sio.core.runlog import current as _runlog_current, runlogged
 
 _DEFAULT_DB_DIR = os.path.expanduser(f"~/.sio/{DEFAULT_PLATFORM}")
 
@@ -4048,6 +4049,7 @@ def promote_positives_cmd(since, min_confidence, dry_run):
               help="Drop variants whose LLM-judge score is below this.")
 @click.option("--max-workers", default=8, show_default=True, type=int,
               help="Thread-pool parallelism for LLM calls.")
+@runlogged("amplify")
 def amplify_cmd(input_path, output_path, n_per_row, min_judge_score, max_workers):
     """Amplify a curated JSONL by synthesizing N variants per row.
 
@@ -4074,13 +4076,32 @@ def amplify_cmd(input_path, output_path, n_per_row, min_judge_score, max_workers
         )
     out = Path(output_path)
 
-    result = amplify(
-        input_path=inp,
-        output_path=out,
-        n_per_row=n_per_row,
-        min_judge_score=min_judge_score,
-        max_workers=max_workers,
-    )
+    rl = _runlog_current()
+    with rl.stage("amplify") as s:
+        result = amplify(
+            input_path=inp,
+            output_path=out,
+            n_per_row=n_per_row,
+            min_judge_score=min_judge_score,
+            max_workers=max_workers,
+        )
+        # Each input row generates n_per_row candidate variants
+        expected = result["input_rows"] * n_per_row
+        kept = result["kept"]
+        # rows_in = expected variants, rows_out = kept (triggers COVERAGE_DROP if low)
+        s.set_rows(rows_in=expected, rows_out=kept)
+        if result["dropped"] > 0:
+            rl.warn(
+                "JUDGE_DROPPED",
+                f"{result['dropped']} of {result['total_generated']} variants "
+                f"dropped by judge (threshold={min_judge_score})",
+                stage="amplify",
+            )
+
+    rl.output("path", result["path"])
+    rl.output("kept", kept)
+    rl.output("dropped", result["dropped"])
+
     click.echo(f"\nInput rows:       {result['input_rows']}")
     click.echo(f"Total generated:  {result['total_generated']}")
     click.echo(f"Kept (judge≥{min_judge_score}): {result['kept']}")
@@ -6552,6 +6573,11 @@ def trend(granularity, top_n, num_windows, pattern_filter, grep_term):
         f"[dim]Data source: error_records.timestamp via pattern_errors (active=1). "
         f"Granularity={granularity}, window=last {interval_days} days.[/dim]"
     )
+
+
+# Register Principle XIII run-log inspector (sio runs)
+from sio.cli.runs import runs_cmd as _runs_cmd  # noqa: E402
+cli.add_command(_runs_cmd)
 
 
 if __name__ == "__main__":
