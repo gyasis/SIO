@@ -4077,8 +4077,20 @@ def promote_positives_cmd(since, min_confidence, dry_run):
               help="Drop variants whose LLM-judge score is below this.")
 @click.option("--max-workers", default=8, show_default=True, type=int,
               help="Thread-pool parallelism for LLM calls.")
+@click.option("--task-mode",
+              type=click.Choice(["work", "cheap", "free", "personal", "personal-strong"]),
+              default=None,
+              help=(
+                  "LM tier for amplification generation. Defaults to whatever "
+                  "[llm.task] in ~/.sio/config.toml resolves to. "
+                  "cheap=Flash (recommended), work=Pro, free=Ollama, "
+                  "personal=gpt-4o-mini, personal-strong=gpt-5."
+              ))
+@click.option("--budget-override", type=float, default=None,
+              help="Override 24h spend cap for this invocation (XII clause 6).")
 @runlogged("amplify")
-def amplify_cmd(input_path, output_path, n_per_row, min_judge_score, max_workers):
+def amplify_cmd(input_path, output_path, n_per_row, min_judge_score, max_workers,
+                task_mode, budget_override):
     """Amplify a curated JSONL by synthesizing N variants per row.
 
     Each input row is passed through Gemini Flash with a "preserve the
@@ -4103,6 +4115,28 @@ def amplify_cmd(input_path, output_path, n_per_row, min_judge_score, max_workers
             f"~/.sio/amplified/{inp.stem}_amplified.jsonl"
         )
     out = Path(output_path)
+
+    # XII clauses 3 + 6: tier selection + budget guard
+    if task_mode:
+        _MODE = {
+            "work":            "gemini/gemini-pro-latest",
+            "cheap":           "gemini/gemini-flash-latest",
+            "free":            "ollama_chat/qwen3-coder:30b",
+            "personal":        "openai/gpt-4o-mini",
+            "personal-strong": "openai/gpt-5",
+        }
+        os.environ["SIO_TASK_LM"] = _MODE[task_mode]
+        click.echo(f"  --task-mode={task_mode} → SIO_TASK_LM={os.environ['SIO_TASK_LM']}")
+    from sio.core.cost import BudgetExceeded, check_budget  # noqa: PLC0415
+    try:
+        bstate = check_budget(override_usd=budget_override)
+        click.echo(
+            f"  budget: ${bstate['spend_24h_usd']:.2f}/24h used "
+            f"of ${bstate['effective_cap_usd']:.2f} cap"
+        )
+    except BudgetExceeded as exc:
+        click.echo(f"BUDGET EXCEEDED: {exc}", err=True)
+        raise SystemExit(1)
 
     rl = _runlog_current()
     with rl.stage("amplify") as s:
@@ -4220,6 +4254,15 @@ def amplify_cmd(input_path, output_path, n_per_row, min_judge_score, max_workers
         "light=$5-8, medium=$15-25, heavy=$40-80 (with gpt-5 reflection)."
     ),
 )
+@click.option(
+    "--budget-override",
+    type=float,
+    default=None,
+    help=(
+        "Override the 24h rolling spend cap from [budget] in ~/.sio/config.toml "
+        "for this invocation (XII clause 6 escape hatch). Pass a USD amount."
+    ),
+)
 @runlogged("optimize")
 def optimize_cmd(
     module_name,
@@ -4232,6 +4275,7 @@ def optimize_cmd(
     task_mode,
     reflection_mode,
     gepa_budget,
+    budget_override,
 ):
     """Run prompt optimization against the gold_standards corpus.
 
@@ -4275,6 +4319,20 @@ def optimize_cmd(
     if gepa_budget:
         os.environ["SIO_GEPA_BUDGET"] = gepa_budget
         console.print(f"  [dim]--gepa-budget={gepa_budget} → SIO_GEPA_BUDGET={gepa_budget}[/dim]")
+
+    # XII clause 6: budget guard. Halt if 24h rolling spend exceeds cap.
+    if not dry_run:
+        from sio.core.cost import BudgetExceeded, check_budget  # noqa: PLC0415
+        try:
+            state = check_budget(override_usd=budget_override)
+            console.print(
+                f"  [dim]budget: ${state['spend_24h_usd']:.2f}/24h used "
+                f"of ${state['effective_cap_usd']:.2f} cap "
+                f"(${state['remaining_usd']:.2f} remaining)[/dim]"
+            )
+        except BudgetExceeded as exc:
+            console.print(f"[red]BUDGET EXCEEDED:[/red] {exc}")
+            raise SystemExit(1)
 
     if dry_run:
         console.print("[bold]Dry run — config:[/bold]")
@@ -6700,6 +6758,10 @@ cli.add_command(_costs_cmd)
 # Register sio multi-train (parallel multi-surface optimizer driver)
 from sio.cli.multi_train import multi_train_cmd as _multi_train_cmd  # noqa: E402
 cli.add_command(_multi_train_cmd)
+
+# Register sio reproduce (XV — reproducibility)
+from sio.cli.reproduce import reproduce_cmd as _reproduce_cmd  # noqa: E402
+cli.add_command(_reproduce_cmd)
 
 
 if __name__ == "__main__":

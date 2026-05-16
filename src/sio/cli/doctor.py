@@ -53,7 +53,148 @@ def run_doctor() -> DoctorReport:
     report.checks.append(_check_harness_install())
     report.checks.append(_check_dspy_alive())
     report.checks.append(_check_runlog_health())
+    report.checks.append(_check_ladder_discipline())
+    report.checks.append(_check_reproducibility_gaps())
+    report.checks.append(_check_budget_state())
     return report
+
+
+def _check_ladder_discipline() -> CheckResult:
+    """Principle XIV: GEPA must follow MIPROv2 on the same module + trainset.
+
+    Surfaces any active GEPA module that has NO corresponding MIPROv2 run
+    on the same trainset.
+    """
+    import sqlite3
+    from pathlib import Path
+    db = str(Path.home() / ".sio" / "sio.db")
+    try:
+        conn = sqlite3.connect(db); conn.row_factory = sqlite3.Row
+        # Active GEPA modules
+        gepa_rows = conn.execute(
+            "SELECT id, module_type, trainset_id FROM optimized_modules "
+            "WHERE optimizer_used = 'gepa' AND is_active = 1"
+        ).fetchall()
+        skips = []
+        for g in gepa_rows:
+            # Check for matching MIPROv2 run on same (module_type, trainset_id)
+            mipro = conn.execute(
+                "SELECT id FROM optimized_modules "
+                "WHERE optimizer_used = 'mipro' "
+                "  AND module_type = ? "
+                "  AND (trainset_id = ? OR (trainset_id IS NULL AND ? IS NULL)) "
+                "  AND id < ? "
+                "LIMIT 1",
+                (g["module_type"], g["trainset_id"], g["trainset_id"], g["id"]),
+            ).fetchone()
+            if mipro is None:
+                skips.append(g["id"])
+        conn.close()
+    except Exception as e:
+        return CheckResult(
+            name="Optimizer ladder (XIV)", status="warn",
+            detail=f"check failed: {e}",
+        )
+
+    if not gepa_rows:
+        return CheckResult(
+            name="Optimizer ladder (XIV)", status="ok",
+            detail="No active GEPA runs to audit",
+        )
+    if skips:
+        return CheckResult(
+            name="Optimizer ladder (XIV)", status="warn",
+            detail=(
+                f"Active GEPA modules without prior MIPROv2 on same trainset: "
+                f"{skips}. Run `sio optimize --optimizer mipro` on the same "
+                f"trainset before GEPA per Principle XIV."
+            ),
+        )
+    return CheckResult(
+        name="Optimizer ladder (XIV)", status="ok",
+        detail=f"{len(gepa_rows)} active GEPA module(s) all have prior MIPROv2 baselines",
+    )
+
+
+def _check_reproducibility_gaps() -> CheckResult:
+    """Proposed Principle XV: every optimized module should have task_lm,
+    reflection_lm (when applicable), trainset_id, seed populated.
+    """
+    import sqlite3
+    from pathlib import Path
+    db = str(Path.home() / ".sio" / "sio.db")
+    try:
+        conn = sqlite3.connect(db); conn.row_factory = sqlite3.Row
+        # Recent active modules
+        rows = conn.execute(
+            "SELECT id, optimizer_used, task_lm, reflection_lm, trainset_id, seed "
+            "FROM optimized_modules "
+            "WHERE is_active = 1 "
+            "ORDER BY id DESC LIMIT 10"
+        ).fetchall()
+        conn.close()
+    except Exception as e:
+        return CheckResult(
+            name="Reproducibility (XV draft)", status="warn",
+            detail=f"check failed: {e}",
+        )
+
+    if not rows:
+        return CheckResult(
+            name="Reproducibility (XV draft)", status="ok",
+            detail="No active modules",
+        )
+
+    gaps_summary = []
+    for r in rows:
+        missing = []
+        if not r["task_lm"]:
+            missing.append("task_lm")
+        if r["optimizer_used"] in ("gepa", "mipro") and not r["reflection_lm"]:
+            missing.append("reflection_lm")
+        if not r["trainset_id"]:
+            missing.append("trainset_id")
+        if r["seed"] is None:
+            missing.append("seed")
+        if missing:
+            gaps_summary.append(f"#{r['id']}({r['optimizer_used']}): {','.join(missing)}")
+
+    if not gaps_summary:
+        return CheckResult(
+            name="Reproducibility (XV draft)", status="ok",
+            detail=f"{len(rows)} active modules all have full reproducibility metadata",
+        )
+    return CheckResult(
+        name="Reproducibility (XV draft)", status="warn",
+        detail=f"{len(gaps_summary)}/{len(rows)} active modules have gaps: " +
+               "; ".join(gaps_summary[:5]) +
+               ("…" if len(gaps_summary) > 5 else ""),
+    )
+
+
+def _check_budget_state() -> CheckResult:
+    """XII clause 6: report current 24h spend vs cap."""
+    try:
+        from sio.core.cost import check_budget, rolling_24h_spend  # noqa: PLC0415
+        spend = rolling_24h_spend()
+        state = check_budget()
+        used_pct = (spend / state["effective_cap_usd"]) * 100 if state["effective_cap_usd"] else 0
+        if used_pct >= 80:
+            status = "warn"
+        else:
+            status = "ok"
+        return CheckResult(
+            name="LLM budget (XII)", status=status,
+            detail=(
+                f"${spend:.4f}/24h used of ${state['effective_cap_usd']:.2f} cap "
+                f"({used_pct:.0f}%) — ${state['remaining_usd']:.2f} remaining"
+            ),
+        )
+    except Exception as e:
+        return CheckResult(
+            name="LLM budget (XII)", status="warn",
+            detail=f"check failed: {e}",
+        )
 
 
 def _check_runlog_health() -> CheckResult:

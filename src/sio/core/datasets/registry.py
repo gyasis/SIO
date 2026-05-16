@@ -42,6 +42,11 @@ def ensure_schema(db_path: str | None = None) -> None:
             conn.execute("ALTER TABLE optimized_modules ADD COLUMN trainset_id INTEGER")
         except sqlite3.OperationalError:
             pass  # column already exists
+        # Add optimized_modules.seed column (idempotent — for XV reproducibility)
+        try:
+            conn.execute("ALTER TABLE optimized_modules ADD COLUMN seed INTEGER")
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
     finally:
         conn.close()
