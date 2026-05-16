@@ -33,16 +33,117 @@ litellm.drop_params = True
 # ---------------------------------------------------------------------------
 
 
+def _resolve_role_lm(role: str, env_var: str, fallback_subkey: str | None,
+                     default_model: str, default_temperature: float,
+                     default_max_tokens: int, default_cache: bool) -> dspy.LM:
+    """Resolve a per-role LM in this order:
+      1) ENV var override (SIO_TASK_LM / SIO_REFLECTION_LM)
+      2) ``[llm.<role>]`` block in ~/.sio/config.toml
+      3) ``[llm.<fallback_subkey>]`` block (e.g. [llm.sub] for task)
+      4) Hard default (Gemini family — matches active env)
+
+    Also enforces the [llm.banned].models list — refuses to load any model
+    listed there (Principle XII clause 4).
+    """
+    env_override = os.environ.get(env_var)
+    if env_override:
+        return _check_banned(_build_lm(env_override, default_temperature,
+                                       default_max_tokens, default_cache))
+
+    cfg = _read_config_role(role) or (
+        _read_config_role(fallback_subkey) if fallback_subkey else None
+    )
+    if cfg:
+        api_key = _resolve_api_key(cfg.get("api_key_env"))
+        kwargs = {
+            "model": cfg.get("model", default_model),
+            "temperature": cfg.get("temperature", default_temperature),
+            "max_tokens": cfg.get("max_tokens", default_max_tokens),
+            "cache": cfg.get("cache", default_cache),
+        }
+        if api_key:
+            kwargs["api_key"] = api_key
+        return _check_banned(dspy.LM(**kwargs))
+
+    return _check_banned(_build_lm(default_model, default_temperature,
+                                   default_max_tokens, default_cache))
+
+
+def _read_config_role(role_key: str | None) -> dict | None:
+    """Read [llm.<role_key>] from ~/.sio/config.toml. Returns None on miss."""
+    if not role_key:
+        return None
+    try:
+        import tomllib  # type: ignore[import-not-found]  # py311+
+    except ImportError:
+        return None
+    cfg_path = os.path.expanduser("~/.sio/config.toml")
+    if not os.path.exists(cfg_path):
+        return None
+    try:
+        with open(cfg_path, "rb") as f:
+            data = tomllib.load(f)
+        return data.get("llm", {}).get(role_key)
+    except Exception:
+        return None
+
+
+def _resolve_api_key(env_var_name: str | None) -> str | None:
+    if not env_var_name:
+        return None
+    return os.environ.get(env_var_name)
+
+
+def _build_lm(model: str, temperature: float, max_tokens: int, cache: bool) -> dspy.LM:
+    return dspy.LM(model, cache=cache, temperature=temperature, max_tokens=max_tokens)
+
+
+def _check_banned(lm: dspy.LM) -> dspy.LM:
+    """Refuse to return an LM whose model is in [llm.banned].models (XII clause 4)."""
+    try:
+        import tomllib  # type: ignore[import-not-found]
+        cfg_path = os.path.expanduser("~/.sio/config.toml")
+        if os.path.exists(cfg_path):
+            with open(cfg_path, "rb") as f:
+                banned = tomllib.load(f).get("llm", {}).get("banned", {}).get("models", [])
+            if any(b in lm.model for b in banned):
+                raise ValueError(
+                    f"Refusing to load banned model '{lm.model}'. "
+                    f"See [llm.banned] in ~/.sio/config.toml and "
+                    f"~/.claude/rules/domains/cost-control.md."
+                )
+    except (ValueError, ImportError):
+        raise
+    except Exception:
+        pass  # config read failures shouldn't break LM construction
+    return lm
+
+
 def get_task_lm() -> dspy.LM:
-    """LM used for normal module forward passes. Cheap, fast, cached."""
-    model = os.environ.get("SIO_TASK_LM", "openai/gpt-4o-mini")
-    return dspy.LM(model, cache=True, temperature=0.0, max_tokens=4096)
+    """LM used for normal module forward passes. Cheap, fast, cached.
+
+    Resolution order: SIO_TASK_LM env > [llm.task] config > [llm.sub] config >
+    hard default (gemini/gemini-flash-latest — matches active Gemini env).
+    """
+    return _resolve_role_lm(
+        role="task", env_var="SIO_TASK_LM", fallback_subkey="sub",
+        default_model="gemini/gemini-flash-latest",
+        default_temperature=0.0, default_max_tokens=4096, default_cache=True,
+    )
 
 
 def get_reflection_lm() -> dspy.LM:
-    """Strong LM used by GEPA to critique prompt candidates. Expensive, uncached."""
-    model = os.environ.get("SIO_REFLECTION_LM", "openai/gpt-5")
-    return dspy.LM(model, cache=False, temperature=1.0, max_tokens=32000)
+    """Strong LM used by GEPA to critique prompt candidates. Expensive, uncached.
+
+    Resolution order: SIO_REFLECTION_LM env > [llm.reflection] config > [llm]
+    config > hard default (gemini/gemini-pro-latest — matches active Gemini env).
+    NEVER defaults to gpt-5 (must be opt-in via env or --reflection-mode).
+    """
+    return _resolve_role_lm(
+        role="reflection", env_var="SIO_REFLECTION_LM", fallback_subkey=None,
+        default_model="gemini/gemini-pro-latest",
+        default_temperature=1.0, default_max_tokens=32000, default_cache=False,
+    )
 
 
 def get_adapter(lm: dspy.LM) -> dspy.Adapter:
