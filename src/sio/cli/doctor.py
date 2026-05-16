@@ -52,7 +52,96 @@ def run_doctor() -> DoctorReport:
     report.checks.append(_check_bootstrap_resolves())
     report.checks.append(_check_harness_install())
     report.checks.append(_check_dspy_alive())
+    report.checks.append(_check_runlog_health())
     return report
+
+
+def _check_runlog_health() -> CheckResult:
+    """Principle XIII clause 8: scan ~/.sio/runs/ last 7 days.
+
+    Surfaces:
+      - exit_class counts (ok / partial / error)
+      - top warning codes by frequency
+      - any command whose partial-success rate > 20%
+      - writer health (any I/O issues)
+    """
+    import json as _json
+    from datetime import datetime, timedelta, timezone
+    from pathlib import Path
+
+    runs_dir = Path.home() / ".sio" / "runs"
+    if not runs_dir.exists():
+        return CheckResult(
+            name="Run-log health (XIII)",
+            status="warn",
+            detail="~/.sio/runs/ does not exist yet — no runs to summarize",
+        )
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    by_class = {"ok": 0, "partial": 0, "error": 0, "unknown": 0}
+    warn_codes: dict[str, int] = {}
+    by_cmd_partial: dict[str, list[int]] = {}  # cmd -> [partial_count, total]
+    read_errors = 0
+    total_runs = 0
+
+    for p in runs_dir.glob("*.json"):
+        try:
+            d = _json.loads(p.read_text())
+        except Exception:
+            read_errors += 1
+            continue
+        try:
+            start = datetime.fromisoformat(d.get("start_ts", "").replace("Z", "+00:00"))
+            if start < cutoff:
+                continue
+        except (ValueError, TypeError):
+            pass
+        total_runs += 1
+        cls = d.get("exit_class") or "unknown"
+        by_class[cls] = by_class.get(cls, 0) + 1
+        for w in d.get("warnings", []):
+            code = w.get("code", "UNKNOWN")
+            warn_codes[code] = warn_codes.get(code, 0) + 1
+        cmd = d.get("cmd", "?")
+        slot = by_cmd_partial.setdefault(cmd, [0, 0])
+        slot[1] += 1
+        if cls == "partial":
+            slot[0] += 1
+
+    top_warnings = sorted(warn_codes.items(), key=lambda kv: -kv[1])[:5]
+    flagged_cmds = [
+        cmd for cmd, (p, t) in by_cmd_partial.items()
+        if t >= 3 and (p / t) > 0.2
+    ]
+
+    summary_lines = [
+        f"Last 7 days: {total_runs} runs total",
+        f"  ok={by_class.get('ok',0)} partial={by_class.get('partial',0)} "
+        f"error={by_class.get('error',0)} unknown={by_class.get('unknown',0)}",
+    ]
+    if top_warnings:
+        wstr = ", ".join(f"{c}={n}" for c, n in top_warnings)
+        summary_lines.append(f"  top warnings: {wstr}")
+    if flagged_cmds:
+        summary_lines.append(
+            f"  ⚠ commands >20% partial: {', '.join(flagged_cmds)}"
+        )
+    if read_errors:
+        summary_lines.append(f"  ⚠ {read_errors} run-log file(s) unreadable")
+
+    # Status: warn if any flagged cmds or read errors; ok otherwise
+    status = "ok"
+    if flagged_cmds or read_errors:
+        status = "warn"
+    elif total_runs == 0:
+        status = "warn"
+        summary_lines.append("  (no runs yet — instrument commands with @runlogged)")
+
+    return CheckResult(
+        name="Run-log health (XIII)",
+        status=status,
+        detail=" | ".join(summary_lines),
+    )
 
 
 def _check_dspy_alive() -> CheckResult:

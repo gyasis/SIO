@@ -95,6 +95,7 @@ def cli():
         "Claude Code). Skipped on --status / --dry-run unless explicit."
     ),
 )
+@runlogged("init")
 def init(
     harness: str | None,
     dry_run: bool,
@@ -308,6 +309,7 @@ def init(
     default="table",
     help="Output format.",
 )
+@runlogged("health")
 def health(platform, skill, fmt):
     """Show per-skill health metrics."""
     from sio.core.health.aggregator import compute_health
@@ -350,6 +352,7 @@ def health(platform, skill, fmt):
 @click.option("--platform", default=DEFAULT_PLATFORM, help="Platform filter.")
 @click.option("--session", default=None, help="Session ID filter.")
 @click.option("--limit", default=20, help="Max items to review.")
+@runlogged("review")
 def review(platform, session, limit):
     """Batch-review unlabeled invocations."""
     from sio.core.feedback.batch_review import apply_label, get_reviewable
@@ -412,6 +415,7 @@ def review(platform, session, limit):
     help="DSPy optimizer to use.",
 )
 @click.option("--dry-run", is_flag=True, help="Show diff without applying.")
+@runlogged("optimize")
 def optimize(skill_name, platform, optimizer, dry_run):
     """Run prompt optimization for a skill."""
     click.echo(
@@ -465,6 +469,7 @@ def optimize(skill_name, platform, optimizer, dry_run):
 
 
 @cli.command()
+@runlogged("doctor")
 def doctor() -> None:
     """Diagnose `sio` install / config problems.
 
@@ -505,6 +510,7 @@ def doctor() -> None:
 
 
 @cli.command()
+@runlogged("install")
 def install():
     """[REMOVED] Use `sio init` instead.
 
@@ -539,6 +545,7 @@ def install():
     default=False,
     help="Skip confirmation prompt.",
 )
+@runlogged("purge")
 def purge(platform, days, dry_run, behavior_only, yes):
     """Purge old telemetry records from the main SIO database.
 
@@ -686,6 +693,7 @@ def purge(platform, days, dry_run, behavior_only, yes):
     help="Export format.",
 )
 @click.option("--output", "-o", default=None, help="Output file path.")
+@runlogged("export")
 def export(platform, fmt, output):
     """Export telemetry data."""
     import csv
@@ -750,6 +758,7 @@ def export(platform, fmt, output):
     default=True,
     help="Filter out sidechain messages before aggregation (default: on).",
 )
+@runlogged("mine")
 def mine(since, project, source, exclude_sidechains):
     """Mine recent sessions for errors and failures."""
     from pathlib import Path
@@ -851,6 +860,7 @@ def mine(since, project, source, exclude_sidechains):
     default=True,
     help="Mine flow data before querying (default: yes).",
 )
+@runlogged("flows")
 def flows(since, project, min_count, limit, mine_first):
     """Discover recurring positive tool sequence patterns.
 
@@ -996,6 +1006,7 @@ def flows(since, project, min_count, limit, mine_first):
     default=None,
     help="Filter latest session by project name.",
 )
+@runlogged("distill")
 def distill(session_path, latest, output, project):
     """Distill a long session into a clean playbook of winning steps.
 
@@ -1104,6 +1115,7 @@ def distill(session_path, latest, output, project):
     default=None,
     help="Save runbook to file.",
 )
+@runlogged("recall")
 def recall(query, session, project, polish, output):
     """Recall how a specific task was solved in a previous session.
 
@@ -1217,6 +1229,7 @@ def recall(query, session, project, polish, output):
     default=None,
     help="Filter by project name (substring match on source path).",
 )
+@runlogged("patterns")
 def patterns(error_type, project):
     """Show discovered error patterns ranked by importance."""
     from rich.console import Console
@@ -1312,6 +1325,7 @@ def patterns(error_type, project):
     default=None,
     help="Exclude error types. Comma-separated (e.g. 'repeated_attempt,tool_failure').",
 )
+@runlogged("errors")
 def errors(error_type, limit, grep_term, project, exclude_types):
     """Browse mined errors with optional type and content filters."""
     from rich.console import Console
@@ -1759,6 +1773,7 @@ def inspect(pattern_id):
     default=24,
     help="Max age in hours for --use-cache to accept without warning. Default: 24.",
 )
+@runlogged("suggest")
 def suggest(
     error_type,
     min_examples,
@@ -2300,6 +2315,7 @@ def suggest(
 
 
 @cli.command("suggest-review")
+@runlogged("suggest-review")
 def suggest_review():
     """Review pending improvement suggestions interactively."""
     from rich.console import Console
@@ -2359,6 +2375,7 @@ def suggest_review():
 @cli.command()
 @click.argument("suggestion_id", type=int)
 @click.option("--note", "-n", default=None, help="Optional note.")
+@runlogged("approve")
 def approve(suggestion_id, note):
     """Approve a suggestion by ID and promote to ground truth."""
     from sio.ground_truth.corpus import promote_to_ground_truth
@@ -2387,6 +2404,7 @@ def approve(suggestion_id, note):
 @cli.command()
 @click.argument("suggestion_id", type=int)
 @click.option("--note", "-n", default=None, help="Optional note.")
+@runlogged("reject")
 def reject(suggestion_id, note):
     """Reject a suggestion by ID."""
     from sio.review.reviewer import reject as do_reject
@@ -2419,6 +2437,7 @@ def reject(suggestion_id, note):
     default=False,
     help="Show what would be promoted without writing.",
 )
+@runlogged("promote-to-gold")
 def promote_to_gold_cmd(invocation_id, all_eligible, dry_run):
     """Promote behavior_invocations to gold_standards for DSPy training.
 
@@ -2568,6 +2587,7 @@ def promote_to_gold_cmd(invocation_id, all_eligible, dry_run):
         "logic at threshold 0.85."
     ),
 )
+@runlogged("apply")
 def apply_suggestion(
     suggestion_id, experiment, force, rollback_id, merge, yes, no_backup,
     auto_threshold, skip_dupes,
@@ -2770,6 +2790,7 @@ def apply_suggestion(
 
 @cli.command()
 @click.argument("change_id", type=int)
+@runlogged("rollback")
 def rollback(change_id):
     """Rollback an applied change by ID."""
     from sio.applier.rollback import rollback_change
@@ -2789,6 +2810,7 @@ def rollback(change_id):
 
 
 @cli.command()
+@runlogged("changes")
 def changes():
     """List applied changes and their status."""
     from rich.console import Console
@@ -3026,6 +3048,7 @@ def schedule_status():
 
 @cli.command("status")
 @click.option("--plain", is_flag=True, help="Plain text output (no Rich tables).")
+@runlogged("status")
 def sio_status(plain: bool = False):
     """Show 5-section SIO pipeline health status.
 
@@ -3345,6 +3368,7 @@ def sio_status(plain: bool = False):
 
 @cli.command("briefing")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+@runlogged("briefing")
 def briefing(as_json):
     """Show a brief session-start briefing of actionable SIO insights."""
     from sio.core.config import load_config
@@ -3587,6 +3611,7 @@ def gt_status():
     help="DSPy optimizer to use. 'auto' selects based on corpus size.",
 )
 @click.option("--dry-run", is_flag=True, help="Evaluate metrics without saving.")
+@runlogged("optimize-suggestions")
 def optimize_suggestions_cmd(optimizer, dry_run):
     """Optimize the suggestion module using ground truth corpus.
 
@@ -3745,6 +3770,7 @@ def _display_optimization_diff(console, conn, result):
                   "src/sio/export/dataset_builder.py. Wires T1.V.3 — populates "
                   "the long-empty positive side of training datasets."
               ))
+@runlogged("differential-flows")
 def differential_flows_cmd(min_success, min_failure, per_cohort, max_hashes,
                            output, positives_for_builder):
     """Find twin flows (same sequence, both success and failure outcomes).
@@ -3877,6 +3903,7 @@ def analyze_same_error_cmd(min_count, since, limit, with_context):
               help='Max rows to emit (DESC by timestamp; newest first).')
 @click.option("-o", "--output", default=None,
               help='Output JSONL path. Defaults to ~/.sio/curated/<timestamp>.jsonl.')
+@runlogged("curate")
 def curate_cmd(
     since, emphasis, classified, pattern, pattern_prefix, error_types,
     exclude_corrections, exclude_cascade, has_positive_recovery,
@@ -3933,6 +3960,7 @@ def curate_cmd(
               help="Drop positives with sentiment_score below this.")
 @click.option("--dry-run", is_flag=True, default=False,
               help="Show what would be promoted without writing.")
+@runlogged("promote-positives")
 def promote_positives_cmd(since, min_confidence, dry_run):
     """Promote positive_records to ground_truth(label='pending').
 
@@ -4163,6 +4191,7 @@ def amplify_cmd(input_path, output_path, n_per_row, min_judge_score, max_workers
         "(treats the new artifact as a candidate, not a promotion)."
     ),
 )
+@runlogged("optimize")
 def optimize_cmd(
     module_name,
     optimizer_name,
@@ -4208,14 +4237,22 @@ def optimize_cmd(
         f"optimizer=[cyan]{optimizer_name}[/cyan] ...\n"
     )
 
+    # XIII clause 6: heartbeat so a long-running optimize is never silent
+    from sio.core.runlog import Heartbeat  # noqa: PLC0415
+    rl = _runlog_current()
+    result = None
     try:
-        result = run_optimize(
-            module_name=module_name,
-            optimizer_name=optimizer_name,
-            trainset_size=trainset_size,
-            valset_size=valset_size,
-            trainset_file=trainset_file,
-        )
+        with rl.stage("optimize_run") as s, Heartbeat(rl, s, interval=30) as hb:
+            result = run_optimize(
+                module_name=module_name,
+                optimizer_name=optimizer_name,
+                trainset_size=trainset_size,
+                valset_size=valset_size,
+                trainset_file=trainset_file,
+            )
+            hb.progress()
+            if result is not None:
+                s.note(f"score={result.get('score')} optimizer={result.get('optimizer')}")
     except InsufficientData as exc:
         console.print(
             f"[red]Insufficient data:[/red] {exc}\n"
@@ -4305,6 +4342,7 @@ def optimize_cmd(
     default=None,
     help="Output file path (default: ~/.sio/datasets/<task>_<date>.<fmt>).",
 )
+@runlogged("export-dataset")
 def export_dataset(task, since, fmt, output):
     """Export structured training datasets for DSPy/ML.
 
@@ -4406,6 +4444,7 @@ def export_dataset(task, since, fmt, output):
     type=int,
     help="Maximum training examples per task.",
 )
+@runlogged("train")
 def train(task, optimizer, model, max_examples):
     """Train DSPy modules on exported datasets.
 
@@ -4488,6 +4527,7 @@ def train(task, optimizer, model, max_examples):
     default="pending",
     help="Quality label for this example.",
 )
+@runlogged("collect-recall")
 def collect_recall(query, session, project, runbook, label):
     """Collect a recall example for training.
 
@@ -4625,6 +4665,7 @@ def collect_recall(query, session, project, runbook, label):
     type=int,
     help="(With --by-rule) minimum 'with rule' records to include a rule.",
 )
+@runlogged("velocity")
 def velocity(error_type, window, fmt, skills, by_rule, min_records):
     """Show learning velocity trends — how error rates change after rules.
 
@@ -4960,6 +5001,7 @@ def velocity(error_type, window, fmt, skills, by_rule, min_records):
     default="table",
     help="Output format.",
 )
+@runlogged("violations")
 def violations(since, fmt):
     """Show detected rule violations (existing rules the assistant ignored).
 
@@ -5205,6 +5247,7 @@ def _discover_rule_files() -> list[str]:
         "would be promoted, but writes nothing."
     ),
 )
+@runlogged("promote-rule")
 def promote_rule(rule_index: int, mode: str, since: str | None, write: bool) -> None:
     """Promote a violated CLAUDE.md rule into a runtime PreToolUse hook.
 
@@ -5487,6 +5530,7 @@ def promote_rule(rule_index: int, mode: str, since: str | None, write: bool) -> 
     default=None,
     help="Check specific file only.",
 )
+@runlogged("budget")
 def budget(file_path):
     """Show instruction budget usage per file.
 
@@ -5628,6 +5672,7 @@ def budget(file_path):
     default=False,
     help="Apply all proposals without confirmation.",
 )
+@runlogged("dedupe")
 def dedupe(threshold, dry_run, auto_apply):
     """Find and consolidate semantically duplicate rules.
 
@@ -5898,6 +5943,7 @@ def autoresearch_status():
     is_flag=True,
     help="Open report in browser after generation.",
 )
+@runlogged("report")
 def report(html_flag, output, days, open_flag):
     """Generate a session report (terminal or HTML).
 
@@ -6035,6 +6081,7 @@ def _report_terminal(db_path: str, days: int) -> None:
 
 @cli.command("promote-flow")
 @click.argument("flow_hash")
+@runlogged("promote-flow")
 def promote_flow(flow_hash):
     """Promote a flow pattern to a Claude Code skill file.
 
@@ -6079,6 +6126,7 @@ def promote_flow(flow_hash):
     default="table",
     help="Output format (default: table).",
 )
+@runlogged("discover")
 def discover(repo, fmt):
     """Discover skill candidates from mined patterns and flows.
 
@@ -6415,6 +6463,7 @@ def autoresearch_install_schedule(method):
     default=None,
     help="Filter patterns by substring match on description (comma-separated OR).",
 )
+@runlogged("trend")
 def trend(granularity, top_n, num_windows, pattern_filter, grep_term):
     """Show growth / decline of pattern clusters over time.
 
