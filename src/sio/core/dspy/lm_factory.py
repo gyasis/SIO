@@ -12,6 +12,7 @@ Environment overrides:
 
 from __future__ import annotations
 
+import json as _json
 import logging
 import os
 
@@ -26,6 +27,50 @@ logger = logging.getLogger(__name__)
 # UnsupportedParamsError when a config passes e.g. 0.7. drop_params=True
 # silently drops unsupported params instead of failing the call.
 litellm.drop_params = True
+
+
+# ---------------------------------------------------------------------------
+# JSON serialization shim for litellm response objects
+# ---------------------------------------------------------------------------
+# DSPy v3.1+ + litellm 1.79+ together produce response objects whose .usage
+# attribute contains Pydantic BaseModel instances (CompletionTokensDetailsWrapper,
+# PromptTokensDetailsWrapper). DSPy internally calls stdlib json.dumps WITHOUT
+# a `default=` argument on these in multiple places (adapters/json_adapter.py
+# line 208, primitives/cache logic, etc.). That fails with
+# "Object of type CompletionTokensDetailsWrapper is not JSON serializable".
+#
+# Fix: install a JSONEncoder default that turns any Pydantic BaseModel into a
+# dict via .model_dump() (preferred) or falls back to repr. This applies to
+# every json.dumps call in the process, including DSPy's. It does NOT change
+# any user code in SIO that already supplies its own default=.
+#
+# Origin: 2026-05-16 MIPROv2 runs a592c6e2 and 80336d65 both failed with this.
+# See sio_optimizer_ladder PRD; remove this shim if/when DSPy ships a fix.
+
+_orig_json_dumps = _json.dumps
+
+
+def _sio_json_default(o):
+    if hasattr(o, "model_dump"):
+        try:
+            return o.model_dump()
+        except Exception:
+            pass
+    if hasattr(o, "dict"):
+        try:
+            return o.dict()
+        except Exception:
+            pass
+    return repr(o)
+
+
+def _patched_dumps(obj, *args, **kwargs):
+    if "default" not in kwargs:
+        kwargs["default"] = _sio_json_default
+    return _orig_json_dumps(obj, *args, **kwargs)
+
+
+_json.dumps = _patched_dumps
 
 
 # ---------------------------------------------------------------------------
