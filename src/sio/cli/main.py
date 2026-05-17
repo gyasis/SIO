@@ -3952,6 +3952,29 @@ def curate_cmd(
         )
         raise SystemExit(1)
 
+    # Principle XIII (observability) + Principle XV-proposed (reproducibility):
+    # auto-register every curate output in trainsets so the dataset is
+    # content-addressable, permanently stored, and joinable to optimized_modules.
+    # Idempotent — re-running curate with same filters returns the existing id.
+    try:
+        from sio.core.datasets import register_dataset  # noqa: PLC0415
+        slug = Path(output).stem  # e.g. "curated_20260517_124102"
+        ds_id = register_dataset(
+            source_path=Path(out["jsonl_path"]),
+            slug=slug,
+            description=(
+                f"Curate output: since={filters.since!r} emphasis={filters.emphasis!r} "
+                f"rows={out['rows']}"
+            ),
+            source="curate",
+        )
+        click.echo(f"Dataset: registered as trainset id={ds_id} (slug={slug})")
+    except Exception as exc:  # noqa: BLE001
+        # Registration failure must NOT break the curate output the user
+        # already has on disk. Log loudly and continue.
+        click.echo(f"\nWARNING: curate output saved but trainset registration "
+                   f"failed: {exc}. Run 'sio reproduce <module_id>' to verify.")
+
 
 @cli.command("promote-positives")
 @click.option("--since", default="7 days", show_default=True,

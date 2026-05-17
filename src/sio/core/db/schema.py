@@ -611,6 +611,23 @@ def init_db(db_path: str) -> sqlite3.Connection:
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Migration P3a (PRD sio_dataset_versioning_2026-05-16): ensure the
+    # `trainsets` content-addressable table exists at init_db time, not
+    # lazily on first register_dataset() call. Before this hook, fresh
+    # installs that hadn't yet hit the curate→register path would have NO
+    # trainsets table — silently breaking ``sio reproduce <id>``. Same
+    # pattern as the active_rules ALTER above: declare it where init_db
+    # runs so every DB shape matches every code path.
+    try:
+        from sio.core.datasets.registry import ensure_schema as _ensure_trainsets  # noqa: PLC0415
+        _ensure_trainsets(db_path)
+    except Exception:  # noqa: BLE001
+        # registry.ensure_schema does its own try/except per ALTER, so this
+        # outer guard only fires on import failure (e.g. in-memory init
+        # before sio.core.datasets is importable). Safe to skip — the
+        # lazy path in register_dataset() will create it on first write.
+        pass
+
     # Create indexes
     for idx_sql in _INDEXES:
         conn.execute(idx_sql)
