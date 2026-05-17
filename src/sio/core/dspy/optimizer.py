@@ -739,35 +739,40 @@ def _record_optimization_run(
 
     conn.execute("SAVEPOINT activate_module")
     try:
-        # Deactivate prior active rows for the same module
+        # Deactivate prior active rows for the same module.
+        # NOTE 2026-05-17: dropped two phantom-column refs here. `module_name`
+        # was never a column on the production schema (only `module_type` is)
+        # and `active` was never a column either (only `is_active`). The
+        # wrapped try/except silently swallowed both errors, but the WHERE
+        # clause that referenced module_name=? compared NULL to the value and
+        # matched nothing — so the deactivate sweep was a no-op AND the
+        # parallel rich INSERT below failed for the same reason. Both fixed.
         try:
             conn.execute(
                 "UPDATE optimized_modules SET is_active=0 "
-                "WHERE (module_type=? OR module_name=?) AND is_active=1",
-                (module_name, module_name),
+                "WHERE module_type=? AND is_active=1",
+                (module_name,),
             )
         except Exception:  # noqa: BLE001
-            pass  # column may not exist on old schema
-        try:
-            conn.execute(
-                "UPDATE optimized_modules SET active=0 "
-                "WHERE (module_type=? OR module_name=?) AND active=1",
-                (module_name, module_name),
-            )
-        except Exception:  # noqa: BLE001
-            pass  # column may not exist on old schema
+            pass  # column may not exist on very old schema
 
-        # Build INSERT with graceful fallback for missing columns
+        # Build INSERT with graceful fallback for missing columns.
+        # NOTE 2026-05-17 (P2 fix): the previous version listed two phantom
+        # columns — `active` (table only has `is_active`) and `module_name`
+        # (table only has `module_type`). Both made this rich INSERT raise
+        # on EVERY production write, silently falling to the minimal fallback.
+        # That's why runs 11-15 in production have NULL optimizer_name /
+        # score / task_lm / reflection_lm. With both phantom refs dropped,
+        # the rich path can persist attribution properly.
         try:
             cur = conn.execute(
                 "INSERT INTO optimized_modules "
-                "(module_type, module_name, optimizer_used, optimizer_name, "
+                "(module_type, optimizer_used, optimizer_name, "
                 "file_path, artifact_path, training_count, trainset_size, "
                 "valset_size, score, metric_before, metric_after, "
-                "task_lm, reflection_lm, is_active, active, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?)",
+                "task_lm, reflection_lm, is_active, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)",
                 (
-                    module_name,
                     module_name,
                     optimizer_name,
                     optimizer_name,
