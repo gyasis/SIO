@@ -4339,6 +4339,19 @@ def amplify_cmd(input_path, output_path, n_per_row, min_judge_score, max_workers
         "logged so SIO mining can track ladder-skip frequency)."
     ),
 )
+@click.option(
+    "--skip-data-gate",
+    is_flag=True,
+    default=False,
+    help=(
+        "Bypass the MIPROv2 data-size gate: by default, `--optimizer mipro` "
+        "refuses to run when valset_size < max(25, trainset_size * 0.2). "
+        "MIPROv2's Bayesian search needs ~25-50+ valset rows to reliably "
+        "outperform Bootstrap; below threshold it often UNDER-performs "
+        "(see optimized_modules row #17 vs #16 on 2026-05-18). Override "
+        "logged via runlog so SIO mining can track data-gate-skip frequency."
+    ),
+)
 @runlogged("optimize")
 def optimize_cmd(
     module_name,
@@ -4353,6 +4366,7 @@ def optimize_cmd(
     gepa_budget,
     budget_override,
     skip_ladder,
+    skip_data_gate,
 ):
     """Run prompt optimization against the gold_standards corpus.
 
@@ -4396,6 +4410,53 @@ def optimize_cmd(
     if gepa_budget:
         os.environ["SIO_GEPA_BUDGET"] = gepa_budget
         console.print(f"  [dim]--gepa-budget={gepa_budget} → SIO_GEPA_BUDGET={gepa_budget}[/dim]")
+
+    # MIPROv2 data-size gate (companion to Constitution XIV — Optimizer
+    # Ladder Discipline). MIPROv2's Bayesian search over instructions needs
+    # ~25-50+ valset rows to reliably outperform Bootstrap; below threshold
+    # it overfits to the small valset and often UNDER-performs (empirical:
+    # row #17 MIPROv2 0.6970 < row #16 Bootstrap 0.7154 on the same dataset
+    # with valset_size=5, 2026-05-18). Threshold: max(25, trainset * 0.2).
+    # When refused, the recommended path is to GROW the dataset via
+    # `sio amplify` first, then re-run MIPROv2 on the amplified output.
+    if optimizer_name == "mipro" and not skip_data_gate:
+        _min_valset = max(25, int(trainset_size * 0.2))
+        if valset_size < _min_valset:
+            _suggest_input = trainset_file or "<your-curate-output.jsonl>"
+            console.print(
+                f"[red]DATA-SIZE VIOLATION:[/red] MIPROv2 needs "
+                f"valset_size >= [cyan]{_min_valset}[/cyan] (max(25, "
+                f"trainset_size * 0.2)). Got valset_size=[cyan]{valset_size}[/cyan].\n"
+                f"\n  MIPROv2's Bayesian search overfits below this threshold "
+                f"and typically under-performs Bootstrap (see optimized_modules "
+                f"#17 vs #16, 2026-05-18). The recommended path is to GROW the "
+                f"dataset via amplify first:\n"
+                f"    [dim]sio amplify -i {_suggest_input} --n-per-row 3[/dim]\n"
+                f"  Then re-run MIPROv2 against the amplified output (which "
+                f"will be auto-registered in trainsets).\n"
+                f"\n  Or override with [bold]--skip-data-gate[/bold] (logged for "
+                f"SIO mining)."
+            )
+            raise SystemExit(3)
+    elif optimizer_name == "mipro" and skip_data_gate:
+        _min_valset = max(25, int(trainset_size * 0.2))
+        if valset_size < _min_valset:
+            console.print(
+                f"  [yellow]--skip-data-gate:[/yellow] bypassing MIPROv2 "
+                f"data-size gate (valset_size={valset_size} < "
+                f"min={_min_valset}). Logged for SIO mining."
+            )
+            rl = _runlog_current()
+            try:
+                rl.warn(
+                    "DATA_SIZE_SKIP",
+                    f"MIPROv2 run on module={module_name} "
+                    f"trainset_size={trainset_size} valset_size={valset_size} "
+                    f"bypassed min_valset={_min_valset} via --skip-data-gate",
+                    stage="optimize_run",
+                )
+            except Exception:  # noqa: BLE001
+                pass
 
     # Proposed Constitution XIV (Optimizer Ladder Discipline): refuse GEPA
     # without a prior successful MIPROv2 run on the same module + same
