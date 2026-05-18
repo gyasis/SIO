@@ -130,21 +130,43 @@ def _make_modules():
         )
 
     class JudgeVariants(dspy.Signature):
-        """Score each variant 0.0-1.0 for category preservation.
+        """Score each variant 0.0-1.0 for FAILURE-MODE preservation against
+        the target pattern_id.
+
+        SURFACE FEATURES — specific file paths, tool names, command lines,
+        line numbers, error message wording — are EXPECTED TO DIFFER between
+        variants. They MUST NOT lower the score. Two errors with completely
+        different paths/commands but the same FAILURE CATEGORY (e.g. both
+        are "permission denied" or both are "file not found") should score
+        ~1.0.
+
+        Only score lower when the variant FAILURE MODE drifts to a
+        different category (e.g. you're judging `tool_failure__permissiondenied`
+        and a variant is actually a network timeout — that's drift, score
+        ~0.2).
 
         Output `scores_json` is a JSON list of floats matching the order
-        of `variants_json`. 1.0 = perfect category match. 0.0 = drift.
+        of `variants_json`. 1.0 = perfect category match. 0.0 = total drift.
         """
 
-        original_pattern_id: str = dspy.InputField()
-        original_error_text: str = dspy.InputField()
+        # NOTE 2026-05-18: dropped `original_error_text` from inputs. Today's
+        # E2E test showed the judge was anchoring on surface similarity to
+        # the original instead of evaluating category preservation. Without
+        # the original in scope, the judge MUST evaluate against pattern_id.
+        # This is Tier 1 of PRD sio_meta_optimize_judgevariants_2026-05-18
+        # (manual prompt fix; Tier 2-5 is DSPy meta-optimization).
+        original_pattern_id: str = dspy.InputField(
+            desc="Target failure category id, e.g. tool_failure__permissiondenied"
+        )
         variants_json: str = dspy.InputField(
             desc='JSON array of variants — each item {"error_text": "..."}'
         )
         scores_json: str = dspy.OutputField(
             desc=(
                 "JSON array of floats matching variants_json order. "
-                "ONLY the JSON. No commentary."
+                "Score 1.0 if variant preserves the FAILURE MODE of "
+                "pattern_id; 0.0 if it drifts to a different category. "
+                "Different paths/tools/commands are NOT drift. ONLY the JSON."
             )
         )
 
@@ -297,14 +319,33 @@ def amplify(
             judge_input = json.dumps(
                 [{"error_text": v["error_text"][:400]} for v in variants]
             )
+            # NOTE 2026-05-18: dropped `original_error_text=orig_err` kwarg.
+            # JudgeVariants no longer accepts it as an input (see signature
+            # at line 132). The judge now grades against pattern_id +
+            # variants only — forces category-evaluation, kills the
+            # surface-similarity anchor bias.
             out = _retry_429(
                 judge,
                 original_pattern_id=pattern_id,
-                original_error_text=orig_err,
                 variants_json=judge_input,
             )
+            # XIII (loud failure): every fallback path below MUST emit a
+            # structured signal so production failure modes don't hide
+            # behind a 0.5 placeholder that coincidentally passes a 0.5
+            # threshold. Today's E2E test caught this — silent fallback
+            # meant we had 0 quality assurance on the kept variants.
+            import sys as _sys  # noqa: PLC0415
             if out is None:
-                # Fallback: keep all variants with default score
+                # Fallback path A: judge call returned None (likely None
+                # response or _retry_429 exhausted). All variants get
+                # placeholder 0.5 → if user picks threshold ≤0.5 they get
+                # FALSE QA. LOUD signal so user/agent sees it.
+                print(
+                    f"  [JUDGE_FALLBACK_NONE] row pattern={pattern_id} — "
+                    f"judge returned None; {len(variants)} variants "
+                    f"assigned PLACEHOLDER 0.5 (not real judge score).",
+                    file=_sys.stderr, flush=True,
+                )
                 for v in variants:
                     with lock:
                         results.append((row, v["error_text"], v["user_message"], 0.5))
@@ -317,15 +358,46 @@ def amplify(
                 raw = raw.strip()
             try:
                 scores = json.loads(raw)
-            except Exception:
+            except Exception as _parse_exc:  # noqa: BLE001
+                # Fallback path B: judge returned text but JSON parse
+                # failed. Same FALSE QA risk. LOUD signal.
+                print(
+                    f"  [JUDGE_FALLBACK_PARSE] row pattern={pattern_id} — "
+                    f"scores_json={raw[:120]!r} parse_err={type(_parse_exc).__name__}; "
+                    f"{len(variants)} variants assigned PLACEHOLDER 0.5.",
+                    file=_sys.stderr, flush=True,
+                )
                 scores = []
+            _fallback_index_used = False
+            _fallback_cast_used = False
             for i, v in enumerate(variants):
                 try:
-                    sc = float(scores[i]) if i < len(scores) else 0.5
+                    if i >= len(scores):
+                        _fallback_index_used = True
+                        sc = 0.5
+                    else:
+                        sc = float(scores[i])
                 except Exception:
+                    _fallback_cast_used = True
                     sc = 0.5
                 with lock:
                     results.append((row, v["error_text"], v["user_message"], sc))
+            # Fallback path C: variant count > score count. LOUD signal.
+            if _fallback_index_used:
+                print(
+                    f"  [JUDGE_FALLBACK_INDEX] row pattern={pattern_id} — "
+                    f"got {len(scores)} scores for {len(variants)} variants; "
+                    f"extras assigned PLACEHOLDER 0.5.",
+                    file=_sys.stderr, flush=True,
+                )
+            # Fallback path D: score wasn't a float. LOUD signal.
+            if _fallback_cast_used:
+                print(
+                    f"  [JUDGE_FALLBACK_CAST] row pattern={pattern_id} — "
+                    f"one or more scores not coercible to float; "
+                    f"affected variants assigned PLACEHOLDER 0.5.",
+                    file=_sys.stderr, flush=True,
+                )
         except Exception as exc:  # noqa: BLE001
             # Graceful degradation: when the judge call itself fails (DSPy
             # adapter error / empty Gemini response / etc.), keep the variants
