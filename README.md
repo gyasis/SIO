@@ -375,6 +375,19 @@ assist, not autonomous override" design stance.
 | `~/.sio/runs/<ts>_<cmd>_<id>_dspy.jsonl` | Per-LM-call sidecar with prompt + completion + tokens + cost |
 | Heartbeat `[HB ...]` stderr | Every 30s during long-running optimize; `REFLECTION_STUCK` warn at 15min if GEPA hasn't reached eval phase |
 
+#### Rule outcomes — measured assist for human judgment
+
+Three surfaces turning `error_records.active_rules` into actionable
+per-rule outcome metrics. All three are decision aids — the human keeps
+the editorship (see [`docs/SIO_PHILOSOPHY.md`](docs/SIO_PHILOSOPHY.md)).
+
+| Command | Description |
+|---|---|
+| `sio velocity --by-rule` | Per-rule overview: 7-day pre/post error-rate delta with confidence tier + plain-text recommend hint |
+| `sio rule-outcomes [<rule_id>]` | Drill-down with title (resolved from `~/.claude/rules/<path>`), first-seen, by-type breakdown, confound-flagged sibling rules |
+| `sio rule-audit <rule_id>` | Deterministic-seed sample of before/after errors with text + session IDs |
+| `sio rule-audit <rule_id> --judge` | Paid Gemini-Flash judge scores "does the rule's prevention apply to this error?" Cost callout fires before any LLM call; `--yes` to skip confirmation |
+
 ### Telemetry & Maintenance
 
 | Command | Description |

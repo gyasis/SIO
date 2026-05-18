@@ -62,6 +62,32 @@ roll into v0.2.1 or v0.3.0 once a real GEPA run validates the stack).
 - **`sio analyze same-error`** now carries `@runlogged` (was the only
   `sio analyze` subcommand without it).
 
+### Added — Rule-outcome surfaces (Principle XIII observability + measured assist)
+
+Three commands that turn `error_records.active_rules` (the rule-id
+snapshot column added 2026-05-15) into actionable per-rule outcome
+metrics. Aligned with `docs/SIO_PHILOSOPHY.md`: all three are math-backed
+DECISION AIDS — no auto-action.
+
+- **`sio velocity --by-rule`** — extended overview. Per-(rule_id,
+  error_type, target_surface) breakdown with 7-day pre/post windows
+  from `min(timestamp)` where rule_id first appears. Confidence tier
+  (low/medium/high on n_after) + `recommend` text hint. `--json` flag
+  preserved.
+- **`sio rule-outcomes [<rule_id>] [--window N] [--since "N days"]`** —
+  drill-down. Omit rule_id to list all; provide it for the per-rule
+  Rich Panel (title resolved from `~/.claude/rules/<path>`, first-seen,
+  target surface, by-type breakdown, confound-flagged sibling rules,
+  plain-text "Verdict" line — informational only).
+- **`sio rule-audit <rule_id> [--judge] [--samples N] [--yes]
+  [--write-report]`** — deep dive. Deterministic-seed sample of
+  before/after errors with text + session IDs. With `--judge`:
+  cost-callout fires (per cost-control rule), `click.confirm()` or
+  `--yes` required, then Gemini Flash scores "does the rule's
+  prevention_instructions apply to this error?" Aggregates
+  applicability percentage. Optional audit report at
+  `~/.sio/audits/<sha1[:10]>_<ts>.md`.
+
 ### Added — Observability stack (Principle XIII)
 
 - **Stuck-in-reflection runtime monitor**: `Heartbeat` extension reads
