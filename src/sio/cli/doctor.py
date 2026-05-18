@@ -56,6 +56,7 @@ def run_doctor() -> DoctorReport:
     report.checks.append(_check_ladder_discipline())
     report.checks.append(_check_reproducibility_gaps())
     report.checks.append(_check_budget_state())
+    report.checks.append(_check_stuck_reflection_runs())
     return report
 
 
@@ -620,5 +621,131 @@ def _check_harness_install() -> CheckResult:
             "sio init  # safely re-syncs missing or out-of-date files"
             if worst != "ok"
             else ""
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Stuck-in-reflection retrospective audit (Principle XIII observability)
+# ---------------------------------------------------------------------------
+
+
+def _check_stuck_reflection_runs() -> CheckResult:
+    """Scan recent ~/.sio/runs/*_dspy.jsonl sidecars for the GEPA
+    stuck-in-reflection failure mode (reflection_lm calls accumulate
+    but task_lm calls never appear).
+
+    Empirical: today's failed GEPA on a 93-row dataset showed 28 gpt-5
+    reflection calls and 0 Flash calls over 58 min — wasted $1.11.
+    Pre-flight gate (amplify-first + row-floor, commit d886078) prevents
+    this going forward. This retrospective check flags any historical
+    run that exhibits the pattern so SIO mining + audit dashboards
+    can surface it.
+
+    Pattern: >=5 reflection-class calls AND 0 task-class calls AND
+    elapsed >= 15 min (computed from first/last ts in sidecar).
+    """
+    import json as _json
+    from datetime import datetime, timedelta, timezone
+    from pathlib import Path as _P
+
+    runs_dir = _P.home() / ".sio" / "runs"
+    if not runs_dir.exists():
+        return CheckResult(
+            name="Stuck-in-reflection audit (XIII)",
+            status="ok",
+            detail="~/.sio/runs/ does not exist yet — nothing to audit",
+        )
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=14)
+    reflection_hints = ("gpt-5", "gemini-pro", "claude-opus", "claude-sonnet-4")
+    task_hints = ("flash", "gpt-4o-mini", "ollama", "haiku")
+
+    flagged = []
+    scanned = 0
+
+    for sidecar in runs_dir.glob("*_dspy.jsonl"):
+        scanned += 1
+        try:
+            reflection_calls = 0
+            task_calls = 0
+            first_ts = None
+            last_ts = None
+            with sidecar.open() as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        d = _json.loads(line)
+                    except Exception:
+                        continue
+                    ts = d.get("ts") or d.get("timestamp")
+                    if first_ts is None:
+                        first_ts = ts
+                    last_ts = ts
+                    m = (d.get("model") or "").lower()
+                    if any(h in m for h in task_hints):
+                        task_calls += 1
+                    elif any(h in m for h in reflection_hints):
+                        reflection_calls += 1
+
+            if not first_ts or not last_ts:
+                continue
+            try:
+                first_dt = datetime.fromisoformat(first_ts.replace("Z", "+00:00"))
+                last_dt = datetime.fromisoformat(last_ts.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                continue
+            if first_dt < cutoff:
+                continue
+            elapsed_min = int((last_dt - first_dt).total_seconds() / 60)
+
+            # Stuck pattern: reflection-heavy, zero task calls, ran for >=15 min
+            if reflection_calls >= 5 and task_calls == 0 and elapsed_min >= 15:
+                flagged.append({
+                    "sidecar": sidecar.name,
+                    "first_ts": first_ts,
+                    "elapsed_min": elapsed_min,
+                    "reflection": reflection_calls,
+                    "task": task_calls,
+                })
+        except Exception:
+            continue
+
+    if not flagged:
+        return CheckResult(
+            name="Stuck-in-reflection audit (XIII)",
+            status="ok",
+            detail=f"Scanned {scanned} run sidecar(s) in last 14d; no "
+                   f"stuck-in-reflection patterns detected.",
+        )
+
+    detail_lines = [
+        f"Found {len(flagged)} run(s) in last 14d that match the stuck-in-"
+        f"reflection pattern (reflection-only LM calls, never reached task "
+        f"LM):"
+    ]
+    for f in flagged[:10]:
+        detail_lines.append(
+            f"  {f['sidecar']}: {f['reflection']}r/0t in {f['elapsed_min']}m "
+            f"(started {f['first_ts']})"
+        )
+    if len(flagged) > 10:
+        detail_lines.append(f"  ... +{len(flagged) - 10} more")
+    detail_lines.append(
+        "Likely cause: dataset too small for GEPA's reflective acceptance "
+        "loop. Pre-flight gate `sio optimize --optimizer gepa` refuses "
+        "<300-row trainsets by default. Override with --skip-amplify-gate "
+        "is logged for SIO mining."
+    )
+
+    return CheckResult(
+        name="Stuck-in-reflection audit (XIII)",
+        status="warn",
+        detail="\n".join(detail_lines),
+        fix_hint=(
+            "sio optimize-ladder --trainset-file <X> "
+            "# auto-amplifies to 300+ rows before GEPA"
         ),
     )
