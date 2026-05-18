@@ -18,6 +18,8 @@ AI coding assistants are powerful but repetitive in their failures:
 
 These patterns are buried in session transcripts. SIO extracts them, finds the signal, and proposes targeted fixes (CLAUDE.md rules, hook configs, skill updates) that prevent recurrence.
 
+> **Design stance:** SIO is **measured assist, not autonomous override**. Detection, generation, and outcome measurement are automatic. Application, deprecation, and final judgment are human. See [`docs/SIO_PHILOSOPHY.md`](docs/SIO_PHILOSOPHY.md) for the full design rationale.
+
 ## How It Works
 
 ```
