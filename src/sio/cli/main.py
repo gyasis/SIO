@@ -4061,6 +4061,7 @@ def promote_positives_cmd(since, min_confidence, dry_run):
         from datetime import datetime as _dt  # noqa: PLC0415
         now = _dt.now(timezone.utc).isoformat()
         inserted = 0
+        promoted_records = []  # captured for the trainsets snapshot below
         for r in rows:
             try:
                 conn.execute(
@@ -4082,11 +4083,66 @@ def promote_positives_cmd(since, min_confidence, dry_run):
                         now,
                     ),
                 )
+                promoted_records.append({
+                    "pattern_id": r["pattern_id"] or "tool_failure__unclassified",
+                    "error_type": r["error_type"],
+                    "error_text": (r["error_text"] or "")[:300],
+                    "signal_type": r["signal_type"],
+                    "signal_text": (r["signal_text"] or "")[:200],
+                    "source_file": r["source_file"],
+                    "promoted_at": now,
+                    "_meta": {
+                        "positive_record_id": r["pos_id"],
+                        "error_record_id": r["err_id"],
+                    },
+                })
                 inserted += 1
             except Exception as exc:  # noqa: BLE001
                 click.echo(f"  skipped one: {exc}", err=True)
         conn.commit()
         click.echo(f"Inserted {inserted} new ground_truth rows (label='pending').")
+
+        # Principle XIII (observability) + Principle XV-proposed (reproducibility):
+        # snapshot the promoted batch as a JSONL trainset row. Without this, a
+        # ground_truth row's lineage stops at the (pattern_id, source) pair —
+        # there's no way to ask "what was the promotion batch on 2026-05-18?"
+        # The snapshot file + content-hash close the audit chain so a future
+        # `sio reproduce` can walk: optimize → ground_truth slice → promotion
+        # JSONL → original positive_records ids.
+        if promoted_records:
+            try:
+                import json as _json  # noqa: PLC0415
+                from pathlib import Path as _P  # noqa: PLC0415
+                from sio.core.datasets import register_dataset  # noqa: PLC0415
+                _ts_safe = now.replace(":", "-").replace("+", "_").replace(".", "_")
+                snapshot_dir = _P.home() / ".sio" / "promoted"
+                snapshot_dir.mkdir(parents=True, exist_ok=True)
+                snapshot_path = snapshot_dir / f"promote_positives_{_ts_safe}.jsonl"
+                with snapshot_path.open("w") as f:
+                    for rec in promoted_records:
+                        f.write(_json.dumps(rec) + "\n")
+                ds_id = register_dataset(
+                    source_path=snapshot_path,
+                    slug=f"promote_positives_{_ts_safe}",
+                    description=(
+                        f"Promotion batch: {inserted} positive_records → "
+                        f"ground_truth(label='pending'). Filters: "
+                        f"since={since!r} min_confidence={min_confidence}"
+                    ),
+                    source="promote-positives",
+                )
+                click.echo(
+                    f"Snapshot: registered as trainset id={ds_id} "
+                    f"({snapshot_path})"
+                )
+            except Exception as exc:  # noqa: BLE001
+                click.echo(
+                    f"WARNING: promotion succeeded but snapshot registration "
+                    f"failed: {exc}. ground_truth rows are still in place; "
+                    f"only the audit-trail snapshot is missing.",
+                    err=True,
+                )
+
         click.echo("Run `sio suggest-review` or `sio approve <id>` to promote them.")
 
 
