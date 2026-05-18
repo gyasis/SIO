@@ -147,11 +147,19 @@ def _get_classifier():
                 "classifier requires SIO_GEMINI_API_KEY (or GEMINI_API_KEY) in env. "
                 "Source ~/.sio/secrets.env first."
             )
+        # NOTE 2026-05-18: raised from 500 → 1000 per token-length audit.
+        # Output is just one category string (~10 chars), but ChatAdapter
+        # scaffolding ([[ ## category ## ]] sentinel) + Gemini-Flash
+        # reasoning preamble can consume the 500-token budget BEFORE the
+        # answer fires — same bug class as amplify's judge (commit 7f31ce3).
+        # The classifier currently returns "Other" on failure (line 177)
+        # which is silently lossy — every "Other" might be a real category
+        # that got truncated. 1000 tokens of headroom kills that risk.
         lm = dspy.LM(
             model="gemini/gemini-flash-latest",
             api_key=api_key,
             temperature=0.0,
-            max_tokens=500,
+            max_tokens=1000,
         )
         dspy.configure(lm=lm)
         _classify_callable = dspy.Predict(_ClassifyError)

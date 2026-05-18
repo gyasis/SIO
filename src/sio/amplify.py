@@ -69,12 +69,18 @@ def _get_lms():
                 "amplify requires SIO_GEMINI_API_KEY (or GEMINI_API_KEY). "
                 "Source ~/.sio/secrets.env first."
             )
-        # Slightly higher temperature for variant generation (creativity)
+        # Slightly higher temperature for variant generation (creativity).
+        # NOTE 2026-05-18: raised from 4000 → 6000 per token-length audit.
+        # 10 variants × ~400 chars (~100 tokens) = 1000 raw + ChatAdapter
+        # scaffolding ([[ ## variants_json ## ]] + [[ ## completed ## ]] +
+        # field separators) + Gemini-Flash reasoning preamble can push past
+        # 4000 for content-heavy patterns. 6000 provides headroom for
+        # n_per_row up to ~15 without truncation.
         _gen_lm = dspy.LM(
             model="gemini/gemini-flash-latest",
             api_key=api_key,
             temperature=0.8,
-            max_tokens=4000,  # enough for ~10 variants in JSON array
+            max_tokens=6000,
         )
         # Low temperature for judging (consistency).
         # NOTE 2026-05-18 (adversarial-audit H2 CONFIRMED): max_tokens was
