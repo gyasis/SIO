@@ -4193,6 +4193,45 @@ def amplify_cmd(input_path, output_path, n_per_row, min_judge_score, max_workers
     click.echo(f"Dropped:          {result['dropped']}")
     click.echo(f"Output:           {result['path']}")
 
+    # Principle XIII (observability) + proposed XV (reproducibility): same
+    # auto-registration as curate_cmd. amplify's output is a new dataset
+    # derived FROM the input curate dataset — record the lineage via
+    # parent_dataset_id so `sio reproduce <id>` can walk back to the source.
+    # Idempotent (content-hash dedup before insert). Failure here MUST NOT
+    # destroy the amplified file the user already has on disk.
+    try:
+        from sio.core.datasets import find_by_hash, hash_file, register_dataset  # noqa: PLC0415
+        # Resolve the input dataset's id by sha lookup (if it was registered
+        # via `sio curate -o`, it'll be there; if not, parent stays NULL).
+        parent_id = None
+        try:
+            parent_row = find_by_hash(hash_file(inp))
+            if parent_row:
+                parent_id = parent_row["id"]
+        except Exception:  # noqa: BLE001
+            pass
+        slug = Path(out).stem  # e.g. "curated_amplified"
+        ds_id = register_dataset(
+            source_path=out,
+            slug=slug,
+            description=(
+                f"Amplify output: input={inp.name!r} n_per_row={n_per_row} "
+                f"min_judge_score={min_judge_score} kept={kept} "
+                f"task_mode={task_mode or '(default)'}"
+            ),
+            source="amplify",
+            parent_dataset_id=parent_id,
+        )
+        click.echo(
+            f"Dataset:          registered as trainset id={ds_id} "
+            f"(slug={slug}, parent={parent_id})"
+        )
+    except Exception as exc:  # noqa: BLE001
+        click.echo(
+            f"\nWARNING: amplify output saved but trainset registration "
+            f"failed: {exc}. Run 'sio reproduce <module_id>' to verify."
+        )
+
 
 @cli.command("optimize")
 @click.option(
@@ -4286,6 +4325,20 @@ def amplify_cmd(input_path, output_path, n_per_row, min_judge_score, max_workers
         "for this invocation (XII clause 6 escape hatch). Pass a USD amount."
     ),
 )
+@click.option(
+    "--skip-ladder",
+    is_flag=True,
+    default=False,
+    help=(
+        "Bypass the optimizer-ladder discipline gate (Constitution XIV proposed): "
+        "by default, `--optimizer gepa` refuses to run on a registered trainset "
+        "if no prior MIPROv2 run exists for the same module on the same dataset. "
+        "The ladder is Bootstrap → MIPROv2 → GEPA; skipping rungs wastes the "
+        "expensive Pro/gpt-5 reflection budget on configurations MIPROv2 may "
+        "already have found near-optimum. Pass this flag to override (a note is "
+        "logged so SIO mining can track ladder-skip frequency)."
+    ),
+)
 @runlogged("optimize")
 def optimize_cmd(
     module_name,
@@ -4299,6 +4352,7 @@ def optimize_cmd(
     reflection_mode,
     gepa_budget,
     budget_override,
+    skip_ladder,
 ):
     """Run prompt optimization against the gold_standards corpus.
 
@@ -4342,6 +4396,83 @@ def optimize_cmd(
     if gepa_budget:
         os.environ["SIO_GEPA_BUDGET"] = gepa_budget
         console.print(f"  [dim]--gepa-budget={gepa_budget} → SIO_GEPA_BUDGET={gepa_budget}[/dim]")
+
+    # Proposed Constitution XIV (Optimizer Ladder Discipline): refuse GEPA
+    # without a prior successful MIPROv2 run on the same module + same
+    # dataset. The ladder is Bootstrap → MIPROv2 → GEPA. Skipping rungs
+    # wastes Pro/gpt-5 reflection budget on configurations MIPROv2 may
+    # already have found near-optimum.
+    #
+    # The gate only fires when:
+    #   - optimizer_name == "gepa"  (other optimizers are upstream rungs)
+    #   - trainset_file is set      (can't enforce on live ground_truth)
+    #   - --skip-ladder is NOT set  (explicit user override)
+    # If skipped via flag, log to runlog so SIO mining can track frequency.
+    if optimizer_name == "gepa" and trainset_file and not skip_ladder:
+        try:
+            from pathlib import Path as _P  # noqa: PLC0415
+            import sqlite3 as _sql  # noqa: PLC0415
+            from sio.core.datasets import find_by_hash, hash_file  # noqa: PLC0415
+            tf = _P(trainset_file).expanduser()
+            sha = hash_file(tf)
+            ds_row = find_by_hash(sha)
+            if ds_row is None:
+                # Unregistered trainset → can't check ladder. Warn but allow
+                # (the optimize wire-up will auto-register on success).
+                console.print(
+                    "  [yellow]ladder-gate:[/yellow] trainset is unregistered "
+                    "(no `trainsets` row for this sha); skipping ladder check."
+                )
+            else:
+                db_path = os.path.expanduser("~/.sio/sio.db")
+                with _sql.connect(db_path) as _c:
+                    _c.row_factory = _sql.Row
+                    prior_mipro = _c.execute(
+                        "SELECT id, score, created_at FROM optimized_modules "
+                        "WHERE module_type=? AND trainset_id=? "
+                        "AND (optimizer_name='mipro' OR optimizer_used='mipro') "
+                        "AND score IS NOT NULL ORDER BY id DESC LIMIT 1",
+                        (module_name, ds_row["id"]),
+                    ).fetchone()
+                if prior_mipro is None:
+                    console.print(
+                        f"[red]LADDER VIOLATION:[/red] No prior MIPROv2 run exists "
+                        f"for module=[cyan]{module_name}[/cyan] on trainset "
+                        f"id=[cyan]{ds_row['id']}[/cyan] (sha={sha[:12]}).\n"
+                        f"\n  The optimizer ladder is "
+                        f"[bold]Bootstrap → MIPROv2 → GEPA[/bold]. Run MIPROv2 first:\n"
+                        f"    [dim]sio optimize --optimizer mipro --trainset-file {trainset_file}[/dim]\n"
+                        f"\n  Or override with [bold]--skip-ladder[/bold] if you have "
+                        f"a specific reason (logged for SIO mining)."
+                    )
+                    raise SystemExit(2)
+                console.print(
+                    f"  [dim]ladder-gate: ok (prior MIPROv2 run id="
+                    f"{prior_mipro['id']} score={prior_mipro['score']:.4f})[/dim]"
+                )
+        except SystemExit:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            # Gate failure must NOT block — log and continue. The point is
+            # discipline, not infrastructure-fragility.
+            console.print(
+                f"  [yellow]ladder-gate: check failed ({exc}); allowing run.[/yellow]"
+            )
+    elif optimizer_name == "gepa" and skip_ladder:
+        console.print(
+            "  [yellow]--skip-ladder:[/yellow] bypassing optimizer-ladder "
+            "discipline gate. Logged for SIO mining (track ladder-skip frequency)."
+        )
+        rl = _runlog_current()
+        try:
+            rl.warn(
+                "LADDER_SKIP",
+                f"GEPA run on module={module_name} trainset={trainset_file} "
+                f"bypassed MIPROv2 prerequisite via --skip-ladder",
+                stage="optimize_run",
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
     # XII clause 6: budget guard. Halt if 24h rolling spend exceeds cap.
     if not dry_run:
@@ -4414,6 +4545,56 @@ def optimize_cmd(
     console.print(f"  artifact: {result['artifact']}")
     console.print(f"  score:    {result['score']:.4f}")
     console.print(f"  optimizer: {result['optimizer']}")
+
+    # Principle XIII (observability) + proposed XV (reproducibility):
+    # close the optimize → trainsets loop. Without this, the resulting
+    # optimized_modules row has trainset_id=NULL and the doctor's
+    # Reproducibility-Gap warning fires ("N/N active modules have gaps").
+    # When --trainset-file was given AND the file is registered in
+    # trainsets, link the new row's trainset_id. If unregistered, register
+    # it now (auto-promote a one-shot file into a permanent dataset).
+    if trainset_file:
+        try:
+            from pathlib import Path as _P  # noqa: PLC0415
+            import sqlite3 as _sql  # noqa: PLC0415
+            from sio.core.datasets import (  # noqa: PLC0415
+                find_by_hash, hash_file, link_optimized_module, register_dataset,
+            )
+            tf = _P(trainset_file).expanduser()
+            sha = hash_file(tf)
+            row = find_by_hash(sha)
+            if row is None:
+                # Auto-register so the dataset becomes content-addressable
+                # even when the user pointed at an ad-hoc file. Slug derived
+                # from filename stem; source='manual' marks the lineage gap.
+                ds_id = register_dataset(
+                    source_path=tf,
+                    slug=tf.stem,
+                    description=f"Auto-registered from sio optimize --trainset-file (was unregistered)",
+                    source="manual",
+                )
+            else:
+                ds_id = row["id"]
+            # Look up the freshly-inserted module_id by max(id) for this module_type
+            db_path = os.path.expanduser("~/.sio/sio.db")
+            with _sql.connect(db_path) as _c:
+                _c.row_factory = _sql.Row
+                latest = _c.execute(
+                    "SELECT id FROM optimized_modules WHERE module_type=? "
+                    "ORDER BY id DESC LIMIT 1",
+                    (module_name,),
+                ).fetchone()
+            if latest:
+                link_optimized_module(latest["id"], ds_id)
+                console.print(
+                    f"  trainset:  linked id={ds_id} (sha={sha[:12]}) → "
+                    f"optimized_modules.id={latest['id']}"
+                )
+        except Exception as exc:  # noqa: BLE001
+            console.print(
+                f"  [yellow]warn:[/yellow] trainset link failed: {exc} — "
+                f"reproducibility-gap warning may persist for this run."
+            )
 
     # --baseline-against gate: refuse to promote if score regresses
     if baseline_against is not None:
