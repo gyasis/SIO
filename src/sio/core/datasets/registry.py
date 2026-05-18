@@ -146,41 +146,15 @@ def link_optimized_module(module_id: int, dataset_id: int,
     finally:
         conn.close()
 
-
-def backfill_known_trainsets(db_path: str | None = None) -> dict:
-    """One-shot: register today's known trainsets + link to their modules.
-
-    Returns summary of what was registered.
-    """
-    ensure_schema(db_path)
-    summary = {"registered": [], "linked": []}
-
-    known = [
-        # (source_path, slug, description, source, linked_module_ids)
-        (Path("/tmp/sio_curated_targeted.jsonl"),
-         "curated_targeted_2026-05-15",
-         "93-row targeted curated set (emphasis+classified) — baseline #8/#13",
-         "curate",
-         [8, 13]),
-        (Path.home() / ".sio/amplified/v2_hybrid_pro.jsonl",
-         "v2_hybrid_pro_2026-05-16",
-         "372-row v2 hybrid amplified — Pro-generated, filled rule outputs — used for #14/#15",
-         "amplify-distilabel-v2-hybrid",
-         [14, 15]),
-        (Path.home() / ".sio/amplified/curated_targeted_distilabel.jsonl",
-         "v1_distilabel_paraphrase_2026-05-16",
-         "v1 distilabel paraphrase (regressed) — module #10",
-         "amplify-distilabel-v1",
-         [10]),
-    ]
-
-    for src, slug, desc, source, modules in known:
-        if not src.exists():
-            continue
-        ds_id = register_dataset(src, slug, desc, source, db_path=db_path)
-        summary["registered"].append({"id": ds_id, "slug": slug, "path": str(src)})
-        for m_id in modules:
-            link_optimized_module(m_id, ds_id, db_path=db_path)
-            summary["linked"].append({"module_id": m_id, "dataset_id": ds_id})
-
-    return summary
+# NOTE 2026-05-18: `backfill_known_trainsets()` was removed. It was a
+# one-shot helper that hardcoded three specific trainset files + linked
+# them to modules #8/#13/#14/#15/#10. Its work has already been applied
+# to ~/.sio/sio.db (rows 1, 2, 3 in the trainsets table, plus the
+# trainset_id linkages on the corresponding optimized_modules rows).
+# Now that curate_cmd and amplify_cmd auto-register every output via
+# register_dataset(), and optimize_cmd auto-links by sha via
+# link_optimized_module(), the one-shot path is obsolete. Generic
+# recovery is the right replacement — e.g. `sio datasets scan
+# --dir ~/.sio/{amplified,curated}/` that content-addresses every JSONL
+# (queued as a separate task; not implemented yet). See PRD
+# sio_dataset_versioning_2026-05-16 for the design intent.

@@ -12,7 +12,6 @@ from .registry import (
     find_by_hash,
     find_by_path,
     link_optimized_module,
-    backfill_known_trainsets,
 )
 
 __all__ = [
@@ -23,5 +22,4 @@ __all__ = [
     "find_by_hash",
     "find_by_path",
     "link_optimized_module",
-    "backfill_known_trainsets",
 ]

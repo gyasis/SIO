@@ -3832,6 +3832,7 @@ def analyze_group():
               help="Max findings to display.")
 @click.option("--with-context", is_flag=True, default=False,
               help="Include up to 3 context_before snippets per finding.")
+@runlogged("analyze-same-error")
 def analyze_same_error_cmd(min_count, since, limit, with_context):
     """Find error signatures repeated >= N times across sessions.
 
@@ -4352,6 +4353,22 @@ def amplify_cmd(input_path, output_path, n_per_row, min_judge_score, max_workers
         "logged via runlog so SIO mining can track data-gate-skip frequency."
     ),
 )
+@click.option(
+    "--resume-from",
+    type=int,
+    default=None,
+    metavar="MODULE_ID",
+    help=(
+        "Resume the optimizer ladder after a prior successful run. Pass the "
+        "optimized_modules.id of the most recent successful rung (Bootstrap "
+        "or MIPROv2). Auto-resolves --trainset-file from that row's "
+        "trainset_id so the new run uses the same dataset. Records the "
+        "lineage in runlog metadata for traceability. Useful for crash "
+        "recovery in background-SIO cron runs: if GEPA crashed after "
+        "Bootstrap+MIPROv2 landed, rerun with --resume-from <mipro_id> "
+        "to pick up at GEPA without re-running the prior rungs."
+    ),
+)
 @runlogged("optimize")
 def optimize_cmd(
     module_name,
@@ -4367,6 +4384,7 @@ def optimize_cmd(
     budget_override,
     skip_ladder,
     skip_data_gate,
+    resume_from,
 ):
     """Run prompt optimization against the gold_standards corpus.
 
@@ -4410,6 +4428,81 @@ def optimize_cmd(
     if gepa_budget:
         os.environ["SIO_GEPA_BUDGET"] = gepa_budget
         console.print(f"  [dim]--gepa-budget={gepa_budget} → SIO_GEPA_BUDGET={gepa_budget}[/dim]")
+
+    # --resume-from: thread context from a prior successful rung. Look up
+    # the named module's trainset_id, auto-populate --trainset-file if the
+    # user didn't pass one. Log resume metadata for lineage.
+    # Use case: background-SIO cron crashes mid-GEPA after Bootstrap+MIPROv2
+    # landed; restart with --resume-from <mipro_id> picks up at GEPA.
+    if resume_from is not None:
+        try:
+            import sqlite3 as _sql  # noqa: PLC0415
+            _db = os.environ.get(
+                "SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db")
+            )
+            with _sql.connect(_db) as _c:
+                _c.row_factory = _sql.Row
+                _prior = _c.execute(
+                    "SELECT id, optimizer_used, score, trainset_id "
+                    "FROM optimized_modules WHERE id=?",
+                    (resume_from,),
+                ).fetchone()
+            if _prior is None:
+                console.print(
+                    f"[red]--resume-from id={resume_from} not found in "
+                    f"optimized_modules.[/red]"
+                )
+                raise SystemExit(4)
+            if _prior["score"] is None:
+                console.print(
+                    f"[yellow]--resume-from id={resume_from} has no score "
+                    f"(failed run). Refusing to resume from a failed rung.[/yellow]"
+                )
+                raise SystemExit(4)
+            # Auto-resolve --trainset-file from the prior row's trainset_id
+            if trainset_file is None and _prior["trainset_id"] is not None:
+                try:
+                    from sio.core.datasets import find_by_hash  # noqa: PLC0415  # noqa: F401
+                    # registry exposes the trainsets row; just look it up by id
+                    with _sql.connect(_db) as _c:
+                        _c.row_factory = _sql.Row
+                        _ts = _c.execute(
+                            "SELECT stored_path, slug FROM trainsets WHERE id=?",
+                            (_prior["trainset_id"],),
+                        ).fetchone()
+                    if _ts and _ts["stored_path"]:
+                        trainset_file = _ts["stored_path"]
+                        console.print(
+                            f"  [dim]--resume-from {resume_from}: auto-resolved "
+                            f"--trainset-file={trainset_file} (trainset_id="
+                            f"{_prior['trainset_id']}, slug={_ts['slug']})[/dim]"
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    console.print(
+                        f"  [yellow]--resume-from: trainset auto-resolve failed: "
+                        f"{exc}[/yellow]"
+                    )
+            console.print(
+                f"  [dim]--resume-from: lineage anchored to module_id="
+                f"{_prior['id']} optimizer={_prior['optimizer_used']} "
+                f"score={_prior['score']:.4f}[/dim]"
+            )
+            # Log resume metadata to the active runlog stage
+            rl = _runlog_current()
+            try:
+                rl.note(
+                    f"resume_from_module_id={resume_from} "
+                    f"prior_optimizer={_prior['optimizer_used']} "
+                    f"prior_score={_prior['score']:.4f}"
+                )
+            except Exception:  # noqa: BLE001
+                pass
+        except SystemExit:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            console.print(
+                f"  [yellow]--resume-from check failed ({exc}); ignoring flag.[/yellow]"
+            )
 
     # MIPROv2 data-size gate (companion to Constitution XIV — Optimizer
     # Ladder Discipline). MIPROv2's Bayesian search over instructions needs
@@ -4485,7 +4578,9 @@ def optimize_cmd(
                     "(no `trainsets` row for this sha); skipping ladder check."
                 )
             else:
-                db_path = os.path.expanduser("~/.sio/sio.db")
+                db_path = os.environ.get(
+                    "SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db")
+                )
                 with _sql.connect(db_path) as _c:
                     _c.row_factory = _sql.Row
                     prior_mipro = _c.execute(
@@ -4637,7 +4732,9 @@ def optimize_cmd(
             else:
                 ds_id = row["id"]
             # Look up the freshly-inserted module_id by max(id) for this module_type
-            db_path = os.path.expanduser("~/.sio/sio.db")
+            db_path = os.environ.get(
+                "SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db")
+            )
             with _sql.connect(db_path) as _c:
                 _c.row_factory = _sql.Row
                 latest = _c.execute(
@@ -4660,7 +4757,9 @@ def optimize_cmd(
     # --baseline-against gate: refuse to promote if score regresses
     if baseline_against is not None:
         import sqlite3 as _sql  # noqa: PLC0415
-        db_path = os.path.expanduser("~/.sio/sio.db")
+        db_path = os.environ.get(
+            "SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db")
+        )
         with _sql.connect(db_path) as _c:
             _c.row_factory = _sql.Row
             row = _c.execute(
