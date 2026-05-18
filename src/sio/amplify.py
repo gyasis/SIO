@@ -76,12 +76,21 @@ def _get_lms():
             temperature=0.8,
             max_tokens=4000,  # enough for ~10 variants in JSON array
         )
-        # Low temperature for judging (consistency)
+        # Low temperature for judging (consistency).
+        # NOTE 2026-05-18 (adversarial-audit H2 CONFIRMED): max_tokens was
+        # 500. ChatAdapter scaffolding ([[ ## scores_json ## ]] + [[ ## completed ## ]]
+        # sentinel) + Gemini-Flash reasoning preamble + N floats CONSUMES
+        # ~600-2000 tokens for typical N=10. Stderr capture today showed
+        # scores_json values truncated mid-array: '[1.0, 1.', '[1.0, 1.0,'
+        # → JSONDecodeError → all variants got 0.5 placeholder, defeating
+        # the judge entirely. Raising to 2000 covers ChatAdapter overhead
+        # for N up to ~30 variants. See PRD amplify_observability_gaps
+        # ISSUE 1 for the full diagnostic.
         _judge_lm = dspy.LM(
             model="gemini/gemini-flash-latest",
             api_key=api_key,
             temperature=0.0,
-            max_tokens=500,  # enough for a JSON array of ~10 floats
+            max_tokens=2000,
         )
     return _gen_lm, _judge_lm
 
