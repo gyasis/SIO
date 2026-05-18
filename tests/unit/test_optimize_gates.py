@@ -63,7 +63,13 @@ def trainset_file(tmp_path: Path) -> Path:
     return p
 
 
-def _register_trainset(db: Path, jsonl: Path, slug: str = "test-set") -> int:
+def _register_trainset(
+    db: Path,
+    jsonl: Path,
+    slug: str = "test-set",
+    source: str = "test",
+    row_count: int = 1,
+) -> int:
     """Insert a trainsets row for `jsonl` and return its id."""
     sha = hash_file(jsonl)
     now = datetime.now(timezone.utc).isoformat()
@@ -71,7 +77,7 @@ def _register_trainset(db: Path, jsonl: Path, slug: str = "test-set") -> int:
         cur = conn.execute(
             "INSERT INTO trainsets (slug, content_sha256, row_count, stored_path, "
             "created_at, description, source) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (slug, sha, 1, str(jsonl), now, "test fixture", "test"),
+            (slug, sha, row_count, str(jsonl), now, "test fixture", source),
         )
         return cur.lastrowid
 
@@ -196,13 +202,16 @@ class TestGepaLadderGate:
         self, runner: CliRunner, tmp_db: Path, trainset_file: Path
     ) -> None:
         _register_trainset(tmp_db, trainset_file)
-        # NOTE: no MIPROv2 row inserted
+        # NOTE: no MIPROv2 row inserted.
+        # --skip-amplify-gate isolates ladder gate (fixture trainsets have
+        # row_count=1 which would trip the amplify row-floor gate first).
         result = runner.invoke(
             cli,
             [
                 "optimize",
                 "--optimizer", "gepa",
                 "--trainset-file", str(trainset_file),
+                "--skip-amplify-gate",
                 "--dry-run",
             ],
         )
@@ -221,6 +230,7 @@ class TestGepaLadderGate:
                 "--module", "suggestions",
                 "--optimizer", "gepa",
                 "--trainset-file", str(trainset_file),
+                "--skip-amplify-gate",
                 "--dry-run",
             ],
         )
@@ -232,7 +242,8 @@ class TestGepaLadderGate:
         self, runner: CliRunner, tmp_db: Path, trainset_file: Path
     ) -> None:
         _register_trainset(tmp_db, trainset_file)
-        # No prior MIPRO row — but --skip-ladder bypasses the gate
+        # No prior MIPRO row — but --skip-ladder bypasses the gate.
+        # --skip-amplify-gate isolates ladder gate.
         result = runner.invoke(
             cli,
             [
@@ -240,6 +251,7 @@ class TestGepaLadderGate:
                 "--optimizer", "gepa",
                 "--trainset-file", str(trainset_file),
                 "--skip-ladder",
+                "--skip-amplify-gate",
                 "--dry-run",
             ],
         )
@@ -278,3 +290,125 @@ class TestGepaLadderGate:
         assert result.exit_code != 2, result.output
         assert "LADDER VIOLATION" not in result.output
         assert "unregistered" in result.output
+
+
+# ---------------------------------------------------------------------------
+# AmplifyFirstGate: refuses MIPROv2/GEPA on un-amplified or too-small data
+# ---------------------------------------------------------------------------
+
+
+class TestAmplifyFirstGate:
+    def test_refuses_curate_source_for_gepa(
+        self, runner: CliRunner, tmp_db: Path, trainset_file: Path
+    ) -> None:
+        # curate-source trainset triggers the gate before ladder/data-size
+        _register_trainset(tmp_db, trainset_file, source="curate", row_count=93)
+        result = runner.invoke(
+            cli,
+            [
+                "optimize",
+                "--optimizer", "gepa",
+                "--trainset-file", str(trainset_file),
+                "--skip-ladder",  # isolate amplify gate from ladder gate
+                "--dry-run",
+            ],
+        )
+        assert result.exit_code == 6, result.output
+        assert "AMPLIFY-FIRST VIOLATION" in result.output
+
+    def test_refuses_too_small_amplified_for_gepa(
+        self, runner: CliRunner, tmp_db: Path, trainset_file: Path
+    ) -> None:
+        # source is amplify but row_count below GEPA floor (300)
+        ts_id = _register_trainset(
+            tmp_db, trainset_file, source="amplify", row_count=50
+        )
+        _insert_mipro_run(tmp_db, module_type="suggestions", trainset_id=ts_id, score=0.7)
+        result = runner.invoke(
+            cli,
+            [
+                "optimize",
+                "--module", "suggestions",
+                "--optimizer", "gepa",
+                "--trainset-file", str(trainset_file),
+                "--dry-run",
+            ],
+        )
+        assert result.exit_code == 6, result.output
+        assert "ROW-FLOOR VIOLATION" in result.output
+
+    def test_allows_amplified_with_enough_rows(
+        self, runner: CliRunner, tmp_db: Path, trainset_file: Path
+    ) -> None:
+        ts_id = _register_trainset(
+            tmp_db, trainset_file, source="amplify", row_count=372
+        )
+        _insert_mipro_run(tmp_db, module_type="suggestions", trainset_id=ts_id, score=0.7)
+        result = runner.invoke(
+            cli,
+            [
+                "optimize",
+                "--module", "suggestions",
+                "--optimizer", "gepa",
+                "--trainset-file", str(trainset_file),
+                "--dry-run",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert "AMPLIFY-FIRST VIOLATION" not in result.output
+        assert "ROW-FLOOR VIOLATION" not in result.output
+
+    def test_skip_amplify_gate_overrides(
+        self, runner: CliRunner, tmp_db: Path, trainset_file: Path
+    ) -> None:
+        _register_trainset(tmp_db, trainset_file, source="curate", row_count=93)
+        result = runner.invoke(
+            cli,
+            [
+                "optimize",
+                "--optimizer", "gepa",
+                "--trainset-file", str(trainset_file),
+                "--skip-ladder",
+                "--skip-amplify-gate",
+                "--dry-run",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert "AMPLIFY-FIRST VIOLATION" not in result.output
+        assert "AMPLIFY_SKIP" in result.output or "skip-amplify-gate" in result.output
+
+    def test_gate_does_not_apply_to_bootstrap(
+        self, runner: CliRunner, tmp_db: Path, trainset_file: Path
+    ) -> None:
+        # Bootstrap is the rung that runs on un-amplified curate data
+        _register_trainset(tmp_db, trainset_file, source="curate", row_count=93)
+        result = runner.invoke(
+            cli,
+            [
+                "optimize",
+                "--optimizer", "bootstrap",
+                "--trainset-file", str(trainset_file),
+                "--dry-run",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert "AMPLIFY-FIRST VIOLATION" not in result.output
+
+    def test_mipro_row_floor_is_lower_than_gepa(
+        self, runner: CliRunner, tmp_db: Path, trainset_file: Path
+    ) -> None:
+        # 200 rows: passes MIPROv2 floor (200), would fail GEPA floor (300)
+        _register_trainset(tmp_db, trainset_file, source="amplify", row_count=200)
+        result_mipro = runner.invoke(
+            cli,
+            [
+                "optimize",
+                "--optimizer", "mipro",
+                "--trainset-file", str(trainset_file),
+                "--trainset-size", "150",
+                "--valset-size", "50",
+                "--dry-run",
+            ],
+        )
+        assert result_mipro.exit_code == 0, result_mipro.output
+        assert "ROW-FLOOR VIOLATION" not in result_mipro.output

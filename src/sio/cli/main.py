@@ -4458,6 +4458,21 @@ def amplify_cmd(input_path, output_path, n_per_row, min_judge_score, max_workers
         "to pick up at GEPA without re-running the prior rungs."
     ),
 )
+@click.option(
+    "--skip-amplify-gate",
+    is_flag=True,
+    default=False,
+    help=(
+        "Bypass the amplify-first discipline gate: by default, "
+        "`--optimizer mipro|gepa` refuses to run on a trainset with "
+        "source='curate' (un-amplified) because the optimizer ladder "
+        "discipline is Bootstrap → AMPLIFY → MIPROv2 → GEPA. Empirically: "
+        "today's GEPA on the 93-row curated baseline timed out at 60 min "
+        "($1.11 wasted) while GEPA #14/#15 on the same baseline amplified "
+        "to 372 rows produced 0.7224 / 0.8653 scores. Override logged "
+        "via runlog so SIO mining can track amplify-skip frequency."
+    ),
+)
 @runlogged("optimize")
 def optimize_cmd(
     module_name,
@@ -4474,6 +4489,7 @@ def optimize_cmd(
     skip_ladder,
     skip_data_gate,
     resume_from,
+    skip_amplify_gate,
 ):
     """Run prompt optimization against the gold_standards corpus.
 
@@ -4592,6 +4608,96 @@ def optimize_cmd(
             console.print(
                 f"  [yellow]--resume-from check failed ({exc}); ignoring flag.[/yellow]"
             )
+
+    # Amplify-first + row-floor discipline gate (Constitution XIV proposed —
+    # Tier 6). Bootstrap → AMPLIFY → MIPROv2 → GEPA is the canonical ladder.
+    # TWO checks fire here, BOTH for MIPROv2 and GEPA:
+    #   (a) source must NOT be 'curate' (i.e. data must be amplified or have
+    #       been auto-promoted from a manual file)
+    #   (b) row_count must meet a per-optimizer empirical floor
+    #
+    # Empirical floors (2026-05-18 evidence):
+    #   MIPROv2 min 200 rows — #18 success at 93 was borderline (0.7705 vs
+    #     Bootstrap 0.7154 by only +7.7%; could be noise on small data)
+    #   GEPA min 300 rows — #15 success at 372 was solid (0.8653); today's
+    #     failure at 93 timed out at 60 min with $1.11 wasted in gpt-5
+    #     reflection that never converged
+    _MIN_ROWS = {"mipro": 200, "gepa": 300}
+    if optimizer_name in ("mipro", "gepa") and trainset_file and not skip_amplify_gate:
+        try:
+            from pathlib import Path as _P  # noqa: PLC0415
+            from sio.core.datasets import find_by_hash, hash_file  # noqa: PLC0415
+            tf = _P(trainset_file).expanduser()
+            sha = hash_file(tf)
+            ds_row = find_by_hash(sha)
+            if ds_row is not None:
+                _src = ds_row["source"] or ""
+                _rows = ds_row["row_count"] or 0
+                _min_rows = _MIN_ROWS[optimizer_name]
+                if _src == "curate":
+                    console.print(
+                        f"[red]AMPLIFY-FIRST VIOLATION:[/red] trainset "
+                        f"id=[cyan]{ds_row['id']}[/cyan] (sha={sha[:12]}) is "
+                        f"un-amplified (source=[cyan]curate[/cyan]). "
+                        f"[cyan]{optimizer_name}[/cyan] requires amplified data.\n"
+                        f"\n  The ladder discipline is [bold]Bootstrap → "
+                        f"AMPLIFY → MIPROv2 → GEPA[/bold]. Empirically: "
+                        f"GEPA on un-amplified 93-row curate timed out at "
+                        f"60 min on 2026-05-18 ($1.11 wasted), while GEPA "
+                        f"on the same baseline amplified to 372 rows produced "
+                        f"0.8653 (#15). Run amplify first:\n"
+                        f"    [dim]sio amplify -i {trainset_file} --n-per-row 3[/dim]\n"
+                        f"  Then re-run with the amplified output (auto-registered "
+                        f"in trainsets with parent_dataset_id pointing here).\n"
+                        f"\n  Or override with [bold]--skip-amplify-gate[/bold] "
+                        f"(logged for SIO mining)."
+                    )
+                    raise SystemExit(6)
+                if _rows < _min_rows:
+                    # Calculate the n_per_row needed to reach the floor
+                    _ratio_needed = (_min_rows + _rows - 1) // max(_rows, 1)
+                    _n_per_row_suggested = max(_ratio_needed, 3)
+                    console.print(
+                        f"[red]ROW-FLOOR VIOLATION:[/red] trainset id="
+                        f"[cyan]{ds_row['id']}[/cyan] has [cyan]{_rows}[/cyan] "
+                        f"rows; [cyan]{optimizer_name}[/cyan] requires >= "
+                        f"[cyan]{_min_rows}[/cyan] for reliable optimization.\n"
+                        f"\n  Empirical floors per optimizer:\n"
+                        f"    MIPROv2: 200 rows (Bayesian search needs candidate signal)\n"
+                        f"    GEPA:    300 rows (reflection converges with diverse examples)\n"
+                        f"\n  Grow the dataset:\n"
+                        f"    [dim]sio amplify -i {trainset_file} "
+                        f"--n-per-row {_n_per_row_suggested}[/dim]\n"
+                        f"  to reach ~{_rows * _n_per_row_suggested} rows. Then "
+                        f"re-run {optimizer_name} on the amplified output.\n"
+                        f"\n  Or override with [bold]--skip-amplify-gate[/bold] "
+                        f"(logged for SIO mining)."
+                    )
+                    raise SystemExit(6)
+            # If trainset is unregistered, can't check source — let it through
+            # (the auto-register on optimize will tag source='manual')
+        except SystemExit:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            console.print(
+                f"  [yellow]amplify-gate: check failed ({exc}); allowing run.[/yellow]"
+            )
+    elif optimizer_name in ("mipro", "gepa") and skip_amplify_gate:
+        console.print(
+            f"  [yellow]--skip-amplify-gate:[/yellow] bypassing amplify-first "
+            f"discipline for {optimizer_name}. Logged for SIO mining."
+        )
+        rl = _runlog_current()
+        try:
+            rl.warn(
+                "AMPLIFY_SKIP",
+                f"{optimizer_name} run on module={module_name} "
+                f"trainset={trainset_file} bypassed amplify-first gate "
+                f"via --skip-amplify-gate",
+                stage="optimize_run",
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
     # MIPROv2 data-size gate (companion to Constitution XIV — Optimizer
     # Ladder Discipline). MIPROv2's Bayesian search over instructions needs
