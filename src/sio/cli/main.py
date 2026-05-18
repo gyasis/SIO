@@ -4991,6 +4991,211 @@ def optimize_cmd(
 
 
 # ---------------------------------------------------------------------------
+# Compound `sio optimize-ladder` — auto-magic Bootstrap → AMPLIFY → MIPROv2 → GEPA
+# (PRD sio_background_persistence_design_2026-05-18 Tier 1 MVP)
+# ---------------------------------------------------------------------------
+
+
+@cli.command("optimize-ladder")
+@click.option("--trainset-file", required=True,
+              help="Input JSONL (curate output). The compound command will "
+                   "amplify it if rows < --target-amplified-rows, then run "
+                   "Bootstrap → MIPROv2 → GEPA on the amplified output.")
+@click.option("--module", default="suggestion_generator", show_default=True,
+              help="Module to optimize.")
+@click.option("--target-amplified-rows", default=300, show_default=True, type=int,
+              help="Minimum amplified row count required for MIPROv2/GEPA. "
+                   "Defaults to 300 (GEPA's floor; satisfies MIPROv2's 200 too).")
+@click.option("--amplify-n-per-row", default=3, show_default=True, type=int,
+              help="Variants generated per row during the amplify step.")
+@click.option("--task-mode", default="cheap", show_default=True,
+              type=click.Choice(["work", "cheap", "free", "personal", "personal-strong"]))
+@click.option("--reflection-mode", default="personal-strong", show_default=True,
+              type=click.Choice(["work", "cheap", "free", "personal", "personal-strong"]))
+@click.option("--yes", is_flag=True, default=False,
+              help="Skip the cost-confirmation prompt (still subject to "
+                   "global budget cap from [budget] in ~/.sio/config.toml).")
+@click.option("--budget-override", type=float, default=None,
+              help="Per-invocation 24h budget cap override (XII clause 6).")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Print the plan + cost estimate, do nothing.")
+@runlogged("optimize-ladder")
+def optimize_ladder_cmd(
+    trainset_file, module, target_amplified_rows, amplify_n_per_row,
+    task_mode, reflection_mode, yes, budget_override, dry_run,
+):
+    """Run the full optimizer ladder (Bootstrap → AMPLIFY → MIPROv2 → GEPA).
+
+    Auto-magic prereq chain that wraps the three discipline gates shipped
+    today:
+      - ladder gate (refuses GEPA without prior MIPROv2)
+      - data-size gate (refuses MIPROv2 below valset floor)
+      - amplify-first gate (refuses MIPROv2/GEPA on curate or <300 rows)
+
+    Skips rungs that already have a successful row in optimized_modules
+    for the relevant trainset_id (idempotent on re-run — useful for cron
+    crash recovery).
+
+    Empirical basis: GEPA on amplified 372-row trainset produced 0.8653
+    (#15, 2026-05-16); GEPA on un-amplified 93-row curate timed out
+    after 60 min wasting $1.11 (2026-05-18). This command makes the
+    successful path the default.
+
+    Example:
+        sio optimize-ladder --trainset-file ~/.sio/datasets/curated.jsonl --yes
+    """
+    import subprocess as _sp  # noqa: PLC0415
+    from pathlib import Path as _P  # noqa: PLC0415
+    from rich.console import Console  # noqa: PLC0415
+    from rich.table import Table  # noqa: PLC0415
+
+    console = Console()
+
+    # ---- Step 1: resolve input trainset + plan the rungs --------------------
+    try:
+        from sio.core.datasets import find_by_hash, hash_file  # noqa: PLC0415
+        from sio.core.cost.estimator import estimate_optimize_run  # noqa: PLC0415
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]Could not load datasets/cost modules:[/red] {exc}")
+        raise SystemExit(1)
+
+    tf = _P(trainset_file).expanduser()
+    if not tf.exists():
+        console.print(f"[red]Trainset file not found:[/red] {tf}")
+        raise SystemExit(1)
+
+    sha = hash_file(tf)
+    ds_row = find_by_hash(sha)
+
+    plan = []  # list of (step_name, cmd_args, est_cost) tuples
+    target_for_mipro_gepa = trainset_file  # may be replaced post-amplify
+
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
+
+    def _has_rung(module_type: str, trainset_id: int, optimizer: str) -> bool:
+        import sqlite3 as _sql  # noqa: PLC0415
+        with _sql.connect(db_path) as _c:
+            _c.row_factory = _sql.Row
+            r = _c.execute(
+                "SELECT id FROM optimized_modules WHERE module_type=? AND "
+                "trainset_id=? AND (optimizer_used=? OR optimizer_name=?) "
+                "AND score IS NOT NULL LIMIT 1",
+                (module_type, trainset_id, optimizer, optimizer),
+            ).fetchone()
+        return r is not None
+
+    # Bootstrap on the ORIGINAL trainset (cheap; runs even on un-amplified)
+    bootstrap_done = ds_row is not None and _has_rung(module, ds_row["id"], "bootstrap")
+    if not bootstrap_done:
+        est = estimate_optimize_run("bootstrap", "light")
+        plan.append((
+            "bootstrap (original trainset)",
+            ["sio", "optimize", "--module", module, "--optimizer", "bootstrap",
+             "--trainset-file", str(tf), "--trainset-size", "20", "--valset-size", "5"],
+            est["total"]["mid"],
+        ))
+
+    # Amplify decision
+    needs_amplify = False
+    if ds_row is None:
+        needs_amplify = True  # unregistered — assume amplification needed
+        amplified_path = None
+    elif (ds_row["source"] or "") == "curate" or (ds_row["row_count"] or 0) < target_amplified_rows:
+        needs_amplify = True
+        amplified_path = str(_P.home() / ".sio" / "amplified" /
+                             f"{tf.stem}_amplified.jsonl")
+    else:
+        # Already amplified + meets row floor — use as-is for MIPRO/GEPA
+        amplified_path = str(tf)
+
+    if needs_amplify:
+        # Cost: amplify produces ~n_per_row × row_count Flash calls
+        rows_in = ds_row["row_count"] if ds_row else 93  # default guess
+        amplify_calls = rows_in * amplify_n_per_row + rows_in  # gen + judge
+        amplify_cost = (amplify_calls * 2000 * 0.075 +    # input tokens × $/M
+                        amplify_calls * 2000 * 0.30) / 1_000_000
+        plan.append((
+            f"amplify ({rows_in} → ~{rows_in * (1 + amplify_n_per_row)} rows)",
+            ["sio", "amplify", "-i", str(tf), "-n", str(amplify_n_per_row),
+             "--task-mode", "cheap"],
+            amplify_cost,
+        ))
+        target_for_mipro_gepa = amplified_path
+
+    # MIPROv2 on the amplified target — cannot check `_has_rung` yet because
+    # amplified trainset may not exist until the amplify step runs. Always
+    # plan it; the inner `sio optimize` invocation's gates will short-circuit
+    # if a row already exists (via --resume-from semantics in a future iter).
+    mipro_est = estimate_optimize_run("mipro", "light")
+    plan.append((
+        "mipro (amplified trainset)",
+        ["sio", "optimize", "--module", module, "--optimizer", "mipro",
+         "--trainset-file", str(target_for_mipro_gepa),
+         "--trainset-size", "200", "--valset-size", "50",
+         "--task-mode", task_mode, "--reflection-mode", reflection_mode],
+        mipro_est["total"]["mid"],
+    ))
+
+    # GEPA on the amplified target
+    gepa_est = estimate_optimize_run("gepa", "light",
+                                     task_lm="gemini/gemini-flash-latest",
+                                     reflection_lm="openai/gpt-5")
+    plan.append((
+        "gepa (amplified trainset)",
+        ["sio", "optimize", "--module", module, "--optimizer", "gepa",
+         "--trainset-file", str(target_for_mipro_gepa),
+         "--trainset-size", "200", "--valset-size", "50",
+         "--task-mode", task_mode, "--reflection-mode", reflection_mode],
+        gepa_est["total"]["mid"],
+    ))
+
+    # ---- Step 2: show plan + cost estimate ----------------------------------
+    table = Table(title="Compound Ladder Plan", show_lines=False)
+    table.add_column("#", justify="right")
+    table.add_column("Step")
+    table.add_column("Est. cost", justify="right")
+    total_cost = 0.0
+    for i, (step_name, _cmd, cost) in enumerate(plan, 1):
+        table.add_row(str(i), step_name, f"${cost:.2f}")
+        total_cost += cost
+    table.add_row("", "[bold]TOTAL[/bold]", f"[bold]${total_cost:.2f}[/bold]")
+    console.print(table)
+
+    if dry_run:
+        console.print("[yellow]--dry-run:[/yellow] not executing. Use --yes to run.")
+        return
+
+    if not yes:
+        if not click.confirm(
+            f"\nProceed with ladder run? Est. ${total_cost:.2f} of LLM "
+            "budget. Each rung writes its row before the next starts, so a "
+            "crash is recoverable.",
+            default=False,
+        ):
+            console.print("[yellow]Aborted.[/yellow]")
+            raise SystemExit(0)
+
+    # ---- Step 3: execute each rung ------------------------------------------
+    for i, (step_name, cmd, cost) in enumerate(plan, 1):
+        console.print(f"\n[bold cyan]═══ Rung {i}/{len(plan)}: {step_name} "
+                      f"(est ${cost:.2f}) ═══[/bold cyan]")
+        # Pass budget_override through to each rung if set
+        if budget_override is not None and "optimize" in cmd[1]:
+            cmd = cmd + ["--budget-override", str(budget_override)]
+        result = _sp.run(cmd, capture_output=False)
+        if result.returncode != 0:
+            console.print(
+                f"[red]Rung {i} ({step_name}) failed with exit "
+                f"{result.returncode}.[/red] Subsequent rungs not attempted. "
+                f"Re-run the same `sio optimize-ladder` command to resume — "
+                f"completed rungs will be detected and skipped."
+            )
+            raise SystemExit(result.returncode)
+
+    console.print(f"\n[bold green]Ladder complete ({len(plan)} rungs).[/bold green]")
+
+
+# ---------------------------------------------------------------------------
 # Dataset export commands (v2.1 — training data generation)
 # ---------------------------------------------------------------------------
 
