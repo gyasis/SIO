@@ -9,6 +9,111 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
+Substantial discipline + observability layer added 2026-05-18 (will
+roll into v0.2.1 or v0.3.0 once a real GEPA run validates the stack).
+
+### Added — Optimizer ladder discipline (Constitution XIV proposed)
+
+- **`sio optimize --skip-ladder`** — bypass the Tier 5 ladder gate.
+  By default, `--optimizer gepa` refuses to run on a registered trainset
+  if no prior MIPROv2 run exists for the same module + dataset. Override
+  logs `LADDER_SKIP` via runlog for SIO mining.
+- **`sio optimize --skip-data-gate`** — bypass the MIPROv2 data-size
+  gate. By default, `--optimizer mipro` refuses when
+  `valset_size < max(25, trainset_size * 0.2)`. Empirically grounded:
+  MIPROv2 #17 with valset=5 scored 0.6970 vs Bootstrap #16's 0.7154
+  (under-performed). Override logs `DATA_SIZE_SKIP`.
+- **`sio optimize --skip-amplify-gate`** — bypass the amplify-first
+  + row-floor gate. By default, MIPROv2/GEPA refuse on `source='curate'`
+  trainsets OR row_count below the per-optimizer floor (MIPROv2 ≥200,
+  GEPA ≥300). Empirically grounded: today's GEPA on the 93-row curated
+  baseline timed out at 60 min with $1.11 wasted in gpt-5 reflection
+  that never reached evaluation, while GEPA #14/#15 on the SAME baseline
+  amplified to 372 rows produced 0.7224/0.8653. Override logs
+  `AMPLIFY_SKIP`.
+- **`sio optimize --resume-from <module_id>`** — auto-resolves
+  `--trainset-file` from the prior row's `trainset_id`, records lineage
+  in runlog metadata for crash recovery in cron-driven SIO runs.
+
+### Added — Compound command
+
+- **`sio optimize-ladder`** — auto-magic Bootstrap → AMPLIFY → MIPROv2 →
+  GEPA chain. Resolves the trainset, plans rungs (skips already-done ones
+  via DB lookup), estimates total cost, prompts for confirmation
+  (or `--yes`), executes each rung via subprocess so the discipline gates
+  fire. Crash-safe: re-running detects existing optimized_modules rows
+  and skips completed rungs.
+- **`sio amplify`** auto-registers output in `trainsets` table with
+  `source='amplify'` and `parent_dataset_id` pointing at input dataset.
+- **`sio optimize --trainset-file <X>`** auto-resolves sha into a
+  `trainsets` row and links `optimized_modules.trainset_id` on the new
+  row. Auto-promotes unregistered files as `source='manual'`.
+
+### Added — Lineage wiring (Principle XV proposed)
+
+- **`sio promote-positives`** writes a JSONL snapshot of the promoted
+  batch to `~/.sio/promoted/promote_positives_<ts>.jsonl` and registers
+  it in `trainsets` with `source='promote-positives'`. Closes the audit
+  chain from optimize → ground_truth slice → promotion batch → original
+  positive_records.
+- **`sio differential-flows`** auto-registers its JSONL output in
+  `trainsets` with `source='differential-flows-pairs'` or
+  `'differential-flows-positives'`.
+- **`sio analyze same-error`** now carries `@runlogged` (was the only
+  `sio analyze` subcommand without it).
+
+### Added — Observability stack (Principle XIII)
+
+- **Stuck-in-reflection runtime monitor**: `Heartbeat` extension reads
+  the active `dspy_capture` sidecar each tick, classifies calls by
+  model class (Flash/Pro/gpt-5), emits `REFLECTION_STUCK` warn at 15 min
+  reflection-only and `REFLECTION_STUCK_CRITICAL` at 40 min.
+- **`sio doctor` stuck-in-reflection retrospective audit**: walks
+  `~/.sio/runs/*_dspy.jsonl` (last 14d), flags any historical run with
+  ≥5 reflection calls + 0 task calls + ≥15 min wall-clock.
+- **`~/.sio/state/ladder_status.json`** — written by
+  `sio optimize-ladder` after each rung (status: in_flight/complete/failed,
+  per-rung exit codes, process_id, total_est_usd). Cron monitor polls
+  this one file to know "is the ladder alive?".
+- **`sio doctor` ladder-state check** — reads the state file +
+  `os.kill(pid, 0)` liveness probe. Flags `in_flight + dead PID > 6h`
+  as "stale crash", proposes `sio optimize-ladder` resume command in
+  `fix_hint`.
+
+### Fixed
+
+- `optimize_cmd` rich `INSERT INTO optimized_modules` referenced two
+  phantom columns (`active`, `module_name`) that never existed on the
+  production schema. Every modern call silently fell to the minimal
+  fallback INSERT, dropping `optimizer_name` / `score` / `task_lm` /
+  `reflection_lm` to NULL. Runs #11-#15 in production showed this.
+  Dropped the phantom refs; the rich INSERT now writes full attribution.
+- 42 sites in `cli/main.py` hardcoded
+  `os.path.expanduser("~/.sio/sio.db")` instead of honoring
+  `SIO_DB_PATH`. Swept all to `os.environ.get("SIO_DB_PATH", ...)` so
+  unit tests can run hermetically against `tmp_path` DBs.
+- Removed `backfill_known_trainsets()` one-shot helper now that
+  `register_dataset()` is wired into curate/amplify/optimize.
+
+### Changed
+
+- Project-level `.claude/hooks/stop.sh` and `.claude/hooks/task-completed.sh`
+  deleted. The `dev-kid finalize` auto-commit was firing on every
+  Claude Code stop event in this repo (where no dev-kid orchestration
+  was active), overwriting commit messages with the generic
+  `[CHECKPOINT] Session finalized - 130/130 tasks complete`. Three
+  earlier-today commits (CHANGELOG v0.2.0 prep, P2 INSERT fix, curate
+  auto-register) landed under that generic message before deletion.
+  Proper fix queued as `prd/scratch/devkid_session_scope_gate_2026-05-17.md`
+  (devkid hooks should check `.claude/devkid_active.lock` sentinel).
+
+### Docs
+
+- **`docs/SIO_PHILOSOPHY.md`** — "measured assist, not autonomous override"
+  design stance. Cross-referenced from README. Anti-patterns explicitly
+  not built (auto-deprecate, auto-promote, A/B-test rules, auto-retrain
+  on outcomes) with rationale.
+
 (PyPI publish remains queued — recreate a fresh PRD when it becomes the
 active sprint goal. `sio_pypi_token_setup_2026-05-11` was resolved as an
 empty template on 2026-05-17.)

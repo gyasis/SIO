@@ -344,6 +344,37 @@ See `~/dev/prd/sio_multi_hop_search_2026-04-24.md` for the design rationale and 
 | `sio train --task all` | Run DSPy BootstrapFewShot/GEPA on exported datasets |
 | `sio train --task recall --optimizer gepa` | Train recall model with GEPA optimizer |
 
+### Optimizer Ladder (v0.3 unreleased — Constitution XIV proposed)
+
+The canonical climb is **Bootstrap → AMPLIFY → MIPROv2 → GEPA**, with
+discipline gates that refuse bad invocations BEFORE LLM cost is spent.
+See [`docs/SIO_PHILOSOPHY.md`](docs/SIO_PHILOSOPHY.md) for the "measured
+assist, not autonomous override" design stance.
+
+| Command | Description |
+|---------|-------------|
+| `sio optimize-ladder --trainset-file <X>` | **Auto-magic compound**: Bootstrap → (amplify if rows<300) → MIPROv2 → GEPA. Estimates total cost, prompts for confirm, executes each rung as a subprocess (gates fire). Crash-safe: re-running skips already-done rungs. |
+| `sio optimize-ladder --dry-run` | Print the plan + per-rung cost estimate without executing |
+| `sio optimize-ladder --yes` | Skip the cost-confirmation prompt (still subject to 24h budget cap) |
+| `sio optimize --resume-from <module_id>` | Resume after a prior successful rung — auto-resolves `--trainset-file` from the prior row's `trainset_id` |
+
+#### Discipline gates (each has a `--skip-*` override; overrides are logged for SIO mining)
+
+| Gate | Refuses when | Empirical basis |
+|------|---------|---|
+| `--skip-ladder` | `--optimizer gepa` on a trainset with no prior MIPROv2 row | Constitution XIV |
+| `--skip-data-gate` | `--optimizer mipro` with `valset < max(25, trainset*0.2)` | #17 (val=5) → 0.6970 < #16 Bootstrap 0.7154 |
+| `--skip-amplify-gate` | `--optimizer mipro\|gepa` on `source='curate'` OR rows < per-optimizer floor (MIPROv2 ≥200, GEPA ≥300) | GEPA on 93-row curate timed out at 60min, $1.11 wasted (2026-05-18); GEPA on 372-row amplified → 0.8653 (#15) |
+
+#### Observability
+
+| Command / surface | Description |
+|---|---|
+| `sio doctor` | Full health check including: DSPy alive, ladder discipline, reproducibility gaps, stuck-in-reflection audit (last 14d), ladder state file |
+| `~/.sio/state/ladder_status.json` | Live state of the most recent `sio optimize-ladder` run (status, current_rung, process_id). Cron monitor polls this one file. |
+| `~/.sio/runs/<ts>_<cmd>_<id>_dspy.jsonl` | Per-LM-call sidecar with prompt + completion + tokens + cost |
+| Heartbeat `[HB ...]` stderr | Every 30s during long-running optimize; `REFLECTION_STUCK` warn at 15min if GEPA hasn't reached eval phase |
+
 ### Telemetry & Maintenance
 
 | Command | Description |
