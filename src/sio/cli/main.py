@@ -4202,9 +4202,15 @@ def promote_positives_cmd(since, min_confidence, dry_run):
               ))
 @click.option("--budget-override", type=float, default=None,
               help="Override 24h spend cap for this invocation (XII clause 6).")
+@click.option("--no-diversity-filter", is_flag=True, default=False,
+              help="Disable cosine-similarity de-duplication of variants "
+                   "(Step 4 of 2026-05-18 paired-debate). Default: ENABLED.")
+@click.option("--diversity-threshold", default=0.95, show_default=True, type=float,
+              help="Cosine similarity above which variants from the same "
+                   "source row are deduplicated. Lower = more aggressive.")
 @runlogged("amplify")
 def amplify_cmd(input_path, output_path, n_per_row, min_judge_score, max_workers,
-                task_mode, budget_override):
+                task_mode, budget_override, no_diversity_filter, diversity_threshold):
     """Amplify a curated JSONL by synthesizing N variants per row.
 
     Each input row is passed through Gemini Flash with a "preserve the
@@ -4260,6 +4266,8 @@ def amplify_cmd(input_path, output_path, n_per_row, min_judge_score, max_workers
             n_per_row=n_per_row,
             min_judge_score=min_judge_score,
             max_workers=max_workers,
+            diversity_filter=(not no_diversity_filter),
+            diversity_threshold=diversity_threshold,
         )
         # Each input row generates n_per_row candidate variants
         expected = result["input_rows"] * n_per_row

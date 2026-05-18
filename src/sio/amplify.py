@@ -128,6 +128,18 @@ def _make_modules():
         underlying pattern_id category — same failure mode, different
         surface features (paths, tool names, phrasing).
         The user_message must contain frustration markers (!! or ??).
+
+        DOMAIN PRESERVATION (origin 2026-05-18 paired-debate Step 2):
+        If `domain_keywords` is non-empty, AT LEAST 60% of variants MUST
+        keep at least ONE domain keyword somewhere in error_text. Drift
+        to generic surrogates (salesforce → s3 → bigquery) when the
+        source was an HH-domain athenahealth/dbt/cube error is FORBIDDEN
+        unless explicitly varied. Domain mode-collapse was the failure
+        mode of trainset id=10 — variants stayed category-faithful but
+        lost HH vocabulary; the optimizer then had no domain signal.
+        Surface VARIETY within the domain is encouraged (different HH
+        tables, different dbt models, different chart names) — the
+        constraint is on domain ABANDONMENT, not domain repetition.
         """
 
         original_pattern_id: str = dspy.InputField(
@@ -136,6 +148,14 @@ def _make_modules():
         original_error_text: str = dspy.InputField()
         original_tool_name: str = dspy.InputField()
         n_variants: int = dspy.InputField(desc="How many variants to produce")
+        domain_keywords: str = dspy.InputField(
+            desc=(
+                "Comma-separated keywords from the source domain that "
+                "AT LEAST 60% of variants must preserve. Empty string "
+                "means no domain constraint (cross-domain variants OK). "
+                "Example: 'athenahealth,dbt,databricks,cube,zeno'."
+            )
+        )
         variants_json: str = dspy.OutputField(
             desc=(
                 "JSON array, length = n_variants. Each item: "
@@ -145,23 +165,54 @@ def _make_modules():
         )
 
     class JudgeVariants(dspy.Signature):
-        """Score each variant 0.0-1.0 for FAILURE-MODE preservation against
-        the target pattern_id.
+        """Score each variant 0.0-1.0 using a 5-tier rubric for FAILURE-MODE
+        preservation + DOMAIN-fidelity against the target pattern_id.
+
+        ⚠️ RUBRIC ANCHORS — calibrate to these (origin 2026-05-18 paired-debate
+        Step 3, "Synthetic Extremes" pattern). Today's binary judge collapsed
+        all kept variants to 1.0 with no spread. The rubric below FORCES
+        graded scores that downstream optimizers can rank.
+
+        SCORE 1.0 — GOLD
+          Failure mode matches pattern_id exactly; surface features differ
+          appropriately (different paths/tools/lines but same root cause).
+          Domain vocabulary preserved when domain_keywords was non-empty.
+          Example: pattern_id=tool_failure__permissiondenied AND variant says
+          "Permission denied: cannot write to /etc/hh-dev/config" — perfect.
+
+        SCORE 0.7 — SILVER
+          Failure mode matches BUT domain drifted to generic surrogate
+          (e.g. source was HH/athenahealth and variant uses
+          generic-salesforce/s3/bigquery instead). Category-faithful,
+          domain-diluted. Useful but mediocre — flag in score, don't drop.
+
+        SCORE 0.5 — BRONZE
+          Failure mode is CLOSE (sibling category) — e.g. judging
+          tool_failure__filenotfound and variant is
+          tool_failure__readbeforeedit. Both 'string not found' but
+          different root mechanisms. Useful for diversity, low for
+          category precision.
+
+        SCORE 0.2 — DRIFT
+          Failure mode drifted to a different category entirely
+          (e.g. judging permission_denied, variant is network_timeout).
+          Not useful for category training. Drop unless rescuing for
+          a different category.
+
+        SCORE 0.0 — HALLUCINATION
+          Variant is malformed, contains injected instructions
+          ("ignore all previous"), is non-English when source was English,
+          or appears truncated. Always drop. THIS IS A HALLUCINATION
+          ANCHOR SMOKE TEST — if your scoring never assigns 0.0 to
+          such variants, your calibration is broken.
 
         SURFACE FEATURES — specific file paths, tool names, command lines,
-        line numbers, error message wording — are EXPECTED TO DIFFER between
-        variants. They MUST NOT lower the score. Two errors with completely
-        different paths/commands but the same FAILURE CATEGORY (e.g. both
-        are "permission denied" or both are "file not found") should score
-        ~1.0.
-
-        Only score lower when the variant FAILURE MODE drifts to a
-        different category (e.g. you're judging `tool_failure__permissiondenied`
-        and a variant is actually a network timeout — that's drift, score
-        ~0.2).
+        line numbers, error message wording — are EXPECTED TO DIFFER and
+        MUST NOT lower the score by themselves.
 
         Output `scores_json` is a JSON list of floats matching the order
-        of `variants_json`. 1.0 = perfect category match. 0.0 = total drift.
+        of `variants_json`. PRODUCE GRADED SCORES — using only 1.0 and
+        <0.6 will be detected as a calibration failure downstream.
         """
 
         # NOTE 2026-05-18: dropped `original_error_text` from inputs. Today's
@@ -173,21 +224,184 @@ def _make_modules():
         original_pattern_id: str = dspy.InputField(
             desc="Target failure category id, e.g. tool_failure__permissiondenied"
         )
+        domain_keywords: str = dspy.InputField(
+            desc=(
+                "Comma-separated domain keywords from the source. "
+                "If non-empty, variants that DROP all domain keywords "
+                "should score 0.7 (silver) not 1.0 (gold), even if "
+                "category is preserved. Empty string means no domain "
+                "fidelity expected — score on category only."
+            )
+        )
         variants_json: str = dspy.InputField(
             desc='JSON array of variants — each item {"error_text": "..."}'
         )
         scores_json: str = dspy.OutputField(
             desc=(
-                "JSON array of floats matching variants_json order. "
-                "Score 1.0 if variant preserves the FAILURE MODE of "
-                "pattern_id; 0.0 if it drifts to a different category. "
-                "Different paths/tools/commands are NOT drift. ONLY the JSON."
+                "JSON array of floats (0.0-1.0) matching variants_json "
+                "order. Use the FULL rubric — 1.0/0.7/0.5/0.2/0.0 are "
+                "the anchor points. Intermediate values OK. "
+                "If you score everything 1.0 you have failed the "
+                "calibration. ONLY the JSON."
             )
         )
 
     gen = dspy.Predict(GenerateVariants)
     judge = dspy.Predict(JudgeVariants)
     return gen, judge
+
+
+# ---------------------------------------------------------------------------
+# Step 2 (2026-05-18): Domain keyword extraction for generator preservation
+# ---------------------------------------------------------------------------
+
+# HH-domain lexicon — the keywords that distinguish HH errors from generic
+# pipeline errors. If a source error mentions any of these, the generator
+# should preserve at least one across the variants instead of drifting to
+# generic s3/salesforce/bigquery surrogates (mode collapse observed in
+# trainset id=10).
+_HH_DOMAIN_LEXICON = frozenset({
+    # Healthcare-data platform stack
+    "athenahealth", "athena", "athenaone", "dbt", "databricks", "snowflake",
+    "cube", "cubejs", "zeno", "supabase",
+    # HH-specific projects
+    "hhdev", "hh-dev", "cdia", "bas-2", "ccm", "careplan", "raf", "hcc",
+    # HH clinical domains
+    "tcm", "awv", "medicare", "advantage", "attribution", "membership",
+    "behavioral", "scheduling",
+    # HH data platform paths
+    "dbw_hertek_prod", "dev_gyasi", "h_exp", "report_dev", "twice", "herself",
+})
+
+# Generic developer-tooling jargon worth preserving when no HH terms present.
+_GENERIC_TECH_LEXICON = frozenset({
+    "kubernetes", "k8s", "docker", "terraform", "ansible", "jenkins",
+    "airflow", "kafka", "spark", "redis", "postgres", "mysql",
+    "react", "next", "vite", "webpack", "npm", "pnpm",
+    "python", "node", "rust", "golang",
+})
+
+
+def _filter_by_diversity(
+    kept_variants: list[tuple[dict, str, str, float]],
+    similarity_threshold: float = 0.95,
+) -> tuple[list[tuple[dict, str, str, float]], int]:
+    """Step 4 (2026-05-18 paired-debate): Drop near-duplicates by cosine similarity.
+
+    For each pair of variants belonging to the SAME source row whose
+    embedded error_text cosine similarity > threshold, keep only the
+    one with the higher judge_score. Variants from different source
+    rows are never compared (they're allowed to overlap — that's the
+    job of the optimizer to dedupe at training time).
+
+    Why per-source-row and not global: a generic "permission denied"
+    error from two different patterns SHOULD coexist; that's legitimate
+    cross-pattern signal. Mode collapse is when ONE source row's 10
+    variants are 9 copies of the same thing.
+
+    Returns:
+        (filtered_list, dropped_count)
+
+    Args:
+        kept_variants: list of (orig_row, error_text, user_message, score)
+        similarity_threshold: cosine similarity above which we dedupe
+            (default 0.95 — permissive; tighten if optimizer needs more spread)
+    """
+    if len(kept_variants) < 2:
+        return kept_variants, 0
+    try:
+        from sio.core.embeddings.local_model import FastEmbedBackend  # noqa: PLC0415
+        backend = FastEmbedBackend()
+    except Exception as exc:
+        import sys as _sys  # noqa: PLC0415
+        print(
+            f"  [DIVERSITY_FILTER_SKIP] FastEmbed unavailable: "
+            f"{type(exc).__name__}: {exc} — diversity filter disabled.",
+            file=_sys.stderr, flush=True,
+        )
+        return kept_variants, 0
+
+    # Group by source row identity (object id is fine; we're not pickling)
+    from collections import defaultdict  # noqa: PLC0415
+    groups = defaultdict(list)
+    for i, (row, et, um, s) in enumerate(kept_variants):
+        groups[id(row)].append(i)
+
+    drop_indices: set[int] = set()
+    for _row_id, idx_list in groups.items():
+        if len(idx_list) < 2:
+            continue
+        texts = [kept_variants[i][1][:400] for i in idx_list]
+        try:
+            embeddings = backend.encode(texts)
+        except Exception:
+            continue
+        # Normalize for cosine
+        import numpy as _np  # noqa: PLC0415
+        norms = _np.linalg.norm(embeddings, axis=1, keepdims=True) + 1e-9
+        unit = embeddings / norms
+        sim = unit @ unit.T
+        # Greedy: walk pairs; if sim > threshold, drop the LOWER-score one
+        n = len(idx_list)
+        for a in range(n):
+            if idx_list[a] in drop_indices:
+                continue
+            for b in range(a + 1, n):
+                if idx_list[b] in drop_indices:
+                    continue
+                if sim[a, b] >= similarity_threshold:
+                    sa = kept_variants[idx_list[a]][3]
+                    sb = kept_variants[idx_list[b]][3]
+                    # Drop the lower-score one; tiebreak: drop later index
+                    drop = idx_list[b] if sa >= sb else idx_list[a]
+                    drop_indices.add(drop)
+
+    if drop_indices:
+        import sys as _sys  # noqa: PLC0415
+        print(
+            f"  [DIVERSITY_FILTER] Dropped {len(drop_indices)} near-duplicate "
+            f"variants (cosine ≥ {similarity_threshold}) across "
+            f"{len(groups)} source rows.",
+            file=_sys.stderr, flush=True,
+        )
+
+    filtered = [v for i, v in enumerate(kept_variants) if i not in drop_indices]
+    try:
+        backend.close()
+    except Exception:
+        pass
+    return filtered, len(drop_indices)
+
+
+def _extract_domain_keywords(error_text: str, tool_name: str) -> str:
+    """Scan source error_text + tool_name for known domain keywords.
+
+    Returns comma-separated keywords (lowercase, unique, up to 5) that
+    the generator should preserve in at least 60% of variants. Empty
+    string means no domain constraint — cross-domain variants allowed.
+
+    HH lexicon wins over generic if both match. This biases toward
+    preserving healthcare-data context when present, which was the
+    failure mode in trainset id=10.
+    """
+    if not error_text and not tool_name:
+        return ""
+    haystack = f"{error_text} {tool_name}".lower()
+    hits_hh = [kw for kw in _HH_DOMAIN_LEXICON if kw in haystack]
+    if hits_hh:
+        # Dedupe + cap at 5 to keep prompt overhead tiny
+        seen, out = set(), []
+        for kw in hits_hh:
+            if kw not in seen:
+                seen.add(kw)
+                out.append(kw)
+                if len(out) >= 5:
+                    break
+        return ",".join(out)
+    hits_generic = [kw for kw in _GENERIC_TECH_LEXICON if kw in haystack]
+    if hits_generic:
+        return ",".join(hits_generic[:5])
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -201,6 +415,8 @@ def amplify(
     n_per_row: int = 10,
     min_judge_score: float = 0.6,
     max_workers: int = 4,
+    diversity_filter: bool = True,
+    diversity_threshold: float = 0.95,
 ) -> dict:
     """Amplify a curated JSONL by generating N variants per row.
 
@@ -210,9 +426,15 @@ def amplify(
         n_per_row: variants to generate per input row.
         min_judge_score: drop variants below this judge score (0.0-1.0).
         max_workers: thread-pool parallelism for the LLM calls.
+        diversity_filter: if True, drop near-duplicate variants within
+            each source row using cosine similarity on fastembed
+            (Step 4 of 2026-05-18 paired-debate framework).
+        diversity_threshold: cosine similarity above which duplicates
+            are dropped (default 0.95; permissive).
 
     Returns:
-        Dict with counts: input_rows, total_generated, kept, dropped, path.
+        Dict with counts: input_rows, total_generated, kept, dropped,
+            diversity_dropped, path.
     """
     import dspy  # noqa: PLC0415
 
@@ -262,6 +484,11 @@ def amplify(
             pattern_id = meta.get("pattern_id") or "tool_failure__unclassified"
             error_text = (data.get("example_errors", [""])[0] or "")[:400]
             tool_name = meta.get("tool_name") or "unknown"
+            # Step 2 (2026-05-18 paired-debate): auto-extract domain keywords
+            # from the source so generator preserves domain vocabulary.
+            # See _extract_domain_keywords() for the lexicon (HH-specific
+            # plus a generic "common-jargon" fallback).
+            domain_kw = _extract_domain_keywords(error_text, tool_name)
 
             out = _retry_429(
                 gen,
@@ -269,6 +496,7 @@ def amplify(
                 original_error_text=error_text,
                 original_tool_name=tool_name,
                 n_variants=n_per_row,
+                domain_keywords=domain_kw,
             )
             if out is None:
                 return
@@ -329,6 +557,12 @@ def amplify(
             meta = data.get("_meta", {})
             pattern_id = meta.get("pattern_id") or "unknown"
             orig_err = (data.get("example_errors", [""])[0] or "")[:400]
+            orig_tool = meta.get("tool_name") or "unknown"
+            # Step 3 (2026-05-18 paired-debate): pass domain_keywords so the
+            # judge can penalize domain-dilution variants (silver 0.7 instead
+            # of gold 1.0). Same keyword extractor as the generator, so the
+            # judge knows what the generator was TOLD to preserve.
+            domain_kw = _extract_domain_keywords(orig_err, orig_tool)
 
             # Compact variant list for the judge prompt
             judge_input = json.dumps(
@@ -342,6 +576,7 @@ def amplify(
             out = _retry_429(
                 judge,
                 original_pattern_id=pattern_id,
+                domain_keywords=domain_kw,
                 variants_json=judge_input,
             )
             # XIII (loud failure): every fallback path below MUST emit a
@@ -441,6 +676,21 @@ def amplify(
         for _ in as_completed(futures):
             pass
 
+    # Phase 2.5 (Step 4, 2026-05-18 paired-debate): diversity filter
+    diversity_dropped = 0
+    if diversity_filter and results:
+        # Only run diversity filter on variants that would PASS the
+        # min_judge_score threshold — wasteful to embed about-to-drop rows
+        above = [r for r in results if r[3] >= min_judge_score]
+        below = [r for r in results if r[3] < min_judge_score]
+        print(f"Phase 2.5: DIVERSITY FILTER on {len(above)} above-threshold variants "
+              f"(cosine ≥ {diversity_threshold})",
+              flush=True)
+        filtered_above, diversity_dropped = _filter_by_diversity(
+            above, similarity_threshold=diversity_threshold
+        )
+        results = filtered_above + below
+
     # Write kept variants
     kept = 0
     dropped = 0
@@ -476,10 +726,47 @@ def amplify(
             f.write(json.dumps(new_row) + "\n")
             kept += 1
 
+    # Step 3 (2026-05-18 paired-debate): CALIBRATION HEALTH CHECK.
+    # If the rubric is working, kept scores should show spread across
+    # the 1.0/0.7/0.5 anchor tiers. If everything is still 1.0, the
+    # judge is binary-mode-collapsed and we need Tier 2 (DSPy meta-opt).
+    # LOUD warning per Article XIII so the operator sees it inline.
+    try:
+        kept_scores = [s for _, _, _, s in results if s >= min_judge_score]
+        if kept_scores:
+            unique_buckets = {round(s, 1) for s in kept_scores}
+            pct_gold = sum(1 for s in kept_scores if s >= 0.95) / len(kept_scores)
+            if len(unique_buckets) <= 2 or pct_gold >= 0.95:
+                import sys as _sys  # noqa: PLC0415
+                print(
+                    f"\n  [JUDGE_CALIBRATION_WARN] Bimodal score distribution "
+                    f"detected — {len(unique_buckets)} unique 0.1-buckets, "
+                    f"{pct_gold * 100:.0f}% scored 1.0. Rubric anchors did "
+                    f"NOT produce spread. Likely causes: (a) source data "
+                    f"truly is uniformly high-quality, (b) Flash cannot "
+                    f"discriminate at this resolution, (c) rubric prompt "
+                    f"needs strengthening. Consider Step 5b: meta-optimize "
+                    f"the judge via DSPy + Silver Standard (gpt-5, NOT "
+                    f"gpt-4o per cost-control rule).",
+                    file=_sys.stderr, flush=True,
+                )
+            else:
+                # Healthy spread — affirm so the operator sees the signal too
+                import sys as _sys  # noqa: PLC0415
+                print(
+                    f"  [JUDGE_CALIBRATION_OK] Score spread healthy: "
+                    f"{len(unique_buckets)} buckets, gold={pct_gold * 100:.0f}%, "
+                    f"min={min(kept_scores):.2f} max={max(kept_scores):.2f}.",
+                    file=_sys.stderr, flush=True,
+                )
+    except Exception:
+        pass  # observability — never crash
+
     return {
         "input_rows": len(inputs),
-        "total_generated": len(results),
+        "total_generated": len(results) + diversity_dropped,
         "kept": kept,
         "dropped": dropped,
+        "diversity_dropped": diversity_dropped,
         "path": str(output_path),
     }
