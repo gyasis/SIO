@@ -29,8 +29,6 @@ import re
 import sqlite3
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-
 
 # Same normalisation rules as sio.clustering.classifier — shared so the
 # signature hash here matches what the curate filter would produce.

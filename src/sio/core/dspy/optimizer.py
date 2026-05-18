@@ -972,8 +972,8 @@ def run_optimize(
         """
         try:
             from sio.core.dspy.metrics import (  # noqa: PLC0415
-                _score_specificity,
                 _score_actionability,
+                _score_specificity,
                 _score_surface_accuracy,
             )
             spec = _score_specificity(gold, pred)

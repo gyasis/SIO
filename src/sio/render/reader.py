@@ -5,7 +5,6 @@ import json
 import os
 import sqlite3
 from pathlib import Path
-from typing import Any
 
 
 def load_artifact(artifact_path: Path) -> dict:

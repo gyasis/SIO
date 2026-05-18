@@ -44,8 +44,6 @@ import os
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any
-
 
 _lm_lock = threading.Lock()
 _gen_lm = None

@@ -96,11 +96,11 @@ The package name on pypi is `self-improving-organism`; the CLI binary stays
 GitHub release for now.)
 
 ```bash
-# Recommended: pin to a release tag (latest = v0.1.1)
-pip install git+https://github.com/gyasisutton/SIO.git@v0.1.1
+# Recommended: pin to a release tag (latest = v0.3.0)
+pip install git+https://github.com/gyasisutton/SIO.git@v0.3.0
 
 # Or grab the wheel directly from the release page (no build step)
-pip install https://github.com/gyasisutton/SIO/releases/download/v0.1.1/self_improving_organism-0.1.1-py3-none-any.whl
+pip install https://github.com/gyasisutton/SIO/releases/download/v0.3.0/self_improving_organism-0.3.0-py3-none-any.whl
 
 # Or from source (editable, for tinkering)
 git clone https://github.com/gyasisutton/SIO.git
@@ -108,7 +108,7 @@ cd SIO
 pip install -e ".[all,dev]"
 
 # Verify
-sio --version          # → 0.1.1
+sio --version          # → 0.3.0
 ```
 
 ### Bootstrap your harness (`sio init`)
@@ -168,7 +168,7 @@ After `sio init`, your tree should look like:
 ### Upgrade
 
 ```bash
-pip install --upgrade git+https://github.com/gyasisutton/SIO.git@v0.1.1
+pip install --upgrade git+https://github.com/gyasisutton/SIO.git@v0.3.0
 sio init                    # safe — never clobbers user-edited files
 sio init --status           # confirm what shipped vs what's drifted
 ```
@@ -344,7 +344,7 @@ See `~/dev/prd/sio_multi_hop_search_2026-04-24.md` for the design rationale and 
 | `sio train --task all` | Run DSPy BootstrapFewShot/GEPA on exported datasets |
 | `sio train --task recall --optimizer gepa` | Train recall model with GEPA optimizer |
 
-### Optimizer Ladder (v0.3 unreleased — Constitution XIV proposed)
+### Optimizer Ladder (v0.3.0 — Constitution XIV)
 
 The canonical climb is **Bootstrap → AMPLIFY → MIPROv2 → GEPA**, with
 discipline gates that refuse bad invocations BEFORE LLM cost is spent.

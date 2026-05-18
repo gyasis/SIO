@@ -9,8 +9,20 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
-Substantial discipline + observability layer added 2026-05-18 (will
-roll into v0.2.1 or v0.3.0 once a real GEPA run validates the stack).
+(nothing yet — the next minor will add the DSPy callback-based unified
+optimizer-progress emitter, JudgeVariants Tier 2 meta-optimization if
+needed, and the distilabel attic move.)
+
+## [0.3.0] — 2026-05-18
+
+Largest release since 0.1.0 — three Constitution articles supported in
+code (XIV Optimizer Ladder Discipline, XVI Background Runs Resumability,
+XVII Outcome Surfacing Mandatory), 56 real-work commits since v0.1.3,
+eight new top-level CLI commands. The discipline + observability layer
+shipped today (2026-05-18 paired-debate); the empirical validation of
+the full ladder stack on Phase 1 graded-judge trainset (id=15) is
+deferred to a separate session — see PRD
+`sio_full_e2e_pipeline_verification_2026-05-18`.
 
 ### Added — Optimizer ladder discipline (Constitution XIV proposed)
 
@@ -105,6 +117,96 @@ DECISION AIDS — no auto-action.
   `os.kill(pid, 0)` liveness probe. Flags `in_flight + dead PID > 6h`
   as "stale crash", proposes `sio optimize-ladder` resume command in
   `fix_hint`.
+
+### Added — Phase 1 paired-debate amplify (2026-05-18)
+
+- **Generator preserves domain** via `_extract_domain_keywords` — an
+  HH-domain lexicon (athenahealth, dbt, databricks, cube, zeno, ccm,
+  careplan, raf, hcc, etc.) with generic-tech fallback (k8s, docker,
+  postgres, etc.). Closes the mode-collapse-to-salesforce/s3/bigquery
+  failure observed in trainset id=10.
+- **Graded judge** with 5-tier rubric anchors:
+  - 1.0 GOLD (category + domain preserved)
+  - 0.7 SILVER (category preserved, domain drifted)
+  - 0.5 BRONZE (sibling category)
+  - 0.2 DRIFT (different category)
+  - 0.0 HALLUCINATION (smoke-test anchor for prompt injection /
+    malformed output)
+  Synthetic-Extremes pattern — no manual labeled corpus needed.
+- **`[JUDGE_CALIBRATION_WARN]` / `_OK`** post-run signal in stderr when
+  score distribution collapses to binary (was today's silent-failure
+  mode that today's session caught and fixed).
+- **Diversity filter** via fastembed cosine similarity ≥0.95 — per-source-row
+  dedup, keeps highest-judge-score in each cluster. Toggle via
+  `--no-diversity-filter`, threshold via `--diversity-threshold 0.95`.
+- Verified on 454-variant smoke test (2026-05-18): 5-bucket distribution
+  (1.0/0.9/0.8/0.7/0.6), was bimodal pre-fix.
+
+### Added — Live optimizer progress (2026-05-18 black-box fix)
+
+- **GEPA live-progress** in heartbeat lines:
+  `[HB ... gepa_iter=17 iter_score=0.6900 best_valset=0.7262 trend=↑]`.
+  Per-iteration `Selected program score` parsed via Python `logging`
+  handler hooked into `dspy.teleprompt.gepa.gepa`. No more black-box
+  "wait for the end-of-run number." 10-entry score_history deque for
+  trend (last vs 3-back, ±0.005 threshold).
+- **MIPRO live-progress** (regex stopgap):
+  `[HB ... mipro_trial=3/10 trial_score=0.7540 best_trial=0.7540 trend=↑]`.
+  Same Python logging hook for `== Trial N / M ==` and `Best score so far`
+  lines, with %→0-1 ratio conversion. Proper DSPy callback-based emitter
+  PRD'd in `sio_unified_optimizer_emitter_2026-05-18.md` for v0.4.0.
+- **`sio gepa-status` CLI** — agent + operator readable live state.
+  Renders active optimizer block (GEPA or MIPRO), score history (last 10),
+  trend arrow, parse_err / truncation counters, plus any T1-T4 abort
+  warnings already emitted. `--watch` flag re-prints every 5s.
+- **`stage.gepa_snapshot`** stashed in runlog JSON each heartbeat tick
+  so external readers (CLI, agent) see same data as stderr.
+
+### Added — Abort tiers (Article XIII clause 8 — Loud Failure)
+
+- **T1 iter-idle 8min** → WARN one-shot (`GEPA_ITER_STALL_WARN`)
+- **T2 iter-idle 15min** → CRITICAL ABORT signal (`GEPA_ITER_STALLED_CRITICAL`)
+- **T3 ≥3 AdapterParseError / 5min** → CRITICAL ABORT signal
+  (`GEPA_ADAPTER_PARSE_STREAK`) — catches task-LM emitting malformed outputs
+- **T4 ≥3 max_tokens truncations / 5min** → CRITICAL ABORT signal
+  (`GEPA_TRUNCATION_STREAK`) — catches token-cap walls
+- **T5 reflection-stuck 40min** (existing backstop, kept) →
+  `REFLECTION_STUCK_CRITICAL`
+- Operator-decides philosophy — no auto-SIGTERM from daemon thread (Python
+  signals across threads are fragile). All warnings appear in run.warns +
+  stderr `[CRITICAL]` line. Today's stuck GEPA at iter 17 would have hit
+  T3/T4 within seconds vs T5's 40-min backstop.
+
+### Added — Compound command discipline + --rungs
+
+- **`sio optimize-ladder --rungs <subset>`** — comma-separated rung filter.
+  Express lane: `--rungs bootstrap` runs only Bootstrap (~1 min, $0.01).
+  Validates unknown rung names with allowed-list error. Skips amplify
+  when no downstream rung needs it. Idempotent: skips rungs that already
+  have scored rows in `optimized_modules`.
+- **LADDER_VERDICT auto-emission** at ladder completion. Verdicts:
+  - `gepa_justified` — GEPA - MIPRO ≥ 0.03 → ship GEPA
+  - `mipro_wins_on_economics` — within 0.03 → ship MIPRO (30× cheaper)
+  - `both_fail` — neither passes bars → fix trainset upstream
+  - `gepa_no_score` — GEPA aborted/stuck → ship MIPRO
+  - `mipro_dead_weight` (warning overlay) — MIPRO < Bootstrap
+- **Per-rung scores in ladder_status.json** (Article XVII compliance) —
+  pulled from `optimized_modules` after each rung. Includes
+  `optimized_module_id`, `task_lm`, `reflection_lm` for full attribution.
+
+### Added — Token-length audit fixes (2026-05-18)
+
+- `amplify.py` gen LM: `max_tokens` 4000 → **6000** for content-heavy
+  patterns with high n_per_row.
+- `amplify.py` judge LM: `max_tokens` 500 → **2000** (fixes silent-bypass
+  bug where Gemini-Flash truncated `scores_json` mid-array, falling
+  through to placeholder 0.5 for all variants).
+- `classifier.py` Gemini-Flash classifier: `max_tokens` 500 → **1000**
+  (same bug class).
+- `refiner.py` Anthropic + OpenAI refinement: `max_tokens` 300 → **1500**
+  (refiner writes rules DIRECTLY to CLAUDE.md; truncated rules would ship).
+- LOUD warnings `[REFINER_FALLBACK_*]` on the 3 fallback paths (was silent
+  `logger.debug` only).
 
 ### Fixed
 

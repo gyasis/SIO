@@ -10,12 +10,12 @@ Examples:
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 
 import click
 
-from sio.core.runlog import current as _runlog_current, runlogged
+from sio.core.runlog import current as _runlog_current
+from sio.core.runlog import runlogged
 
 
 @click.command("render")
@@ -36,10 +36,6 @@ from sio.core.runlog import current as _runlog_current, runlogged
 @runlogged("render")
 def render_cmd(module_id, use_active, all_active, fmt, output_path, skill_name, dry_run):
     """Render an optimized DSPy module as a skill / prompt / rule file."""
-    from sio.render import (  # noqa: PLC0415
-        load_artifact, load_module_metadata,
-        render_skill, render_system_prompt, render_claude_md, render_json_prompt,
-    )
     from sio.render.reader import find_active_module  # noqa: PLC0415
 
     if not module_id and not use_active and not all_active:
@@ -48,7 +44,8 @@ def render_cmd(module_id, use_active, all_active, fmt, output_path, skill_name, 
 
     # --all-active: iterate every distinct module_type with an active row
     if all_active:
-        import sqlite3, os as _os  # noqa: PLC0415
+        import os as _os  # noqa: PLC0415
+        import sqlite3
         db = _os.path.expanduser("~/.sio/sio.db")
         conn = sqlite3.connect(db); conn.row_factory = sqlite3.Row
         rows = conn.execute(
@@ -79,8 +76,12 @@ def render_cmd(module_id, use_active, all_active, fmt, output_path, skill_name, 
 def _render_one(module_id, fmt, output_path, skill_name, dry_run):
     """Render a single module — extracted so --all-active can reuse."""
     from sio.render import (  # noqa: PLC0415
-        load_artifact, load_module_metadata,
-        render_skill, render_system_prompt, render_claude_md, render_json_prompt,
+        load_artifact,
+        load_module_metadata,
+        render_claude_md,
+        render_json_prompt,
+        render_skill,
+        render_system_prompt,
     )
     rl = _runlog_current()
     with rl.stage("load_metadata"):

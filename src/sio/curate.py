@@ -37,11 +37,9 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterable
-
 
 # ---------------------------------------------------------------------------
 # Filter chain
@@ -206,19 +204,19 @@ def write_preview(
         types[r.get("error_type") or "(none)"] += 1
 
     lines: list[str] = []
-    lines.append(f"# Curated dataset preview")
+    lines.append("# Curated dataset preview")
     lines.append("")
     lines.append(f"- **Generated:** {datetime.now(timezone.utc).isoformat()}")
     lines.append(f"- **Row count:** {len(rows)}")
-    lines.append(f"- **Filters applied:**")
+    lines.append("- **Filters applied:**")
     for k, v in filters.__dict__.items():
         if v not in (None, False, (), ""):
             lines.append(f"  - `{k}` = `{v}`")
     lines.append("")
     lines.append("## Distribution by pattern_id (top 20)")
     lines.append("")
-    lines.append(f"| pattern_id | count |")
-    lines.append(f"|---|---|")
+    lines.append("| pattern_id | count |")
+    lines.append("|---|---|")
     for cat, n in cats.most_common(20):
         lines.append(f"| `{cat}` | {n} |")
     lines.append("")

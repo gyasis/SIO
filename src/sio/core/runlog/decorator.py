@@ -22,7 +22,7 @@ import sys
 from typing import Callable
 
 from . import dspy_capture, logging_filter, tqdm_hook
-from .writer import RunLog, current, reset_current, set_current
+from .writer import RunLog, reset_current, set_current
 
 
 def runlogged(cmd_name: str):

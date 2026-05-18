@@ -7,11 +7,11 @@ alone — the trainset is in /tmp/."
 from .registry import (
     DATASETS_DIR,
     ensure_schema,
-    register_dataset,
-    hash_file,
     find_by_hash,
     find_by_path,
+    hash_file,
     link_optimized_module,
+    register_dataset,
 )
 
 __all__ = [

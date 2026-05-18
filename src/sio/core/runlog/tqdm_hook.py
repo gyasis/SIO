@@ -11,8 +11,6 @@ to decorator.py).
 """
 from __future__ import annotations
 
-from typing import Optional
-
 from .writer import current
 
 _INSTALLED = False

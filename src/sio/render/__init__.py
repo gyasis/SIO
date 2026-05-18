@@ -3,7 +3,7 @@
 See: ~/dev/prd/scratch/sio_render_artifact_2026-05-16.md
 """
 from .reader import load_artifact, load_module_metadata
-from .templates import render_skill, render_system_prompt, render_claude_md, render_json_prompt
+from .templates import render_claude_md, render_json_prompt, render_skill, render_system_prompt
 
 __all__ = [
     "load_artifact",

@@ -18,8 +18,6 @@ idempotent.
 from __future__ import annotations
 
 import json
-import os
-import sys
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -130,7 +128,7 @@ def install() -> None:
             })
             # XII clause 2: append-only ~/.sio/usage.log with computed cost
             try:
-                from sio.core.cost import record_call, estimate_call  # noqa: PLC0415
+                from sio.core.cost import estimate_call, record_call  # noqa: PLC0415
                 in_tok = int((usage or {}).get("prompt_tokens", 0) or 0)
                 out_tok = int((usage or {}).get("completion_tokens", 0) or 0)
                 model_name = getattr(self, "model", "?")

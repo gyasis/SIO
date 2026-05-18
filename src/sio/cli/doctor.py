@@ -771,7 +771,7 @@ def _check_ladder_state() -> CheckResult:
     to crawl the DB.
     """
     import json as _json
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timezone
     from pathlib import Path as _P
 
     state_file = _P.home() / ".sio" / "state" / "ladder_status.json"

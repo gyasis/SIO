@@ -28,7 +28,6 @@ from typing import Optional
 
 from .writer import RunLog, Stage
 
-
 # Reflection-class model fingerprints (Pro/gpt-5 tier).
 _REFLECTION_HINTS = ("gpt-5", "gemini-pro", "claude-opus", "claude-sonnet-4")
 # Task-LM fingerprints (Flash/mini tier). If any of these show up, GEPA

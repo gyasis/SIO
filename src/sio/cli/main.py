@@ -5,14 +5,15 @@ import os
 import time
 from contextlib import contextmanager
 from importlib.metadata import PackageNotFoundError
-from pathlib import Path
 from importlib.metadata import version as pkg_version
+from pathlib import Path
 
 import click
 
 from sio.core.constants import DEFAULT_PLATFORM
 from sio.core.observability import log_failure
-from sio.core.runlog import current as _runlog_current, runlogged
+from sio.core.runlog import current as _runlog_current
+from sio.core.runlog import runlogged
 
 _DEFAULT_DB_DIR = os.path.expanduser(f"~/.sio/{DEFAULT_PLATFORM}")
 
@@ -1830,7 +1831,6 @@ def suggest(
 
         if csv_path:
             import csv as _csv
-            from datetime import datetime as _dt, timezone as _tz
 
             csv_abs = os.path.expanduser(csv_path)
             if not os.path.exists(csv_abs):
@@ -3790,6 +3790,7 @@ def differential_flows_cmd(min_success, min_failure, per_cohort, max_hashes,
     """
     import datetime as _dt
     from pathlib import Path
+
     from sio.flows.differential import export_pairs, export_positives_for_dataset_builder
 
     if output is None:
@@ -4030,7 +4031,7 @@ def promote_positives_cmd(since, min_confidence, dry_run):
     Bridges the session_id schema gap (error_records uses bare UUIDs,
     positive_records uses ``<path>:<hash>``) via the shared source_file.
     """
-    from datetime import datetime, timezone, timedelta  # noqa: PLC0415
+    from datetime import datetime, timedelta, timezone  # noqa: PLC0415
 
     db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
@@ -4147,6 +4148,7 @@ def promote_positives_cmd(since, min_confidence, dry_run):
             try:
                 import json as _json  # noqa: PLC0415
                 from pathlib import Path as _P  # noqa: PLC0415
+
                 from sio.core.datasets import register_dataset  # noqa: PLC0415
                 _ts_safe = now.replace(":", "-").replace("+", "_").replace(".", "_")
                 snapshot_dir = _P.home() / ".sio" / "promoted"
@@ -4223,6 +4225,7 @@ def amplify_cmd(input_path, output_path, n_per_row, min_judge_score, max_workers
     variants — can be consumed directly by ``sio optimize --trainset-file``.
     """
     from pathlib import Path  # noqa: PLC0415
+
     from sio.amplify import amplify  # noqa: PLC0415
 
     inp = Path(input_path).expanduser()
@@ -4635,6 +4638,7 @@ def optimize_cmd(
     if optimizer_name in ("mipro", "gepa") and trainset_file and not skip_amplify_gate:
         try:
             from pathlib import Path as _P  # noqa: PLC0415
+
             from sio.core.datasets import find_by_hash, hash_file  # noqa: PLC0415
             tf = _P(trainset_file).expanduser()
             sha = hash_file(tf)
@@ -4768,8 +4772,9 @@ def optimize_cmd(
     # If skipped via flag, log to runlog so SIO mining can track frequency.
     if optimizer_name == "gepa" and trainset_file and not skip_ladder:
         try:
-            from pathlib import Path as _P  # noqa: PLC0415
             import sqlite3 as _sql  # noqa: PLC0415
+            from pathlib import Path as _P  # noqa: PLC0415
+
             from sio.core.datasets import find_by_hash, hash_file  # noqa: PLC0415
             tf = _P(trainset_file).expanduser()
             sha = hash_file(tf)
@@ -4915,10 +4920,14 @@ def optimize_cmd(
     # it now (auto-promote a one-shot file into a permanent dataset).
     if trainset_file:
         try:
-            from pathlib import Path as _P  # noqa: PLC0415
             import sqlite3 as _sql  # noqa: PLC0415
+            from pathlib import Path as _P  # noqa: PLC0415
+
             from sio.core.datasets import (  # noqa: PLC0415
-                find_by_hash, hash_file, link_optimized_module, register_dataset,
+                find_by_hash,
+                hash_file,
+                link_optimized_module,
+                register_dataset,
             )
             tf = _P(trainset_file).expanduser()
             sha = hash_file(tf)
@@ -4930,7 +4939,7 @@ def optimize_cmd(
                 ds_id = register_dataset(
                     source_path=tf,
                     slug=tf.stem,
-                    description=f"Auto-registered from sio optimize --trainset-file (was unregistered)",
+                    description="Auto-registered from sio optimize --trainset-file (was unregistered)",
                     source="manual",
                 )
             else:
@@ -5060,6 +5069,7 @@ def optimize_ladder_cmd(
     """
     import subprocess as _sp  # noqa: PLC0415
     from pathlib import Path as _P  # noqa: PLC0415
+
     from rich.console import Console  # noqa: PLC0415
     from rich.table import Table  # noqa: PLC0415
 
@@ -5077,8 +5087,8 @@ def optimize_ladder_cmd(
 
     # ---- Step 1: resolve input trainset + plan the rungs --------------------
     try:
-        from sio.core.datasets import find_by_hash, hash_file  # noqa: PLC0415
         from sio.core.cost.estimator import estimate_optimize_run  # noqa: PLC0415
+        from sio.core.datasets import find_by_hash, hash_file  # noqa: PLC0415
     except Exception as exc:  # noqa: BLE001
         console.print(f"[red]Could not load datasets/cost modules:[/red] {exc}")
         raise SystemExit(1)
@@ -5229,8 +5239,8 @@ def optimize_ladder_cmd(
     # `sio doctor --ladder` (or any external monitor) can answer "is this
     # ladder making progress?" without needing to crawl the DB. Updated
     # after every rung. Self-cleaning on success at the end.
-    import json as _json  # noqa: PLC0415
     import datetime as _dt2  # noqa: PLC0415
+    import json as _json  # noqa: PLC0415
     state_dir = _P.home() / ".sio" / "state"
     state_dir.mkdir(parents=True, exist_ok=True)
     state_file = state_dir / "ladder_status.json"
@@ -6216,7 +6226,8 @@ def rule_outcomes_cmd(rule_id, window, since, fmt):
 
     # Optional since-filter on first_seen
     if since:
-        from datetime import datetime as _dt, timedelta as _td  # noqa: PLC0415
+        from datetime import datetime as _dt  # noqa: PLC0415
+        from datetime import timedelta as _td
         cutoff = None
         s = since.strip()
         if s.endswith("days") or s.endswith("day"):
@@ -6425,7 +6436,7 @@ def rule_audit_cmd(rule_id, samples, window, judge, yes, write_report, fmt):
         total = per_call * n
         click.echo("")
         click.echo(
-            f"--judge mode: PAID LLM call."
+            "--judge mode: PAID LLM call."
         )
         click.echo(
             f"  Model:    {model}"
@@ -6444,6 +6455,7 @@ def rule_audit_cmd(rule_id, samples, window, judge, yes, write_report, fmt):
     if judge:
         try:
             import time  # noqa: PLC0415
+
             from sio.core.cost import record_call  # noqa: PLC0415
             from sio.core.dspy.lm_factory import get_task_lm  # noqa: PLC0415
 
@@ -8199,22 +8211,27 @@ def trend(granularity, top_n, num_windows, pattern_filter, grep_term):
 
 # Register Principle XIII run-log inspector (sio runs)
 from sio.cli.runs import runs_cmd as _runs_cmd  # noqa: E402
+
 cli.add_command(_runs_cmd)
 
 # Register sio render (turn optimized module into deployable skill)
 from sio.cli.render import render_cmd as _render_cmd  # noqa: E402
+
 cli.add_command(_render_cmd)
 
 # Register sio costs (XII transparency)
 from sio.cli.costs import costs_cmd as _costs_cmd  # noqa: E402
+
 cli.add_command(_costs_cmd)
 
 # Register sio multi-train (parallel multi-surface optimizer driver)
 from sio.cli.multi_train import multi_train_cmd as _multi_train_cmd  # noqa: E402
+
 cli.add_command(_multi_train_cmd)
 
 # Register sio reproduce (XV — reproducibility)
 from sio.cli.reproduce import reproduce_cmd as _reproduce_cmd  # noqa: E402
+
 cli.add_command(_reproduce_cmd)
 
 

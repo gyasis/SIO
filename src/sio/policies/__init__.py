@@ -12,7 +12,7 @@ Public API:
 """
 
 from sio.policies.compile import compile_manifest
-from sio.policies.telemetry import ingest_telemetry, compute_ia
 from sio.policies.lifecycle import check_health
+from sio.policies.telemetry import compute_ia, ingest_telemetry
 
 __all__ = ["compile_manifest", "ingest_telemetry", "compute_ia", "check_health"]

@@ -26,7 +26,6 @@ from pathlib import Path
 
 from sio.promote_rule.extractor import DetectionPattern
 
-
 # ---------------------------------------------------------------------------
 # Hook script template — string formatted with the rule + detection details.
 # Kept as a single triple-quoted block for easy review; uses %s placeholders
