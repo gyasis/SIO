@@ -35,7 +35,7 @@ def _get_sio_db_conn():
     """
     from sio.core.db.schema import init_db
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         return None
     return init_db(db_path)
@@ -765,7 +765,7 @@ def mine(since, project, source, exclude_sidechains):
 
     from sio.mining.pipeline import run_mine
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
     source_dirs = []
@@ -878,7 +878,7 @@ def flows(since, project, min_count, limit, mine_first):
 
     from sio.mining.flow_pipeline import query_flows, run_flow_mine
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
     with _db_conn(db_path) as conn:
@@ -1239,7 +1239,7 @@ def patterns(error_type, project):
     from sio.clustering.ranker import rank_patterns
     from sio.core.db.queries import get_error_records
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio mine' first.")
         return
@@ -1331,7 +1331,7 @@ def errors(error_type, limit, grep_term, project, exclude_types):
     from rich.console import Console
     from rich.table import Table
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio mine' first.")
         return
@@ -1452,7 +1452,7 @@ def errors(error_type, limit, grep_term, project, exclude_types):
 def datasets(ctx):
     """Manage pattern datasets."""
     if ctx.invoked_subcommand is None:
-        db_path = os.path.expanduser("~/.sio/sio.db")
+        db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
         if not os.path.exists(db_path):
             click.echo("No database found. Run 'sio mine' first.")
             return
@@ -1483,7 +1483,7 @@ def collect(since, error_type):
     """Collect targeted dataset from specific criteria."""
     from sio.datasets.builder import collect_dataset
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio mine' first.")
         return
@@ -1511,7 +1511,7 @@ def inspect(pattern_id):
 
     console = Console()
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio mine' first.")
         return
@@ -1809,7 +1809,7 @@ def suggest(
     from sio.datasets.builder import build_dataset
     from sio.suggestions.generator import generate_suggestions
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio mine' first.")
         return
@@ -2326,7 +2326,7 @@ def suggest_review():
     from sio.review.reviewer import reject as do_reject
     from sio.review.reviewer import review_pending
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio mine' first.")
         return
@@ -2381,7 +2381,7 @@ def approve(suggestion_id, note):
     from sio.ground_truth.corpus import promote_to_ground_truth
     from sio.review.reviewer import approve as do_approve
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found.")
         return
@@ -2409,7 +2409,7 @@ def reject(suggestion_id, note):
     """Reject a suggestion by ID."""
     from sio.review.reviewer import reject as do_reject
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found.")
         return
@@ -2446,7 +2446,7 @@ def promote_to_gold_cmd(invocation_id, all_eligible, dry_run):
     """
     from sio.core.arena.gold_standards import promote_to_gold as do_promote
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found.")
         raise SystemExit(1)
@@ -2635,7 +2635,7 @@ def apply_suggestion(
                        err=True)
             raise SystemExit(1)
 
-        db_path = os.path.expanduser("~/.sio/sio.db")
+        db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
         if not os.path.exists(db_path):
             click.echo("No database found.")
             raise SystemExit(1)
@@ -2705,7 +2705,7 @@ def apply_suggestion(
             rollback_applied_change,
         )
 
-        db_path = os.path.expanduser("~/.sio/sio.db")
+        db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
         try:
             result = rollback_applied_change(rollback_id, db_path=db_path)
             click.echo(f"Rolled back applied change {rollback_id}: restored {result['target']}")
@@ -2724,7 +2724,7 @@ def apply_suggestion(
     from sio.applier.writer import apply_change
     from sio.core.config import load_config
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found.")
         return
@@ -2795,7 +2795,7 @@ def rollback(change_id):
     """Rollback an applied change by ID."""
     from sio.applier.rollback import rollback_change
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found.")
         return
@@ -2816,7 +2816,7 @@ def changes():
     from rich.console import Console
     from rich.table import Table
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found.")
         return
@@ -3069,7 +3069,7 @@ def sio_status(plain: bool = False):
     except ImportError:
         _rich_available = False
 
-    db_path_str = os.path.expanduser("~/.sio/sio.db")
+    db_path_str = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     db_exists = os.path.exists(db_path_str)
 
     any_error = False
@@ -3374,7 +3374,7 @@ def briefing(as_json):
     from sio.core.config import load_config
     from sio.suggestions.consultant import build_session_briefing
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No SIO database found. Run 'sio mine' first.")
         return
@@ -3409,7 +3409,7 @@ def gt_seed(count, surface):
     from sio.core.config import load_config
     from sio.ground_truth.seeder import seed_ground_truth
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     config = load_config()
 
@@ -3431,7 +3431,7 @@ def gt_generate(candidates, pattern_id):
     from sio.core.db.queries import get_pattern_by_id, get_patterns
     from sio.ground_truth.generator import generate_candidates
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio mine' first.")
         raise SystemExit(1)
@@ -3485,7 +3485,7 @@ def gt_review(surface):
     from sio.core.db.queries import get_pending_ground_truth
     from sio.ground_truth.reviewer import approve, edit, reject
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found.")
         raise SystemExit(1)
@@ -3564,7 +3564,7 @@ def gt_status():
 
     from sio.core.db.queries import get_ground_truth_stats
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio ground-truth seed' first.")
         return
@@ -3627,7 +3627,7 @@ def optimize_suggestions_cmd(optimizer, dry_run):
     from sio.core.config import load_config
     from sio.core.dspy.optimizer import OptimizationError, optimize_suggestions
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio ground-truth seed' first.")
         raise SystemExit(1)
@@ -3797,7 +3797,7 @@ def differential_flows_cmd(min_success, min_failure, per_cohort, max_hashes,
         output = os.path.expanduser(f"~/.sio/differential/differential{suffix}_{ts}.jsonl")
     out_path = Path(output)
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if positives_for_builder:
         result = export_positives_for_dataset_builder(
             db_path, out_path,
@@ -3848,7 +3848,7 @@ def analyze_same_error_cmd(min_count, since, limit, with_context):
     """
     from sio.analyze import same_error_analysis
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found.")
         raise SystemExit(1)
@@ -3941,7 +3941,7 @@ def curate_cmd(
         ts = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
         output = os.path.expanduser(f"~/.sio/curated/curated_{ts}.jsonl")
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     out = curate(db_path, filters, Path(output))
     click.echo(f"Rows:    {out['rows']}")
     click.echo(f"JSONL:   {out['jsonl_path']}")
@@ -3998,7 +3998,7 @@ def promote_positives_cmd(since, min_confidence, dry_run):
     """
     from datetime import datetime, timezone, timedelta  # noqa: PLC0415
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found.")
         raise SystemExit(1)
@@ -4850,7 +4850,7 @@ def export_dataset(task, since, fmt, output):
         export_parquet,
     )
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio mine' first.")
         return
@@ -4953,7 +4953,7 @@ def train(task, optimizer, model, max_examples):
         train_recall_module,
     )
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio mine' first.")
         return
@@ -5029,7 +5029,7 @@ def collect_recall(query, session, project, runbook, label):
     from sio.mining.recall import detect_struggles, format_recall_output, topic_filter
     from sio.mining.session_distiller import distill_session
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
     # Find session
@@ -5169,7 +5169,7 @@ def velocity(error_type, window, fmt, skills, by_rule, min_records):
     if by_rule:
         from sio.core.metrics.velocity import compute_per_rule_velocity  # noqa: PLC0415
 
-        db_path = os.path.expanduser("~/.sio/sio.db")
+        db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
         if not os.path.exists(db_path):
             click.echo("No database found. Run 'sio mine' first.")
             return
@@ -5260,7 +5260,7 @@ def velocity(error_type, window, fmt, skills, by_rule, min_records):
         get_velocity_trends,
     )
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio mine' first.")
         return
@@ -5505,7 +5505,7 @@ def violations(since, fmt):
 
     from sio.mining.violation_detector import get_violation_report
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio mine' first.")
         return
@@ -5754,7 +5754,7 @@ def promote_rule(rule_index: int, mode: str, since: str | None, write: bool) -> 
     """
     from sio.mining.violation_detector import get_violation_report  # noqa: PLC0415
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio mine' first.")
         raise SystemExit(2)
@@ -6333,7 +6333,7 @@ def autoresearch_start(interval, max_cycles, max_experiments, dry_run):
     from sio.core.arena.autoresearch import AutoResearchLoop
     from sio.core.config import load_config
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
     config = load_config()
@@ -6368,7 +6368,7 @@ def autoresearch_status():
     """Show autoresearch loop status."""
     from sio.core.arena.txlog import TxLog
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio mine' first.")
         return
@@ -6439,7 +6439,7 @@ def report(html_flag, output, days, open_flag):
         sio report --html -o my-report.html # Custom output path
         sio report --html --open            # Generate and open in browser
     """
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio mine' first.")
         return
@@ -6576,7 +6576,7 @@ def promote_flow(flow_hash):
     """
     from sio.clustering.grader import promote_flow_to_skill
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio mine' first.")
         raise SystemExit(1)
@@ -6628,7 +6628,7 @@ def discover(repo, fmt):
     """
     from sio.suggestions.discoverer import discover_skill_candidates
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio mine' first.")
         return
@@ -6957,7 +6957,7 @@ def trend(granularity, top_n, num_windows, pattern_filter, grep_term):
     from rich.console import Console
     from rich.table import Table
 
-    db_path = os.path.expanduser("~/.sio/sio.db")
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio mine' first.")
         return
