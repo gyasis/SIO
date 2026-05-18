@@ -5028,10 +5028,15 @@ def optimize_cmd(
               help="Per-invocation 24h budget cap override (XII clause 6).")
 @click.option("--dry-run", is_flag=True, default=False,
               help="Print the plan + cost estimate, do nothing.")
+@click.option("--rungs", default="bootstrap,amplify,mipro,gepa", show_default=True,
+              help="Comma-separated subset of rungs to run. Use "
+                   "'bootstrap' for the 1-min express lane "
+                   "(skip MIPRO + GEPA when you need a quick baseline "
+                   "and will revisit later). Example: --rungs bootstrap.")
 @runlogged("optimize-ladder")
 def optimize_ladder_cmd(
     trainset_file, module, target_amplified_rows, amplify_n_per_row,
-    task_mode, reflection_mode, yes, budget_override, dry_run,
+    task_mode, reflection_mode, yes, budget_override, dry_run, rungs,
 ):
     """Run the full optimizer ladder (Bootstrap → AMPLIFY → MIPROv2 → GEPA).
 
@@ -5089,6 +5094,26 @@ def optimize_ladder_cmd(
     plan = []  # list of (step_name, cmd_args, est_cost) tuples
     target_for_mipro_gepa = trainset_file  # may be replaced post-amplify
 
+    # --rungs filter (origin 2026-05-18). Solo-owner reality: sometimes you
+    # need a 1-min Bootstrap baseline and want to defer MIPRO+GEPA to a
+    # later session. Parse the comma-separated string into a normalized
+    # set. Unknown rung names fail loud so a typo doesn't silently skip
+    # the rung the user actually wanted.
+    _allowed_rungs = {"bootstrap", "amplify", "mipro", "gepa"}
+    selected_rungs = {r.strip().lower() for r in (rungs or "").split(",") if r.strip()}
+    if not selected_rungs:
+        selected_rungs = _allowed_rungs.copy()  # default: all
+    unknown = selected_rungs - _allowed_rungs
+    if unknown:
+        click.echo(f"Unknown rung(s) in --rungs: {sorted(unknown)}. "
+                   f"Allowed: {sorted(_allowed_rungs)}", err=True)
+        raise SystemExit(1)
+    if selected_rungs != _allowed_rungs:
+        console.print(
+            f"[yellow]--rungs filter active: {sorted(selected_rungs)}. "
+            f"Skipping: {sorted(_allowed_rungs - selected_rungs)}.[/yellow]"
+        )
+
     db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
 
     def _has_rung(module_type: str, trainset_id: int, optimizer: str) -> bool:
@@ -5105,7 +5130,7 @@ def optimize_ladder_cmd(
 
     # Bootstrap on the ORIGINAL trainset (cheap; runs even on un-amplified)
     bootstrap_done = ds_row is not None and _has_rung(module, ds_row["id"], "bootstrap")
-    if not bootstrap_done:
+    if not bootstrap_done and "bootstrap" in selected_rungs:
         est = estimate_optimize_run("bootstrap", "light")
         plan.append((
             "bootstrap (original trainset)",
@@ -5127,7 +5152,10 @@ def optimize_ladder_cmd(
         # Already amplified + meets row floor — use as-is for MIPRO/GEPA
         amplified_path = str(tf)
 
-    if needs_amplify:
+    # Skip amplify if not selected OR if no downstream rung needs it
+    if needs_amplify and "amplify" in selected_rungs and (
+        "mipro" in selected_rungs or "gepa" in selected_rungs
+    ):
         # Cost: amplify produces ~n_per_row × row_count Flash calls
         rows_in = ds_row["row_count"] if ds_row else 93  # default guess
         amplify_calls = rows_in * amplify_n_per_row + rows_in  # gen + judge
@@ -5145,28 +5173,30 @@ def optimize_ladder_cmd(
     # amplified trainset may not exist until the amplify step runs. Always
     # plan it; the inner `sio optimize` invocation's gates will short-circuit
     # if a row already exists (via --resume-from semantics in a future iter).
-    mipro_est = estimate_optimize_run("mipro", "light")
-    plan.append((
-        "mipro (amplified trainset)",
-        ["sio", "optimize", "--module", module, "--optimizer", "mipro",
-         "--trainset-file", str(target_for_mipro_gepa),
-         "--trainset-size", "200", "--valset-size", "50",
-         "--task-mode", task_mode, "--reflection-mode", reflection_mode],
-        mipro_est["total"]["mid"],
-    ))
+    if "mipro" in selected_rungs:
+        mipro_est = estimate_optimize_run("mipro", "light")
+        plan.append((
+            "mipro (amplified trainset)",
+            ["sio", "optimize", "--module", module, "--optimizer", "mipro",
+             "--trainset-file", str(target_for_mipro_gepa),
+             "--trainset-size", "200", "--valset-size", "50",
+             "--task-mode", task_mode, "--reflection-mode", reflection_mode],
+            mipro_est["total"]["mid"],
+        ))
 
     # GEPA on the amplified target
-    gepa_est = estimate_optimize_run("gepa", "light",
-                                     task_lm="gemini/gemini-flash-latest",
-                                     reflection_lm="openai/gpt-5")
-    plan.append((
-        "gepa (amplified trainset)",
-        ["sio", "optimize", "--module", module, "--optimizer", "gepa",
-         "--trainset-file", str(target_for_mipro_gepa),
-         "--trainset-size", "200", "--valset-size", "50",
-         "--task-mode", task_mode, "--reflection-mode", reflection_mode],
-        gepa_est["total"]["mid"],
-    ))
+    if "gepa" in selected_rungs:
+        gepa_est = estimate_optimize_run("gepa", "light",
+                                         task_lm="gemini/gemini-flash-latest",
+                                         reflection_lm="openai/gpt-5")
+        plan.append((
+            "gepa (amplified trainset)",
+            ["sio", "optimize", "--module", module, "--optimizer", "gepa",
+             "--trainset-file", str(target_for_mipro_gepa),
+             "--trainset-size", "200", "--valset-size", "50",
+             "--task-mode", task_mode, "--reflection-mode", reflection_mode],
+            gepa_est["total"]["mid"],
+        ))
 
     # ---- Step 2: show plan + cost estimate ----------------------------------
     table = Table(title="Compound Ladder Plan", show_lines=False)
