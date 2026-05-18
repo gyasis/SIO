@@ -49,6 +49,15 @@ _GEPA_ADAPTER_PARSE_ERR_RE = re.compile(r"AdapterParseError")
 _GEPA_TRUNCATION_RE = re.compile(
     r"LM response was truncated due to exceeding max_tokens=\d+"
 )
+# MIPROv2 log line patterns (extension 2026-05-18). DSPy MIPROv2 emits in
+# PERCENTAGE format (64.53) not 0-1 ratio — we convert when capturing.
+# Empirical from c28c44fb stderr capture.
+_MIPRO_TRIAL_RE = re.compile(r"== Trial (\d+) / (\d+)")
+# "Default program score: 64.53" / "Best score so far: 64.53" / etc.
+_MIPRO_SCORE_RE = re.compile(
+    r"(?:Default program score|Best score so far|"
+    r"Trial \d+ score|Score for trial \d+): ([\d.]+)"
+)
 
 
 class _GepaProgressWatcher(logging.Handler):
@@ -68,16 +77,19 @@ class _GepaProgressWatcher(logging.Handler):
     def __init__(self) -> None:
         super().__init__(level=logging.INFO)
         self._lock = threading.Lock()
+        # === GEPA state ===
         self.current_iter: int = 0
         self.last_iter_advance_at: float = time.time()
-        # Per-iteration score (from "Selected program N score" line). This is
-        # the score of the program GEPA picked for THIS iteration — useful
-        # for trend visibility (is GEPA exploring up, down, sideways?).
         self.last_iter_score: Optional[float] = None
-        # Best valset score seen so far (across all iterations).
         self.best_valset_score: Optional[float] = None
-        # Score history: last 10 (iter_idx, score) tuples for trend reporting
         self.score_history: deque = deque(maxlen=10)
+        # === MIPRO state (added 2026-05-18 — same observability for MIPRO) ===
+        self.current_trial: int = 0
+        self.trial_total: int = 0
+        self.last_trial_advance_at: float = time.time()
+        self.last_trial_score: Optional[float] = None  # 0.0-1.0 (converted from %)
+        self.best_trial_score: Optional[float] = None
+        self.trial_history: deque = deque(maxlen=10)
         # Rolling 5-min windows; oldest entries evicted in property accessors
         self.parse_errors: deque = deque()
         self.truncations: deque = deque()
@@ -116,6 +128,32 @@ class _GepaProgressWatcher(logging.Handler):
                         self.best_valset_score = score
                 except Exception:
                     pass
+            # MIPRO trial start
+            m3 = _MIPRO_TRIAL_RE.search(msg)
+            if m3:
+                try:
+                    new_trial = int(m3.group(1))
+                    total = int(m3.group(2))
+                    if new_trial >= self.current_trial:
+                        self.current_trial = new_trial
+                        self.trial_total = total
+                        self.last_trial_advance_at = now
+                except Exception:
+                    pass
+            # MIPRO score (Default program score / Best score so far / etc.)
+            # MIPRO emits percentage (e.g. 64.53). Convert to 0-1 ratio.
+            m4 = _MIPRO_SCORE_RE.search(msg)
+            if m4:
+                try:
+                    raw = float(m4.group(1))
+                    score = raw / 100.0 if raw > 1.5 else raw
+                    self.last_trial_score = score
+                    if self.best_trial_score is None or score > self.best_trial_score:
+                        self.best_trial_score = score
+                    if self.current_trial > 0:
+                        self.trial_history.append((self.current_trial, score))
+                except Exception:
+                    pass
             if _GEPA_ADAPTER_PARSE_ERR_RE.search(msg):
                 self.parse_errors.append(now)
             if _GEPA_TRUNCATION_RE.search(msg):
@@ -143,13 +181,42 @@ class _GepaProgressWatcher(logging.Handler):
                     trend = "down"
                 else:
                     trend = "flat"
+            # MIPRO trend (same heuristic: last vs 3-back)
+            mipro_trend = None
+            if len(self.trial_history) >= 3:
+                recent = self.trial_history[-1][1]
+                older = self.trial_history[-3][1]
+                diff = recent - older
+                if diff > 0.005:
+                    mipro_trend = "up"
+                elif diff < -0.005:
+                    mipro_trend = "down"
+                else:
+                    mipro_trend = "flat"
+            # Detect active optimizer
+            active = None
+            if self.current_iter > 0:
+                active = "gepa"
+            elif self.current_trial > 0:
+                active = "mipro"
             return {
+                "active": active,
+                # GEPA fields
                 "iter": self.current_iter,
                 "iter_score": self.last_iter_score,
                 "best": self.best_valset_score,
                 "trend": trend,
                 "history": list(self.score_history),
                 "iter_idle_sec": int(time.time() - self.last_iter_advance_at),
+                # MIPRO fields (added 2026-05-18)
+                "trial": self.current_trial,
+                "trial_total": self.trial_total,
+                "trial_score": self.last_trial_score,
+                "best_trial": self.best_trial_score,
+                "mipro_trend": mipro_trend,
+                "trial_history": list(self.trial_history),
+                "trial_idle_sec": int(time.time() - self.last_trial_advance_at),
+                # Shared error counters
                 "parse_errors_5min": len(self.parse_errors),
                 "truncations_5min": len(self.truncations),
             }
@@ -253,34 +320,43 @@ class Heartbeat:
             # Surfaces iteration index + best valset score + abort signals
             # so the operator can see GEPA's "score-so-far" instead of
             # waiting for a black-box end-of-run number.
-            gepa_extra = ""
+            opt_extra = ""
             if self._gepa_attached:
                 snap = self._gepa.snapshot()
                 # Stash on stage so external readers (sio gepa-status, agent
                 # in conversation) see the same data as stderr. Updated each
                 # heartbeat tick (~30s) — fresh enough for human eyeballing.
                 self.stage.gepa_snapshot = snap
-                if snap["iter"] > 0 or snap["best"] is not None:
-                    gepa_extra = f" gepa_iter={snap['iter']}"
-                    # Per-iteration current score (the score of THIS iter's
-                    # selected program). Distinct from best_valset which is
-                    # the all-time max. Surfacing both shows iter-by-iter
-                    # exploration AND best-found progress.
+                # GEPA rendering — only when GEPA is active
+                if snap.get("active") == "gepa":
+                    opt_extra = f" gepa_iter={snap['iter']}"
                     if snap["iter_score"] is not None:
-                        gepa_extra += f" iter_score={snap['iter_score']:.4f}"
+                        opt_extra += f" iter_score={snap['iter_score']:.4f}"
                     if snap["best"] is not None:
-                        gepa_extra += f" best_valset={snap['best']:.4f}"
+                        opt_extra += f" best_valset={snap['best']:.4f}"
                     if snap["trend"]:
-                        # ↑/↓/→ arrows (ascii safe equivalents in case of
-                        # log forwarders that mangle utf-8)
                         arrow = {"up": "↑", "down": "↓", "flat": "→"}[snap["trend"]]
-                        gepa_extra += f" trend={arrow}"
+                        opt_extra += f" trend={arrow}"
                     if snap["iter_idle_sec"] > 60:
-                        gepa_extra += f" iter_idle={snap['iter_idle_sec']}s"
-                    if snap["parse_errors_5min"]:
-                        gepa_extra += f" parse_err_5m={snap['parse_errors_5min']}"
-                    if snap["truncations_5min"]:
-                        gepa_extra += f" trunc_5m={snap['truncations_5min']}"
+                        opt_extra += f" iter_idle={snap['iter_idle_sec']}s"
+                # MIPRO rendering — only when MIPRO is active (no GEPA iters seen)
+                elif snap.get("active") == "mipro":
+                    opt_extra = f" mipro_trial={snap['trial']}/{snap['trial_total']}"
+                    if snap["trial_score"] is not None:
+                        opt_extra += f" trial_score={snap['trial_score']:.4f}"
+                    if snap["best_trial"] is not None:
+                        opt_extra += f" best_trial={snap['best_trial']:.4f}"
+                    if snap.get("mipro_trend"):
+                        arrow = {"up": "↑", "down": "↓", "flat": "→"}[snap["mipro_trend"]]
+                        opt_extra += f" trend={arrow}"
+                    if snap["trial_idle_sec"] > 120:
+                        opt_extra += f" trial_idle={snap['trial_idle_sec']}s"
+                # Always show error counters when present, regardless of optimizer
+                if snap["parse_errors_5min"]:
+                    opt_extra += f" parse_err_5m={snap['parse_errors_5min']}"
+                if snap["truncations_5min"]:
+                    opt_extra += f" trunc_5m={snap['truncations_5min']}"
+            gepa_extra = opt_extra  # keep var name compatibility below
             print(
                 f"[HB run={self.run.run_id} stage={self.stage.name} "
                 f"elapsed={elapsed}s since_progress={since_progress}s "

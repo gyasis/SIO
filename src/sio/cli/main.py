@@ -8233,25 +8233,43 @@ def gepa_status_cmd(watch):
                 snap = s["gepa_snapshot"]
                 break
         if not snap:
-            click.echo("  [no GEPA snapshot yet — either not a GEPA run or "
-                       "first heartbeat hasn't fired]")
+            click.echo("  [no optimizer snapshot yet — first heartbeat "
+                       "hasn't fired]")
         else:
-            click.echo(f"\n  GEPA iter: {snap['iter']}")
-            if snap.get('iter_score') is not None:
-                click.echo(f"  GEPA iter_score (this iter): {snap['iter_score']:.4f}")
-            if snap.get('best') is not None:
-                click.echo(f"  GEPA best_valset_so_far: {snap['best']:.4f}")
-            if snap.get('trend'):
-                arrow = {"up": "↑", "down": "↓", "flat": "→"}[snap['trend']]
-                click.echo(f"  Trend (last 3 iters): {arrow} ({snap['trend']})")
-            click.echo(f"  iter_idle: {snap.get('iter_idle_sec',0)}s")
+            active = snap.get("active", "unknown")
+            click.echo(f"\n  Active optimizer: {active}")
+            if active == "gepa":
+                click.echo(f"  GEPA iter: {snap['iter']}")
+                if snap.get('iter_score') is not None:
+                    click.echo(f"  GEPA iter_score (this iter): {snap['iter_score']:.4f}")
+                if snap.get('best') is not None:
+                    click.echo(f"  GEPA best_valset_so_far: {snap['best']:.4f}")
+                if snap.get('trend'):
+                    arrow = {"up": "↑", "down": "↓", "flat": "→"}[snap['trend']]
+                    click.echo(f"  Trend (last 3 iters): {arrow} ({snap['trend']})")
+                click.echo(f"  iter_idle: {snap.get('iter_idle_sec',0)}s")
+                hist = snap.get('history', [])
+                if hist:
+                    click.echo("\n  GEPA score history (iter, score):")
+                    for it, sc in hist[-10:]:
+                        click.echo(f"    iter={it:>3}  score={sc:.4f}")
+            elif active == "mipro":
+                click.echo(f"  MIPRO trial: {snap['trial']}/{snap['trial_total']}")
+                if snap.get('trial_score') is not None:
+                    click.echo(f"  MIPRO trial_score (latest): {snap['trial_score']:.4f}")
+                if snap.get('best_trial') is not None:
+                    click.echo(f"  MIPRO best_trial_so_far: {snap['best_trial']:.4f}")
+                if snap.get('mipro_trend'):
+                    arrow = {"up": "↑", "down": "↓", "flat": "→"}[snap['mipro_trend']]
+                    click.echo(f"  Trend (last 3 trials): {arrow} ({snap['mipro_trend']})")
+                click.echo(f"  trial_idle: {snap.get('trial_idle_sec',0)}s")
+                hist = snap.get('trial_history', [])
+                if hist:
+                    click.echo("\n  MIPRO score history (trial, score):")
+                    for tr, sc in hist[-10:]:
+                        click.echo(f"    trial={tr:>3}  score={sc:.4f}")
             click.echo(f"  parse_err (5min): {snap.get('parse_errors_5min',0)}")
             click.echo(f"  truncations (5min): {snap.get('truncations_5min',0)}")
-            hist = snap.get('history', [])
-            if hist:
-                click.echo("\n  Score history (iter, score):")
-                for it, sc in hist[-10:]:
-                    click.echo(f"    iter={it:>3}  score={sc:.4f}")
         # Show warnings emitted by abort tiers
         warns = d.get("warns", []) if isinstance(d.get("warns"), list) else []
         gepa_warns = [w for w in warns if isinstance(w, dict)
