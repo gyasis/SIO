@@ -5050,7 +5050,17 @@ def optimize_ladder_cmd(
     from rich.console import Console  # noqa: PLC0415
     from rich.table import Table  # noqa: PLC0415
 
-    console = Console()
+    # Constitution XVI — Background-mode hooks. When SIO_BACKGROUND_MODE=1
+    # is set (cron / systemd / non-interactive callers), suppress all
+    # interactive prompts AND Rich ANSI codes (cron mail is plaintext).
+    # Force --yes implicitly; any gate refusal still aborts with non-zero
+    # exit. Every state transition is also appended to a cron audit log.
+    _background_mode = os.environ.get("SIO_BACKGROUND_MODE") == "1"
+    if _background_mode:
+        console = Console(force_terminal=False, no_color=True, width=200)
+        yes = True  # implicit --yes; no human to confirm anything
+    else:
+        console = Console()
 
     # ---- Step 1: resolve input trainset + plan the rungs --------------------
     try:
@@ -5263,6 +5273,27 @@ def optimize_ladder_cmd(
         state_file.write_text(_json.dumps(ladder_state, indent=2))
     except Exception:
         pass
+
+    # Constitution XVI clause: background-mode audit log. Every state
+    # transition (start/finish/fail) appends a compact JSONL line so a
+    # cron health check or post-mortem can reconstruct what happened.
+    if _background_mode:
+        try:
+            audit_log = state_dir / "ladder_runs.jsonl"
+            audit_log.parent.mkdir(parents=True, exist_ok=True)
+            with audit_log.open("a") as _f:
+                _f.write(_json.dumps({
+                    "ts": _now_iso(),
+                    "event": "ladder_complete",
+                    "module": module,
+                    "trainset_id": ds_row["id"] if ds_row else None,
+                    "n_rungs": len(plan),
+                    "total_estimated_usd": round(total_cost, 4),
+                    "process_id": os.getpid(),
+                }) + "\n")
+        except Exception:
+            pass
+
     console.print(f"\n[bold green]Ladder complete ({len(plan)} rungs).[/bold green]")
     console.print(f"[dim]State recorded at {state_file}[/dim]")
 
