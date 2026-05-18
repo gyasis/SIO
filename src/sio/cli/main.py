@@ -5,6 +5,7 @@ import os
 import time
 from contextlib import contextmanager
 from importlib.metadata import PackageNotFoundError
+from pathlib import Path
 from importlib.metadata import version as pkg_version
 
 import click
@@ -5947,6 +5948,424 @@ def velocity(error_type, window, fmt, skills, by_rule, min_records):
                             f"{sm.get('improvement_pct', 'N/A'):>8} "
                             f"{sm['sessions_tracked']:>6}"
                         )
+
+
+# ---------------------------------------------------------------------------
+# Rule outcomes & audit surfaces (PRD sio_rule_outcomes_audit_2026-05-18.md)
+# ---------------------------------------------------------------------------
+
+
+def _resolve_rule_title(rule_id: str) -> str:
+    """Best-effort: read first H1/H2 from rule file referenced by rule_id.
+
+    rule_id format: ``<rules-path>#<sha[:12]>``. The current rules root is
+    ``~/.claude/rules/``. Returns empty string on any failure — failure
+    isolation per task spec.
+    """
+    try:
+        path_part = rule_id.split("#", 1)[0]
+        full = Path.home() / ".claude" / "rules" / path_part
+        if not full.exists():
+            return ""
+        with open(full) as f:
+            for line in f:
+                ls = line.strip()
+                if ls.startswith("# ") or ls.startswith("## "):
+                    return ls.lstrip("# ").strip()[:120]
+                if len(ls) > 0 and not ls.startswith("---"):
+                    return ls[:120]
+    except Exception:
+        return ""
+    return ""
+
+
+@cli.command("rule-outcomes")
+@click.argument("rule_id", required=False)
+@click.option(
+    "--window",
+    default=7,
+    type=int,
+    show_default=True,
+    help="Pre/post window in days around rule first-seen.",
+)
+@click.option(
+    "--since",
+    default=None,
+    help=(
+        "Only consider error_records on/after this date (ISO-8601 or 'N days')."
+    ),
+)
+@click.option(
+    "--format",
+    "fmt",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    show_default=True,
+)
+@runlogged("rule-outcomes")
+def rule_outcomes_cmd(rule_id, window, since, fmt):
+    """Per-rule outcomes drill-down (PRD Surface 2).
+
+    Omit RULE_ID to list all rules with outcomes data. Provide a rule_id
+    (format ``tools/foo.md#<sha[:12]>``) to print the per-rule detail
+    block with before/after counts, confidence, related sibling rules.
+    """
+    from sio.core.metrics.velocity import compute_rule_outcomes  # noqa: PLC0415
+
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
+    if not os.path.exists(db_path):
+        click.echo("No database found. Run 'sio mine' first.")
+        return
+
+    with _db_conn(db_path) as conn:
+        try:
+            outcomes = compute_rule_outcomes(
+                conn, rule_id_filter=rule_id, window_days=window
+            )
+        except Exception as e:  # noqa: BLE001
+            click.echo(f"Error computing rule outcomes: {e}")
+            return
+
+    # Optional since-filter on first_seen
+    if since:
+        from datetime import datetime as _dt, timedelta as _td  # noqa: PLC0415
+        cutoff = None
+        s = since.strip()
+        if s.endswith("days") or s.endswith("day"):
+            try:
+                n = int(s.split()[0])
+                cutoff = (_dt.now() - _td(days=n)).isoformat()
+            except Exception:
+                cutoff = None
+        else:
+            cutoff = s
+        if cutoff:
+            outcomes = [o for o in outcomes if (o["first_seen"] or "") >= cutoff]
+
+    if not outcomes:
+        click.echo(
+            "No rule outcomes found"
+            + (f" for rule_id={rule_id!r}" if rule_id else "")
+            + ". Active-rules stamping may be too recent — wait for "
+            "organic churn (≈2 weeks) or rerun `sio mine`."
+        )
+        return
+
+    if fmt == "json":
+        click.echo(_json.dumps(outcomes, indent=2, default=str))
+        return
+
+    try:
+        from rich.console import Console  # noqa: PLC0415
+        from rich.panel import Panel  # noqa: PLC0415
+        console = Console()
+    except ImportError:
+        console = None
+
+    for o in outcomes:
+        rid = o["rule_id"]
+        title = _resolve_rule_title(rid) or "(no title)"
+        lines = [
+            f"Rule: {rid}",
+            f"  Title:           {title}",
+            f"  First seen:      {o['first_seen']}",
+            f"  Target surface:  {o['target_surface']}",
+            f"  Window:          {o['window_days']} days each side",
+            "",
+            f"  Before (n_total):  {o['n_before_total']}",
+            f"  After  (n_total):  {o['n_after_total']}",
+            (
+                f"  Δ total:           "
+                f"{o['delta_pct_total']:+.1f}% "
+                f"(confidence: {o['confidence_total']})"
+                if o["delta_pct_total"] is not None
+                else f"  Δ total:           N/A (confidence: {o['confidence_total']})"
+            ),
+            f"  Recommend:         {o['recommend_total']}",
+            "",
+            "  By (error_type, surface):",
+        ]
+        for bd in o["by_type"]:
+            dpct = bd["delta_pct"]
+            dstr = f"{dpct:+.1f}%" if dpct is not None else "N/A"
+            lines.append(
+                f"    {bd['error_type']:<22s}  "
+                f"n_before={bd['n_before']:>4d}  "
+                f"n_after={bd['n_after']:>4d}  "
+                f"Δ={dstr:>7s}  "
+                f"conf={bd['confidence']:<6s}  "
+                f"{bd['recommend']}"
+            )
+        if o["related_rules"]:
+            lines.append("")
+            lines.append("  Related rules active in same window (possible confounds):")
+            for s in o["related_rules"][:10]:
+                lines.append(f"    {s}")
+            if len(o["related_rules"]) > 10:
+                lines.append(f"    ... and {len(o['related_rules']) - 10} more")
+        lines.append("")
+        lines.append(
+            "  Verdict (informational only — you decide): "
+            f"{o['recommend_total']}"
+        )
+
+        body = "\n".join(lines)
+        if console is not None:
+            console.print(Panel(body, title=rid, border_style="cyan"))
+        else:
+            click.echo(body)
+            click.echo("-" * 60)
+
+
+@cli.command("rule-audit")
+@click.argument("rule_id")
+@click.option(
+    "--samples",
+    default=10,
+    type=int,
+    show_default=True,
+    help="Number of representative errors to display from each side.",
+)
+@click.option(
+    "--window",
+    default=7,
+    type=int,
+    show_default=True,
+    help="Pre/post window in days around rule first-seen.",
+)
+@click.option(
+    "--judge",
+    is_flag=True,
+    default=False,
+    help=(
+        "Run LLM-as-judge on AFTER-window samples. PAID — requires --yes or "
+        "interactive confirmation."
+    ),
+)
+@click.option(
+    "--yes",
+    is_flag=True,
+    default=False,
+    help="Skip the cost-confirmation prompt (--judge only).",
+)
+@click.option(
+    "--write-report",
+    is_flag=True,
+    default=False,
+    help=(
+        "Write the audit output to ~/.sio/audits/<rule_hash>_<ts>.md."
+    ),
+)
+@click.option(
+    "--format",
+    "fmt",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    show_default=True,
+)
+@runlogged("rule-audit")
+def rule_audit_cmd(rule_id, samples, window, judge, yes, write_report, fmt):
+    """Audit a single rule with concrete error samples (PRD Surface 3).
+
+    Default: pulls SAMPLES error rows from before & after the rule's
+    first-seen window and prints them. With --judge: invokes a paid LLM
+    to score whether the rule's prevention_instructions actually apply
+    to each AFTER-window error. Cost callout fires before any LLM call.
+    """
+    from sio.core.metrics.velocity import sample_errors_around_rule  # noqa: PLC0415
+
+    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
+    if not os.path.exists(db_path):
+        click.echo("No database found. Run 'sio mine' first.")
+        return
+
+    with _db_conn(db_path) as conn:
+        try:
+            data = sample_errors_around_rule(
+                conn, rule_id, n_samples=samples, window_days=window
+            )
+        except Exception as e:  # noqa: BLE001
+            click.echo(f"Error sampling errors: {e}")
+            return
+
+    if not data["first_seen"]:
+        click.echo(
+            f"Rule {rule_id} not found in error_records.active_rules. "
+            "Check rule_id format (path#sha)."
+        )
+        return
+
+    title = _resolve_rule_title(rule_id) or "(no title)"
+    out_lines: list[str] = [
+        f"Rule:        {rule_id}",
+        f"Title:       {title}",
+        f"First seen:  {data['first_seen']}",
+        f"Samples:     {samples} (window ±{window}d)",
+        "",
+        f"BEFORE the rule landed ({len(data['before'])} samples):",
+    ]
+    for i, e in enumerate(data["before"], 1):
+        snip = (e["error_text"] or "")[:120].replace("\n", " ")
+        sid = (e["session_id"] or "")[:8]
+        out_lines.append(
+            f"  {i:>2d}. [{e['error_type']}] {snip}... "
+            f"({e['timestamp']}, session={sid})"
+        )
+    out_lines.append("")
+    out_lines.append(
+        f"AFTER the rule landed ({len(data['after'])} samples — "
+        "the rule did NOT prevent these):"
+    )
+    for i, e in enumerate(data["after"], 1):
+        snip = (e["error_text"] or "")[:120].replace("\n", " ")
+        sid = (e["session_id"] or "")[:8]
+        out_lines.append(
+            f"  {i:>2d}. [{e['error_type']}] {snip}... "
+            f"({e['timestamp']}, session={sid})"
+        )
+
+    judge_result: dict | None = None
+    if judge:
+        # Cost callout per ~/.claude/rules/domains/cost-control.md
+        from sio.core.cost import estimate_call  # noqa: PLC0415
+
+        n = len(data["after"])
+        # Conservative per-call estimate: ~1500 in tokens (rule body +
+        # error text), ~150 out tokens (small JSON verdict).
+        model = "gemini/gemini-flash-latest"
+        per_call = estimate_call(model, in_tokens=1500, out_tokens=150)
+        total = per_call * n
+        click.echo("")
+        click.echo(
+            f"--judge mode: PAID LLM call."
+        )
+        click.echo(
+            f"  Model:    {model}"
+        )
+        click.echo(
+            f"  Samples:  {n}"
+        )
+        click.echo(
+            f"  Estimated: ${total:.4f} (≈ ${per_call:.5f}/call × {n})"
+        )
+        if not yes:
+            if not click.confirm("Proceed with paid --judge run?", default=False):
+                click.echo("Aborted — no LLM call fired.")
+                judge = False
+
+    if judge:
+        try:
+            import time  # noqa: PLC0415
+            from sio.core.cost import record_call  # noqa: PLC0415
+            from sio.core.dspy.lm_factory import get_task_lm  # noqa: PLC0415
+
+            # Read rule body for prevention_instructions context.
+            path_part = rule_id.split("#", 1)[0]
+            rule_path = Path.home() / ".claude" / "rules" / path_part
+            rule_body = ""
+            try:
+                rule_body = rule_path.read_text()[:4000]
+            except Exception:
+                rule_body = "(rule file not readable)"
+
+            lm = get_task_lm()
+            matches = 0
+            verdicts: list[dict] = []
+            for e in data["after"]:
+                prompt = (
+                    "You are a strict judge. Given the rule below and an "
+                    "error that occurred AFTER the rule was applied, answer "
+                    "ONLY 'YES' or 'NO' on whether the rule directly applies "
+                    "to this error.\n\n"
+                    f"=== RULE ({rule_id}) ===\n{rule_body}\n\n"
+                    f"=== ERROR ===\n"
+                    f"type: {e['error_type']}\n"
+                    f"text: {(e['error_text'] or '')[:600]}\n"
+                    "\nAnswer YES or NO:"
+                )
+                t0 = time.monotonic()
+                try:
+                    resp = lm(prompt)
+                    if isinstance(resp, list):
+                        txt = (resp[0] if resp else "").strip().upper()
+                    else:
+                        txt = str(resp).strip().upper()
+                except Exception as je:  # noqa: BLE001
+                    txt = f"ERROR:{je}"
+                latency = int((time.monotonic() - t0) * 1000)
+                in_tok = max(1, len(prompt) // 4)
+                out_tok = max(1, len(txt) // 4)
+                cost = estimate_call(model, in_tok, out_tok)
+                try:
+                    record_call(
+                        model=model, role="judge",
+                        in_tokens=in_tok, out_tokens=out_tok,
+                        cost_usd=cost, cmd="rule-audit",
+                        latency_ms=latency,
+                    )
+                except Exception:
+                    pass
+                applies = txt.startswith("YES")
+                if applies:
+                    matches += 1
+                verdicts.append({
+                    "id": e["id"], "applies": applies, "raw": txt[:40]
+                })
+
+            pct = (matches / len(data["after"]) * 100) if data["after"] else 0.0
+            judge_result = {
+                "model": model,
+                "samples": len(data["after"]),
+                "matches": matches,
+                "applicability_pct": pct,
+                "verdicts": verdicts,
+            }
+            out_lines.append("")
+            out_lines.append(
+                f"--judge verdict: {matches}/{len(data['after'])} "
+                f"({pct:.0f}%) of AFTER errors are still in-scope of this rule."
+            )
+            if pct >= 70:
+                out_lines.append(
+                    "  Hint: rule still relevant — errors are in-scope but "
+                    "persisting. Audit *content* of the rule next."
+                )
+            elif pct <= 30:
+                out_lines.append(
+                    "  Hint: rule may be miscategorized — most AFTER errors "
+                    "are out-of-scope. Candidate for deprecation. You decide."
+                )
+            else:
+                out_lines.append("  Hint: mixed — investigate manually.")
+        except Exception as e:  # noqa: BLE001
+            out_lines.append("")
+            out_lines.append(f"--judge failed: {e}")
+
+    body = "\n".join(out_lines)
+
+    if fmt == "json":
+        click.echo(_json.dumps({
+            "rule_id": rule_id, "title": title,
+            "first_seen": data["first_seen"],
+            "before": data["before"], "after": data["after"],
+            "judge": judge_result,
+        }, indent=2, default=str))
+    else:
+        click.echo(body)
+
+    if write_report:
+        try:
+            import hashlib  # noqa: PLC0415
+            from datetime import datetime as _dt  # noqa: PLC0415
+            audits_dir = Path.home() / ".sio" / "audits"
+            audits_dir.mkdir(parents=True, exist_ok=True)
+            rh = hashlib.sha1(rule_id.encode()).hexdigest()[:10]
+            ts = _dt.now().strftime("%Y%m%dT%H%M%S")
+            out_path = audits_dir / f"{rh}_{ts}.md"
+            out_path.write_text(body + "\n")
+            click.echo(f"\n[report written: {out_path}]")
+        except Exception as e:  # noqa: BLE001
+            click.echo(f"\n[report write failed: {e}]")
 
 
 # ---------------------------------------------------------------------------

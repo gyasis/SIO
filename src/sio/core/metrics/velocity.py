@@ -329,6 +329,273 @@ def compute_per_rule_velocity(
     return results
 
 
+def _confidence_tier(n_after: int) -> str:
+    """Sample-size based confidence tier (per PRD §3 Surface 1)."""
+    if n_after >= 100:
+        return "high"
+    if n_after >= 25:
+        return "medium"
+    return "low"
+
+
+def _recommend_text(delta_pct: float | None, tier: str, n_after: int) -> str:
+    """Rule-of-thumb recommendation text — NEVER an action."""
+    if n_after < 10 or delta_pct is None:
+        return "needs more data"
+    if tier == "low":
+        return "needs more data"
+    if delta_pct <= -20:
+        return "looks fine"
+    if delta_pct >= 10:
+        return "look at this"
+    return "no clear signal"
+
+
+def compute_rule_outcomes(
+    db: sqlite3.Connection,
+    rule_id_filter: str | None = None,
+    window_days: int = 7,
+) -> list[dict]:
+    """Per-(rule_id, error_type, target_surface) outcome breakdown.
+
+    Implements Tier 1 of PRD ``sio_rule_outcomes_audit_2026-05-18.md``.
+
+    For each rule_id present in ``error_records.active_rules`` (optionally
+    filtered to one), compute:
+      * ``first_seen``: min(timestamp) where rule_id appears in active_rules
+      * ``n_before`` / ``n_after``: errors in [first_seen - window_days,
+        first_seen) vs [first_seen, first_seen + window_days)
+      * ``delta_pct``: (n_after - n_before) / n_before * 100, broken down
+        per (error_type, target_surface)
+      * ``confidence``: low/medium/high tier from sample size
+      * ``recommend``: text hint
+      * ``target_surface``: derived from rule_id's file path
+    """
+    import json  # noqa: PLC0415
+
+    where = "WHERE active_rules IS NOT NULL AND active_rules != ''"
+    rows = db.execute(
+        f"SELECT timestamp, active_rules, error_type, source_file "
+        f"FROM error_records {where}"
+    ).fetchall()
+    if not rows:
+        return []
+
+    # Build per-rule first-seen + by-(error_type, target_surface) tallies.
+    # target_surface = top-level rule file (e.g. "tools/gemini.md").
+    rule_first_seen: dict[str, str] = {}
+    rule_events: dict[str, list[tuple[str, str]]] = {}  # rule_id -> [(ts, etype)]
+    rule_target_surface: dict[str, str] = {}
+
+    for r in rows:
+        ts = r[0] or ""
+        ar_json = r[1]
+        etype = r[2] or ""
+        try:
+            rule_ids = json.loads(ar_json)
+            if not isinstance(rule_ids, list):
+                continue
+        except Exception:
+            continue
+        for rid in rule_ids:
+            if rule_id_filter and rid != rule_id_filter:
+                continue
+            cur = rule_first_seen.get(rid)
+            if cur is None or ts < cur:
+                rule_first_seen[rid] = ts
+            rule_events.setdefault(rid, []).append((ts, etype))
+            if rid not in rule_target_surface:
+                # rule_id format: "<path>#<sha>"
+                rule_target_surface[rid] = rid.split("#", 1)[0]
+
+    # For each rule, count errors in the pre/post windows.
+    results: list[dict] = []
+    for rid, first_seen in rule_first_seen.items():
+        if not first_seen:
+            continue
+        try:
+            ts0 = datetime.fromisoformat(first_seen.replace("Z", "+00:00"))
+        except Exception:
+            continue
+        pre_start = (ts0 - timedelta(days=window_days)).isoformat()
+        pre_end = first_seen
+        post_start = first_seen
+        post_end = (ts0 + timedelta(days=window_days)).isoformat()
+
+        # Per (error_type, target_surface) — surface is fixed for the rule.
+        target_surface = rule_target_surface[rid]
+        by_type_before: dict[str, int] = {}
+        by_type_after: dict[str, int] = {}
+
+        before_rows = db.execute(
+            "SELECT error_type FROM error_records "
+            "WHERE timestamp >= ? AND timestamp < ?",
+            (pre_start, pre_end),
+        ).fetchall()
+        for br in before_rows:
+            et = br[0] or ""
+            by_type_before[et] = by_type_before.get(et, 0) + 1
+
+        after_rows = db.execute(
+            "SELECT error_type FROM error_records "
+            "WHERE timestamp >= ? AND timestamp <= ?",
+            (post_start, post_end),
+        ).fetchall()
+        for ar in after_rows:
+            et = ar[0] or ""
+            by_type_after[et] = by_type_after.get(et, 0) + 1
+
+        all_types = set(by_type_before) | set(by_type_after)
+        breakdowns: list[dict] = []
+        for et in sorted(all_types):
+            nb = by_type_before.get(et, 0)
+            na = by_type_after.get(et, 0)
+            if nb == 0:
+                delta_pct = None
+            else:
+                delta_pct = ((na - nb) / nb) * 100
+            tier = _confidence_tier(na)
+            breakdowns.append({
+                "rule_id": rid,
+                "error_type": et,
+                "target_surface": target_surface,
+                "n_before": nb,
+                "n_after": na,
+                "delta_pct": delta_pct,
+                "confidence": tier,
+                "recommend": _recommend_text(delta_pct, tier, na),
+            })
+
+        n_before_total = sum(by_type_before.values())
+        n_after_total = sum(by_type_after.values())
+        if n_before_total > 0:
+            agg_delta = ((n_after_total - n_before_total) / n_before_total) * 100
+        else:
+            agg_delta = None
+        agg_tier = _confidence_tier(n_after_total)
+
+        # Related-rules detection: any rule_id active in records with same
+        # error_type within the post window — possible confound.
+        related: set[str] = set()
+        for ts, _et in rule_events.get(rid, []):
+            if ts < first_seen:
+                continue
+        # Sibling: rules that co-appear in active_rules JSON for the same
+        # error rows in the post window.
+        sibling_rows = db.execute(
+            "SELECT active_rules FROM error_records "
+            "WHERE timestamp >= ? AND timestamp <= ? "
+            "AND active_rules IS NOT NULL AND active_rules != ''",
+            (post_start, post_end),
+        ).fetchall()
+        for sr in sibling_rows:
+            try:
+                sibs = json.loads(sr[0])
+            except Exception:
+                continue
+            if rid not in sibs:
+                continue
+            for s in sibs:
+                if s != rid:
+                    related.add(s)
+
+        results.append({
+            "rule_id": rid,
+            "target_surface": target_surface,
+            "first_seen": first_seen,
+            "window_days": window_days,
+            "n_before_total": n_before_total,
+            "n_after_total": n_after_total,
+            "delta_pct_total": agg_delta,
+            "confidence_total": agg_tier,
+            "recommend_total": _recommend_text(agg_delta, agg_tier, n_after_total),
+            "by_type": breakdowns,
+            "related_rules": sorted(related),
+        })
+
+    # Sort: lowest (most-negative) aggregate delta first.
+    results.sort(
+        key=lambda r: (
+            r["delta_pct_total"] if r["delta_pct_total"] is not None else 0.0
+        )
+    )
+    return results
+
+
+def sample_errors_around_rule(
+    db: sqlite3.Connection,
+    rule_id: str,
+    n_samples: int = 10,
+    window_days: int = 7,
+) -> dict:
+    """Return ``n_samples`` error rows from before & after rule first-seen.
+
+    Used by ``sio rule-audit`` to display representative evidence. Sampling
+    is deterministic — orders by timestamp, takes evenly-spaced rows so
+    repeated audits surface the same evidence.
+    """
+    import json  # noqa: PLC0415
+
+    rows = db.execute(
+        "SELECT timestamp, active_rules FROM error_records "
+        "WHERE active_rules IS NOT NULL AND active_rules != '' "
+        "ORDER BY timestamp ASC"
+    ).fetchall()
+    first_seen: str | None = None
+    for r in rows:
+        try:
+            ids = json.loads(r[1])
+        except Exception:
+            continue
+        if rule_id in ids:
+            first_seen = r[0]
+            break
+    if not first_seen:
+        return {"rule_id": rule_id, "first_seen": None, "before": [], "after": []}
+    try:
+        ts0 = datetime.fromisoformat(first_seen.replace("Z", "+00:00"))
+    except Exception:
+        return {"rule_id": rule_id, "first_seen": first_seen, "before": [], "after": []}
+
+    pre_start = (ts0 - timedelta(days=window_days)).isoformat()
+    post_end = (ts0 + timedelta(days=window_days)).isoformat()
+
+    before = db.execute(
+        "SELECT id, timestamp, session_id, error_type, error_text "
+        "FROM error_records "
+        "WHERE timestamp >= ? AND timestamp < ? "
+        "ORDER BY timestamp ASC",
+        (pre_start, first_seen),
+    ).fetchall()
+    after = db.execute(
+        "SELECT id, timestamp, session_id, error_type, error_text "
+        "FROM error_records "
+        "WHERE timestamp >= ? AND timestamp <= ? "
+        "ORDER BY timestamp ASC",
+        (first_seen, post_end),
+    ).fetchall()
+
+    def _evenly(rows_in, n):
+        if not rows_in:
+            return []
+        if len(rows_in) <= n:
+            return [dict(zip(
+                ["id", "timestamp", "session_id", "error_type", "error_text"], r
+            )) for r in rows_in]
+        step = len(rows_in) // n
+        out = [rows_in[i * step] for i in range(n)]
+        return [dict(zip(
+            ["id", "timestamp", "session_id", "error_type", "error_text"], r
+        )) for r in out]
+
+    return {
+        "rule_id": rule_id,
+        "first_seen": first_seen,
+        "before": _evenly(before, n_samples),
+        "after": _evenly(after, n_samples),
+    }
+
+
 def get_velocity_trends(
     db: sqlite3.Connection,
     error_type: str | None = None,
