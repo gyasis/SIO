@@ -117,14 +117,29 @@ def _try_anthropic(prompt: str, system: str) -> str | None:
         import anthropic
 
         client = anthropic.Anthropic(api_key=api_key)
+        # NOTE 2026-05-18: raised from 300 → 1500 per token-length audit.
+        # A refined CLAUDE.md rule typically runs 150-400 tokens but can
+        # exceed 500 for multi-clause rules with examples. 300 was a
+        # silent-truncation risk — same bug class as amplify judge
+        # (commit 7f31ce3). Refiner output writes DIRECTLY to CLAUDE.md,
+        # so truncated rules ship to production. 1500 gives ample headroom.
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=300,
+            max_tokens=1500,
             system=system,
             messages=[{"role": "user", "content": prompt}],
         )
         return response.content[0].text
     except Exception as exc:
+        # XIII LOUD WARNING — refiner writes rules to CLAUDE.md. A silent
+        # failure here means the agent ships a generic/unrefined rule.
+        import sys as _sys
+        print(
+            f"  [REFINER_FALLBACK_ANTHROPIC] Refinement failed: "
+            f"{type(exc).__name__}: {exc} — falling through to next provider.",
+            file=_sys.stderr,
+            flush=True,
+        )
         logger.debug("Anthropic refinement failed: %s", exc)
         return None
 
@@ -139,9 +154,11 @@ def _try_openai(prompt: str, system: str) -> str | None:
         import openai
 
         client = openai.OpenAI(api_key=api_key)
+        # NOTE 2026-05-18: raised from 300 → 1500 per token-length audit.
+        # See Anthropic call above for full rationale. Same bug class.
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            max_tokens=300,
+            max_tokens=1500,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
@@ -149,6 +166,14 @@ def _try_openai(prompt: str, system: str) -> str | None:
         )
         return response.choices[0].message.content
     except Exception as exc:
+        # XIII LOUD WARNING — refiner writes rules to CLAUDE.md.
+        import sys as _sys
+        print(
+            f"  [REFINER_FALLBACK_OPENAI] Refinement failed: "
+            f"{type(exc).__name__}: {exc} — falling through to next provider.",
+            file=_sys.stderr,
+            flush=True,
+        )
         logger.debug("OpenAI refinement failed: %s", exc)
         return None
 
@@ -170,6 +195,14 @@ def _try_gemini(prompt: str, system: str) -> str | None:
         response = model.generate_content(prompt)
         return response.text
     except Exception as exc:
+        # XIII LOUD WARNING — refiner writes rules to CLAUDE.md.
+        import sys as _sys
+        print(
+            f"  [REFINER_FALLBACK_GEMINI] Refinement failed: "
+            f"{type(exc).__name__}: {exc} — generic rule will be used.",
+            file=_sys.stderr,
+            flush=True,
+        )
         logger.debug("Gemini refinement failed: %s", exc)
         return None
 
