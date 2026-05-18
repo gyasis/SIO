@@ -5326,6 +5326,76 @@ def optimize_ladder_cmd(
 
     ladder_state["status"] = "complete"
     ladder_state["completed_at"] = _now_iso()
+
+    # MIPRO-vs-GEPA cost-justified verdict (origin 2026-05-18 paired-debate).
+    # GEPA is ~30x the cost of MIPROv2 ($0.66 vs $0.02). If GEPA scores
+    # within `gepa_justified_delta` (default 0.03) of MIPROv2, ship MIPROv2
+    # instead. The verdict goes into state file so operator and downstream
+    # readers see the recommendation explicitly.
+    try:
+        _scores = {r["step"].split()[0]: r.get("score")
+                   for r in ladder_state["rungs"]
+                   if r.get("score") is not None}
+        _mipro = _scores.get("mipro")
+        _gepa = _scores.get("gepa")
+        _boot = _scores.get("bootstrap")
+        _delta_thr = 0.03  # >=3% means GEPA cost-justified
+        verdict = None
+        verdict_reason = None
+        if _mipro is not None and _gepa is not None:
+            if _gepa < 0.80 and _mipro < 0.79:
+                verdict = "both_fail"
+                verdict_reason = (
+                    f"Both optimizers under-perform their bars "
+                    f"(MIPRO={_mipro:.4f}<0.79, GEPA={_gepa:.4f}<0.80). "
+                    f"Fix the trainset (amplify quality), not the optimizer."
+                )
+            elif _gepa - _mipro >= _delta_thr:
+                verdict = "gepa_justified"
+                verdict_reason = (
+                    f"GEPA={_gepa:.4f} beats MIPRO={_mipro:.4f} by "
+                    f"{(_gepa - _mipro):.3f} ≥ {_delta_thr} threshold. "
+                    f"30x cost is earned — ship GEPA module."
+                )
+            else:
+                verdict = "mipro_wins_on_economics"
+                verdict_reason = (
+                    f"GEPA={_gepa:.4f} - MIPRO={_mipro:.4f} = "
+                    f"{(_gepa - _mipro):+.3f} < {_delta_thr} threshold. "
+                    f"GEPA does not earn its 30x cost — ship MIPROv2 "
+                    f"module instead."
+                )
+        elif _gepa is None and _mipro is not None:
+            verdict = "gepa_no_score"
+            verdict_reason = (
+                f"GEPA produced no score (likely aborted or stuck). "
+                f"Ship MIPROv2 module (score={_mipro:.4f})."
+            )
+        if _boot is not None and _mipro is not None and _mipro < _boot:
+            verdict = verdict or "mipro_dead_weight"
+            verdict_reason = (
+                (verdict_reason + " | " if verdict_reason else "")
+                + f"WARNING: MIPRO={_mipro:.4f} LOST to Bootstrap="
+                f"{_boot:.4f}. Amplification is net-negative for this "
+                f"trainset — investigate judge calibration / variant "
+                f"quality before next ladder."
+            )
+        if verdict:
+            ladder_state["ladder_verdict"] = verdict
+            ladder_state["ladder_verdict_reason"] = verdict_reason
+            import sys as _sys  # noqa: PLC0415
+            print(
+                f"\n[LADDER_VERDICT] {verdict.upper()}: {verdict_reason}",
+                file=_sys.stderr, flush=True,
+            )
+    except Exception as _exc:
+        # Verdict is observability only — never crash on it
+        import sys as _sys  # noqa: PLC0415
+        print(
+            f"[LADDER_VERDICT_FAIL] {type(_exc).__name__}: {_exc}",
+            file=_sys.stderr, flush=True,
+        )
+
     try:
         state_file.write_text(_json.dumps(ladder_state, indent=2))
     except Exception:
