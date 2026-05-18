@@ -5246,6 +5246,55 @@ def optimize_ladder_cmd(
         rung_state["exit_code"] = result.returncode
         rung_state["status"] = "ok" if result.returncode == 0 else "failed"
 
+        # Article XVII clause: outcomes must be surfaced. Pull the score
+        # from optimized_modules for THIS rung's optimizer + trainset and
+        # write it into the state file so cron / doctor / ladder-status
+        # readers see quality signal, not just cost. Looks up by:
+        # (module_type, optimizer_used, trainset_id) created after rung start.
+        # Best-effort — never crash on observability.
+        try:
+            import sqlite3 as _sql3  # noqa: PLC0415
+            _opt_name = "bootstrap" if "bootstrap" in step_name.lower() else (
+                "mipro" if "mipro" in step_name.lower() else (
+                    "gepa" if "gepa" in step_name.lower() else None
+                )
+            )
+            if _opt_name:
+                _db = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
+                with _sql3.connect(_db) as _conn:
+                    _conn.row_factory = _sql3.Row
+                    _row = _conn.execute(
+                        "SELECT id, score, metric_before, metric_after, "
+                        "trainset_size, task_lm, reflection_lm "
+                        "FROM optimized_modules "
+                        "WHERE module_type = ? AND optimizer_used = ? "
+                        "AND created_at >= ? "
+                        "ORDER BY id DESC LIMIT 1",
+                        (module, _opt_name, rung_state["started_at"]),
+                    ).fetchone()
+                    if _row is not None:
+                        rung_state["score"] = (
+                            round(_row["score"], 4) if _row["score"] is not None else None
+                        )
+                        rung_state["metric_after"] = (
+                            round(_row["metric_after"], 4)
+                            if _row["metric_after"] is not None else None
+                        )
+                        rung_state["trainset_rows"] = _row["trainset_size"]
+                        rung_state["optimized_module_id"] = _row["id"]
+                        rung_state["task_lm"] = _row["task_lm"]
+                        rung_state["reflection_lm"] = _row["reflection_lm"]
+        except Exception as _exc:
+            # XIII: loud but non-fatal — score lookup failure means the
+            # state file is degraded, not the run.
+            import sys as _sys
+            print(
+                f"  [LADDER_SCORE_LOOKUP_FAIL] rung={i} step={step_name}: "
+                f"{type(_exc).__name__}: {_exc}",
+                file=_sys.stderr,
+                flush=True,
+            )
+
         if result.returncode != 0:
             ladder_state["status"] = "failed"
             try:
