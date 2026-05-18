@@ -8188,5 +8188,94 @@ from sio.cli.reproduce import reproduce_cmd as _reproduce_cmd  # noqa: E402
 cli.add_command(_reproduce_cmd)
 
 
+@cli.command("gepa-status")
+@click.option("--watch", is_flag=True, default=False,
+              help="Re-print every 5s until process ends.")
+def gepa_status_cmd(watch):
+    """Show live GEPA progress for the most recent in-flight optimize run.
+
+    Reads the latest runlog JSON, surfaces:
+      - current iteration + best valset score
+      - per-iteration score history (last 10)
+      - iter idle time, parse_err / truncation counters
+      - critical-tier warnings already fired
+
+    Origin: 2026-05-18 paired-debate. Lets the agent answer "where are
+    we?" mid-run without grepping stderr or guessing.
+    """
+    import glob as _glob  # noqa: PLC0415
+    import json as _json  # noqa: PLC0415
+    import os as _os  # noqa: PLC0415
+    import time as _time  # noqa: PLC0415
+
+    def _render_once():
+        runs_dir = _os.path.expanduser("~/.sio/runs")
+        candidates = sorted(_glob.glob(f"{runs_dir}/*_optimize_*.json"),
+                            key=_os.path.getmtime, reverse=True)
+        if not candidates:
+            click.echo("No optimize runs found.")
+            return False
+        latest = candidates[0]
+        try:
+            d = _json.load(open(latest))
+        except Exception as exc:
+            click.echo(f"Failed to read {latest}: {exc}")
+            return False
+        click.echo(f"\n=== {_os.path.basename(latest)} ===")
+        click.echo(f"  cmd: {d.get('cmd')} argv: {d.get('argv',[])[:3]}...")
+        click.echo(f"  pid: {d.get('pid')}  start: {d.get('start_ts')}")
+        click.echo(f"  elapsed: {d.get('elapsed_sec', 0)/60:.1f} min")
+        click.echo(f"  exit_code: {d.get('exit_code', 'running')}")
+        # Pull the optimize stage's gepa_snapshot
+        snap = None
+        for s in d.get("stages", []):
+            if s.get("gepa_snapshot"):
+                snap = s["gepa_snapshot"]
+                break
+        if not snap:
+            click.echo("  [no GEPA snapshot yet — either not a GEPA run or "
+                       "first heartbeat hasn't fired]")
+        else:
+            click.echo(f"\n  GEPA iter: {snap['iter']}")
+            if snap.get('iter_score') is not None:
+                click.echo(f"  GEPA iter_score (this iter): {snap['iter_score']:.4f}")
+            if snap.get('best') is not None:
+                click.echo(f"  GEPA best_valset_so_far: {snap['best']:.4f}")
+            if snap.get('trend'):
+                arrow = {"up": "↑", "down": "↓", "flat": "→"}[snap['trend']]
+                click.echo(f"  Trend (last 3 iters): {arrow} ({snap['trend']})")
+            click.echo(f"  iter_idle: {snap.get('iter_idle_sec',0)}s")
+            click.echo(f"  parse_err (5min): {snap.get('parse_errors_5min',0)}")
+            click.echo(f"  truncations (5min): {snap.get('truncations_5min',0)}")
+            hist = snap.get('history', [])
+            if hist:
+                click.echo("\n  Score history (iter, score):")
+                for it, sc in hist[-10:]:
+                    click.echo(f"    iter={it:>3}  score={sc:.4f}")
+        # Show warnings emitted by abort tiers
+        warns = d.get("warns", []) if isinstance(d.get("warns"), list) else []
+        gepa_warns = [w for w in warns if isinstance(w, dict)
+                      and any(k in (w.get('code') or '') for k in
+                              ['GEPA_', 'REFLECTION_'])]
+        if gepa_warns:
+            click.echo("\n  ⚠ GEPA warnings emitted:")
+            for w in gepa_warns:
+                click.echo(f"    [{w.get('code')}] {w.get('msg','')[:200]}")
+        return d.get("exit_code") is None  # True if still running
+
+    if not watch:
+        _render_once()
+        return
+    try:
+        while True:
+            still_running = _render_once()
+            if not still_running:
+                click.echo("\nRun finished or no in-flight optimize.")
+                break
+            _time.sleep(5)
+    except KeyboardInterrupt:
+        pass
+
+
 if __name__ == "__main__":
     cli()

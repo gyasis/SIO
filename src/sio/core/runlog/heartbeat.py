@@ -70,7 +70,14 @@ class _GepaProgressWatcher(logging.Handler):
         self._lock = threading.Lock()
         self.current_iter: int = 0
         self.last_iter_advance_at: float = time.time()
+        # Per-iteration score (from "Selected program N score" line). This is
+        # the score of the program GEPA picked for THIS iteration — useful
+        # for trend visibility (is GEPA exploring up, down, sideways?).
+        self.last_iter_score: Optional[float] = None
+        # Best valset score seen so far (across all iterations).
         self.best_valset_score: Optional[float] = None
+        # Score history: last 10 (iter_idx, score) tuples for trend reporting
+        self.score_history: deque = deque(maxlen=10)
         # Rolling 5-min windows; oldest entries evicted in property accessors
         self.parse_errors: deque = deque()
         self.truncations: deque = deque()
@@ -85,9 +92,22 @@ class _GepaProgressWatcher(logging.Handler):
             m = _GEPA_ITER_RE.search(msg)
             if m:
                 idx = int(m.group(1))
-                if idx > self.current_iter:
-                    self.current_iter = idx
-                    self.last_iter_advance_at = now
+                try:
+                    iter_score = float(m.group(2))
+                except Exception:
+                    iter_score = None
+                # ALWAYS capture iter_score even if iter index hasn't advanced —
+                # GEPA can emit multiple "Selected program" lines per iter as it
+                # explores alternatives. The latest score is what's current.
+                if iter_score is not None:
+                    self.last_iter_score = iter_score
+                if idx >= self.current_iter:
+                    if idx > self.current_iter:
+                        self.current_iter = idx
+                        self.last_iter_advance_at = now
+                    if iter_score is not None:
+                        # Append to history; deque(maxlen=10) drops oldest
+                        self.score_history.append((idx, iter_score))
             m2 = _GEPA_VALSET_RE.search(msg)
             if m2:
                 try:
@@ -111,9 +131,24 @@ class _GepaProgressWatcher(logging.Handler):
         with self._lock:
             self._evict_old(self.parse_errors)
             self._evict_old(self.truncations)
+            # Trend: compare latest score to score 3 iters back
+            trend = None
+            if len(self.score_history) >= 3:
+                recent = self.score_history[-1][1]
+                older = self.score_history[-3][1]
+                diff = recent - older
+                if diff > 0.005:
+                    trend = "up"
+                elif diff < -0.005:
+                    trend = "down"
+                else:
+                    trend = "flat"
             return {
                 "iter": self.current_iter,
+                "iter_score": self.last_iter_score,
                 "best": self.best_valset_score,
+                "trend": trend,
+                "history": list(self.score_history),
                 "iter_idle_sec": int(time.time() - self.last_iter_advance_at),
                 "parse_errors_5min": len(self.parse_errors),
                 "truncations_5min": len(self.truncations),
@@ -221,10 +256,25 @@ class Heartbeat:
             gepa_extra = ""
             if self._gepa_attached:
                 snap = self._gepa.snapshot()
+                # Stash on stage so external readers (sio gepa-status, agent
+                # in conversation) see the same data as stderr. Updated each
+                # heartbeat tick (~30s) — fresh enough for human eyeballing.
+                self.stage.gepa_snapshot = snap
                 if snap["iter"] > 0 or snap["best"] is not None:
                     gepa_extra = f" gepa_iter={snap['iter']}"
+                    # Per-iteration current score (the score of THIS iter's
+                    # selected program). Distinct from best_valset which is
+                    # the all-time max. Surfacing both shows iter-by-iter
+                    # exploration AND best-found progress.
+                    if snap["iter_score"] is not None:
+                        gepa_extra += f" iter_score={snap['iter_score']:.4f}"
                     if snap["best"] is not None:
                         gepa_extra += f" best_valset={snap['best']:.4f}"
+                    if snap["trend"]:
+                        # ↑/↓/→ arrows (ascii safe equivalents in case of
+                        # log forwarders that mangle utf-8)
+                        arrow = {"up": "↑", "down": "↓", "flat": "→"}[snap["trend"]]
+                        gepa_extra += f" trend={arrow}"
                     if snap["iter_idle_sec"] > 60:
                         gepa_extra += f" iter_idle={snap['iter_idle_sec']}s"
                     if snap["parse_errors_5min"]:

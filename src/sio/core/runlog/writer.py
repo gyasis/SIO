@@ -61,6 +61,11 @@ class Stage:
         # P2 fix 2026-05-16: progress + ETA for long optimizer runs
         self.progress_current: Optional[int] = None  # e.g. 212
         self.progress_total: Optional[int] = None    # e.g. 250
+        # GEPA live snapshot (origin 2026-05-18 paired-debate). Updated by
+        # the heartbeat thread each tick so external readers (sio gepa-status,
+        # the agent in conversation) can answer "where are we right now?"
+        # without grepping stderr logs.
+        self.gepa_snapshot: Optional[dict] = None
 
     def set_rows(self, rows_in: int, rows_out: int) -> None:
         self.rows_in = rows_in
@@ -109,6 +114,7 @@ class Stage:
                 "fraction": round(progress_frac, 4) if progress_frac is not None else None,
                 "eta_sec": eta_s,
             } if self.progress_current is not None else None,
+            "gepa_snapshot": self.gepa_snapshot,
         }
 
 
