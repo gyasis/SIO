@@ -3807,6 +3807,8 @@ def differential_flows_cmd(min_success, min_failure, per_cohort, max_hashes,
         click.echo(f"Twins:          {result['twins']}")
         click.echo(f"Positive rows:  {result['positive_rows_written']}")
         click.echo(f"Output:         {result['path']}")
+        _rows_written = result.get("positive_rows_written", 0)
+        _source = "differential-flows-positives"
     else:
         result = export_pairs(
             db_path, out_path,
@@ -3816,6 +3818,37 @@ def differential_flows_cmd(min_success, min_failure, per_cohort, max_hashes,
         click.echo(f"Twin hashes:   {result['twin_hashes']}")
         click.echo(f"Rows written:  {result['rows_written']}")
         click.echo(f"Output:        {result['path']}")
+        _rows_written = result.get("rows_written", 0)
+        _source = "differential-flows-pairs"
+
+    # Principle XIII (observability) + XV-proposed (reproducibility): same
+    # auto-register pattern as curate/amplify/promote-positives. Differential
+    # flow outputs are training-grade artifacts (consumed by sio optimize
+    # --trainset-file or by dataset_builder). Without content-hashing, an
+    # optimize run that USED a specific differential JSONL has no DB lineage
+    # back to the flow_events corpus that produced it. Closes Agent D top-3
+    # gap #3 (2026-05-18 CLI audit). Failure isolated — does NOT delete the
+    # JSONL the user already has on disk.
+    if _rows_written > 0 and Path(result["path"]).exists():
+        try:
+            from sio.core.datasets import register_dataset  # noqa: PLC0415
+            slug = Path(result["path"]).stem
+            ds_id = register_dataset(
+                source_path=Path(result["path"]),
+                slug=slug,
+                description=(
+                    f"Differential flows ({_source}): "
+                    f"min_success={min_success} min_failure={min_failure} "
+                    f"per_cohort={per_cohort} rows={_rows_written}"
+                ),
+                source=_source,
+            )
+            click.echo(f"Dataset:       registered as trainset id={ds_id} (slug={slug})")
+        except Exception as exc:  # noqa: BLE001
+            click.echo(
+                f"\nWARNING: differential-flows JSONL saved but trainset "
+                f"registration failed: {exc}. Run 'sio reproduce <id>' to verify."
+            )
 
 
 @cli.group("analyze")
