@@ -57,6 +57,7 @@ def run_doctor() -> DoctorReport:
     report.checks.append(_check_reproducibility_gaps())
     report.checks.append(_check_budget_state())
     report.checks.append(_check_stuck_reflection_runs())
+    report.checks.append(_check_ladder_state())
     return report
 
 
@@ -748,4 +749,131 @@ def _check_stuck_reflection_runs() -> CheckResult:
             "sio optimize-ladder --trainset-file <X> "
             "# auto-amplifies to 300+ rows before GEPA"
         ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Ladder state-file health check (PRD background-persistence Tier 2)
+# ---------------------------------------------------------------------------
+
+
+def _check_ladder_state() -> CheckResult:
+    """Read ~/.sio/state/ladder_status.json and report status.
+
+    Flags:
+      - status='in_flight' but started_at > 6h ago → likely crashed mid-run
+      - status='failed' → most recent ladder errored
+      - status='complete' → green
+      - file missing → no recent compound run, ok
+
+    Cron observability: this is the file a monitoring script should poll
+    to know "is a ladder run alive, done, or stuck?" without needing
+    to crawl the DB.
+    """
+    import json as _json
+    from datetime import datetime, timedelta, timezone
+    from pathlib import Path as _P
+
+    state_file = _P.home() / ".sio" / "state" / "ladder_status.json"
+    if not state_file.exists():
+        return CheckResult(
+            name="Ladder state (background-persistence Tier 2)",
+            status="ok",
+            detail="No active ladder run state file — clean idle state",
+        )
+
+    try:
+        st = _json.loads(state_file.read_text())
+    except Exception as e:
+        return CheckResult(
+            name="Ladder state (background-persistence Tier 2)",
+            status="warn",
+            detail=f"State file unreadable: {e}",
+        )
+
+    status = st.get("status", "?")
+    started = st.get("started_at", "?")
+    plan = st.get("plan", [])
+    rungs = st.get("rungs", [])
+    current = st.get("current_rung")
+    module = st.get("module", "?")
+
+    if status == "complete":
+        completed_at = st.get("completed_at", "?")
+        return CheckResult(
+            name="Ladder state (background-persistence Tier 2)",
+            status="ok",
+            detail=(
+                f"Most recent ladder: module={module}, {len(rungs)} rungs, "
+                f"completed_at={completed_at}, "
+                f"total_est_usd=${st.get('total_estimated_usd', 0):.2f}"
+            ),
+        )
+
+    if status == "failed":
+        last_rung = rungs[-1] if rungs else {}
+        return CheckResult(
+            name="Ladder state (background-persistence Tier 2)",
+            status="warn",
+            detail=(
+                f"Most recent ladder FAILED at rung {current}/{len(plan)}: "
+                f"{last_rung.get('step', '?')} (exit={last_rung.get('exit_code')})"
+                f". Re-run `sio optimize-ladder` with same args to resume."
+            ),
+        )
+
+    if status == "in_flight":
+        try:
+            started_dt = datetime.fromisoformat(started.replace("Z", "+00:00"))
+            elapsed = datetime.now(timezone.utc) - started_dt
+            age_h = elapsed.total_seconds() / 3600
+        except (ValueError, TypeError):
+            age_h = 0.0
+
+        # Probe the PID to see if the process is still alive
+        pid = st.get("process_id")
+        alive = False
+        if pid:
+            try:
+                os.kill(pid, 0)  # signal 0 = check existence, doesn't kill
+                alive = True
+            except (OSError, ProcessLookupError):
+                alive = False
+
+        if age_h > 6 and not alive:
+            return CheckResult(
+                name="Ladder state (background-persistence Tier 2)",
+                status="warn",
+                detail=(
+                    f"Stale in_flight ladder (started {age_h:.1f}h ago, "
+                    f"PID {pid} not running). Most likely a crash. "
+                    f"Re-run `sio optimize-ladder` to resume from the last "
+                    f"completed rung."
+                ),
+                fix_hint=f"sio optimize-ladder --trainset-file {st.get('trainset_file', '<X>')} --yes",
+            )
+        if age_h > 2 and not alive:
+            return CheckResult(
+                name="Ladder state (background-persistence Tier 2)",
+                status="warn",
+                detail=(
+                    f"in_flight ladder appears idle "
+                    f"(started {age_h:.1f}h ago, PID {pid} not alive). "
+                    f"Investigate then resume."
+                ),
+            )
+        return CheckResult(
+            name="Ladder state (background-persistence Tier 2)",
+            status="ok",
+            detail=(
+                f"Ladder in flight: rung {current}/{len(plan)} "
+                f"({rungs[-1].get('step', '?') if rungs else '?'}), "
+                f"running {age_h:.2f}h, PID {pid} {'alive' if alive else 'NOT RUNNING'}"
+            ),
+        )
+
+    return CheckResult(
+        name="Ladder state (background-persistence Tier 2)",
+        status="warn",
+        detail=f"Unknown status='{status}' in state file",
     )

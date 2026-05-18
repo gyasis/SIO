@@ -5175,24 +5175,95 @@ def optimize_ladder_cmd(
             console.print("[yellow]Aborted.[/yellow]")
             raise SystemExit(0)
 
+    # ---- Step 2.5: write ladder state file (PRD Tier 2 — cron observability)
+    # ~/.sio/state/ladder_status.json holds the in-flight + done state so
+    # `sio doctor --ladder` (or any external monitor) can answer "is this
+    # ladder making progress?" without needing to crawl the DB. Updated
+    # after every rung. Self-cleaning on success at the end.
+    import json as _json  # noqa: PLC0415
+    import datetime as _dt2  # noqa: PLC0415
+    state_dir = _P.home() / ".sio" / "state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    state_file = state_dir / "ladder_status.json"
+
+    def _now_iso() -> str:
+        return _dt2.datetime.now(_dt2.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+    ladder_state = {
+        "started_at": _now_iso(),
+        "trainset_file": str(tf),
+        "trainset_sha": sha,
+        "trainset_id": ds_row["id"] if ds_row else None,
+        "module": module,
+        "plan": [s for s, _c, _co in plan],
+        "rungs": [],  # appended after each step
+        "total_estimated_usd": round(total_cost, 4),
+        "status": "in_flight",
+        "process_id": os.getpid(),
+    }
+    try:
+        state_file.write_text(_json.dumps(ladder_state, indent=2))
+    except Exception:
+        pass  # state file is observability — never crash on it
+
     # ---- Step 3: execute each rung ------------------------------------------
     for i, (step_name, cmd, cost) in enumerate(plan, 1):
         console.print(f"\n[bold cyan]═══ Rung {i}/{len(plan)}: {step_name} "
                       f"(est ${cost:.2f}) ═══[/bold cyan]")
+        # Mark this rung as in-flight in state file
+        rung_state = {
+            "rung": i,
+            "step": step_name,
+            "status": "running",
+            "started_at": _now_iso(),
+            "finished_at": None,
+            "exit_code": None,
+            "est_cost_usd": round(cost, 4),
+        }
+        ladder_state["rungs"].append(rung_state)
+        ladder_state["current_rung"] = i
+        try:
+            state_file.write_text(_json.dumps(ladder_state, indent=2))
+        except Exception:
+            pass
+
         # Pass budget_override through to each rung if set
         if budget_override is not None and "optimize" in cmd[1]:
             cmd = cmd + ["--budget-override", str(budget_override)]
         result = _sp.run(cmd, capture_output=False)
+        rung_state["finished_at"] = _now_iso()
+        rung_state["exit_code"] = result.returncode
+        rung_state["status"] = "ok" if result.returncode == 0 else "failed"
+
         if result.returncode != 0:
+            ladder_state["status"] = "failed"
+            try:
+                state_file.write_text(_json.dumps(ladder_state, indent=2))
+            except Exception:
+                pass
             console.print(
                 f"[red]Rung {i} ({step_name}) failed with exit "
                 f"{result.returncode}.[/red] Subsequent rungs not attempted. "
                 f"Re-run the same `sio optimize-ladder` command to resume — "
-                f"completed rungs will be detected and skipped."
+                f"completed rungs will be detected and skipped. "
+                f"State at: {state_file}"
             )
             raise SystemExit(result.returncode)
 
+        # Save state after successful rung — crash recovery anchor
+        try:
+            state_file.write_text(_json.dumps(ladder_state, indent=2))
+        except Exception:
+            pass
+
+    ladder_state["status"] = "complete"
+    ladder_state["completed_at"] = _now_iso()
+    try:
+        state_file.write_text(_json.dumps(ladder_state, indent=2))
+    except Exception:
+        pass
     console.print(f"\n[bold green]Ladder complete ({len(plan)} rungs).[/bold green]")
+    console.print(f"[dim]State recorded at {state_file}[/dim]")
 
 
 # ---------------------------------------------------------------------------
@@ -5565,9 +5636,11 @@ def velocity(error_type, window, fmt, skills, by_rule, min_records):
         sio velocity --by-rule                # per-rule attribution
         sio velocity --by-rule --format json  # machine-readable
     """
-    # --by-rule mode takes the per-rule attribution path
+    # --by-rule mode takes the per-rule attribution path (PRD Tier 1)
     if by_rule:
-        from sio.core.metrics.velocity import compute_per_rule_velocity  # noqa: PLC0415
+        from sio.core.metrics.velocity import (  # noqa: PLC0415
+            compute_rule_outcomes,
+        )
 
         db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
         if not os.path.exists(db_path):
@@ -5575,15 +5648,35 @@ def velocity(error_type, window, fmt, skills, by_rule, min_records):
             return
 
         with _db_conn(db_path) as conn:
-            results = compute_per_rule_velocity(
-                conn, window_days=window, min_after=min_records
-            )
+            try:
+                outcomes = compute_rule_outcomes(conn, window_days=window)
+            except Exception as e:  # noqa: BLE001
+                click.echo(f"Error computing rule outcomes: {e}")
+                return
+
+        # Build flat per-(rule, error_type, surface) result list for output.
+        results: list[dict] = []
+        for o in outcomes:
+            if o["n_after_total"] < min_records:
+                continue
+            for bd in o["by_type"]:
+                results.append({
+                    "rule_id": bd["rule_id"],
+                    "error_type": bd["error_type"],
+                    "target_surface": bd["target_surface"],
+                    "first_seen": o["first_seen"],
+                    "n_before": bd["n_before"],
+                    "n_after": bd["n_after"],
+                    "delta_pct": bd["delta_pct"],
+                    "confidence": bd["confidence"],
+                    "recommend": bd["recommend"],
+                })
 
         if not results:
             click.echo(
-                "No rules with >= {} active_rules-stamped records yet. "
-                "Run `sio mine` so future records get stamped."
-                .format(min_records)
+                "No rules with >= {} active_rules-stamped post-window records "
+                "yet. Run `sio mine` so future records get stamped, then wait "
+                "for organic rule churn.".format(min_records)
             )
             return
 
@@ -5591,67 +5684,57 @@ def velocity(error_type, window, fmt, skills, by_rule, min_records):
             click.echo(_json.dumps(results, indent=2, default=str))
             return
 
-        # Table output
+        # Table output (Rich)
         try:
-            from rich.console import Console
-            from rich.table import Table
+            from rich.console import Console  # noqa: PLC0415
+            from rich.table import Table  # noqa: PLC0415
 
             console = Console()
             t = Table(
-                title=f"Per-rule velocity ({len(results)} rules, "
-                      f"min {min_records} active records)",
+                title=f"Per-rule outcomes ({len(results)} rows, "
+                      f"window={window}d, min n_after={min_records})",
                 title_style="bold cyan",
             )
             t.add_column("Rule", style="cyan", overflow="fold")
-            t.add_column("With", justify="right")
-            t.add_column("Without", justify="right")
-            t.add_column("Best Δ (type)", justify="right")
-            t.add_column("Worst Δ (type)", justify="right")
-            for r in results[:30]:  # cap at 30
-                best = r["best_delta"]
-                worst = r["worst_delta"]
-                best_str = (
-                    f"[green]{best['delta_pct']:+.0f}%[/green] "
-                    f"({best['error_type']})"
-                    if best and best["delta_pct"] is not None and best["delta_pct"] < 0
-                    else (
-                        f"{best['delta_pct']:+.0f}% ({best['error_type']})"
-                        if best and best["delta_pct"] is not None
-                        else "-"
-                    )
-                )
-                worst_str = (
-                    f"[red]{worst['delta_pct']:+.0f}%[/red] "
-                    f"({worst['error_type']})"
-                    if worst and worst["delta_pct"] is not None and worst["delta_pct"] > 0
-                    else (
-                        f"{worst['delta_pct']:+.0f}% ({worst['error_type']})"
-                        if worst and worst["delta_pct"] is not None
-                        else "-"
-                    )
-                )
-                # Truncate rule_id for display
+            t.add_column("Error type", style="magenta")
+            t.add_column("Surface", style="dim")
+            t.add_column("n_before", justify="right")
+            t.add_column("n_after", justify="right")
+            t.add_column("Δ %", justify="right")
+            t.add_column("Conf", justify="center")
+            t.add_column("Recommend")
+            for r in results[:50]:
                 rid = r["rule_id"]
-                if len(rid) > 60:
-                    rid = rid[:57] + "..."
+                if len(rid) > 50:
+                    rid = rid[:47] + "..."
+                dpct = r["delta_pct"]
+                if dpct is None:
+                    delta_str = "-"
+                elif dpct < 0:
+                    delta_str = f"[green]{dpct:+.0f}%[/green]"
+                elif dpct > 0:
+                    delta_str = f"[red]{dpct:+.0f}%[/red]"
+                else:
+                    delta_str = "0%"
                 t.add_row(
-                    rid, str(r["with_count"]), str(r["without_count"]),
-                    best_str, worst_str,
+                    rid, r["error_type"] or "-", r["target_surface"],
+                    str(r["n_before"]), str(r["n_after"]),
+                    delta_str, r["confidence"], r["recommend"],
                 )
             console.print(t)
             console.print(
-                f"\n[dim]Δ < 0 = errors decreased when rule is active. "
-                f"Δ > 0 = errors INCREASED (rule may be ineffective or causing harm).[/dim]"
+                "\n[dim]Δ < 0 = errors decreased after rule first appeared. "
+                "Recommendations are hints — you decide.[/dim]"
             )
         except ImportError:
-            for r in results[:30]:
-                best = r["best_delta"]
-                worst = r["worst_delta"]
+            for r in results[:50]:
+                dpct = r["delta_pct"]
+                dstr = f"{dpct:+.0f}%" if dpct is not None else "-"
                 click.echo(
-                    f"{r['rule_id']:<60s} with={r['with_count']:5d} "
-                    f"without={r['without_count']:5d} "
-                    f"best={best['delta_pct']:+.0f}% worst={worst['delta_pct']:+.0f}%"
-                    if best and worst else f"{r['rule_id']}"
+                    f"{r['rule_id']:<50s} {r['error_type']:<20s} "
+                    f"n_before={r['n_before']:4d} n_after={r['n_after']:4d} "
+                    f"Δ={dstr:>6s} conf={r['confidence']:<6s} "
+                    f"{r['recommend']}"
                 )
         return
 
