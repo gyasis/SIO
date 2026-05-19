@@ -13,6 +13,24 @@ GitHub release pages (with full asset downloads) live at
 optimizer-progress emitter, JudgeVariants Tier 2 meta-optimization if
 needed, and the distilabel attic move.)
 
+## [0.3.1] — 2026-05-19
+
+Documentation-only patch. Adds eight scenario-driven use-case walkthroughs
+under `docs/use-cases/`, each generic and sanitized, showing how to wire
+SIO's CLI surfaces into common day-to-day work. Index at
+`docs/use-cases/README.md` sorts them by trigger and suggests reading order.
+
+### Added
+- `docs/use-cases/README.md` — index + reading order + common operational pattern
+- `docs/use-cases/validating-a-config-change.md` — 3-phase before/after/steady-state loop
+- `docs/use-cases/debugging-flaky-tool.md` — circuit-breaker recovery → recall → codify
+- `docs/use-cases/pre-merge-pr-safety.md` — SIO as prior-art layer alongside `/adversarial-audit`
+- `docs/use-cases/onboarding-to-codebase.md` — return-to-project / fresh-agent territory mapping
+- `docs/use-cases/cost-performance-regression-hunt.md` — `sio trend` + behavior_invocations.db forensics
+- `docs/use-cases/rule-lifecycle.md` — PROPOSED → ACTIVE → DECLINING → RETIRED lifecycle
+- `docs/use-cases/cross-session-continuity.md` — `/compact` and `/clear` recovery loop
+- `docs/use-cases/workflow-discovery-and-promotion.md` — positive-signal use case (`/sio-flows` → skill)
+
 ## [0.3.0] — 2026-05-18
 
 Largest release since 0.1.0 — three Constitution articles supported in
