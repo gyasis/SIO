@@ -37,6 +37,7 @@ tool" — flow mining is the efficiency-uplift signal, not the bugfix signal.
 | `/sio-review` | Interactively review pending suggestions |
 | `/sio-apply` | Apply an approved suggestion |
 | `/sio-violations` | Detect existing CLAUDE.md rules being ignored by the agent |
+| `/sio-promote-rule` | Promote a violated rule into a runtime PreToolUse hook (warn → block) |
 | `/sio-velocity` | Per-rule effectiveness — are applied rules actually shrinking errors? |
 | `/sio-budget` | Per-instruction-file size report (lines / cap / status) |
 | `/sio-feedback` | Mark the last AI action ++ / -- (feeds DSPy ground-truth corpus) |
@@ -130,6 +131,7 @@ questions far better than `sio suggest --grep` ever can.
 **Review + apply**
 - "Review my suggestions" → `/sio-review`
 - "Apply suggestion N" → `/sio-apply`
+- "Promote rule N to a runtime hook" → `/sio-promote-rule`  *(when text rules are being ignored at scale; default warn, flip to block after soak)*
 
 **Positive signal (what works)**
 - "What workflows actually work for me?" → `/sio-flows`
