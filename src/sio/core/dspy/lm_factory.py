@@ -61,31 +61,31 @@ litellm.drop_params = True
 # with a `__getstate__` for repr-safe dumping. Opt-out via SIO_NO_JSON_SHIM=1.
 
 def _install_json_shim() -> None:
-    """Narrowly fix DSPy serialization without changing stdlib json globally."""
+    """Narrowly fix DSPy serialization without changing stdlib json globally.
+
+    Placeholder — the json.dumps fallback is currently installed lazily by
+    ``install_json_shim()`` / ``uninstall_json_shim()`` below, gated on the
+    SIO_NO_JSON_SHIM env opt-out. This function reserves the namespace for
+    a more permanent fix (e.g. patching DSPy's ``serialize_for_json`` helper
+    directly so json.dumps stays untouched globally). See the audit finding
+    2026-05-16 in the module docstring.
+
+    Strategy notes (not yet implemented):
+      * DSPy's ``serialize_for_json()`` wraps Pydantic dump with try/except
+        falling back to ``str(value)``. The bug is that downstream callers
+        don't always go through that helper — some hit ``json.dumps``
+        directly. The right fix is to patch DSPy's helper to register the
+        offending litellm classes (``CompletionTokensDetailsWrapper``,
+        ``PromptTokensDetailsWrapper``) as dict-like, OR add a per-class
+        ``__json__`` hook via subclass injection. Both leave stdlib
+        ``json.dumps`` untouched.
+      * Until then, callers use ``install_json_shim()`` /
+        ``uninstall_json_shim()`` around the optimization run.
+    """
     if os.environ.get("SIO_NO_JSON_SHIM") == "1":
         return
-    # Strategy: DSPy's serialize_for_json() wraps Pydantic dump with try/except
-    # falling back to str(value). The bug is that downstream calls don't go
-    # through serialize_for_json — they call json.dumps directly. Fix by
-    # monkey-patching the offending litellm class's __json__-style hook so
-    # standard json.dumps's default-less path treats it as serializable via
-    # __reduce__/__getstate__. Concretely: add a `to_json` method dict route.
-    try:
-        from litellm.types.utils import (
-            CompletionTokensDetailsWrapper,
-            PromptTokensDetailsWrapper,
-        )
-        # json.dumps doesn't honor __json__ but DOES dive into objects via
-        # JSONEncoder. We can't make Pydantic classes JSON-native without
-        # subclassing. The least-bad scoped move: register them as dict-like
-        # by setting `__iter__` + `__getitem__`. But that breaks pydantic.
-        #
-        # Practical compromise: install the json.dumps shim ONLY when we
-        # detect we're inside a DSPy/MIPRO/GEPA optimization run (env-flag set
-        # by run_optimize), and ALWAYS restore via atexit. Outside optimize,
-        # the global shim is off — no surprise behavior for the rest of SIO.
-    except ImportError:
-        return
+    # No-op for now — see strategy notes above.
+    return
 
 
 _orig_json_dumps = _json.dumps
@@ -370,6 +370,56 @@ def get_reflection_lm() -> dspy.LM:
         default_model="gemini/gemini-pro-latest",
         default_temperature=1.0, default_max_tokens=32000, default_cache=False,
     )
+
+
+def make_lm(
+    model: str,
+    *,
+    temperature: float,
+    max_tokens: int,
+    cache: bool = False,
+    api_key: str | None = None,
+    role: str = "task",
+) -> dspy.LM:
+    """Construct a ``dspy.LM`` with caller-supplied knobs (FR-041 escape hatch).
+
+    The approved single-source way to build a ``dspy.LM`` outside the
+    ``get_task_lm`` / ``get_reflection_lm`` role contracts. Use this when a
+    caller needs ``temperature`` / ``max_tokens`` settings that don't match
+    either role default (e.g. amplify generator at temp=0.8/max=6000,
+    classifier at temp=0.0/max=1000).
+
+    Goes through ``_apply_ollama_heartbeat_fallback`` and ``_check_banned``
+    just like the role-based getters, so callers inherit the same safety
+    plumbing (ollama swap-on-dead, banned-model refusal) for free.
+
+    Args:
+        model: dspy/litellm model id (e.g. "gemini/gemini-flash-latest",
+            "openai/gpt-4o-mini", "ollama/qwen3-coder:30b").
+        temperature: sampling temperature for this LM.
+        max_tokens: hard cap on response tokens.
+        cache: whether the LM cache should hit; default False because
+            custom-knob callers are usually one-offs, not module forwards.
+        api_key: explicit API key. If None, ``dspy.LM`` falls back to the
+            provider's standard env var (``OPENAI_API_KEY``, etc.).
+        role: ``"task"`` or ``"reflection"`` — only affects which
+            ``SIO_OLLAMA_FALLBACK_*_LM`` env var is consulted when the
+            model is ``ollama/*`` and the heartbeat fails. Defaults to
+            ``"task"`` since custom-knob callers are typically task-side.
+    """
+    resolved_model = _apply_ollama_heartbeat_fallback(model, role=role)
+    kwargs: dict = {
+        "model": resolved_model,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "cache": cache,
+    }
+    # If ollama→fallback swap happened, the caller's api_key was for the
+    # original provider; drop it so dspy.LM resolves the new provider's
+    # standard env var.
+    if api_key and resolved_model == model:
+        kwargs["api_key"] = api_key
+    return _check_banned(dspy.LM(**kwargs))
 
 
 def get_adapter(lm: dspy.LM) -> dspy.Adapter:
