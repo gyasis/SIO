@@ -20,6 +20,7 @@ SIO mines your Claude Code session history to find errors, discover workflows, d
 | Review pending suggestions | `/sio-review` | `sio suggest-review` | Free |
 | Apply a suggestion | `/sio-apply` | `sio apply` | Free |
 | Check rules being violated | `/sio-violations` | `sio violations` | Free |
+| Promote a violated rule into a runtime hook | `/sio-promote-rule` | `sio promote-rule N --write` | ~$0.01 (LLM) |
 | Check if rules are reducing errors | `/sio-velocity` | `sio velocity` | Free |
 | Check instruction-file budget | `/sio-budget` | `sio budget` | Free |
 | Label last AI action (++ / --) | `/sio-feedback` | `sio feedback` | Free |
@@ -78,6 +79,15 @@ Applies an approved suggestion to CLAUDE.md or config files.
 Detects when rules already in CLAUDE.md are being violated by the agent.
 Different from errors: violations mean the rule exists but isn't being
 followed; errors mean no rule exists yet.
+
+### "Promote rule N to a hook" / "make that violated rule actually block" / "hook-ify rule N"
+→ `/sio-promote-rule`
+Takes a violated rule (by index from `/sio-violations`), extracts a
+runtime detection pattern via DSPy, generates a PreToolUse hook
+script, and registers it in `~/.claude/settings.json`. Default mode
+is `warn` (logs but allows); flip to `block` after confirming the
+detection isn't over-firing. Preview-by-default — pass `--write`
+to install.
 
 ### "Are my rules working?" / "check rule effectiveness"
 → `/sio-velocity`
