@@ -8,6 +8,14 @@ Environment overrides:
   SIO_REFLECTION_LM — model string for get_reflection_lm() (default: openai/gpt-5)
   SIO_FORCE_ADAPTER — "json" | "chat"  (override provider detection)
   SIO_FORCE_NATIVE_FC — "0" | "1"     (override native function-calling flag)
+
+Ollama heartbeat fallback (2026-05-21):
+  SIO_OLLAMA_FALLBACK_TASK_LM        — used when a resolved ``ollama/*`` task
+                                       model can't be reached (e.g. ``openai/gpt-4o-mini``)
+  SIO_OLLAMA_FALLBACK_REFLECTION_LM  — same, for reflection role
+  SIO_NO_OLLAMA_FALLBACK=1           — opt out of the heartbeat probe entirely
+  SIO_OLLAMA_HEARTBEAT_TIMEOUT       — probe timeout seconds (default: 2.0)
+  OLLAMA_HOST                        — host to probe (default: http://localhost:11434)
 """
 
 from __future__ import annotations
@@ -16,6 +24,9 @@ import functools as _functools
 import json as _json
 import logging
 import os
+import time
+import urllib.error
+import urllib.request
 
 import dspy
 import litellm
@@ -128,6 +139,89 @@ def uninstall_json_shim() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Ollama heartbeat fallback (2026-05-21)
+# ---------------------------------------------------------------------------
+# A resolved ``ollama/<model>`` will throw a network error at call time if
+# the configured OLLAMA_HOST is unreachable — a real failure mode for users
+# on the road / off VPN / with a daemon that died. This helper probes the
+# host at resolution time (cached for 30s to avoid per-call overhead) and
+# swaps the model to a configured cloud fallback when the probe fails. The
+# original behavior (no fallback) is preserved when fallback env vars are
+# unset and via the SIO_NO_OLLAMA_FALLBACK=1 opt-out.
+
+_HEARTBEAT_TTL_SEC = 30.0
+_heartbeat_cache: dict[str, tuple[float, bool]] = {}
+
+
+def _ollama_heartbeat(host: str, timeout: float) -> bool:
+    """Probe ``<host>/api/version``. Result cached per-host for 30s."""
+    now = time.monotonic()
+    cached = _heartbeat_cache.get(host)
+    if cached and (now - cached[0]) < _HEARTBEAT_TTL_SEC:
+        return cached[1]
+    alive = False
+    try:
+        with urllib.request.urlopen(
+            f"{host.rstrip('/')}/api/version", timeout=timeout
+        ) as resp:
+            alive = 200 <= resp.status < 300
+    except (urllib.error.URLError, TimeoutError, OSError):
+        alive = False
+    _heartbeat_cache[host] = (now, alive)
+    return alive
+
+
+def _apply_ollama_heartbeat_fallback(model: str, role: str) -> str:
+    """If ``model`` is ``ollama/*`` and the heartbeat fails, swap to a
+    configured fallback. Returns the (possibly swapped) model string.
+
+    Behavior matrix:
+        * non-``ollama/*`` model              → returned unchanged
+        * ``SIO_NO_OLLAMA_FALLBACK=1``        → returned unchanged
+        * heartbeat passes                    → returned unchanged
+        * heartbeat fails + fallback env set  → fallback model returned (warning)
+        * heartbeat fails + no fallback env   → original returned (warning;
+                                                downstream call will fail with
+                                                a clear network error)
+    """
+    if os.environ.get("SIO_NO_OLLAMA_FALLBACK") == "1":
+        return model
+    if not model.startswith("ollama/"):
+        return model
+    host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+    try:
+        timeout = float(os.environ.get("SIO_OLLAMA_HEARTBEAT_TIMEOUT", "2.0"))
+    except ValueError:
+        timeout = 2.0
+    if _ollama_heartbeat(host, timeout):
+        return model
+    fallback_env = (
+        "SIO_OLLAMA_FALLBACK_REFLECTION_LM"
+        if role == "reflection"
+        else "SIO_OLLAMA_FALLBACK_TASK_LM"
+    )
+    fallback = os.environ.get(fallback_env)
+    if fallback:
+        logger.warning(
+            "Ollama heartbeat failed at %s — falling back to %s "
+            "(role=%s, original=%s).",
+            host, fallback, role, model,
+        )
+        return fallback
+    logger.warning(
+        "Ollama heartbeat failed at %s — no %s configured, keeping %s "
+        "(calls will likely fail with a network error).",
+        host, fallback_env, model,
+    )
+    return model
+
+
+def _reset_heartbeat_cache() -> None:
+    """Test hook — clear the heartbeat cache so unit tests don't bleed across."""
+    _heartbeat_cache.clear()
+
+
+# ---------------------------------------------------------------------------
 # New contract functions (FR-041, contracts/dspy-module-api.md §1)
 # ---------------------------------------------------------------------------
 
@@ -143,19 +237,31 @@ def _resolve_role_lm(role: str, env_var: str, fallback_subkey: str | None,
 
     Also enforces the [llm.banned].models list — refuses to load any model
     listed there (Principle XII clause 4).
+
+    After resolution, ``ollama/*`` models are passed through
+    :func:`_apply_ollama_heartbeat_fallback` so a dead Ollama server swaps
+    to a configured cloud fallback (opt-out via SIO_NO_OLLAMA_FALLBACK=1).
     """
     env_override = os.environ.get(env_var)
     if env_override:
-        return _check_banned(_build_lm(env_override, default_temperature,
+        model = _apply_ollama_heartbeat_fallback(env_override, role)
+        return _check_banned(_build_lm(model, default_temperature,
                                        default_max_tokens, default_cache))
 
     cfg = _read_config_role(role) or (
         _read_config_role(fallback_subkey) if fallback_subkey else None
     )
     if cfg:
+        cfg_model = cfg.get("model", default_model)
+        resolved_model = _apply_ollama_heartbeat_fallback(cfg_model, role)
         api_key = _resolve_api_key(cfg.get("api_key_env"))
+        # If we swapped (ollama → fallback), the cfg's api_key/api_base envs
+        # were for the original provider — drop them so dspy.LM falls back to
+        # the new provider's standard env (e.g. OPENAI_API_KEY).
+        if resolved_model != cfg_model:
+            api_key = None
         kwargs = {
-            "model": cfg.get("model", default_model),
+            "model": resolved_model,
             "temperature": cfg.get("temperature", default_temperature),
             "max_tokens": cfg.get("max_tokens", default_max_tokens),
             "cache": cfg.get("cache", default_cache),
@@ -164,7 +270,8 @@ def _resolve_role_lm(role: str, env_var: str, fallback_subkey: str | None,
             kwargs["api_key"] = api_key
         return _check_banned(dspy.LM(**kwargs))
 
-    return _check_banned(_build_lm(default_model, default_temperature,
+    model = _apply_ollama_heartbeat_fallback(default_model, role)
+    return _check_banned(_build_lm(model, default_temperature,
                                    default_max_tokens, default_cache))
 
 
