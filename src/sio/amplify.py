@@ -59,7 +59,7 @@ def _get_lms():
         if _gen_lm is not None and _judge_lm is not None:
             return _gen_lm, _judge_lm
 
-        import dspy  # noqa: PLC0415
+        from sio.core.dspy.lm_factory import make_lm  # noqa: PLC0415
 
         api_key = os.environ.get("SIO_GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
         if not api_key:
@@ -74,11 +74,11 @@ def _get_lms():
         # field separators) + Gemini-Flash reasoning preamble can push past
         # 4000 for content-heavy patterns. 6000 provides headroom for
         # n_per_row up to ~15 without truncation.
-        _gen_lm = dspy.LM(
-            model="gemini/gemini-flash-latest",
-            api_key=api_key,
+        _gen_lm = make_lm(
+            "gemini/gemini-flash-latest",
             temperature=0.8,
             max_tokens=6000,
+            api_key=api_key,
         )
         # Low temperature for judging (consistency).
         # NOTE 2026-05-18 (adversarial-audit H2 CONFIRMED): max_tokens was
@@ -90,11 +90,11 @@ def _get_lms():
         # the judge entirely. Raising to 2000 covers ChatAdapter overhead
         # for N up to ~30 variants. See PRD amplify_observability_gaps
         # ISSUE 1 for the full diagnostic.
-        _judge_lm = dspy.LM(
-            model="gemini/gemini-flash-latest",
-            api_key=api_key,
+        _judge_lm = make_lm(
+            "gemini/gemini-flash-latest",
             temperature=0.0,
             max_tokens=2000,
+            api_key=api_key,
         )
     return _gen_lm, _judge_lm
 

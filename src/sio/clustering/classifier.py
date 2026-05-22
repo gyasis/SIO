@@ -141,6 +141,8 @@ def _get_classifier():
                 )
             )
 
+        from sio.core.dspy.lm_factory import make_lm
+
         api_key = os.environ.get("SIO_GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
         if not api_key:
             raise RuntimeError(
@@ -155,11 +157,11 @@ def _get_classifier():
         # The classifier currently returns "Other" on failure (line 177)
         # which is silently lossy — every "Other" might be a real category
         # that got truncated. 1000 tokens of headroom kills that risk.
-        lm = dspy.LM(
-            model="gemini/gemini-flash-latest",
-            api_key=api_key,
+        lm = make_lm(
+            "gemini/gemini-flash-latest",
             temperature=0.0,
             max_tokens=1000,
+            api_key=api_key,
         )
         dspy.configure(lm=lm)
         _classify_callable = dspy.Predict(_ClassifyError)
