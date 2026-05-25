@@ -31,6 +31,7 @@ cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLO
 Python 3.11+: Follow standard conventions
 
 ## Recent Changes
+- sio-experiment-cohort: Added the `sio experiment` cohort primitive — backend in `src/sio/core/cohort/` (models, snapshot, store, window, report, 3 renderers), schema v5 tables `experiments` + `experiment_runs` via `migrate_005_experiments`, and a `--experiment NAME` scope filter on `mine`/`suggest`/`trend`/`flows`/`velocity`. NOT the git-worktree `arena/experiment.py` concept — `cohort` is named to avoid that collision. Docs: `docs/experiment-cohorts.md`.
 - 004-pipeline-integrity-remediation: Added Python 3.11+ + DSPy >=3.1.3 (core framework per Constitution V), Click >=8.1 (CLI), Rich >=13.0 (TUI), fastembed >=0.2 (ONNX embeddings for centroids), numpy >=1.24, sqlite3 (stdlib), tomllib (stdlib), `systemd-user` or Claude Code `CronCreate` for scheduling (selected in Phase 0 research)
 - 001-competitive-enhancement: Added Python 3.11+ + Click >=8.1 (CLI), Rich >=13.0 (terminal UI), fastembed >=0.2 (embeddings), numpy >=1.24, DSPy >=3.1.3 (optimization)
 - 001-competitive-enhancement: Added Python 3.11+ + Click >=8.1 (CLI), Rich >=13.0 (terminal UI), fastembed >=0.2 (embeddings), numpy >=1.24, DSPy >=3.1.3 (optimization)

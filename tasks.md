@@ -1,1 +1,0 @@
-specs/004-pipeline-integrity-remediation/tasks.md

@@ -23,6 +23,8 @@ def compute_velocity_snapshot(
     db: sqlite3.Connection,
     error_type: str,
     window_days: int = 7,
+    window_start: str | None = None,
+    window_end: str | None = None,
 ) -> dict:
     """Compute a velocity snapshot for a given error type.
 
@@ -36,7 +38,12 @@ def compute_velocity_snapshot(
     Args:
         db: Open sqlite3.Connection with SIO schema.
         error_type: The error_type value to track (e.g. "unused_import").
-        window_days: Rolling window size in days (default 7).
+        window_days: Rolling window size in days (default 7). Ignored when
+            both ``window_start`` and ``window_end`` are given.
+        window_start: explicit ISO-8601 lower bound (overrides the rolling
+            window). Used by ``sio velocity --experiment`` so a closed
+            cohort's window is honored exactly rather than rolling-from-now.
+        window_end: explicit ISO-8601 upper bound.
 
     Returns:
         Dict with keys: error_type, error_rate, error_count_in_window,
@@ -44,8 +51,12 @@ def compute_velocity_snapshot(
         rule_suggestion_id, window_start, window_end, created_at.
     """
     now = datetime.now(timezone.utc)
-    window_end = now.isoformat()
-    window_start = (now - timedelta(days=window_days)).isoformat()
+    if window_start is not None and window_end is not None:
+        # Explicit window (experiment scoping) — bypass rolling-from-now.
+        pass
+    else:
+        window_end = now.isoformat()
+        window_start = (now - timedelta(days=window_days)).isoformat()
 
     # Count errors of this type in the window
     row = db.execute(

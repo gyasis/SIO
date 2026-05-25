@@ -21,19 +21,19 @@
     "timeout_minutes": 30
   },
   "sentinel": {
-    "enabled": false,
+    "enabled": true,
     "mode": "auto",
     "tiers_file": "",
     "min_tier": "",
     "max_total_cost_usd": 5.0,
     "max_total_duration_min": 30,
     "tier1": {
-      "model": "qwen3-coder:30b",
-      "ollama_url": "http://192.168.0.159:11434",
+      "model": "",
+      "ollama_url": "http://localhost:11434",
       "max_iterations": 5
     },
     "tier2": {
-      "model": "claude-sonnet-4-20250514",
+      "model": "",
       "max_iterations": 10,
       "max_budget_usd": 2.0,
       "max_duration_min": 10

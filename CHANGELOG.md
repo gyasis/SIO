@@ -9,7 +9,30 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
-(nothing yet — the next minor will add the DSPy callback-based unified
+### Added
+- **Experiment cohort primitive (`sio experiment`)** — bookmark a named
+  time window tagged with a config-hash snapshot (CLAUDE.md + active
+  skills + rules + `~/.claude/settings.json` hooks), then analyze it A/B
+  against a prior baseline. No manual debug instrumentation required —
+  the existing hook/JSONL telemetry is auto-scoped to the window.
+  - `sio experiment start NAME [--note --project]` — open a cohort,
+    snapshotting the active config hash
+  - `sio experiment status [NAME]` — show one cohort, or all open ones
+  - `sio experiment list [--status --project]` — list cohorts (newest first)
+  - `sio experiment close NAME [--report --format text|html|json --baseline 7d]`
+    — close + generate an A/B report (error-rate delta per-hour normalized,
+    new-error-class diff, flow emerged/died delta, scoped suggestions)
+  - Scope filter `--experiment NAME` retrofitted onto `sio mine`,
+    `suggest`, `trend`, `flows`, `velocity`
+  - New tables `experiments` + `experiment_runs` (schema v5,
+    `migrate_005_experiments`); backend in `src/sio/core/cohort/`
+  - Docs: `docs/experiment-cohorts.md`
+  - **Naming note:** distinct from the older git-worktree rule-testing
+    "experiment" (`sio apply --experiment`, autoresearch). This is the
+    telemetry-cohort concept; backend module is named `cohort` to avoid
+    collision with `core/arena/experiment.py`.
+
+(Next minor will also add the DSPy callback-based unified
 optimizer-progress emitter, JudgeVariants Tier 2 meta-optimization if
 needed, and the distilabel attic move.)
 

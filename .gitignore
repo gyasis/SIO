@@ -39,3 +39,11 @@ Thumbs.db
 memory-bank/
 execution_plan.json
 deep_research.db
+
+# dev-kid lightweight-init transient assets — swept in accidentally.
+# PRD sio_autotag_experiments anti-pattern: do NOT commit these.
+.playwright-mcp/
+dspy-course/
+distilabel-course/
+sio-course/
+/*.png

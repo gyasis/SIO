@@ -550,6 +550,7 @@ v3.0 imports the best features from 10+ self-improving agent tools (claude-refle
 | **Anomaly Detection** | MAD-based flagging of unusual sessions (>3 deviations) | arena |
 | **AutoResearch Loop** | Autonomous mine→cluster→grade→generate→experiment→validate cycle | `sio autoresearch start` |
 | **HTML Report** | Standalone visual report with charts, patterns, copy-ready suggestions | `sio report --html` |
+| **Experiment Cohorts** | Bookmark a config-change window + config-hash snapshot, then A/B it vs a baseline | `sio experiment start` |
 
 ### New CLI Commands (v3.0)
 
@@ -564,6 +565,32 @@ v3.0 imports the best features from 10+ self-improving agent tools (claude-refle
 | `sio autoresearch status` | Show cycle count, active experiments, promotions |
 | `sio report --html` | Generate standalone HTML report with charts and copy-ready suggestions |
 
+### Experiment Cohorts (`sio experiment`)
+
+Bookmark a window around a config/prompt change and analyze it A/B against
+a prior baseline — without writing any debug instrumentation. The existing
+hook + JSONL telemetry is auto-scoped to the window. Full guide:
+[`docs/experiment-cohorts.md`](docs/experiment-cohorts.md).
+
+| Command | Description |
+|---------|-------------|
+| `sio experiment start NAME [--note --project]` | Open a cohort; snapshots a config hash (CLAUDE.md + skills + rules + settings hooks) |
+| `sio experiment status [NAME]` | Show one cohort's details, or a table of all open cohorts |
+| `sio experiment list [--status --project]` | List all cohorts, newest first |
+| `sio experiment close NAME [--report --format text\|html\|json --baseline 7d]` | Close + emit an A/B report (error-rate delta, new error classes, flow delta, scoped suggestions) |
+| `sio mine\|suggest\|trend\|flows\|velocity --experiment NAME` | Scope any of these to a cohort's window |
+
+> **Two different "experiments" — don't confuse them:**
+> - **`sio experiment` (this feature)** = a *telemetry cohort*: a named
+>   time window for measuring how a config change affected error rates /
+>   flows. Backend module: `src/sio/core/cohort/`.
+> - **`sio apply --experiment` / autoresearch** = the older *git-worktree*
+>   concept: testing a candidate rule on an isolated branch before
+>   promoting. Backend module: `src/sio/core/arena/experiment.py`.
+>
+> They share the word "experiment" but are unrelated. The `--experiment NAME`
+> scope flag (on mine/suggest/trend/flows/velocity) refers to the cohort.
+
 ### New Database Tables (v3.0)
 
 | Table | Purpose |
@@ -573,6 +600,8 @@ v3.0 imports the best features from 10+ self-improving agent tools (claude-refle
 | `positive_records` | Detected positive user signals (confirmation, gratitude, approval) |
 | `velocity_snapshots` | Rolling-window error rate measurements for velocity tracking |
 | `autoresearch_txlog` | Append-only transaction log for autonomous loop actions |
+| `experiments` | Cohort bookmarks: name, window, config_hash, project, status (schema v5) |
+| `experiment_runs` | Join table tagging events to a cohort by timestamp window (no in-place mutation) |
 
 ---
 

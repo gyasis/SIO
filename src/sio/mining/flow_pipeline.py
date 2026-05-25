@@ -208,14 +208,20 @@ def query_flows(
     since: str | None = None,
     min_count: int = 3,
     limit: int = 20,
+    until: str | None = None,
 ) -> list[dict]:
     """Query aggregated flows sorted by confidence.
+
+    Args:
+        until: optional ISO-8601 upper bound on ``fe.timestamp``. Used by
+            ``--experiment`` scoping so a closed cohort doesn't count flows
+            that occurred after its close timestamp.
 
     Returns list of dicts:
         {sequence, count, success_count, success_rate, avg_duration,
          confidence, ngram_size, last_seen, session_count}
     """
-    where_clause = ""
+    conds: list[str] = []
     params: list = []
 
     if since:
@@ -224,8 +230,14 @@ def query_flows(
 
         cutoff = parse_since(since)
         if cutoff:
-            where_clause = "WHERE fe.timestamp >= ?"
+            conds.append("fe.timestamp >= ?")
             params.append(cutoff.isoformat())
+
+    if until:
+        conds.append("fe.timestamp <= ?")
+        params.append(until)
+
+    where_clause = ("WHERE " + " AND ".join(conds)) if conds else ""
 
     sql = f"""
         SELECT

@@ -401,6 +401,41 @@ CREATE TABLE IF NOT EXISTS promoted_hooks (
 )
 """
 
+# PRD sio_autotag_experiments_2026-05-23: cohort-tagging primitive.
+# `experiments` bookmarks a named time window (start_ts → close_ts) with a
+# config_hash snapshot of CLAUDE.md + active skills + rules + settings.json
+# hooks taken at start. `experiment_runs` is the auto-tag join — every event
+# whose timestamp falls inside an experiment window is joined to it at query
+# time (Q3 decision: no in-place mutation of behavior_invocations rows).
+_EXPERIMENTS_DDL = """
+CREATE TABLE IF NOT EXISTS experiments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    start_ts TEXT NOT NULL,
+    close_ts TEXT,
+    note TEXT,
+    config_hash TEXT,
+    project TEXT,
+    status TEXT NOT NULL DEFAULT 'open'
+        CHECK(status IN ('open', 'closed'))
+)
+"""
+
+# T002: join table — every event whose timestamp falls inside an experiment
+# window is joined here at query time. `source_table` distinguishes which
+# table the event_id refers to (behavior_invocations, error_records,
+# flow_events, positive_records, etc.). The UNIQUE constraint allows N
+# concurrent experiments (Q4) without row-level duplicates.
+_EXPERIMENT_RUNS_DDL = """
+CREATE TABLE IF NOT EXISTS experiment_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id INTEGER NOT NULL,
+    experiment_name TEXT NOT NULL,
+    source_table TEXT NOT NULL,
+    UNIQUE(event_id, experiment_name, source_table)
+)
+"""
+
 _INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_session ON behavior_invocations(session_id)",
     (
@@ -464,6 +499,15 @@ _INDEXES = [
     # autoresearch_txlog indexes
     "CREATE INDEX IF NOT EXISTS idx_tx_cycle ON autoresearch_txlog(cycle_number)",
     "CREATE INDEX IF NOT EXISTS idx_tx_action ON autoresearch_txlog(action)",
+    # experiments indexes (T001) — name lookup + status filter + window range
+    "CREATE INDEX IF NOT EXISTS idx_exp_status ON experiments(status)",
+    "CREATE INDEX IF NOT EXISTS idx_exp_window ON experiments(start_ts, close_ts)",
+    # experiment_runs indexes (T002) — join by name and by event
+    "CREATE INDEX IF NOT EXISTS idx_exprun_name ON experiment_runs(experiment_name)",
+    (
+        "CREATE INDEX IF NOT EXISTS idx_exprun_source "
+        "ON experiment_runs(source_table, event_id)"
+    ),
 ]
 
 
@@ -552,6 +596,12 @@ def init_db(db_path: str) -> sqlite3.Connection:
 
     # Promoted-hook audit table (see PRD violated-rule-to-pretooluse-hook)
     conn.execute(_PROMOTED_HOOKS_DDL)
+
+    # Experiments (PRD sio_autotag_experiments_2026-05-23) — cohort
+    # bookmark + config-hash snapshot (T001) and the auto-tag join
+    # (T002).
+    conn.execute(_EXPERIMENTS_DDL)
+    conn.execute(_EXPERIMENT_RUNS_DDL)
 
     # v3 migrations: add columns to existing tables
     _migrate_v3(conn)
@@ -720,6 +770,79 @@ def refuse_to_start(conn: sqlite3.Connection) -> None:
             "the previous migration did not complete successfully.  "
             "Run 'sio db repair' to resolve."
         )
+
+
+def migrate_005_experiments(db_path: str) -> None:
+    """Bring an existing DB up to schema version 5 (experiments cohort).
+
+    Idempotent. Creates the ``experiments`` and ``experiment_runs`` tables
+    plus their indexes if they don't already exist, then stamps
+    ``schema_version`` row ``version=5`` as ``applied``.
+
+    Pre-existing DBs that already had ``init_db()`` run after the T001/T002
+    DDLs landed will already have the tables; this migration only writes
+    the schema_version row in that case.
+
+    Args:
+        db_path: SQLite DB path. ``:memory:`` is supported for tests.
+    """
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
+
+        # Ensure schema_version table + baseline row exist (idempotent).
+        ensure_schema_version(conn)
+
+        # Idempotency gate.
+        existing = conn.execute(
+            "SELECT status FROM schema_version WHERE version = 5"
+        ).fetchone()
+        if existing and existing[0] == "applied":
+            return
+
+        # Sentinel — record 'applying'.
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_version "
+            "(version, applied_at, status, description) "
+            "VALUES (5, datetime('now'), 'applying', "
+            "'005-sio-autotag-experiments')"
+        )
+        conn.execute(
+            "UPDATE schema_version SET status='applying', "
+            "applied_at=datetime('now') "
+            "WHERE version=5 AND status != 'applied'"
+        )
+        conn.commit()
+
+        # Create tables (no-op if init_db already created them).
+        conn.execute(_EXPERIMENTS_DDL)
+        conn.execute(_EXPERIMENT_RUNS_DDL)
+
+        # Create indexes (idempotent — IF NOT EXISTS).
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_exp_status ON experiments(status)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_exp_window "
+            "ON experiments(start_ts, close_ts)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_exprun_name "
+            "ON experiment_runs(experiment_name)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_exprun_source "
+            "ON experiment_runs(source_table, event_id)"
+        )
+
+        # Stamp applied.
+        conn.execute(
+            "UPDATE schema_version SET status='applied' WHERE version=5"
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def repair_schema_version(conn: sqlite3.Connection) -> list[int]:

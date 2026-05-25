@@ -76,6 +76,15 @@ def ensure_canonical_db_ready(db_path: str | Path | None = None) -> Path:
     except Exception as exc:
         logger.debug("migrate_004 skipped on %s: %s", db_path, exc)
 
+    # 3b. 005 migration — experiments cohort tables (PRD
+    # sio_autotag_experiments_2026-05-23). Idempotent.
+    try:
+        from sio.core.db.schema import migrate_005_experiments  # noqa: PLC0415
+
+        migrate_005_experiments(str(db_path))
+    except Exception as exc:
+        logger.debug("migrate_005_experiments skipped on %s: %s", db_path, exc)
+
     # 4. Split-brain backfill (one-time, idempotent across runs)
     try:
         from scripts.migrate_split_brain import main as split_brain  # noqa: PLC0415
