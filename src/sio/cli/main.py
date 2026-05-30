@@ -806,7 +806,8 @@ def _mine_session_via_adapter(db_path: str, handle: str, agent: str) -> None:
     help=(
         'Time window: "3 days", "2 weeks", "1 month",'
         ' "6h", "yesterday", "3 days ago", "2026-01-15".'
-        " Required unless --session targets a single session."
+        " Required unless --session targets a single session,"
+        " or --experiment is given."
     ),
 )
 @click.option("--project", default=None, help="Filter by project name.")
@@ -831,9 +832,24 @@ def _mine_session_via_adapter(db_path: str, handle: str, agent: str) -> None:
         "`sio search ... --files`."
     ),
 )
+@click.option(
+    "--experiment",
+    "experiment_name",
+    default=None,
+    help=(
+        "Scope to the cohort window of the named experiment "
+        "(resolves --since from experiments table)."
+    ),
+)
 @runlogged("mine")
-def mine(since, project, source, exclude_sidechains, session_handle):
-    """Mine recent sessions for errors and failures."""
+def mine(since, project, source, exclude_sidechains, session_handle, experiment_name):
+    """Mine recent sessions for errors and failures.
+
+    The user-visible verb in the PRD is ``scan``; ``mine`` is the
+    implementation name. ``--experiment NAME`` scopes the window to a
+    cohort recorded by ``sio experiment start``. ``--session`` targets a
+    single session (and makes ``--since`` optional).
+    """
     from pathlib import Path
 
     from sio.mining.pipeline import run_mine
@@ -856,15 +872,35 @@ def mine(since, project, source, exclude_sidechains, session_handle):
                 db_path, session_handle, parse_handle(session_handle)[0]
             )
             return
-    if not since and not session_handle:
+    if not since and not session_handle and not experiment_name:
         raise click.UsageError(
-            "--since is required (or use --session to target one session)."
+            "Provide --since, or --session (one session), or --experiment (a cohort)."
         )
     if session_handle and not since:
         since = "20 years"  # effectively unbounded for a single targeted session
 
     db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
+
+    if experiment_name is not None:
+        from sio.core.cohort.store import ExperimentNotFound  # noqa: PLC0415
+        from sio.core.cohort.window import (  # noqa: PLC0415
+            resolve_experiment_window,
+        )
+
+        try:
+            start_ts, _end_ts = resolve_experiment_window(db_path, experiment_name)
+        except ExperimentNotFound as exc:
+            click.echo(f"Error: {exc}")
+            raise SystemExit(1) from exc
+        # --since wins if both are given; otherwise we hand the
+        # experiment start ISO timestamp straight to the parser.
+        if since is None:
+            since = start_ts
+    elif since is None:
+        raise click.UsageError(
+            "Either --since or --experiment must be provided."
+        )
 
     source_dirs = []
     specstory_dir = Path(os.path.expanduser("~/.specstory/history"))
@@ -959,8 +995,14 @@ def mine(since, project, source, exclude_sidechains, session_handle):
     default=True,
     help="Mine flow data before querying (default: yes).",
 )
+@click.option(
+    "--experiment",
+    "experiment_name",
+    default=None,
+    help="Scope flows to the cohort window of the named experiment.",
+)
 @runlogged("flows")
-def flows(since, project, min_count, limit, mine_first):
+def flows(since, project, min_count, limit, mine_first, experiment_name):
     """Discover recurring positive tool sequence patterns.
 
     Analyzes JSONL session transcripts to find tool sequences that
@@ -972,6 +1014,7 @@ def flows(since, project, min_count, limit, mine_first):
         sio flows --since "7 days"        # Last week
         sio flows --min-count 5           # Only frequent patterns
         sio flows --no-mine               # Skip mining, query existing data
+        sio flows --experiment sysprompt-v2  # Scope to a cohort window
     """
     from pathlib import Path
 
@@ -979,6 +1022,22 @@ def flows(since, project, min_count, limit, mine_first):
 
     db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
+
+    # --experiment scoping: resolve the cohort window and use it as the
+    # since/until bounds. Skips fresh mining (the window is historical).
+    exp_until: str | None = None
+    if experiment_name is not None:
+        from sio.core.cohort.store import ExperimentNotFound  # noqa: PLC0415
+        from sio.core.cohort.window import (  # noqa: PLC0415
+            resolve_experiment_window,
+        )
+
+        try:
+            since, exp_until = resolve_experiment_window(db_path, experiment_name)
+        except ExperimentNotFound as exc:
+            click.echo(f"Error: {exc}")
+            raise SystemExit(1) from exc
+        mine_first = False
 
     with _db_conn(db_path) as conn:
         # Optionally mine fresh flow data
@@ -1022,7 +1081,9 @@ def flows(since, project, min_count, limit, mine_first):
                 return
 
         # Query aggregated flows
-        results = query_flows(conn, since=since, min_count=min_count, limit=limit)
+        results = query_flows(
+            conn, since=since, min_count=min_count, limit=limit, until=exp_until
+        )
 
     if not results:
         click.echo("\nNo flows discovered yet. Try lowering --min-count or widening --since.")
@@ -1928,6 +1989,15 @@ def inspect(pattern_id):
         "single-session analyzer. Pipe from `sio search ... --files`."
     ),
 )
+@click.option(
+    "--experiment",
+    "experiment_name",
+    default=None,
+    help=(
+        "Scope errors to the cohort window of the named experiment. "
+        "Composable with --grep / --type / --project."
+    ),
+)
 @runlogged("suggest")
 def suggest(
     error_type,
@@ -1946,6 +2016,7 @@ def suggest(
     use_cache,
     cache_ttl_hours,
     session_handle,
+    experiment_name,
 ):
     """Run the full pipeline: cluster -> persist -> dataset -> suggestions."""
     import uuid
@@ -1978,6 +2049,21 @@ def suggest(
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio mine' first.")
         return
+
+    # --experiment scoping: resolve the cohort window once. Errors are
+    # filtered to [start_ts, end_ts] after the DB load below.
+    experiment_window: tuple[str, str] | None = None
+    if experiment_name is not None:
+        from sio.core.cohort.store import ExperimentNotFound  # noqa: PLC0415
+        from sio.core.cohort.window import (  # noqa: PLC0415
+            resolve_experiment_window,
+        )
+
+        try:
+            experiment_window = resolve_experiment_window(db_path, experiment_name)
+        except ExperimentNotFound as exc:
+            click.echo(f"Error: {exc}")
+            raise SystemExit(1) from exc
 
     with _db_conn(db_path) as conn:
         console = Console()
@@ -2060,6 +2146,20 @@ def suggest(
                 return
 
             errors_to_cluster = all_errors
+
+        # --experiment window filter — applies to both cache + DB paths.
+        # Composable: runs before --type / --grep narrow further.
+        if experiment_window is not None:
+            win_start, win_end = experiment_window
+            errors_to_cluster = [
+                e
+                for e in errors_to_cluster
+                if win_start <= (e.get("timestamp") or "") <= win_end
+            ]
+            console.print(
+                f"[dim]Scoped to experiment '{experiment_name}' "
+                f"[{win_start} … {win_end}]: {len(errors_to_cluster)} errors[/dim]"
+            )
 
         # Apply error type filter (include)
         if error_type:
@@ -3155,6 +3255,264 @@ def _mask_key(key: str) -> str:
     if len(key) <= 8:
         return "****"
     return f"{key[:4]}...{key[-4:]}"
+
+
+# ---------------------------------------------------------------------------
+# sio experiment — cohort tagging primitive
+# PRD: ~/dev/prd/scratch/sio_autotag_experiments_2026-05-23.md
+# ---------------------------------------------------------------------------
+
+
+def _experiment_db_path() -> str:
+    """Resolve the canonical SIO DB path for experiment commands."""
+    return os.environ.get(
+        "SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db")
+    )
+
+
+@cli.group(invoke_without_command=True)
+@click.pass_context
+def experiment(ctx):
+    """Cohort tagging — bookmark a config window and analyze it.
+
+    Subcommands: ``start``, ``status``, ``list``, ``close``.
+    """
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
+
+
+@experiment.command("start")
+@click.argument("name")
+@click.option("--note", default=None, help="Free-form note describing the change.")
+@click.option(
+    "--project",
+    default=None,
+    help="Optional project filter. Default: global cohort (no filter).",
+)
+def experiment_start(name: str, note: str | None, project: str | None) -> None:
+    """Open a new experiment cohort named NAME.
+
+    Snapshots ~/.claude/CLAUDE.md + skills + rules + settings.json hooks
+    into a sha256 config_hash so a later close can detect config drift.
+    """
+    from rich.console import Console
+
+    from sio.core.cohort.snapshot import snapshot_hash
+    from sio.core.cohort.store import ExperimentExists, create_experiment
+    from sio.core.db.bootstrap import ensure_canonical_db_ready
+
+    console = Console()
+    db_path = str(ensure_canonical_db_ready(_experiment_db_path()))
+
+    digest, _ = snapshot_hash()
+    try:
+        exp = create_experiment(
+            db_path,
+            name,
+            note=note,
+            project=project,
+            config_hash=digest,
+        )
+    except ExperimentExists as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise SystemExit(1) from exc
+
+    console.print(
+        f"[green]Experiment started:[/green] [bold]{exp.name}[/bold]"
+    )
+    console.print(f"  start_ts:    {exp.start_ts}")
+    console.print(f"  config_hash: {exp.config_hash[:12]}…")
+    if exp.project:
+        console.print(f"  project:     {exp.project}")
+    if exp.note:
+        console.print(f"  note:        {exp.note}")
+
+
+@experiment.command("status")
+@click.argument("name", required=False)
+def experiment_status(name: str | None) -> None:
+    """Show details for an experiment NAME (or all open experiments).
+
+    With NAME: print the full row (status, window, config_hash, note).
+    Without NAME: print a table of all ``open`` experiments.
+    """
+    from rich.console import Console
+    from rich.table import Table
+
+    from sio.core.cohort.store import get_experiment, list_experiments
+    from sio.core.db.bootstrap import ensure_canonical_db_ready
+
+    console = Console()
+    db_path = str(ensure_canonical_db_ready(_experiment_db_path()))
+
+    if name is None:
+        open_runs = list_experiments(db_path, status="open")
+        if not open_runs:
+            console.print("[dim]No open experiments.[/dim]")
+            return
+        table = Table(title="Open experiments")
+        table.add_column("name", style="bold")
+        table.add_column("start_ts")
+        table.add_column("project")
+        table.add_column("config_hash")
+        table.add_column("note")
+        for e in open_runs:
+            table.add_row(
+                e.name,
+                e.start_ts,
+                e.project or "(global)",
+                (e.config_hash or "")[:12] + ("…" if e.config_hash else ""),
+                (e.note or "")[:50],
+            )
+        console.print(table)
+        return
+
+    exp = get_experiment(db_path, name)
+    if exp is None:
+        console.print(f"[red]No experiment named {name!r}[/red]")
+        raise SystemExit(1)
+    status_color = "green" if exp.status == "open" else "yellow"
+    console.print(f"[bold]{exp.name}[/bold]  [{status_color}]{exp.status}[/{status_color}]")
+    console.print(f"  start_ts:    {exp.start_ts}")
+    console.print(f"  close_ts:    {exp.close_ts or '(open)'}")
+    console.print(f"  project:     {exp.project or '(global)'}")
+    console.print(
+        f"  config_hash: {exp.config_hash or '(none)'}"
+    )
+    if exp.note:
+        console.print(f"  note:        {exp.note}")
+
+
+@experiment.command("list")
+@click.option(
+    "--status",
+    "status_filter",
+    type=click.Choice(["open", "closed"]),
+    default=None,
+    help="Filter by status. Default: all.",
+)
+@click.option("--project", default=None, help="Filter by project (exact match).")
+def experiment_list(status_filter: str | None, project: str | None) -> None:
+    """List every experiment (newest first)."""
+    from rich.console import Console
+    from rich.table import Table
+
+    from sio.core.cohort.store import list_experiments
+    from sio.core.db.bootstrap import ensure_canonical_db_ready
+
+    console = Console()
+    db_path = str(ensure_canonical_db_ready(_experiment_db_path()))
+
+    rows = list_experiments(db_path, status=status_filter, project=project)
+    if not rows:
+        console.print("[dim]No experiments match.[/dim]")
+        return
+
+    table = Table(title=f"Experiments ({len(rows)})")
+    table.add_column("name", style="bold")
+    table.add_column("status")
+    table.add_column("start_ts")
+    table.add_column("close_ts")
+    table.add_column("project")
+    table.add_column("note")
+    for e in rows:
+        color = "green" if e.status == "open" else "yellow"
+        table.add_row(
+            e.name,
+            f"[{color}]{e.status}[/{color}]",
+            e.start_ts,
+            e.close_ts or "—",
+            e.project or "(global)",
+            (e.note or "")[:40],
+        )
+    console.print(table)
+
+
+@experiment.command("close")
+@click.argument("name")
+@click.option(
+    "--report/--no-report",
+    default=False,
+    help="Generate an A/B report after closing. (Wave 13 wires renderers.)",
+)
+@click.option(
+    "--format",
+    "fmt",
+    type=click.Choice(["text", "html", "json"]),
+    default="text",
+    help="Report format. Only meaningful with --report.",
+)
+@click.option(
+    "--baseline",
+    default="7d",
+    help="Baseline window for A/B report (e.g. '7d', '14d').",
+)
+def experiment_close(name: str, report: bool, fmt: str, baseline: str) -> None:
+    """Close NAME (stamp close_ts → flip status='closed').
+
+    With ``--report``, emits an A/B report in the chosen ``--format``.
+    The report engine itself is built in Wave 13 (T017-T024); this
+    command wires the flags through so the surface is stable from
+    Wave 7 onward.
+    """
+    import contextlib
+    import io
+
+    from rich.console import Console
+
+    from sio.core.cohort.store import (
+        ExperimentAlreadyClosed,
+        ExperimentNotFound,
+        close_experiment,
+    )
+    from sio.core.db.bootstrap import ensure_canonical_db_ready
+
+    console = Console()
+    # Bootstrap chatter (e.g. split-brain "0 rows copied") would pollute
+    # stdout and break `--format json` piping. Swallow it; the DB is the
+    # only thing we need from this call.
+    with contextlib.redirect_stdout(io.StringIO()):
+        db_path = str(ensure_canonical_db_ready(_experiment_db_path()))
+
+    try:
+        exp = close_experiment(db_path, name)
+    except ExperimentNotFound as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise SystemExit(1) from exc
+    except ExperimentAlreadyClosed as exc:
+        console.print(f"[yellow]{exc}[/yellow]")
+        raise SystemExit(1) from exc
+
+    # Suppress the human-readable preamble for JSON so stdout stays
+    # pipeable (the report itself is the only stdout payload).
+    quiet = report and fmt == "json"
+    if not quiet:
+        console.print(
+            f"[green]Experiment closed:[/green] [bold]{exp.name}[/bold]"
+        )
+        console.print(f"  start_ts: {exp.start_ts}")
+        console.print(f"  close_ts: {exp.close_ts}")
+
+    if report:
+        from sio.core.cohort.report import render_report  # noqa: PLC0415
+
+        rendered = render_report(
+            db_path,
+            experiment_name=exp.name,
+            fmt=fmt,
+            baseline=baseline,
+            console=console if fmt == "text" else None,
+        )
+        if fmt == "html":
+            out_path = os.path.expanduser(
+                f"~/.sio/reports/experiment_{exp.name}.html"
+            )
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+            with open(out_path, "w") as f:
+                f.write(rendered)
+            console.print(f"[green]HTML report written:[/green] {out_path}")
+        elif fmt == "json":
+            click.echo(rendered)
 
 
 @cli.group()
@@ -6000,8 +6358,17 @@ def collect_recall(query, session, project, runbook, label):
     type=int,
     help="(With --by-rule) minimum 'with rule' records to include a rule.",
 )
+@click.option(
+    "--experiment",
+    "experiment_name",
+    default=None,
+    help=(
+        "Scope the velocity window to the named experiment's cohort "
+        "(overrides --window). Not compatible with --by-rule."
+    ),
+)
 @runlogged("velocity")
-def velocity(error_type, window, fmt, skills, by_rule, min_records):
+def velocity(error_type, window, fmt, skills, by_rule, min_records, experiment_name):
     """Show learning velocity trends — how error rates change after rules.
 
     Computes error frequency per type over a rolling window, measures
@@ -6017,6 +6384,26 @@ def velocity(error_type, window, fmt, skills, by_rule, min_records):
         sio velocity --by-rule                # per-rule attribution
         sio velocity --by-rule --format json  # machine-readable
     """
+    # --experiment scoping: resolve the cohort window. Mutually exclusive
+    # with --by-rule (that path uses a different rolling-window model).
+    exp_window: tuple[str, str] | None = None
+    if experiment_name is not None:
+        if by_rule:
+            raise click.UsageError(
+                "--experiment is not compatible with --by-rule."
+            )
+        _vdb = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
+        from sio.core.cohort.store import ExperimentNotFound  # noqa: PLC0415
+        from sio.core.cohort.window import (  # noqa: PLC0415
+            resolve_experiment_window,
+        )
+
+        try:
+            exp_window = resolve_experiment_window(_vdb, experiment_name)
+        except ExperimentNotFound as exc:
+            click.echo(f"Error: {exc}")
+            raise SystemExit(1) from exc
+
     # --by-rule mode takes the per-rule attribution path (PRD Tier 1)
     if by_rule:
         from sio.core.metrics.velocity import (  # noqa: PLC0415
@@ -6146,7 +6533,15 @@ def velocity(error_type, window, fmt, skills, by_rule, min_records):
         # Compute fresh snapshots for each error type
         snapshots = []
         for etype in error_types:
-            snap = compute_velocity_snapshot(conn, etype, window_days=window)
+            if exp_window is not None:
+                snap = compute_velocity_snapshot(
+                    conn,
+                    etype,
+                    window_start=exp_window[0],
+                    window_end=exp_window[1],
+                )
+            else:
+                snap = compute_velocity_snapshot(conn, etype, window_days=window)
             snapshots.append(snap)
 
         # Get historical trends for delta computation
@@ -8344,8 +8739,14 @@ def autoresearch_install_schedule(method):
     default=None,
     help="Filter patterns by substring match on description (comma-separated OR).",
 )
+@click.option(
+    "--experiment",
+    "experiment_name",
+    default=None,
+    help="Scope buckets to the cohort window of the named experiment.",
+)
 @runlogged("trend")
-def trend(granularity, top_n, num_windows, pattern_filter, grep_term):
+def trend(granularity, top_n, num_windows, pattern_filter, grep_term, experiment_name):
     """Show growth / decline of pattern clusters over time.
 
     Uses the `error_records.timestamp` column joined via `pattern_errors` to
@@ -8359,6 +8760,21 @@ def trend(granularity, top_n, num_windows, pattern_filter, grep_term):
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio mine' first.")
         return
+
+    # --experiment scoping: when set, the bucket range is the cohort window
+    # rather than the rolling "-N days" window.
+    exp_window: tuple[str, str] | None = None
+    if experiment_name is not None:
+        from sio.core.cohort.store import ExperimentNotFound  # noqa: PLC0415
+        from sio.core.cohort.window import (  # noqa: PLC0415
+            resolve_experiment_window,
+        )
+
+        try:
+            exp_window = resolve_experiment_window(db_path, experiment_name)
+        except ExperimentNotFound as exc:
+            click.echo(f"Error: {exc}")
+            raise SystemExit(1) from exc
 
     # SQLite strftime tokens per granularity
     if granularity == "weekly":
@@ -8374,6 +8790,15 @@ def trend(granularity, top_n, num_windows, pattern_filter, grep_term):
         interval_days = 31 * num_windows
         bucket_label = "Month"
 
+    # The window predicate is shared by the bucket-listing and per-pattern
+    # count queries so both stay in sync.
+    if exp_window is not None:
+        window_pred = "e.timestamp BETWEEN ? AND ?"
+        window_params: list = [exp_window[0], exp_window[1]]
+    else:
+        window_pred = f"e.timestamp >= datetime('now', '-{interval_days} days')"
+        window_params = []
+
     with _db_conn(db_path) as conn:
         cur = conn.cursor()
 
@@ -8382,9 +8807,10 @@ def trend(granularity, top_n, num_windows, pattern_filter, grep_term):
             f"""
             SELECT DISTINCT strftime('{bucket_fmt}', e.timestamp) AS bucket
             FROM error_records e
-            WHERE e.timestamp >= datetime('now', '-{interval_days} days')
+            WHERE {window_pred}
             ORDER BY bucket
-            """
+            """,
+            window_params,
         )
         buckets = [r[0] for r in cur.fetchall() if r[0]]
         # Keep only the last num_windows buckets (most recent)
@@ -8400,6 +8826,9 @@ def trend(granularity, top_n, num_windows, pattern_filter, grep_term):
         # 2. Per-pattern bucket counts
         where_clauses = []
         params: list = []
+        if exp_window is not None:
+            where_clauses.append("e.timestamp BETWEEN ? AND ?")
+            params.extend([exp_window[0], exp_window[1]])
         if pattern_filter:
             if pattern_filter.isdigit():
                 where_clauses.append("p.id = ?")
