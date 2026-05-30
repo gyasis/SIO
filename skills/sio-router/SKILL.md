@@ -38,13 +38,13 @@ Pick exactly one based on what the user is asking for:
 
 | Surface | When to pick | Specialized skill (when trained) |
 |---|---|---|
-| **`claude_md_rule`** | User wants a prevention rule, a "do not X" directive, an "if Y then Z" gate, anything that goes in `CLAUDE.md` or a project rules file | `/sio-rule-generator` ✅ (active, score 0.87) |
-| **`skill_update`** | User wants to create or edit a Claude Code skill — a file in the skills directory with YAML frontmatter that's user-invocable. Multi-step workflow, action-oriented description. | `/sio-skill-generator` (not yet trained — fall back) |
-| **`hook_config`** | User wants a PreToolUse / PostToolUse / SessionStart / etc. hook — typically a shell script plus a `hooks` block in `settings.json`. | `/sio-hook-generator` (not yet trained — fall back) |
-| **`mcp_config`** | User wants to add/edit an MCP server entry in `settings.json`'s `mcpServers` block. | `/sio-mcp-generator` (not yet trained — fall back) |
+| **`claude_md_rule`** | User wants a prevention rule, a "do not X" directive, an "if Y then Z" gate, anything that goes in `CLAUDE.md` or `~/.claude/rules/**/*.md` | `/sio-rule-generator` ✅ (active, score 0.87) |
+| **`skill_update`** | User wants to create or edit a Claude Code skill — a file in `~/.claude/skills/*.md` with YAML frontmatter that's user-invocable. Multi-step workflow, action-oriented description. | `/sio-skill-generator` (not yet trained — fall back) |
+| **`hook_config`** | User wants a PreToolUse / PostToolUse / SessionStart / etc. hook — typically a shell script under `~/.claude/hooks/<name>/` plus a `hooks` block in `settings.json`. | `/sio-hook-generator` (not yet trained — fall back) |
+| **`mcp_config`** | User wants to add/edit an MCP server entry in `~/.claude/settings.json`'s `mcpServers` block. | `/sio-mcp-generator` (not yet trained — fall back) |
 | **`settings_config`** | User wants to change non-MCP settings (model, theme, env vars, permissions). | `/sio-settings-generator` (not yet trained — fall back) |
-| **`agent_profile`** | User wants to create or edit an agent definition under the agents directory. | `/sio-agent-generator` (not yet trained — fall back) |
-| **`project_config`** | User wants to modify project-scoped config (e.g. `pyproject.toml`, build configs, `package.json`). | `/sio-project-config-generator` (not yet trained — fall back) |
+| **`agent_profile`** | User wants to create or edit an agent definition under `~/.claude/agents/*.md`. | `/sio-agent-generator` (not yet trained — fall back) |
+| **`project_config`** | User wants to modify project-scoped config (pyproject.toml, dbt_project.yml, package.json, etc.). | `/sio-project-config-generator` (not yet trained — fall back) |
 
 If you can't pick exactly one, ask the user to disambiguate before proceeding.
 
@@ -59,7 +59,8 @@ State your classification explicitly in 1 line:
 
 ### Step 2 — Try the specialized skill
 
-If a `Specialized skill` exists for the chosen surface, INVOKE it with the three SIO inputs:
+If a `Specialized skill` exists for the chosen surface AND its file exists at
+`~/.claude/skills/<name>.md`, INVOKE it with the three SIO inputs:
 
 - `pattern_description` — a 1-2 sentence summary of what the user needs
 - `example_errors` — concrete error messages, error logs, or current-state
@@ -101,7 +102,7 @@ Output: rule_title + rule_body + rule_rationale.
 
 ### Example B — skill creation, no trained skill yet
 
-User: *"Make me a skill that runs a daily summary report."*
+User: *"Make me a skill that runs morning-report every weekday at 7am."*
 
 Classification: `skill_update`
 Specialized skill exists? **No.**
@@ -141,3 +142,4 @@ logic — no LLM evaluation needed. Specialized sub-skills below this router
 ARE optimized; their evolved instructions carry the SIO-trained signal.
 
 - Pairs with: SIO optimizer pipeline + `sio render --all-active`
+- Source PRD: `~/dev/prd/library/L010_sio_render_artifact_2026-05-16.md`

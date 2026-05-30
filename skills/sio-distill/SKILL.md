@@ -57,16 +57,16 @@ sio distill --latest -o <project>/.memory/<descriptive_name>_playbook.md
 
 ### Step 3: Optional — LLM Polish (Expensive Tier)
 
-If the cheap playbook is too raw, send the output to an LLM brainstorm call to polish into a clean runbook:
+If the cheap playbook is too raw, send the output to `gemini_brainstorm` to polish into a clean runbook:
 
 ```
-ask_llm(
+gemini_brainstorm(
     topic="Polish this raw session playbook into a clean step-by-step workflow",
     context="<paste the raw playbook output>"
 )
 ```
 
-> **Portability note:** Originally referenced `gemini_brainstorm` from the Gemini MCP tool; genericized to `ask_llm` for portability. Use whichever LLM brainstorm tool is available in your setup.
+> **Portability note:** `gemini_brainstorm` (Gemini MCP tool) is the preferred polish step here. If Gemini MCP isn't available in your setup, substitute any LLM brainstorm tool (`ask_llm`, etc.).
 
 ## What It Does
 

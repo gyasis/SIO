@@ -21,6 +21,11 @@ WARN_STALE: timedelta = timedelta(hours=1)
 ERROR_STALE: timedelta = timedelta(hours=6)
 EXPECTED_HOOKS: tuple[str, ...] = ("post_tool_use", "stop", "pre_compact")
 
+# Trigger-driven hooks fire only on user-initiated events (e.g. pre_compact only
+# on /compact) — so going stale is their NORMAL idle state, not a failure.
+# For these, staleness alone is NOT warn/error; only consecutive_failures is.
+TRIGGER_DRIVEN: frozenset[str] = frozenset({"pre_compact"})
+
 
 def hook_health_rows() -> list[tuple[str, str, str]]:
     """Return hook health rows for display in sio status.
@@ -60,6 +65,10 @@ def hook_health_rows() -> list[tuple[str, str, str]]:
         if consec >= 3:
             last_msg = h.get("last_error_message") or "unknown error"
             rows.append((hook, "error", f"{consec} consecutive failures; last error {last_msg}"))
+        elif hook in TRIGGER_DRIVEN and age > WARN_STALE:
+            # Trigger-driven hooks legitimately idle between events.
+            # Staleness alone is NOT a failure; only consec failures (above) are.
+            rows.append((hook, "healthy", f"idle — last fired {age} ago (fires on trigger)"))
         elif age > ERROR_STALE:
             rows.append((hook, "error", f"stale {age}"))
         elif age > WARN_STALE:

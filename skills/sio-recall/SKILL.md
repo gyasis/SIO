@@ -1,6 +1,6 @@
 ---
 name: sio-recall
-description: Recall how a task was solved in a previous session. Topic-filters distilled sessions, detects struggle→fix transitions, polishes via Gemini. Ask "how did we do X?" or "recall the setup workflow".
+description: Recall how a task was solved in a previous session. Topic-filters distilled sessions, detects struggle→fix transitions, polishes via Gemini. Ask "how did we do X?" or "recall the dbt setup workflow" or "recall the snowflake deploy workflow".
 user-invocable: true
 requires:
   cli: "sio>=0.3.0"
@@ -20,10 +20,12 @@ requires:
 > **Portability note:** Originally written with hh-dev / Cube / Snowflake / hhdev examples; genericized for portability. If you use those tools, the skill still applies — just pass your own tool names as the query.
 
 ## When to Use
-- "How did we run the local pipeline?"
+- "How did we run dbt locally?"
 - "Recall the auth fix from last week"
+- "What was the snowflake deploy workflow?"
+- "How did we set up the Cube connection?"
+- "How did we run the local pipeline?"
 - "What was the deploy workflow?"
-- "How did we set up the connection?"
 - Any time the user references a previous session's workflow
 
 ## The Pipeline
@@ -102,10 +104,13 @@ sio recall "query" --session /path/to.jsonl # Specific session
 
 ## How Topic Filtering Works
 
-The query is expanded into a keyword cluster. SIO automatically expands common tool names to their
-associated config files and sub-terms. For example:
-- A data pipeline tool name → also searches related config files (project files, schema dirs, target dirs)
-- An auth or connection topic → also searches for connection strings, credential files
+The query is expanded into a keyword cluster (universal tooling only):
+- "dbt" → also searches for: profiles.yml, dbt_project, models/, target/
+- "cube" → also searches for: cubejs, schema/, .yml
+- "snowflake" → also searches for: snowsql
+- "superset" → also searches for: dataset, chart
+- "tableau" → also searches for: twb, tds, workbook
+- "prefect" → also searches for: flow, deployment, work.pool
 
 Steps are included if their summary, tool_input, or output matches ANY keyword.
 Context window: 1 step before and 1 after each match is also included.
