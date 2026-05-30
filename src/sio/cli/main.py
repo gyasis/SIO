@@ -741,6 +741,63 @@ def export(platform, fmt, output):
 # ---------------------------------------------------------------------------
 
 
+def _mine_session_via_adapter(db_path: str, handle: str, agent: str) -> None:
+    """Mine ONE non-claude session through the adapter EXTRACT layer.
+
+    Routes a non-claude `mine --session` via the adapter Protocol: locate the
+    session, pull its events, run the error extractor, and insert (canonical
+    session id applied at the write path). Claude keeps its richer file-scan
+    path untouched. Non-claude extraction is content-level (the search-backed
+    adapters do not carry tool_input/output), so tool_failure detection is
+    limited — text-pattern errors (admissions, corrections) are still caught.
+    """
+    import datetime
+
+    from sio.adapters.factory import adapter_for, manifest_from_handle
+    from sio.core.db.queries import insert_error_record
+    from sio.core.session_handle import to_canonical
+    from sio.mining.error_extractor import extract_errors
+
+    try:
+        manifest = manifest_from_handle(handle)
+    except NotImplementedError as exc:
+        click.echo(str(exc))
+        return
+    if manifest is None:
+        click.echo(f"Session not found: {handle}")
+        return
+
+    adapter = adapter_for(agent)
+    canonical = to_canonical(handle)
+    events = list(adapter.get_events(manifest))
+    messages = [
+        {
+            "role": ev.role,
+            "content": ev.content,
+            "tool_name": ev.tool,
+            "tool_input": None,
+            "tool_output": None,
+            "error": None,
+            "timestamp": ev.ts,
+            "session_id": canonical,
+        }
+        for ev in events
+    ]
+    errors = extract_errors(messages, source_file=manifest.handle, source_type="adapter")
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    with _db_conn(db_path) as conn:
+        for rec in errors:
+            rec.setdefault("session_id", canonical)
+            rec.setdefault("mined_at", now)
+            rec.setdefault("is_subagent", 0)
+            insert_error_record(conn, rec, _batch=True)
+        conn.commit()
+    click.echo(
+        f"Adapter-mined {manifest.handle}: {len(events)} events "
+        f"-> {len(errors)} errors inserted."
+    )
+
+
 @cli.command()
 @click.option(
     "--since",
@@ -786,9 +843,19 @@ def mine(since, project, source, exclude_sidechains, session_handle):
 
         session_handle = sys.stdin.readline()
     if session_handle:
-        from sio.core.session_handle import coerce_session_input
+        from sio.core.session_handle import coerce_session_input, parse_handle
 
         session_handle = coerce_session_input(session_handle)
+        # Non-claude single session -> route through the adapter EXTRACT layer.
+        if parse_handle(session_handle)[0] != "claude":
+            db_path = os.environ.get(
+                "SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db")
+            )
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)
+            _mine_session_via_adapter(
+                db_path, session_handle, parse_handle(session_handle)[0]
+            )
+            return
     if not since and not session_handle:
         raise click.UsageError(
             "--since is required (or use --session to target one session)."

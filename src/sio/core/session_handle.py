@@ -56,6 +56,24 @@ def to_canonical(handle: str) -> str:
     return f"{agent}:{native}"
 
 
+def ensure_canonical(session_id: str | None, agent: str = LEGACY_AGENT) -> str | None:
+    """Namespace a bare session id as ``agent:id`` for writing.
+
+    Idempotent: empty or already-namespaced ids are returned unchanged. Applied
+    at the DB write path so new rows match the backfilled canonical form.
+
+    >>> ensure_canonical("abc-123")
+    'claude:abc-123'
+    >>> ensure_canonical("claude:abc-123")
+    'claude:abc-123'
+    >>> ensure_canonical(None) is None
+    True
+    """
+    if not session_id or ":" in session_id:
+        return session_id
+    return f"{agent}:{session_id}"
+
+
 def looks_like_path(raw: str) -> bool:
     """True if ``raw`` looks like a session file path rather than a handle."""
     return "/" in raw or raw.endswith((".jsonl", ".md"))

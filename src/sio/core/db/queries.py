@@ -44,12 +44,29 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
     return dict(row)
 
 
+def _canonicalize_session_fields(record: dict) -> dict:
+    """Return a copy of ``record`` with session id fields namespaced to
+    canonical ``claude:<id>`` form (idempotent).
+
+    Applied at every write so new rows stay consistent with the backfilled DB
+    (see PRD sio_absorb_session_search). All current writers are Claude.
+    """
+    from sio.core.session_handle import ensure_canonical
+
+    out = dict(record)
+    for key in ("session_id", "parent_session_id"):
+        if out.get(key):
+            out[key] = ensure_canonical(out[key])
+    return out
+
+
 def insert_invocation(
     conn: sqlite3.Connection,
     record: dict,
     *,
     _batch: bool = False,
 ) -> int:
+    record = _canonicalize_session_fields(record)
     cols = _INVOCATION_COLS
     placeholders = ", ".join(["?"] * len(cols))
     col_names = ", ".join(cols)
@@ -244,6 +261,7 @@ def insert_error_record(
     _batch: bool = False,
 ) -> int:
     """Insert an error record. Returns the new row ID."""
+    record = _canonicalize_session_fields(record)
     cols = _ERROR_RECORD_COLS
     placeholders = ", ".join(["?"] * len(cols))
     col_names = ", ".join(cols)
@@ -875,6 +893,7 @@ def insert_session_metrics(
 
     Uses INSERT OR REPLACE keyed on session_id (UNIQUE constraint).
     """
+    record = _canonicalize_session_fields(record)
     cols = _SESSION_METRICS_COLS
     placeholders = ", ".join(["?"] * len(cols))
     col_names = ", ".join(cols)
