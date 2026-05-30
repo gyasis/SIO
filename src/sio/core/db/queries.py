@@ -302,6 +302,23 @@ def count_error_records(conn: sqlite3.Connection) -> int:
     return row[0]
 
 
+def resolve_session_prefix(conn: sqlite3.Connection, prefix: str) -> list[str]:
+    """Distinct error_records session_ids matching a (partial) id.
+
+    Matches the prefix at the start of a bare id OR after an ``agent:``
+    namespace, so a fuzzy ``--session <partial>`` resolves whether rows are
+    stored bare (legacy) or canonical. Returns a sorted list of distinct
+    session_ids (0 = none, 1 = unambiguous, >1 = ambiguous).
+    """
+    rows = conn.execute(
+        "SELECT DISTINCT session_id FROM error_records "
+        "WHERE session_id LIKE ? OR session_id LIKE ? "
+        "ORDER BY session_id",
+        (f"{prefix}%", f"%:{prefix}%"),
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
 # ---------------------------------------------------------------------------
 # v2 — Pattern queries
 # ---------------------------------------------------------------------------

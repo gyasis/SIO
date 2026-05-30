@@ -1380,6 +1380,24 @@ def errors(error_type, limit, grep_term, project, exclude_types, session_handle)
 
                 session_handle = sys.stdin.readline()
             session_handle = coerce_session_input(session_handle)
+            # Fuzzy resolve a short bare partial id (no colon, no path) to a full
+            # session, or list candidates when ambiguous.
+            if session_handle and ":" not in session_handle and len(session_handle) < 36:
+                from sio.core.db.queries import resolve_session_prefix
+
+                matches = resolve_session_prefix(conn, session_handle)
+                if len(matches) > 1:
+                    click.echo(
+                        f"Ambiguous --session '{session_handle}' — "
+                        f"{len(matches)} sessions match:"
+                    )
+                    for m in matches[:10]:
+                        click.echo(f"  {m}")
+                    if len(matches) > 10:
+                        click.echo(f"  ... and {len(matches) - 10} more")
+                    return
+                if len(matches) == 1:
+                    session_handle = matches[0]
             if session_handle:
                 clause, sp = session_match_clause(session_handle)
                 where_clauses.append(clause)
