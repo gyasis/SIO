@@ -7934,6 +7934,57 @@ def db():
     """Database schema management commands."""
 
 
+@db.command("backfill-sessions")
+@click.option(
+    "--db-path",
+    default=os.path.expanduser("~/.sio/sio.db"),
+    help="Path to the SIO database.",
+    show_default=True,
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show what would change without writing (and without a backup).",
+)
+@click.option(
+    "--agent",
+    default="claude",
+    show_default=True,
+    help="Agent namespace to prefix legacy bare ids with.",
+)
+def db_backfill_sessions(db_path, dry_run, agent):
+    """Backfill legacy bare session ids to canonical ``agent:<id>`` form.
+
+    Idempotent and non-destructive (only adds an ``agent:`` prefix to rows that
+    lack a colon). A timestamped backup is taken before any write.
+    """
+    import shutil
+
+    from sio.core.db.session_migration import backfill_canonical_session_ids
+
+    if not os.path.exists(db_path):
+        click.echo(f"No database found at {db_path}.")
+        return
+
+    if not dry_run:
+        backup = db_path + ".backup-session-backfill"
+        shutil.copy2(db_path, backup)
+        click.echo(f"Backed up DB -> {backup}")
+
+    with _db_conn(db_path) as conn:
+        report = backfill_canonical_session_ids(conn, agent=agent, dry_run=dry_run)
+
+    total = sum(report.values())
+    verb = "would migrate" if dry_run else "migrated"
+    prefix = "DRY RUN: " if dry_run else ""
+    click.echo(f"{prefix}{verb} {total} rows to canonical {agent}:<id>")
+    for key, n in sorted(report.items()):
+        if n:
+            click.echo(f"  {key}: {n}")
+    if not total:
+        click.echo("  (nothing to migrate — already canonical)")
+
+
 @db.command("migrate")
 @click.option(
     "--db-path",
