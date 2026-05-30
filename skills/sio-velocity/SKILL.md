@@ -1,9 +1,19 @@
 ---
 name: sio-velocity
 description: Check if applied rules are actually reducing errors. Ask naturally like "are my rules working?" or "check rule effectiveness".
+requires:
+  cli: "sio>=0.3.0"
+  skills: [sio-budget, sio-scan, sio-suggest]
+  hooks: []
+  optional: []
 ---
 
 # SIO Velocity — Are My Rules Working?
+
+## Dependencies
+- **CLI:** `sio >= 0.3.0`
+- **Skills:** `/sio-budget` — check instruction-file space when rules aren't working and may need pruning; `/sio-scan` — re-scan underlying errors for declining rules; `/sio-suggest` — regenerate targeted suggestions for rules showing declining effectiveness
+- **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 
 Run this to verify rule effectiveness. Shows whether applied rules are actually reducing the errors they target. Flag rules that are not working so they can be revised or removed.
 

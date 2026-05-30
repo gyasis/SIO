@@ -1,9 +1,19 @@
 ---
 name: sio-discover
 description: Find repo-specific skill candidates from mined patterns. Ask naturally like "what can SIO improve in this repo?" or "find improvement opportunities".
+requires:
+  cli: "sio>=0.3.0"
+  skills: [sio-flows, sio-promote-flow, sio-suggest]
+  hooks: []
+  optional: []
 ---
 
 # SIO Discover — Find Improvement Opportunities
+
+## Dependencies
+- **CLI:** `sio >= 0.3.0`
+- **Skills:** `/sio-flows` (inspect full flow details), `/sio-promote-flow` (promote a flow to a skill), `/sio-suggest` (generate guard rules from error patterns)
+- **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 
 Run this when starting work on a repo to find improvement opportunities. Analyzes mined patterns to identify repo-specific skill candidates — recurring workflows that could become reusable skills.
 

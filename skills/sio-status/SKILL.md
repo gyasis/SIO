@@ -1,9 +1,19 @@
 ---
 name: sio-status
 description: Show the current state of the SIO pipeline — errors mined, patterns found, suggestions pending. Ask naturally like "how is SIO doing?" or "what's the pipeline status?".
+requires:
+  cli: "sio>=0.3.0"
+  skills: [sio-review, sio-scan, sio-suggest]
+  hooks: []
+  optional: []
 ---
 
 # SIO Status — Pipeline Dashboard
+
+## Dependencies
+- **CLI:** `sio >= 0.3.0`
+- **Skills:** `/sio-review` — to action pending suggestions surfaced by status; `/sio-scan` — to populate errors when count is 0; `/sio-suggest` — to cluster errors into patterns when pattern count is 0
+- **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 
 Quick overview of the SIO pipeline state with project-aware context.
 

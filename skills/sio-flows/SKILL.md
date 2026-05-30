@@ -2,9 +2,19 @@
 name: sio-flows
 description: Discover recurring positive tool sequence patterns from sessions. Shows what workflows work well, not just errors. Ask naturally like "what patterns work?" or "show my productive workflows".
 user-invocable: true
+requires:
+  cli: "sio>=0.3.0"
+  skills: [sio-distill, sio-export, sio-scan]
+  hooks: []
+  optional: []
 ---
 
 # SIO Flows — Discover Positive Patterns
+
+## Dependencies
+- **CLI:** `sio >= 0.3.0`
+- **Skills:** `/sio-scan` — mine error+success patterns to compare against flows; `/sio-export` — export flow data as training sets; `/sio-distill` — distill a specific session into a reusable playbook
+- **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 
 ## When to Use
 - "What patterns work well in my sessions?"

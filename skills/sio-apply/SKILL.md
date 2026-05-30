@@ -1,9 +1,19 @@
 ---
 name: sio-apply
 description: Apply an approved suggestion to CLAUDE.md or other config files. Ask naturally like "apply suggestion 5" or "add that rule to my config".
+requires:
+  cli: "sio>=0.3.0"
+  skills: [sio-review, sio-suggest]
+  hooks: []
+  optional: []
 ---
 
 # SIO Apply — Add Approved Rules to Your Config
+
+## Dependencies
+- **CLI:** `sio >= 0.3.0`
+- **Skills:** `/sio-suggest`, `/sio-review` — suggestions must be generated and reviewed before apply
+- **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 
 Write an approved suggestion to its target file (usually CLAUDE.md). Every change is recorded with before/after diffs for safe rollback.
 
