@@ -46,5 +46,10 @@ class SearchBackedAdapter:
                 raw=meta,
             )
 
-    def get_live_stream(self, manifest: SessionManifest) -> Iterator[SessionEvent]:
-        raise NotImplementedError("live streaming is Phase B")
+    def get_live_stream(
+        self, manifest: SessionManifest, **_kwargs: object
+    ) -> Iterator[SessionEvent]:
+        raise NotImplementedError(
+            f"live watch not supported for agent '{self.agent}' yet (Phase B "
+            "currently supports claude)."
+        )

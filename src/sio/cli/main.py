@@ -7925,6 +7925,67 @@ def discover(repo, fmt):
 
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# sio watch — live session watcher (Phase B)
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.option(
+    "--session",
+    "session_handle",
+    required=True,
+    help=(
+        "Session to watch (agent:native_id, a search-result path, `-` for "
+        "stdin, or a bare id). Live watch supports claude so far."
+    ),
+)
+@click.option(
+    "--from-start",
+    is_flag=True,
+    help="Replay existing events first, then follow new ones.",
+)
+@click.option(
+    "--tools-only",
+    is_flag=True,
+    help="Only surface tool_use events.",
+)
+def watch(session_handle, from_start, tools_only):
+    """Watch a session live — tail events as they happen (Phase B)."""
+    from sio.adapters.factory import adapter_for, manifest_from_handle
+    from sio.core.session_handle import coerce_session_input, parse_handle
+
+    if session_handle == "-":
+        import sys
+
+        session_handle = sys.stdin.readline()
+    session_handle = coerce_session_input(session_handle)
+    agent, _ = parse_handle(session_handle)
+
+    try:
+        manifest = manifest_from_handle(session_handle)
+    except NotImplementedError as exc:
+        click.echo(str(exc))
+        return
+    if manifest is None:
+        click.echo(f"Session not found: {session_handle}")
+        return
+
+    adapter = adapter_for(agent)
+    click.echo(f"Watching {manifest.handle}  (Ctrl-C to stop)")
+    try:
+        for ev in adapter.get_live_stream(manifest, from_start=from_start):
+            if tools_only and not ev.tool:
+                continue
+            tag = f"[{ev.tool}]" if ev.tool else ev.role
+            click.echo(f"{ev.ts[:19]} {tag}: {ev.content[:120]}")
+    except KeyboardInterrupt:
+        click.echo("\nStopped.")
+    except NotImplementedError as exc:
+        click.echo(str(exc))
+
+
+# ---------------------------------------------------------------------------
 # sio db — schema migration commands (T013, FR-017)
 # ---------------------------------------------------------------------------
 
