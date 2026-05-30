@@ -1,9 +1,19 @@
 ---
 name: sio-briefing
 description: Session-start intelligence check. Shows violations, budget warnings, declining rules, and pending suggestions. Ask naturally like "what should I know?" or "any issues to be aware of?".
+requires:
+  cli: "sio>=0.3.0"
+  skills: [sio-budget, sio-review, sio-velocity, sio-violations]
+  hooks: []
+  optional: []
 ---
 
 # SIO Briefing — Session-Start Intelligence Check
+
+## Dependencies
+- **CLI:** `sio >= 0.3.0`
+- **Skills:** `/sio-budget`, `/sio-review`, `/sio-velocity`, `/sio-violations` — each handles follow-up actions surfaced by the briefing
+- **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 
 Run this at the start of a session to check for known issues. Shows violations, budget warnings, declining rules, and pending suggestions so you know what to watch for.
 

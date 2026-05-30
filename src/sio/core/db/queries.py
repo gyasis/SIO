@@ -44,12 +44,29 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
     return dict(row)
 
 
+def _canonicalize_session_fields(record: dict) -> dict:
+    """Return a copy of ``record`` with session id fields namespaced to
+    canonical ``claude:<id>`` form (idempotent).
+
+    Applied at every write so new rows stay consistent with the backfilled DB
+    (see PRD sio_absorb_session_search). All current writers are Claude.
+    """
+    from sio.core.session_handle import ensure_canonical
+
+    out = dict(record)
+    for key in ("session_id", "parent_session_id"):
+        if out.get(key):
+            out[key] = ensure_canonical(out[key])
+    return out
+
+
 def insert_invocation(
     conn: sqlite3.Connection,
     record: dict,
     *,
     _batch: bool = False,
 ) -> int:
+    record = _canonicalize_session_fields(record)
     cols = _INVOCATION_COLS
     placeholders = ", ".join(["?"] * len(cols))
     col_names = ", ".join(cols)
@@ -244,6 +261,7 @@ def insert_error_record(
     _batch: bool = False,
 ) -> int:
     """Insert an error record. Returns the new row ID."""
+    record = _canonicalize_session_fields(record)
     cols = _ERROR_RECORD_COLS
     placeholders = ", ".join(["?"] * len(cols))
     col_names = ", ".join(cols)
@@ -270,8 +288,12 @@ def get_error_records(
     query = "SELECT * FROM error_records WHERE 1=1"
     params: list = []
     if session_id:
-        query += " AND session_id = ?"
-        params.append(session_id)
+        # Transition-safe: match bare legacy id OR canonical agent:native_id.
+        from sio.core.session_handle import session_match_clause
+
+        clause, sp = session_match_clause(session_id)
+        query += f" AND {clause}"
+        params.extend(sp)
     if error_type:
         query += " AND error_type = ?"
         params.append(error_type)
@@ -296,6 +318,23 @@ def count_error_records(conn: sqlite3.Connection) -> int:
     """Count total error records."""
     row = conn.execute("SELECT COUNT(*) FROM error_records").fetchone()
     return row[0]
+
+
+def resolve_session_prefix(conn: sqlite3.Connection, prefix: str) -> list[str]:
+    """Distinct error_records session_ids matching a (partial) id.
+
+    Matches the prefix at the start of a bare id OR after an ``agent:``
+    namespace, so a fuzzy ``--session <partial>`` resolves whether rows are
+    stored bare (legacy) or canonical. Returns a sorted list of distinct
+    session_ids (0 = none, 1 = unambiguous, >1 = ambiguous).
+    """
+    rows = conn.execute(
+        "SELECT DISTINCT session_id FROM error_records "
+        "WHERE session_id LIKE ? OR session_id LIKE ? "
+        "ORDER BY session_id",
+        (f"{prefix}%", f"%:{prefix}%"),
+    ).fetchall()
+    return [r[0] for r in rows]
 
 
 # ---------------------------------------------------------------------------
@@ -854,6 +893,7 @@ def insert_session_metrics(
 
     Uses INSERT OR REPLACE keyed on session_id (UNIQUE constraint).
     """
+    record = _canonicalize_session_fields(record)
     cols = _SESSION_METRICS_COLS
     placeholders = ", ".join(["?"] * len(cols))
     col_names = ", ".join(cols)

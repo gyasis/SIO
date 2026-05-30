@@ -40,6 +40,19 @@ memory-bank/
 execution_plan.json
 deep_research.db
 
+# Secrets / credentials (defense-in-depth — never commit)
+.env
+.env.*
+!.env.example
+!.env.template
+*.key
+*.pem
+*.token
+*.p12
+*.pfx
+secrets/
+credentials/
+
 # dev-kid lightweight-init transient assets — swept in accidentally.
 # PRD sio_autotag_experiments anti-pattern: do NOT commit these.
 .playwright-mcp/

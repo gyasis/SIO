@@ -781,6 +781,7 @@ def run_mine(
     project: str | None = None,
     *,
     exclude_sidechains: bool = True,
+    session: str | None = None,
 ) -> dict[str, Any]:
     """Run the full mining pipeline.
 
@@ -837,12 +838,24 @@ def run_mine(
     else:
         project_filtered = time_filtered
 
+    # --- 3b. Session filter (mine ONE session by handle/id) ----------------
+    # Restrict to the single file whose stem matches the handle's native id.
+    if session and project_filtered:
+        from sio.core.session_handle import parse_handle
+
+        _, native = parse_handle(session)
+        project_filtered = [p for p in project_filtered if p.stem == native]
+
     # total_files_scanned reflects files that survived the time filter (and
     # were candidates for processing).  The project filter is a best-effort
     # scope that controls which candidate files are actually parsed — it does
     # not reduce the reported scan count so that callers can see how many
     # files existed in the window regardless of project narrowing.
-    total_files_scanned: int = len(time_filtered)
+    # When targeting a single session, report the narrowed count (not the whole
+    # time-window) so the summary reflects the one session actually considered.
+    total_files_scanned: int = (
+        len(project_filtered) if session else len(time_filtered)
+    )
 
     # --- 4. Process each file ----------------------------------------------
     inserted_ids: list[int] = []

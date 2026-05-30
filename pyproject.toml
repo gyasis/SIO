@@ -52,6 +52,10 @@ Issues = "https://github.com/gyasis/SIO/issues"
 
 [project.scripts]
 sio = "sio.cli.main:cli"
+# Deprecation shim: `session-search` is absorbed into `sio search`. Kept as a
+# packaged entry point (survives pip install on any machine) during the
+# deprecation window, then removed. See PRD sio_absorb_session_search.
+session-search = "sio.search.cli:main_session_search_shim"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sio"]

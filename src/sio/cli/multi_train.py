@@ -113,14 +113,20 @@ def multi_train_cmd(surfaces, parallelism, optimizer, budget, lm_mix,
     click.echo(f"  parallelism: {parallelism}")
     click.echo(f"  total runs:  {len(plan)}")
     click.echo()
-    click.echo(f"  {'#':<3} {'surface':<20} {'task_lm':<32} {'reflection_lm':<32} {'cost (low-mid-high)':<25}")
+    hdr = (
+        f"  {'#':<3} {'surface':<20} {'task_lm':<32} "
+        f"{'reflection_lm':<32} {'cost (low-mid-high)':<25}"
+    )
+    click.echo(hdr)
     click.echo("  " + "-" * 115)
     for i, run in enumerate(plan):
         task_lm = _MODE_TO_MODEL[run["task_mode"]]
         refl_lm = _MODE_TO_MODEL[run["reflection_mode"]]
         e = estimate_optimize_run(optimizer, budget, task_lm, refl_lm)
         t = e["total"]
-        total_low += t["low"]; total_mid += t["mid"]; total_high += t["high"]
+        total_low += t["low"]
+        total_mid += t["mid"]
+        total_high += t["high"]
         click.echo(
             f"  {i+1:<3} {run['surface']:<20} {task_lm:<32} {refl_lm:<32} "
             f"${t['low']:.2f}-${t['mid']:.2f}-${t['high']:.2f}"

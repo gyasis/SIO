@@ -1,10 +1,20 @@
 ---
 name: sio-codify-workflow
 description: One-shot pipeline to codify a recent successful workflow into a reusable skill — runs distill → promote → optimize with confirmation between steps. Use when the user says "codify this", "save this workflow as a skill", "turn what I just did into a skill", "make a skill from this session".
+requires:
+  cli: "sio>=0.3.0"
+  skills: [sio, sio-discover, sio-distill, sio-flows, sio-optimize, sio-promote-flow, sio-velocity]
+  hooks: []
+  optional: []
 user-invocable: true
 ---
 
 # SIO Codify Workflow — Session → Skill in One Pipeline
+
+## Dependencies
+- **CLI:** `sio >= 0.3.0`
+- **Skills:** `/sio-distill` (cleans session), `/sio-promote-flow` (writes SKILL.md), `/sio-optimize` (DSPy tuning), `/sio-flows` (fallback for fragmented sessions), `/sio-discover` (find more candidates), `/sio-velocity` (confirm the skill is used), `/sio` (master router)
+- **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 
 This skill is the "I just did something useful, save it" wrapper. It chains the three SIO codification steps — distill, promote, optimize — with a confirmation pause between each so the user can abort or edit before the next stage runs.
 

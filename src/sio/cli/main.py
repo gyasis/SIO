@@ -505,7 +505,9 @@ def doctor() -> None:
     if fixes:
         console.print("\n[bold]Suggested fixes:[/bold]")
         for c in fixes:
-            console.print(f"  [{color_map[c.status]}]{c.name}[/{color_map[c.status]}]: {c.fix_hint}")
+            console.print(
+                f"  [{color_map[c.status]}]{c.name}[/{color_map[c.status]}]: {c.fix_hint}"
+            )
 
     if report.has_errors:
         raise SystemExit(1)
@@ -739,6 +741,63 @@ def export(platform, fmt, output):
 # ---------------------------------------------------------------------------
 
 
+def _mine_session_via_adapter(db_path: str, handle: str, agent: str) -> None:
+    """Mine ONE non-claude session through the adapter EXTRACT layer.
+
+    Routes a non-claude `mine --session` via the adapter Protocol: locate the
+    session, pull its events, run the error extractor, and insert (canonical
+    session id applied at the write path). Claude keeps its richer file-scan
+    path untouched. Non-claude extraction is content-level (the search-backed
+    adapters do not carry tool_input/output), so tool_failure detection is
+    limited — text-pattern errors (admissions, corrections) are still caught.
+    """
+    import datetime
+
+    from sio.adapters.factory import adapter_for, manifest_from_handle
+    from sio.core.db.queries import insert_error_record
+    from sio.core.session_handle import to_canonical
+    from sio.mining.error_extractor import extract_errors
+
+    try:
+        manifest = manifest_from_handle(handle)
+    except NotImplementedError as exc:
+        click.echo(str(exc))
+        return
+    if manifest is None:
+        click.echo(f"Session not found: {handle}")
+        return
+
+    adapter = adapter_for(agent)
+    canonical = to_canonical(handle)
+    events = list(adapter.get_events(manifest))
+    messages = [
+        {
+            "role": ev.role,
+            "content": ev.content,
+            "tool_name": ev.tool,
+            "tool_input": None,
+            "tool_output": None,
+            "error": None,
+            "timestamp": ev.ts,
+            "session_id": canonical,
+        }
+        for ev in events
+    ]
+    errors = extract_errors(messages, source_file=manifest.handle, source_type="adapter")
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    with _db_conn(db_path) as conn:
+        for rec in errors:
+            rec.setdefault("session_id", canonical)
+            rec.setdefault("mined_at", now)
+            rec.setdefault("is_subagent", 0)
+            insert_error_record(conn, rec, _batch=True)
+        conn.commit()
+    click.echo(
+        f"Adapter-mined {manifest.handle}: {len(events)} events "
+        f"-> {len(errors)} errors inserted."
+    )
+
+
 @cli.command()
 @click.option(
     "--since",
@@ -747,7 +806,8 @@ def export(platform, fmt, output):
     help=(
         'Time window: "3 days", "2 weeks", "1 month",'
         ' "6h", "yesterday", "3 days ago", "2026-01-15".'
-        " Required unless --experiment is given."
+        " Required unless --session targets a single session,"
+        " or --experiment is given."
     ),
 )
 @click.option("--project", default=None, help="Filter by project name.")
@@ -763,6 +823,16 @@ def export(platform, fmt, output):
     help="Filter out sidechain messages before aggregation (default: on).",
 )
 @click.option(
+    "--session",
+    "session_handle",
+    default=None,
+    help=(
+        "Mine ONE session by handle/path/id (agent:native_id, a search-result "
+        "path, or bare id). When set, --since is optional. Pipe from "
+        "`sio search ... --files`."
+    ),
+)
+@click.option(
     "--experiment",
     "experiment_name",
     default=None,
@@ -772,16 +842,42 @@ def export(platform, fmt, output):
     ),
 )
 @runlogged("mine")
-def mine(since, project, source, exclude_sidechains, experiment_name):
+def mine(since, project, source, exclude_sidechains, session_handle, experiment_name):
     """Mine recent sessions for errors and failures.
 
     The user-visible verb in the PRD is ``scan``; ``mine`` is the
     implementation name. ``--experiment NAME`` scopes the window to a
-    cohort recorded by ``sio experiment start``.
+    cohort recorded by ``sio experiment start``. ``--session`` targets a
+    single session (and makes ``--since`` optional).
     """
     from pathlib import Path
 
     from sio.mining.pipeline import run_mine
+
+    if session_handle == "-":
+        import sys
+
+        session_handle = sys.stdin.readline()
+    if session_handle:
+        from sio.core.session_handle import coerce_session_input, parse_handle
+
+        session_handle = coerce_session_input(session_handle)
+        # Non-claude single session -> route through the adapter EXTRACT layer.
+        if parse_handle(session_handle)[0] != "claude":
+            db_path = os.environ.get(
+                "SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db")
+            )
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)
+            _mine_session_via_adapter(
+                db_path, session_handle, parse_handle(session_handle)[0]
+            )
+            return
+    if not since and not session_handle and not experiment_name:
+        raise click.UsageError(
+            "Provide --since, or --session (one session), or --experiment (a cohort)."
+        )
+    if session_handle and not since:
+        since = "20 years"  # effectively unbounded for a single targeted session
 
     db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
@@ -831,6 +927,7 @@ def mine(since, project, source, exclude_sidechains, experiment_name):
             source,
             project,
             exclude_sidechains=exclude_sidechains,
+            session=session_handle,
         )
 
     from rich.console import Console
@@ -1388,8 +1485,18 @@ def patterns(error_type, project):
     default=None,
     help="Exclude error types. Comma-separated (e.g. 'repeated_attempt,tool_failure').",
 )
+@click.option(
+    "--session",
+    "session_handle",
+    default=None,
+    help=(
+        "Scope to ONE session by handle (agent:native_id, e.g. "
+        "claude:<uuid>; a bare id is assumed claude). Matches legacy and "
+        "canonical forms. Pipe from search: `sio search ... --files`."
+    ),
+)
 @runlogged("errors")
-def errors(error_type, limit, grep_term, project, exclude_types):
+def errors(error_type, limit, grep_term, project, exclude_types, session_handle):
     """Browse mined errors with optional type and content filters."""
     from rich.console import Console
     from rich.table import Table
@@ -1417,6 +1524,40 @@ def errors(error_type, limit, grep_term, project, exclude_types):
         if project:
             where_clauses.append("source_file LIKE ?")
             params.append(f"%{project}%")
+
+        if session_handle:
+            from sio.core.session_handle import (
+                coerce_session_input,
+                session_match_clause,
+            )
+
+            if session_handle == "-":
+                import sys
+
+                session_handle = sys.stdin.readline()
+            session_handle = coerce_session_input(session_handle)
+            # Fuzzy resolve a short bare partial id (no colon, no path) to a full
+            # session, or list candidates when ambiguous.
+            if session_handle and ":" not in session_handle and len(session_handle) < 36:
+                from sio.core.db.queries import resolve_session_prefix
+
+                matches = resolve_session_prefix(conn, session_handle)
+                if len(matches) > 1:
+                    click.echo(
+                        f"Ambiguous --session '{session_handle}' — "
+                        f"{len(matches)} sessions match:"
+                    )
+                    for m in matches[:10]:
+                        click.echo(f"  {m}")
+                    if len(matches) > 10:
+                        click.echo(f"  ... and {len(matches) - 10} more")
+                    return
+                if len(matches) == 1:
+                    session_handle = matches[0]
+            if session_handle:
+                clause, sp = session_match_clause(session_handle)
+                where_clauses.append(clause)
+                params.extend(sp)
 
         if grep_term:
             # Comma-separated terms use OR logic across all content fields
@@ -1791,7 +1932,8 @@ def inspect(pattern_id):
     help=(
         "Hop-2 narrowing strategy (used with --refine). "
         "'filter' (default): narrow errors by --refine, feed subset to DSPy. Fast, shallow. "
-        "'recluster': re-cluster Hop-1's errors and select sub-clusters matching --refine. Slower, deep. "
+        "'recluster': re-cluster Hop-1's errors and select sub-clusters matching --refine. "
+        "Slower, deep. "
         "'hybrid': filter by --refine, then re-cluster the survivors. Balance."
     ),
 )
@@ -1816,7 +1958,8 @@ def inspect(pattern_id):
         "Path to a Hop-1 errors CSV (from a previous --preview run). "
         "Skips DB load + --grep / --project / --type filters (those were applied in Hop-1). "
         "Feeds the cached errors directly into clustering + Hop-2. "
-        "Use '~/.sio/previews/errors_preview.csv' (latest preview) by default if --use-cache is set."
+        "Use '~/.sio/previews/errors_preview.csv' (latest preview) by default "
+        "if --use-cache is set."
     ),
 )
 @click.option(
@@ -1835,6 +1978,16 @@ def inspect(pattern_id):
     type=int,
     default=24,
     help="Max age in hours for --use-cache to accept without warning. Default: 24.",
+)
+@click.option(
+    "--session",
+    "session_handle",
+    default=None,
+    help=(
+        "Scope the whole pipeline to ONE session (agent:native_id, e.g. "
+        "claude:<uuid>; bare id assumed claude). Turns suggest into a targeted "
+        "single-session analyzer. Pipe from `sio search ... --files`."
+    ),
 )
 @click.option(
     "--experiment",
@@ -1862,11 +2015,21 @@ def suggest(
     within_csv,
     use_cache,
     cache_ttl_hours,
+    session_handle,
     experiment_name,
 ):
     """Run the full pipeline: cluster -> persist -> dataset -> suggestions."""
     import uuid
     from datetime import datetime, timezone
+
+    if session_handle == "-":
+        import sys
+
+        session_handle = sys.stdin.readline()
+    if session_handle:
+        from sio.core.session_handle import coerce_session_input
+
+        session_handle = coerce_session_input(session_handle)
 
     from rich.console import Console
     from rich.table import Table
@@ -1972,7 +2135,9 @@ def suggest(
         else:
             # Normal path — load from DB and apply Hop-1 filters
             # 1. Get all errors (no limit), filtered by project if specified
-            all_errors = get_error_records(conn, limit=0, project=project)
+            all_errors = get_error_records(
+                conn, limit=0, project=project, session_id=session_handle
+            )
             if not all_errors:
                 filter_hint = f" for project '{project}'" if project else ""
                 click.echo(
@@ -2087,7 +2252,8 @@ def suggest(
         if hop2_refine_terms:
             filter_msg += (
                 f" | Hop-2 strategy={hop2_strategy.lower()} refine='{refine_term}'"
-                f" ({hop1_error_count} -> {len(errors_to_cluster)} errors after pre-cluster narrowing)"
+                f" ({hop1_error_count} -> {len(errors_to_cluster)}"
+                f" errors after pre-cluster narrowing)"
             )
         console.print(
             f"[bold]Step 1:[/bold] Clustering {len(errors_to_cluster)} errors{filter_msg}..."
@@ -4469,7 +4635,8 @@ def promote_positives_cmd(since, min_confidence, dry_run):
                     """,
                     (
                         r["pattern_id"] or "tool_failure__unclassified",
-                        '[{"error_text": "' + (r["error_text"] or "").replace('"', '\\"')[:300] + '"}]',
+                        '[{"error_text": "' + (r["error_text"] or "").replace(
+                            '"', '\\"')[:300] + '"}]',
                         r["error_type"],
                         f"User-confirmed recovery: {(r['signal_text'] or '')[:200]}",
                         f"Recovery-paired rule for {r['pattern_id'] or 'unclassified'}",
@@ -4896,10 +5063,15 @@ def optimize_cmd(
     }
     if task_mode:
         os.environ["SIO_TASK_LM"] = _MODE_TO_MODEL["task"][task_mode]
-        console.print(f"  [dim]--task-mode={task_mode} → SIO_TASK_LM={os.environ['SIO_TASK_LM']}[/dim]")
+        console.print(
+            f"  [dim]--task-mode={task_mode} → SIO_TASK_LM={os.environ['SIO_TASK_LM']}[/dim]"
+        )
     if reflection_mode:
         os.environ["SIO_REFLECTION_LM"] = _MODE_TO_MODEL["reflection"][reflection_mode]
-        console.print(f"  [dim]--reflection-mode={reflection_mode} → SIO_REFLECTION_LM={os.environ['SIO_REFLECTION_LM']}[/dim]")
+        console.print(
+            f"  [dim]--reflection-mode={reflection_mode} → "
+            f"SIO_REFLECTION_LM={os.environ['SIO_REFLECTION_LM']}[/dim]"
+        )
     if gepa_budget:
         os.environ["SIO_GEPA_BUDGET"] = gepa_budget
         console.print(f"  [dim]--gepa-budget={gepa_budget} → SIO_GEPA_BUDGET={gepa_budget}[/dim]")
@@ -5164,7 +5336,8 @@ def optimize_cmd(
                         f"id=[cyan]{ds_row['id']}[/cyan] (sha={sha[:12]}).\n"
                         f"\n  The optimizer ladder is "
                         f"[bold]Bootstrap → MIPROv2 → GEPA[/bold]. Run MIPROv2 first:\n"
-                        f"    [dim]sio optimize --optimizer mipro --trainset-file {trainset_file}[/dim]\n"
+                        f"    [dim]sio optimize --optimizer mipro"
+                        f" --trainset-file {trainset_file}[/dim]\n"
                         f"\n  Or override with [bold]--skip-ladder[/bold] if you have "
                         f"a specific reason (logged for SIO mining)."
                     )
@@ -5297,7 +5470,9 @@ def optimize_cmd(
                 ds_id = register_dataset(
                     source_path=tf,
                     slug=tf.stem,
-                    description="Auto-registered from sio optimize --trainset-file (was unregistered)",
+                    description=(
+                        "Auto-registered from sio optimize --trainset-file (was unregistered)"
+                    ),
                     source="manual",
                 )
             else:
@@ -5512,7 +5687,10 @@ def optimize_ladder_cmd(
     if ds_row is None:
         needs_amplify = True  # unregistered — assume amplification needed
         amplified_path = None
-    elif (ds_row["source"] or "") == "curate" or (ds_row["row_count"] or 0) < target_amplified_rows:
+    elif (
+        (ds_row["source"] or "") == "curate"
+        or (ds_row["row_count"] or 0) < target_amplified_rows
+    ):
         needs_amplify = True
         amplified_path = str(_P.home() / ".sio" / "amplified" /
                              f"{tf.stem}_amplified.jsonl")
@@ -5604,7 +5782,11 @@ def optimize_ladder_cmd(
     state_file = state_dir / "ladder_status.json"
 
     def _now_iso() -> str:
-        return _dt2.datetime.now(_dt2.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+        return (
+            _dt2.datetime.now(_dt2.timezone.utc)
+            .isoformat(timespec="seconds")
+            .replace("+00:00", "Z")
+        )
 
     ladder_state = {
         "started_at": _now_iso(),
@@ -7455,7 +7637,9 @@ def promote_rule(rule_index: int, mode: str, since: str | None, write: bool) -> 
                     f"[bold]Slug:[/bold]             {result.slug}\n"
                     f"[bold]promoted_hooks id:[/bold] {result.promoted_hook_id}"
                 )
-                console.print(Panel(wrote_body, title="Promoted (mode=" + mode + ")", expand=False))
+                console.print(Panel(
+                    wrote_body, title="Promoted (mode=" + mode + ")", expand=False
+                ))
                 console.print(
                     "[green]✓ Hook installed.[/green] Restart Claude Code so the "
                     "harness picks up the new PreToolUse registration. The hook "
@@ -8203,6 +8387,67 @@ def discover(repo, fmt):
 
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# sio watch — live session watcher (Phase B)
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.option(
+    "--session",
+    "session_handle",
+    required=True,
+    help=(
+        "Session to watch (agent:native_id, a search-result path, `-` for "
+        "stdin, or a bare id). Live watch supports claude so far."
+    ),
+)
+@click.option(
+    "--from-start",
+    is_flag=True,
+    help="Replay existing events first, then follow new ones.",
+)
+@click.option(
+    "--tools-only",
+    is_flag=True,
+    help="Only surface tool_use events.",
+)
+def watch(session_handle, from_start, tools_only):
+    """Watch a session live — tail events as they happen (Phase B)."""
+    from sio.adapters.factory import adapter_for, manifest_from_handle
+    from sio.core.session_handle import coerce_session_input, parse_handle
+
+    if session_handle == "-":
+        import sys
+
+        session_handle = sys.stdin.readline()
+    session_handle = coerce_session_input(session_handle)
+    agent, _ = parse_handle(session_handle)
+
+    try:
+        manifest = manifest_from_handle(session_handle)
+    except NotImplementedError as exc:
+        click.echo(str(exc))
+        return
+    if manifest is None:
+        click.echo(f"Session not found: {session_handle}")
+        return
+
+    adapter = adapter_for(agent)
+    click.echo(f"Watching {manifest.handle}  (Ctrl-C to stop)")
+    try:
+        for ev in adapter.get_live_stream(manifest, from_start=from_start):
+            if tools_only and not ev.tool:
+                continue
+            tag = f"[{ev.tool}]" if ev.tool else ev.role
+            click.echo(f"{ev.ts[:19]} {tag}: {ev.content[:120]}")
+    except KeyboardInterrupt:
+        click.echo("\nStopped.")
+    except NotImplementedError as exc:
+        click.echo(str(exc))
+
+
+# ---------------------------------------------------------------------------
 # sio db — schema migration commands (T013, FR-017)
 # ---------------------------------------------------------------------------
 
@@ -8210,6 +8455,57 @@ def discover(repo, fmt):
 @cli.group()
 def db():
     """Database schema management commands."""
+
+
+@db.command("backfill-sessions")
+@click.option(
+    "--db-path",
+    default=os.path.expanduser("~/.sio/sio.db"),
+    help="Path to the SIO database.",
+    show_default=True,
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show what would change without writing (and without a backup).",
+)
+@click.option(
+    "--agent",
+    default="claude",
+    show_default=True,
+    help="Agent namespace to prefix legacy bare ids with.",
+)
+def db_backfill_sessions(db_path, dry_run, agent):
+    """Backfill legacy bare session ids to canonical ``agent:<id>`` form.
+
+    Idempotent and non-destructive (only adds an ``agent:`` prefix to rows that
+    lack a colon). A timestamped backup is taken before any write.
+    """
+    import shutil
+
+    from sio.core.db.session_migration import backfill_canonical_session_ids
+
+    if not os.path.exists(db_path):
+        click.echo(f"No database found at {db_path}.")
+        return
+
+    if not dry_run:
+        backup = db_path + ".backup-session-backfill"
+        shutil.copy2(db_path, backup)
+        click.echo(f"Backed up DB -> {backup}")
+
+    with _db_conn(db_path) as conn:
+        report = backfill_canonical_session_ids(conn, agent=agent, dry_run=dry_run)
+
+    total = sum(report.values())
+    verb = "would migrate" if dry_run else "migrated"
+    prefix = "DRY RUN: " if dry_run else ""
+    click.echo(f"{prefix}{verb} {total} rows to canonical {agent}:<id>")
+    for key, n in sorted(report.items()):
+        if n:
+            click.echo(f"  {key}: {n}")
+    if not total:
+        click.echo("  (nothing to migrate — already canonical)")
 
 
 @db.command("migrate")
@@ -8662,6 +8958,11 @@ cli.add_command(_multi_train_cmd)
 from sio.cli.reproduce import reproduce_cmd as _reproduce_cmd  # noqa: E402
 
 cli.add_command(_reproduce_cmd)
+
+# Register sio search (absorbed cross-harness session-search; merge Phase 0)
+from sio.cli.search import search_cmd as _search_cmd  # noqa: E402
+
+cli.add_command(_search_cmd)
 
 
 @cli.command("gepa-status")

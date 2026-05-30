@@ -487,3 +487,477 @@ Export telemetry data.
 ```bash
 sio export [--platform claude-code] [--format json|csv] [-o output.json]
 ```
+
+---
+
+## Observability
+
+### `sio changes`
+
+List all applied CLAUDE.md changes and their current status.
+
+```bash
+sio changes
+```
+
+Displays a Rich table with columns: change ID, suggestion ID, target file, applied timestamp, status (active or rolled back), and description. Complements `sio rollback <id>` — run `sio changes` first to find the change ID to roll back.
+
+---
+
+### `sio briefing`
+
+Show a concise session-start briefing of actionable SIO insights drawn from recent patterns and pending suggestions.
+
+```bash
+sio briefing [--json]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--json` | off | Output as a JSON object `{"briefing": "..."}` instead of plain text |
+
+**Examples:**
+
+```bash
+# Human-readable briefing
+sio briefing
+
+# Machine-readable for agent injection
+sio briefing --json
+```
+
+---
+
+### `sio trend`
+
+Show growth or decline of error pattern clusters over time using bucketed counts and trend arrows.
+
+```bash
+sio trend [--daily|--weekly|--monthly] [--top <n>] [--windows <n>] [--grep <terms>] [--pattern <id>]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--weekly` | (default) | Weekly time buckets |
+| `--daily` | — | Daily time buckets |
+| `--monthly` | — | Monthly time buckets |
+| `--top` | `10` | Show top-N patterns by total error count |
+| `--windows` | `6` | Number of time buckets to include, counted backwards from now |
+| `--grep` | None | Filter patterns by substring match on description (comma-separated OR) |
+| `--pattern` | None | Filter to a single pattern by numeric id or slug |
+
+The last column shows a trend arrow: `↑` growing, `↓` shrinking, `→` stable — based on a comparison of the two most recent buckets.
+
+**Examples:**
+
+```bash
+# Default: weekly, top 10, last 6 weeks
+sio trend
+
+# Daily buckets, last 14 days, show only top 5
+sio trend --daily --top 5 --windows 14
+
+# Focus on patterns mentioning zeno or cdia
+sio trend --grep "zeno,cdia"
+
+# Single pattern by slug
+sio trend --pattern user-correction-this
+```
+
+---
+
+### `sio gepa-status`
+
+Show live GEPA (or MIPROv2) optimizer progress for the most recently started `sio optimize` run.
+
+```bash
+sio gepa-status [--watch]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--watch` | off | Re-print every 5 seconds until the process finishes |
+
+Reads the latest runlog JSON from `~/.sio/runs/` and surfaces: active optimizer name, current iteration / trial, best validation score so far, per-iteration score history (last 10), idle time, parse error / truncation counters, and any GEPA/MIPRO warning tiers that have fired.
+
+**Examples:**
+
+```bash
+# One-shot status check
+sio gepa-status
+
+# Live dashboard while optimize is running
+sio gepa-status --watch
+```
+
+---
+
+### `sio rule-outcomes`
+
+Show per-rule outcome metrics — how error counts changed before and after each CLAUDE.md rule was first seen.
+
+```bash
+sio rule-outcomes [RULE_ID] [--window <days>] [--since <date>] [--format text|json]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `RULE_ID` | (optional) | Rule identifier in `tools/foo.md#<sha[:12]>` format. Omit to list all rules with data. |
+| `--window` | `7` | Pre/post window in days around each rule's first-seen date |
+| `--since` | None | Only consider error records on or after this date (ISO-8601 or `"N days"`) |
+| `--format` | `text` | Output format: `text` (Rich panels) or `json` |
+
+**Examples:**
+
+```bash
+# List all rules with outcome data
+sio rule-outcomes
+
+# Drill into a specific rule
+sio rule-outcomes "tools/retry.md#abc123def456"
+
+# Wider window, JSON output
+sio rule-outcomes --window 14 --format json
+```
+
+---
+
+### `sio rule-audit`
+
+Audit a single rule with concrete before/after error samples; optionally run an LLM judge to score applicability.
+
+```bash
+sio rule-audit RULE_ID [--samples <n>] [--window <days>] [--judge] [--yes] [--write-report] [--format text|json]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `RULE_ID` | (required) | Rule identifier in `tools/foo.md#<sha[:12]>` format |
+| `--samples` | `10` | Number of representative errors to display from each side (before / after) |
+| `--window` | `7` | Pre/post window in days around rule first-seen |
+| `--judge` | off | Run LLM-as-judge on AFTER-window samples (PAID — prompts for confirmation) |
+| `--yes` | off | Skip the cost-confirmation prompt (only used with `--judge`) |
+| `--write-report` | off | Write the audit output to `~/.sio/audits/<rule_hash>_<ts>.md` |
+| `--format` | `text` | Output format: `text` or `json` |
+
+**Examples:**
+
+```bash
+# Review 10 samples each side, text output
+sio rule-audit "tools/retry.md#abc123def456"
+
+# Wider sample, save to file
+sio rule-audit "tools/retry.md#abc123def456" --samples 20 --write-report
+
+# Full LLM-judge pass (paid)
+sio rule-audit "tools/retry.md#abc123def456" --judge --yes
+```
+
+---
+
+### `sio analyze same-error`
+
+Find error signatures that recur across multiple sessions without the agent learning from them.
+
+```bash
+sio analyze same-error [--min-count <n>] [--since <time>] [--limit <n>] [--with-context]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--min-count` | `3` | Minimum repetition count to surface a signature |
+| `--since` | None | Time window, e.g. `"30 days"` or `"1 week"` |
+| `--limit` | `30` | Maximum number of findings to display |
+| `--with-context` | off | Include up to 3 `context_before` snippets per finding |
+
+The unit of analysis is the normalized `error_text` signature hash — the same hash space used by the clustering classifier.
+
+**Examples:**
+
+```bash
+# Find errors seen 3+ times
+sio analyze same-error
+
+# Tighter filter, last week only
+sio analyze same-error --min-count 5 --since "7 days"
+
+# Include agent-intent context snippets
+sio analyze same-error --with-context
+```
+
+---
+
+## Ground Truth & Training
+
+### `sio curate`
+
+Produce a filtered, curated JSONL training dataset from the mined error corpus — the primary input for `sio amplify` and `sio optimize --trainset-file`.
+
+```bash
+sio curate [--since <time>] [--emphasis] [--classified] [--pattern <slug>]
+           [--pattern-prefix <prefix>] [--error-type <type>]...
+           [--exclude-corrections/--include-corrections]
+           [--exclude-cascade/--include-cascade]
+           [--has-positive-recovery] [--recovery-window-seconds <n>]
+           [--limit <n>] [-o <path>]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--since` | `7 days` | Time window: `"7 days"`, `"30 days"`, or an ISO date |
+| `--emphasis` | off | Require `!!` or `??` in user message (frustration markers) |
+| `--classified` | off | Require `pattern_id NOT NULL` (skip unclassified records) |
+| `--pattern` | None | Exact `pattern_id` slug to filter on |
+| `--pattern-prefix` | None | LIKE prefix for `pattern_id` (e.g. `tool_failure__`) |
+| `--error-type` | — | Restrict to one or more error types; repeat flag for multiple |
+| `--exclude-corrections` | on | Drop `user_correction` rows |
+| `--exclude-cascade` | on | Drop cascade-failure rows |
+| `--has-positive-recovery` | off | Require a `positive_records` event within `--recovery-window-seconds` |
+| `--recovery-window-seconds` | `600` | Recovery window when using `--has-positive-recovery` |
+| `--limit` | None | Max rows to emit (newest first) |
+| `-o` / `--output` | `~/.sio/curated/<ts>.jsonl` | Output JSONL path |
+
+Outputs a JSONL of canonical `PatternToRule` DSPy example shapes plus a Markdown preview with row count, category distribution, and 10 sample rows. The dataset is auto-registered in the `trainsets` table.
+
+**Examples:**
+
+```bash
+# Basic curate, last 7 days
+sio curate
+
+# Wider window, only frustration-marked errors
+sio curate --since "30 days" --emphasis
+
+# Only errors that had a recovery within 10 minutes
+sio curate --has-positive-recovery --recovery-window-seconds 600
+
+# Filter to a specific pattern family
+sio curate --pattern-prefix "tool_failure__"
+```
+
+---
+
+### `sio amplify`
+
+Synthesize N variants per curated row using an LLM, then filter out low-quality or duplicate variants. Paid command — see cost callout in output.
+
+```bash
+sio amplify -i <curated.jsonl> [-o <output.jsonl>] [-n <n-per-row>]
+            [--min-judge-score <score>] [--max-workers <n>]
+            [--task-mode work|cheap|free|personal|personal-strong]
+            [--budget-override <usd>]
+            [--no-diversity-filter] [--diversity-threshold <threshold>]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-i` / `--input` | (required) | Input JSONL from `sio curate` |
+| `-o` / `--output` | `~/.sio/amplified/<input>_amplified.jsonl` | Output JSONL path |
+| `-n` / `--n-per-row` | `10` | Synthetic variants to generate per input row — **the primary knob** |
+| `--min-judge-score` | `0.6` | Drop variants whose LLM-judge score falls below this |
+| `--max-workers` | `8` | Thread-pool parallelism for LLM calls |
+| `--task-mode` | config default | LM tier: `cheap` (Flash, recommended), `work` (Pro), `free` (Ollama), `personal` (gpt-4o-mini), `personal-strong` (gpt-5) |
+| `--budget-override` | None | Override the 24h spend cap for this run |
+| `--no-diversity-filter` | off | Disable cosine-similarity deduplication of variants |
+| `--diversity-threshold` | `0.95` | Cosine similarity above which variants are deduplicated (lower = more aggressive) |
+
+**Cost callout:** Amplification calls the configured LLM for every input row × `--n-per-row`. Start with `--task-mode cheap` and a small curated set. Budget check fires automatically before the first call.
+
+For a full conceptual guide and cost strategy see [`docs/AMPLIFY_GUIDE.md`](AMPLIFY_GUIDE.md).
+
+**Examples:**
+
+```bash
+# Amplify with 5 variants per row (recommended starting point)
+sio amplify -i ~/.sio/curated/curated_20260520_120000.jsonl -n 5
+
+# Use cheapest tier, budget override to $2
+sio amplify -i curated.jsonl -n 10 --task-mode cheap --budget-override 2.0
+
+# Tighter diversity filter
+sio amplify -i curated.jsonl -n 10 --diversity-threshold 0.85
+```
+
+---
+
+### `sio promote-positives`
+
+Promote positive session signals (confirmations, gratitude, session-success events) from the `positive_records` table into the ground truth review queue.
+
+```bash
+sio promote-positives [--since <time>] [--min-confidence <score>] [--dry-run]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--since` | `7 days` | Time window of `positive_records` to consider |
+| `--min-confidence` | `0.0` | Drop positives whose `sentiment_score` is below this |
+| `--dry-run` | off | Show what would be promoted without writing |
+
+Inserted rows land in `ground_truth` with `label='pending'`. Run `sio suggest-review` or `sio approve <id>` afterward to move them to `label='positive'` and into the next `sio optimize` trainset.
+
+**Examples:**
+
+```bash
+# Promote last week's positive signals
+sio promote-positives
+
+# Wider window, only high-confidence signals
+sio promote-positives --since "30 days" --min-confidence 0.5
+
+# Preview without writing
+sio promote-positives --dry-run
+```
+
+---
+
+### `sio promote-to-gold`
+
+Promote `behavior_invocations` rows that the user rated as both satisfied and correct into the `gold_standards` table for DSPy training.
+
+```bash
+sio promote-to-gold [INVOCATION_ID] [--all-eligible] [--dry-run]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `INVOCATION_ID` | — | Promote a single invocation by its numeric ID |
+| `--all-eligible` | off | Bulk-promote all invocations with `user_satisfied=1` AND `correct_outcome=1` |
+| `--dry-run` | off | Show what would be promoted without writing |
+
+A row is eligible when both `user_satisfied=1` AND `correct_outcome=1`. Use `sio review` to label invocations before running this command.
+
+**Examples:**
+
+```bash
+# Promote one invocation
+sio promote-to-gold 42
+
+# Bulk promote all eligible
+sio promote-to-gold --all-eligible
+
+# Preview bulk promotion
+sio promote-to-gold --all-eligible --dry-run
+```
+
+---
+
+### `sio promote-flow`
+
+Promote a specific flow pattern (identified by its hash from `sio flows`) into a Claude Code skill Markdown file.
+
+```bash
+sio promote-flow <FLOW_HASH>
+```
+
+**Arguments:**
+
+| Argument | Description |
+|----------|-------------|
+| `FLOW_HASH` | Flow hash from the `sio flows` output table |
+
+Generates a skill Markdown file in `~/.claude/skills/` based on the observed tool sequence and success heuristics.
+
+**Examples:**
+
+```bash
+# First find the hash
+sio flows
+
+# Then promote
+sio promote-flow abc123def456
+```
+
+---
+
+### `sio promote-rule`
+
+Convert a frequently violated CLAUDE.md rule into a runtime PreToolUse hook that warns or blocks the offending tool call.
+
+```bash
+sio promote-rule <RULE_INDEX> [--mode warn|block] [--since <date>] [--write]
+```
+
+**Arguments & Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `RULE_INDEX` | (required) | 1-based index from the `sio violations` report |
+| `--mode` | `warn` | `warn`: print rule text + continue. `block`: prevent the tool call entirely. |
+| `--since` | None | Only count violations after this ISO-8601 date |
+| `--write` | off | Actually write the hook script and register it in `~/.claude/settings.json`; without this flag the command is a preview only |
+
+Typical workflow: start with `warn` mode until the violation count is decisively shrinking, then graduate to `block`.
+
+**Examples:**
+
+```bash
+# See what's violating rules most
+sio violations
+
+# Preview what would be promoted for rule #1
+sio promote-rule 1
+
+# Write a warn-mode hook
+sio promote-rule 1 --mode warn --write
+
+# Graduate to block after soak
+sio promote-rule 1 --mode block --write
+```
+
+---
+
+### `sio differential-flows`
+
+Find twin flows — the same tool sequence that appears with both success and failure outcomes — and export paired training examples. Requires no LLM.
+
+```bash
+sio differential-flows [--min-success <n>] [--min-failure <n>] [--per-cohort <n>]
+                       [--max-hashes <n>] [-o <path>] [--positives-for-builder]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--min-success` | `3` | Minimum successful events per flow hash to qualify as a twin |
+| `--min-failure` | `3` | Minimum failed events per flow hash to qualify as a twin |
+| `--per-cohort` | `5` | Samples drawn from each cohort (success / failure) per twin |
+| `--max-hashes` | None | Cap the number of twin hashes processed (debug) |
+| `-o` / `--output` | `~/.sio/differential/differential_<ts>.jsonl` | Output JSONL path |
+| `--positives-for-builder` | off | Emit flat positive examples in `PatternToRule` shape (for `dataset_builder`) instead of paired cohort rows |
+
+The output JSONL is automatically registered in the `trainsets` table and can be fed directly to `sio optimize --trainset-file`.
+
+**Examples:**
+
+```bash
+# Default: paired success/failure cohorts
+sio differential-flows
+
+# Higher bar, more samples per cohort
+sio differential-flows --min-success 5 --per-cohort 10
+
+# Emit only the successful side for training
+sio differential-flows --positives-for-builder
+```

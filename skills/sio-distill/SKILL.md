@@ -1,10 +1,20 @@
 ---
 name: sio-distill
 description: Distill a long exploratory session into a clean playbook of winning steps. Removes failures, retries, dead ends. Ask naturally like "distill that session" or "extract the workflow from yesterday".
+requires:
+  cli: "sio>=0.3.0"
+  skills: [sio-export]
+  hooks: []
+  optional: []
 user-invocable: true
 ---
 
 # SIO Distill — Extract the Winning Path
+
+## Dependencies
+- **CLI:** `sio >= 0.3.0`
+- **Skills:** `/sio-export` — distilled flows can be fed to the export pipeline as DSPy training data
+- **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 
 ## When to Use
 - After a long session where you figured out a workflow
@@ -47,14 +57,16 @@ sio distill --latest -o <project>/.memory/<descriptive_name>_playbook.md
 
 ### Step 3: Optional — LLM Polish (Expensive Tier)
 
-If the cheap playbook is too raw, send the output to `gemini_brainstorm` to polish into a clean runbook:
+If the cheap playbook is too raw, send the output to an LLM brainstorm call to polish into a clean runbook:
 
 ```
-gemini_brainstorm(
+ask_llm(
     topic="Polish this raw session playbook into a clean step-by-step workflow",
     context="<paste the raw playbook output>"
 )
 ```
+
+> **Portability note:** Originally referenced `gemini_brainstorm` from the Gemini MCP tool; genericized to `ask_llm` for portability. Use whichever LLM brainstorm tool is available in your setup.
 
 ## What It Does
 

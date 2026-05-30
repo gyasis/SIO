@@ -1,9 +1,21 @@
 ---
 name: sio-suggest
 description: Generate targeted CLAUDE.md rules from mined error patterns. Ask naturally like "how can I improve my agent?" or "generate suggestions from my errors".
+requires:
+  cli: "sio>=0.3.0"
+  skills: [sio-review]
+  hooks: []
+  optional: []
 ---
 
 # SIO Suggest — Turn Errors into Improvement Rules
+
+## Dependencies
+- **CLI:** `sio >= 0.3.0`
+- **Skills:** `/sio-review` — reviewed next after suggestions are generated to approve/reject rules
+- **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
+
+> **Portability note:** Originally written with Databricks/Snowflake grep examples; genericized for portability. Substitute your own technology names as `--grep` values for any project stack.
 
 Natural language interface to the SIO pipeline. The agent translates what you say into
 filters, shows you the dataset FIRST with groupings, lets you refine, THEN generates.
@@ -84,7 +96,7 @@ Present generated suggestions and recommend `/sio-review`.
 | "find development gaps" | `placeholder,hardcoded,stub,empty` |
 | "placeholder and empty method issues" | `placeholder,empty` |
 | "find fake or mocked code" | `fake,mock,stub,placeholder` |
-| "what Snowflake queries fail?" | `snowflake` |
+| "what <tool/service> errors keep happening?" | `<tool-name>` |
 | (nothing specific) | omit --grep |
 
 ### Error types → `--type` or `--exclude-type`

@@ -122,7 +122,10 @@ def runs_cmd(run_id, failed, partial, cmd_filter, since, limit, tail, dspy):
                     progress_str = f"{cur}/{tot} {pct:.0f}%"
                 eta = p.get("eta_sec")
                 if eta is not None:
-                    eta_str = f"{eta//60}m{eta%60:02d}s" if eta < 3600 else f"{eta//3600}h{(eta%3600)//60}m"
+                    eta_str = (
+                        f"{eta//60}m{eta%60:02d}s" if eta < 3600
+                        else f"{eta//3600}h{(eta%3600)//60}m"
+                    )
         line = (
             f"{r.get('run_id','?'):<10}"
             f"{(r.get('cmd') or '?')[:21]:<22}"

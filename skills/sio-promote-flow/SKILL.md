@@ -1,9 +1,19 @@
 ---
 name: sio-promote-flow
 description: Promote a successful workflow to a reusable skill file. Ask naturally like "promote that flow" or "turn that workflow into a skill".
+requires:
+  cli: "sio>=0.3.0"
+  skills: [sio-discover, sio-flows, sio-velocity]
+  hooks: []
+  optional: []
 ---
 
 # SIO Promote Flow — Turn Workflows into Skills
+
+## Dependencies
+- **CLI:** `sio >= 0.3.0`
+- **Skills:** `/sio-flows` — run first to enumerate available flows and their hashes; `/sio-discover` — surface skill candidates from mined patterns; `/sio-velocity` — verify existing skills are effective before adding new ones
+- **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 
 Run `sio flows` first to see available flows, then promote the selected one to a reusable skill file. This is a two-step process.
 

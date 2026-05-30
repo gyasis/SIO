@@ -20,6 +20,22 @@ These patterns are buried in session transcripts. SIO extracts them, finds the s
 
 > **Design stance:** SIO is **measured assist, not autonomous override**. Detection, generation, and outcome measurement are automatic. Application, deprecation, and final judgment are human. See [`docs/SIO_PHILOSOPHY.md`](docs/SIO_PHILOSOPHY.md) for the full design rationale.
 
+## Documentation
+
+| Doc | What it covers |
+|-----|----------------|
+| 🖼️ [Feature infographic](docs/sio-feature-infographic.html) | One-page visual map of everything SIO can do (open in a browser) |
+| [Getting started](docs/getting-started.md) | Install, `sio init`, first-run walkthrough |
+| [User guide](docs/user-guide.md) | Full CLI reference for every command |
+| [Configuration & env vars](docs/configuration.md) | `config.toml` options + all `SIO_*` environment variables |
+| [Architecture](docs/architecture.md) | Data flow, DB schema, file layout |
+| [Optimizer ladder guide](docs/optimizer-guide.md) | Bootstrap → AMPLIFY → MIPROv2 → GEPA, discipline gates, cost awareness |
+| [Amplify guide](docs/AMPLIFY_GUIDE.md) | Deep-dive on `sio amplify` synthetic data expansion |
+| [Troubleshooting](docs/troubleshooting.md) | Common failure modes → causes → fixes |
+| [Cookbook](docs/cookbook.md) · [Use cases](docs/use-cases/README.md) | Narrative end-to-end workflows |
+| [Design philosophy](docs/SIO_PHILOSOPHY.md) | "Measured assist, not autonomous override" |
+| [Contributing](CONTRIBUTING.md) | Dev setup, tests, spec workflow, PR checklist |
+
 ## How It Works
 
 ```
@@ -255,6 +271,32 @@ fresh install should never silently dispatch to the wrong provider.
 | `sio patterns` | Show discovered error patterns, ranked by importance |
 | `sio errors` | List individual error records with filtering |
 | `sio errors --grep "FileNotFound"` | Search errors by text |
+
+### Cross-Agent Search & Session-Scoped Analysis
+
+SIO absorbed the standalone `session-search` tool: **`sio search`** finds sessions
+across **all six coding-agent harnesses** (Claude, Codex, Goose, OpenCode, Gemini,
+Aider). Every analysis command can be **scoped to one session** via `--session`,
+turning SIO into a targeted debugger for a single session/process. Session ids are
+canonical **`agent:native_id`** "Session URIs" (e.g. `claude:<uuid>`,
+`goose:<name>`); legacy bare ids are matched transparently.
+
+| Command | Description |
+|---------|-------------|
+| `sio search "pattern" --agent all` | Search session history across all 6 harnesses (absorbed `session-search`) |
+| `sio search "pattern" --agent claude --files` | Emit matching session file paths (pipe into `--session`) |
+| `sio errors --session <handle>` | Scope error browsing to ONE session (`agent:id`, a path, a bare id, or `-` for stdin) |
+| `sio errors --session c6428f4f` | Fuzzy partial-id resolve (lists candidates if ambiguous) |
+| `sio suggest --session <handle>` | Generate rules from a single session |
+| `sio mine --session <handle>` | Mine ONE session (Claude via file scan; other agents via the adapter layer); `--since` optional |
+| `sio watch --session <handle>` | **Live**-tail a session's events in real time (Claude); `--tools-only` filters to tool calls |
+| `sio search ... --files \| sio errors --session -` | Pipe search results straight into scoped analysis |
+
+#### Database maintenance
+
+| Command | Description |
+|---------|-------------|
+| `sio db backfill-sessions [--dry-run]` | Migrate legacy bare session ids to canonical `agent:<id>` (idempotent, auto-backup) |
 
 ### Dataset Management
 

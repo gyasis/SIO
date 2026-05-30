@@ -1,16 +1,29 @@
 ---
 name: sio-recall
-description: Recall how a task was solved in a previous session. Topic-filters distilled sessions, detects struggle→fix transitions, polishes via Gemini. Ask "how did we do X?" or "recall the dbt setup workflow".
+description: Recall how a task was solved in a previous session. Topic-filters distilled sessions, detects struggle→fix transitions, polishes via Gemini. Ask "how did we do X?" or "recall the setup workflow".
 user-invocable: true
+requires:
+  cli: "sio>=0.3.0"
+  skills: [sio-scan]
+  hooks: []
+  optional: [memory-search]
 ---
 
 # SIO Recall — How Did We Do That?
 
+## Dependencies
+- **CLI:** `sio >= 0.3.0`
+- **Skills:** `/sio-scan` — use instead when you only need error-only lookup (not full workflow recall)
+- **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
+- **Optional:** `/memory-search` — alternative for simple fact lookup (not workflow reconstruction)
+
+> **Portability note:** Originally written with hh-dev / Cube / Snowflake / hhdev examples; genericized for portability. If you use those tools, the skill still applies — just pass your own tool names as the query.
+
 ## When to Use
-- "How did we run dbt locally?"
+- "How did we run the local pipeline?"
 - "Recall the auth fix from last week"
-- "What was the snowflake deploy workflow?"
-- "How did we set up the Cube connection?"
+- "What was the deploy workflow?"
+- "How did we set up the connection?"
 - Any time the user references a previous session's workflow
 
 ## The Pipeline
@@ -82,20 +95,17 @@ Ask the user: "Save this runbook to `.memory/` for future reference?"
 ```bash
 sio recall "query"                          # Cheap: topic-filtered distill
 sio recall "query" --polish                 # Show Gemini prompt for polish
-sio recall "query" --project my-app          # Filter by project
+sio recall "query" --project my-app         # Filter by project
 sio recall "query" -o runbook.md            # Save to file
 sio recall "query" --session /path/to.jsonl # Specific session
 ```
 
 ## How Topic Filtering Works
 
-The query is expanded into a keyword cluster (universal tooling only):
-- "dbt" → also searches for: profiles.yml, dbt_project, models/, target/
-- "cube" → also searches for: cubejs, schema/, .yml
-- "snowflake" → also searches for: snowsql
-- "superset" → also searches for: dataset, chart
-- "tableau" → also searches for: twb, tds, workbook
-- "prefect" → also searches for: flow, deployment, work.pool
+The query is expanded into a keyword cluster. SIO automatically expands common tool names to their
+associated config files and sub-terms. For example:
+- A data pipeline tool name → also searches related config files (project files, schema dirs, target dirs)
+- An auth or connection topic → also searches for connection strings, credential files
 
 Steps are included if their summary, tool_input, or output matches ANY keyword.
 Context window: 1 step before and 1 after each match is also included.

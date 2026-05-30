@@ -9,7 +9,63 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
-### Added
+### Session Intelligence — absorb session-search + cross-agent, session-scoped analysis
+
+Slated for the next minor (0.4.0). SIO absorbs the standalone `session-search`
+tool and grows from an ambient corpus miner into a **targeted, cross-agent
+session debugger**: point it at ONE session — regardless of which coding-agent
+harness produced it — and search, mine, analyze, or live-watch it.
+
+#### Added
+
+- **`sio search`** — the standalone `session-search` tool, absorbed into SIO as a
+  subcommand (one tool, one install). Cross-harness session search across Claude,
+  Codex, Goose, OpenCode, Gemini, and Aider. Ships inside the wheel (stdlib-only),
+  so `pip install` carries it to any machine. `session-search` remains a packaged
+  deprecation-shim entry point that warns and forwards.
+- **`--session <handle>` scoping** on `sio errors`, `sio suggest`, and `sio mine`.
+  Accepts a canonical `agent:native_id` handle, a bare id, a session **file path**
+  (as emitted by `sio search --files`), `-` to read the handle from **stdin**, or
+  a **fuzzy partial** id (resolves if unambiguous, else lists candidates). Enables
+  `sio search "x" --files | sio errors --session -`.
+- **`sio watch --session <handle>`** — Phase B live watcher. Tails a session's
+  events in real time (mtime-poll + append-read); `--from-start` replays then
+  follows, `--tools-only` filters to tool calls. Claude implemented; other agents
+  report an honest not-yet message.
+- **`sio db backfill-sessions`** — non-destructive, idempotent migration of legacy
+  bare session ids to canonical `claude:<id>` across all session-keyed tables.
+  Schema-driven, auto-backup, `--dry-run`. (Applied to the maintainer's DB:
+  923,137 rows.)
+- **Cross-agent adapter layer** (`sio/adapters/`) — the EXTRACT contract:
+  `SessionManifest`, `SessionEvent`, `SessionAdapter` Protocol; a real
+  `ClaudeAdapter` (JSONL parse + live tail) and a `SearchBackedAdapter` that reuses
+  the absorbed per-agent parsers so all six harnesses extract through one interface.
+  `factory.adapter_for()` / `manifest_from_handle()` route by agent prefix.
+- **`sio/core/session_handle.py`** — canonical `agent:native_id` "Session URI"
+  helpers: `parse_handle`, `to_canonical`, `ensure_canonical`, transition-safe
+  `session_match_clause`, path/stdin coercion.
+
+#### Changed
+
+- **Write path is now canonical** — `insert_invocation`, `insert_error_record`, and
+  `insert_session_metrics` namespace `session_id` / `parent_session_id` to
+  `claude:<id>` on write, keeping new rows consistent with the backfilled DB
+  (idempotent; transition-safe matching reads both forms during any mix).
+- `sio mine` — `--since` is now optional when `--session` targets a single session;
+  a non-Claude `--session` routes through the adapter EXTRACT layer (Claude keeps
+  its richer file-scan parser — no degradation).
+- `get_error_records()` session filter upgraded to the transition-safe clause.
+
+#### Notes / known limits
+
+- Non-Claude error extraction is currently content-level (the search-backed
+  adapters do not carry `tool_input`/`tool_output`), so deep `tool_failure`
+  detection is Claude-only until `SessionEvent` is enriched.
+- Non-Claude **live** watch and the migration of `~/.claude` `session-search`
+  references → `sio search` (then sunsetting the standalone tool) are tracked
+  follow-ups.
+
+### Added — Experiment cohort primitive
 - **Experiment cohort primitive (`sio experiment`)** — bookmark a named
   time window tagged with a config-hash snapshot (CLAUDE.md + active
   skills + rules + `~/.claude/settings.json` hooks), then analyze it A/B

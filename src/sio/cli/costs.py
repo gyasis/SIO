@@ -22,7 +22,10 @@ def costs_summary(since_days):
     if s["by_model"]:
         click.echo("\nBy model:")
         for m, d in sorted(s["by_model"].items(), key=lambda kv: -kv[1]["cost"]):
-            click.echo(f"  {m:<40} ${d['cost']:>7.4f}  ({d['calls']} calls, {d['in_tok']:,}→{d['out_tok']:,} tok)")
+            tok = f"{d['in_tok']:,}→{d['out_tok']:,} tok"
+            click.echo(
+                f"  {m:<40} ${d['cost']:>7.4f}  ({d['calls']} calls, {tok})"
+            )
     if s["by_day"]:
         click.echo("\nBy day:")
         for day in sorted(s["by_day"].keys()):
