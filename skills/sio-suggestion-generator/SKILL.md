@@ -1,6 +1,6 @@
 ---
 name: sio-suggestion-generator
-description: "SIO-distilled CLAUDE.md rule generator. Given a Claude Code error pattern (pattern_description + example_errors + project_context), produces a concise, testable rule. Optimized by SIO BOOTSTRAP 2026-05-15, score=1.0000."
+description: "SIO-distilled CLAUDE.md rule generator. Given a Claude Code error pattern (pattern_description + example_errors + project_context), produces a concise, testable rule. Optimized by SIO BOOTSTRAP 2026-05-15, score=1.0000. Triggers: sio suggest, generate rule, rule from pattern, error pattern to rule."
 user-invocable: true
 requires:
   cli: "sio>=0.3.0"
@@ -64,6 +64,8 @@ EXAMPLE 1 — tool_failure (file wipe)
 pattern_description: "[tool_failure] Tool: Bash. Common phrases: sed -i emptied, file truncated, config gone. 12 errors across 5 sessions."
 example_errors: ["[error] sed -i silently emptied .env", "[error] file truncated after sed"]
 project_context: "Claude Code project with OS-level filesystem watchers"
+  # Original grounding case: "WSL2 Claude Code project" — sed -i atomic-rename races
+  # with Windows filesystem watchers silently wiped .env files on WSL2.
 ---
 rule_title: "Never use sed -i for file edits — use Edit tool"
 rule_body: |
@@ -71,6 +73,7 @@ rule_body: |
   modifications. The `sed -i` temp-rename pattern races with filesystem
   watchers and has silently wiped files on this system.
 rule_rationale: "Prevents file wipes caused by atomic-rename races with filesystem watchers."
+  # Original WSL2-specific rationale: "Prevents file wipes caused by atomic-rename races in WSL2."
 ---
 EXAMPLE 2 — tool_failure (cascade)
 pattern_description: "[tool_failure] Tool: parallel. Common phrases: sibling tool call errored, MCP timeout, Bash cancelled. 8 errors across 4 sessions."

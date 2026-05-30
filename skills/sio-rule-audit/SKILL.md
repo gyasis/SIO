@@ -1,6 +1,6 @@
 ---
 name: sio-rule-audit
-description: Audit which rules in CLAUDE.md / rules/domains/ / rules/tools/ exist as TEXT only versus which have actual ENFORCEMENT (hooks/skills/recipes/memory). Cross-references SIO violation counts to rank "rules most-violated AND least-enforced" as 6-channel-wiring candidates. Triggers on "audit rules", "which rules aren't enforced", "rule coverage", "what rules are unenforceable", "find rule gaps", "which rules need hooks", "rule-to-enforcement audit". Use to find the next high-violation cluster before it costs another long debugging session.
+description: Audit which rules in CLAUDE.md / rules/domains/ / rules/tools/ exist as TEXT only versus which have actual ENFORCEMENT (hooks/skills/recipes/memory). Cross-references SIO violation counts to rank "rules most-violated AND least-enforced" as 6-channel-wiring candidates. Triggers on "audit rules", "which rules aren't enforced", "rule coverage", "what rules are unenforceable", "find rule gaps", "which rules need hooks", "rule-to-enforcement audit". Use to find the next AP-010-style cluster before it costs another long debugging session.
 requires:
   cli: "sio>=0.3.0"
   skills: [sio, sio-status, sio-suggest, sio-violations]
@@ -23,7 +23,7 @@ The meta-tool for the "rule exists but agent doesn't follow" pattern. Scans ever
 - **Enforcement coverage** (which of 4 channels actually bind it: hook / skill / recipe / memory)
 - **Discoverability** (which of 2 channels surface it: CLAUDE.md / rules-injector domain rule)
 
-Outputs a ranked list of rules that are **high-violation AND low-enforcement** — these are the text-only hazards waiting to bleed time.
+Outputs a ranked list of rules that are **high-violation AND low-enforcement** — these are the AP-010-equivalents waiting to bleed time.
 
 ## When to invoke
 
@@ -40,6 +40,9 @@ python3 ~/.claude/skills/sio-rule-audit/scripts/sio-rule-audit.py               
 python3 ~/.claude/skills/sio-rule-audit/scripts/sio-rule-audit.py --json         # machine-readable
 python3 ~/.claude/skills/sio-rule-audit/scripts/sio-rule-audit.py --top 10       # top N candidates only
 python3 ~/.claude/skills/sio-rule-audit/scripts/sio-rule-audit.py --since 7      # 7-day SIO window (default 14)
+
+# Legacy path (if you installed the script separately before bundling):
+# python3 ~/.claude/scripts/sio-rule-audit.py  [same flags apply]
 ```
 
 ## What it scans
@@ -86,13 +89,13 @@ Rank | Rule (file:line)                                   | Violations | Enforce
 
 ## What to do with output
 
-1. **Top of list (TEXT-ONLY + high-violation)** = the next 6-channel-wiring candidates. Apply the same pattern: hook + skill + recipe + memory + domain rule + CLAUDE.md nudge.
+1. **Top of list (TEXT-ONLY + high-violation)** = the next 6-channel-wiring candidates. Apply the same pattern AP-010 used: hook + skill + recipe + memory + domain rule + CLAUDE.md nudge.
 2. **TEXT-ONLY + low-violation** = either the rule is well-followed already, OR the violation isn't being detected (consider adding SIO error patterns).
-3. **Wired + high-violation** = the wiring isn't catching the violations. Probably has a bug or the matcher is too narrow.
+3. **Wired + high-violation** = the wiring isn't catching the violations. Probably has a bug (see adversarial-bug-hunt findings) or the matcher is too narrow.
 
 ## Reference for the 6-channel pattern
 
-When wiring a rule, hit all 6 channels:
+When wiring a rule, hit all 6 channels (per AP-010 case study, 2026-05-06):
 
 | Channel | Where | Auto-loaded? |
 |---|---|---|
@@ -105,5 +108,7 @@ When wiring a rule, hit all 6 channels:
 
 ## Cross-references
 
+- The AP-010 case study: `~/.claude/recipes/hh-zombie-stack-diagnosis-and-cleanup.md` (R-HH07) — the wiring pattern this skill abstracts from
+- `~/.claude/rules/domains/hh-dev.md` § ZENO BOOT PREFLIGHT — example of a fully-wired rule
 - `/sio-violations` — sister skill: which CLAUDE.md rules are being violated (no enforcement-coverage analysis)
 - `/sio-suggest` — generates new CLAUDE.md rules; this skill audits existing ones

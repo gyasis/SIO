@@ -57,9 +57,9 @@ Output format (must match exactly)
 - Output only these three keys; no extra sections or commentary.
 
 Grounding and specificity (non‑negotiable)
-- The TITLE must quote specific tokens from pattern_description's "Common phrases:" when present (e.g., sed -i, MCP timeout, WORKSPACE_DIR, "sibling tool call errored", "Exit code 1", "=== files to move back ==="). If "Common phrases" is absent or generic, lift the most distinctive literals from example_errors verbatim (e.g., '/etc/hosts', '.env.production', exact migration filenames).
+- The TITLE must quote specific tokens from pattern_description's "Common phrases:" when present (e.g., sed -i, MCP timeout, WORKSPACE_DIR, "sibling tool call errored", "Exit code 1", "=== files to move back ==="). If "Common phrases" is absent or generic, lift the most distinctive literals from example_errors verbatim (e.g., '/etc/hosts', '.env.production', '~/.aws/credentials', 'env', 'printenv', 'awk', 'grep', ':3000', exact migration filenames like '20250202_remove_page_access_permissions.sql').
 - The BODY must cite at least one concrete failure snippet verbatim from example_errors (wrap exact text in backticks), preserving any bracket markers like [before]/[error]/[after] and exact line breaks where shown (e.g., include `=== output ===\n(empty)` if present).
-- Do not paraphrase tool names, env vars, file paths, ports, error labels, or commands—use them exactly as shown.
+- Do not paraphrase tool names, env vars, file paths, ports, error labels, or commands—use them exactly as shown (e.g., `/etc/hosts`, `.env.production`, `~/.aws/credentials`, `env`, `printenv`, `awk`, `grep`, `Exit code 1`, `=== files to move back ===`).
 - Preserve domain-literal phrases seen in prior incidents when relevant: "sed -i silently emptied", "sibling tool call errored", "MCP timeout cancelled Bash", `$WORKSPACE_DIR`, stale dev server on :3000, session-search flags like `--recent 7`, and Edit vs Write tool behavior.
 
 Actionability requirements
@@ -89,14 +89,14 @@ Creation process (follow these steps)
 2) Draft the rule_title using those literals in quotes so the title is uniquely searchable.
 3) Write rule_body:
    - Start with an "If you encounter …" gate quoting at least one exact error line from example_errors (preserve punctuation, spacing, and any markers).
-   - State a prohibitive clause ("Do not …") that forbids the failing action using exact tokens.
-   - Add one or more concrete prevention/remediation steps with explicit commands, and halting instructions when needed.
+   - State a prohibitive clause ("Do not …") that forbids the failing action using exact tokens (e.g., `env`, `printenv`, `awk`, `grep`, `sed -i`).
+   - Add one or more concrete prevention/remediation steps with explicit commands (e.g., `sleep 2`, `set -o pipefail`, `realpath`, `lsof -i :3000`, `git restore --source=HEAD -- 20250202_remove_page_access_permissions.sql`), and halting instructions when needed.
 4) Write rule_rationale in one short sentence describing the prevention benefit.
 5) Self-check before finalizing:
-   - Does the TITLE include a discriminating token from "Common phrases:" or an exact error literal? If not, fix it.
-   - Does the BODY quote at least one exact error snippet from example_errors, and repeat any env var/path/command literals exactly? If not, add them.
+   - Does the TITLE include a discriminating token from "Common phrases:" or an exact error literal (e.g., `/etc/hosts`, `.env.production`, `Exit code 1`, `=== files to move back ===`)? If not, fix it.
+   - Does the BODY quote at least one exact error snippet from example_errors (including any [before]/[error]/[after] or multi-line segments like `=== output ===\n(empty)`), and repeat any env var/path/command literals exactly? If not, add them.
    - Are the steps concrete and testable (with a copyable command), include a clear gate, an explicit forbid, and halting where appropriate? If vague, tighten with exact commands or filenames from the inputs.
-   - Are domain-literal phrases preserved when relevant? If missing, add where appropriate.
+   - Are domain-literal phrases preserved when relevant (e.g., "sed -i silently emptied", "sibling tool call errored", "MCP timeout cancelled Bash", `$WORKSPACE_DIR`, `--recent 7`, `:3000`)? If missing, add where appropriate.
    - Is rule_body ≤3 sentences and rule_rationale exactly 1 sentence? If not, trim.
 
 Remember: prioritize surface-accurate quoting of the observed failure and provide at least one safe, copyable command that directly prevents the exact failure shown.

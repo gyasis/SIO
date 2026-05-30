@@ -47,6 +47,8 @@ tool" — flow mining is the efficiency-uplift signal, not the bugfix signal.
 | `/sio-codify-workflow` | One-shot: distill → promote-flow → optimize on the *current* session |
 | `/sio-recall` | Recall how a task was solved in a previous session |
 | `/sio-export` | Export structured training datasets (DSPy-ready) |
+| `/sio-search` | Cross-harness session search (absorbed `session-search`); fans out to claude/codex/goose/opencode/gemini/aider |
+| `/sio-watch` | Tail a coding-agent session live — events as they happen |
 
 ## Multi-Hop Targeted Search (`sio suggest --refine`)
 
@@ -83,6 +85,62 @@ sio trend --pattern <pattern-id>       # single pattern growth
 
 Output is a compact table with one column per bucket and a trend arrow
 (↑ ↓ →) on the last two buckets. Set `COLUMNS=160` if the render squashes.
+
+## Experiment Cohorts (`sio experiment`)
+
+A *telemetry cohort* primitive: bookmark a named time window around a
+config/prompt change, snapshot the config hash (CLAUDE.md + skills + rules
++ settings hooks), then A/B it against a prior baseline. The existing hook +
+JSONL telemetry is auto-scoped to the window — no debug instrumentation.
+
+```bash
+sio experiment start NAME [--note --project]   # open + config-hash snapshot
+sio experiment status [NAME]                    # one cohort, or all open
+sio experiment list [--status --project]        # all cohorts, newest first
+sio experiment close NAME --report [--format text|html|json] [--baseline 7d]
+#   → error-rate delta (per-hour), new error classes, flow emerged/died, scoped suggestions
+
+# Scope filter — narrows any of these to a cohort window:
+sio mine|suggest|trend|flows|velocity --experiment NAME
+```
+
+**Do NOT confuse with the git-worktree concept.** `sio experiment`
+(backend `src/sio/core/cohort/`) is telemetry-cohort A/B analysis.
+`sio apply --experiment` / `sio autoresearch` (backend
+`src/sio/core/arena/experiment.py`) is isolated-branch rule testing —
+unrelated. The `--experiment NAME` scope flag refers to the cohort.
+Full guide: `~/Documents/code/SIO/docs/experiment-cohorts.md`.
+
+## Cross-agent session search (`sio search`) + live watch (`sio watch`)
+
+As of 0.3.x SIO **absorbed `session-search`** as `sio search` and added a live
+session tailer `sio watch`. These are coding-agent-session tools, not error-mining.
+
+```bash
+# SEARCH — unified cross-harness session search (argparse-based)
+sio search "pattern"                         # claude history (default)
+sio search "pattern" --agent all             # fan out to all 6 harnesses
+sio search "pattern" --recent 7 --files      # mtime <7d, emit unique paths
+sio search "pattern" --agent codex --count   # per-file match counts
+sio search --list-agents                     # inventory of agents with history
+#   --agent {claude,codex,goose,opencode,gemini,aider,all}
+#   --all (claude: JSONL+SpecStory+backups) · --specstory · --backups
+#   --context N · --clean · --format {jsonl,text} · --fast/--no-fast
+
+# Session-scoped mining (Phase A) — mine/suggest ONE session:
+sio mine    --session <agent:native_id | path | partial-id | ->
+sio suggest --session <...>
+sio errors  --session <...>
+
+# WATCH — tail a session live (Phase B; live watch supports claude so far)
+sio watch --session <agent:native_id | search-result path | bare id | ->   # required
+sio watch --session <id> --from-start    # replay existing, then follow
+sio watch --session <id> --tools-only    # only tool_use events
+```
+
+The `--session` scope flag accepts `agent:native_id`, a search-result path,
+a bare id, or `-` for stdin. Fuzzy partial-id resolution is supported.
+Canonical session-id migration: `sio db backfill-sessions`.
 
 ## Database locations
 
