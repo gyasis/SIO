@@ -12,6 +12,8 @@ the bare legacy id and the canonical form.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 KNOWN_AGENTS: tuple[str, ...] = (
     "claude",
     "codex",
@@ -52,6 +54,61 @@ def to_canonical(handle: str) -> str:
     """Normalise any handle to canonical ``agent:native_id`` form."""
     agent, native = parse_handle(handle)
     return f"{agent}:{native}"
+
+
+def looks_like_path(raw: str) -> bool:
+    """True if ``raw`` looks like a session file path rather than a handle."""
+    return "/" in raw or raw.endswith((".jsonl", ".md"))
+
+
+def from_path(path_str: str) -> str:
+    """Map a session FILE path (as emitted by ``sio search --files``) to a
+    canonical handle.
+
+    The file stem is the agent-native session id; the agent is inferred from the
+    path location (defaults to claude, covering JSONL, SpecStory md, backups).
+
+    >>> from_path("/home/u/.claude/projects/-x/abc-123.jsonl")
+    'claude:abc-123'
+    >>> from_path("/home/u/.local/share/goose/sessions/mysession.jsonl")
+    'goose:mysession'
+    """
+    p = Path(path_str)
+    native = p.stem
+    s = str(p)
+    if "/.codex/" in s:
+        agent = "codex"
+    elif "/goose/" in s:
+        agent = "goose"
+    elif "/opencode" in s:
+        agent = "opencode"
+    elif "/.gemini/" in s:
+        agent = "gemini"
+    elif ".aider" in s:
+        agent = "aider"
+    else:
+        agent = LEGACY_AGENT
+    return f"{agent}:{native}"
+
+
+def coerce_session_input(raw: str) -> str:
+    """Normalise a raw ``--session`` value (CLI arg or stdin line) to a handle.
+
+    Accepts a handle (``claude:uuid`` or bare id), a session file path (as from
+    ``sio search --files``), or a ``sio search --count`` line (``"N\\tpath"`` —
+    the path is taken). Returns a string ready for :func:`session_match_clause`.
+
+    >>> coerce_session_input("claude:abc")
+    'claude:abc'
+    >>> coerce_session_input("/home/u/.claude/projects/-x/abc-123.jsonl")
+    'claude:abc-123'
+    """
+    raw = raw.strip()
+    if "\t" in raw:  # `sio search --count` emits "N\tpath"
+        raw = raw.split("\t")[-1].strip()
+    if looks_like_path(raw):
+        return from_path(raw)
+    return raw
 
 
 def session_match_clause(

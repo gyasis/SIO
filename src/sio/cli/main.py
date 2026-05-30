@@ -1370,11 +1370,20 @@ def errors(error_type, limit, grep_term, project, exclude_types, session_handle)
             params.append(f"%{project}%")
 
         if session_handle:
-            from sio.core.session_handle import session_match_clause
+            from sio.core.session_handle import (
+                coerce_session_input,
+                session_match_clause,
+            )
 
-            clause, sp = session_match_clause(session_handle)
-            where_clauses.append(clause)
-            params.extend(sp)
+            if session_handle == "-":
+                import sys
+
+                session_handle = sys.stdin.readline()
+            session_handle = coerce_session_input(session_handle)
+            if session_handle:
+                clause, sp = session_match_clause(session_handle)
+                where_clauses.append(clause)
+                params.extend(sp)
 
         if grep_term:
             # Comma-separated terms use OR logic across all content fields
@@ -1828,6 +1837,15 @@ def suggest(
     """Run the full pipeline: cluster -> persist -> dataset -> suggestions."""
     import uuid
     from datetime import datetime, timezone
+
+    if session_handle == "-":
+        import sys
+
+        session_handle = sys.stdin.readline()
+    if session_handle:
+        from sio.core.session_handle import coerce_session_input
+
+        session_handle = coerce_session_input(session_handle)
 
     from rich.console import Console
     from rich.table import Table
