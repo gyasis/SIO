@@ -744,10 +744,12 @@ def export(platform, fmt, output):
 @cli.command()
 @click.option(
     "--since",
-    required=True,
+    required=False,
+    default=None,
     help=(
         'Time window: "3 days", "2 weeks", "1 month",'
         ' "6h", "yesterday", "3 days ago", "2026-01-15".'
+        " Required unless --session targets a single session."
     ),
 )
 @click.option("--project", default=None, help="Filter by project name.")
@@ -762,12 +764,37 @@ def export(platform, fmt, output):
     default=True,
     help="Filter out sidechain messages before aggregation (default: on).",
 )
+@click.option(
+    "--session",
+    "session_handle",
+    default=None,
+    help=(
+        "Mine ONE session by handle/path/id (agent:native_id, a search-result "
+        "path, or bare id). When set, --since is optional. Pipe from "
+        "`sio search ... --files`."
+    ),
+)
 @runlogged("mine")
-def mine(since, project, source, exclude_sidechains):
+def mine(since, project, source, exclude_sidechains, session_handle):
     """Mine recent sessions for errors and failures."""
     from pathlib import Path
 
     from sio.mining.pipeline import run_mine
+
+    if session_handle == "-":
+        import sys
+
+        session_handle = sys.stdin.readline()
+    if session_handle:
+        from sio.core.session_handle import coerce_session_input
+
+        session_handle = coerce_session_input(session_handle)
+    if not since and not session_handle:
+        raise click.UsageError(
+            "--since is required (or use --session to target one session)."
+        )
+    if session_handle and not since:
+        since = "20 years"  # effectively unbounded for a single targeted session
 
     db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
@@ -797,6 +824,7 @@ def mine(since, project, source, exclude_sidechains):
             source,
             project,
             exclude_sidechains=exclude_sidechains,
+            session=session_handle,
         )
 
     from rich.console import Console
