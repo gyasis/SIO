@@ -2,9 +2,19 @@
 name: sio-promote-rule
 description: Promote a violated CLAUDE.md rule (from `sio violations`) into a runtime PreToolUse hook so the harness enforces it instead of relying on the agent reading the rule. Ask naturally like "promote rule 1 to a hook" or "make that violated rule actually block".
 user-invocable: true
+requires:
+  cli: "sio>=0.3.0"
+  skills: [sio-violations]
+  hooks: []
+  optional: []
 ---
 
 # SIO Promote-Rule — Turn Violated Text Rules Into Runtime Hooks
+
+## Dependencies
+- **CLI:** `sio >= 0.3.0`
+- **Skills:** `/sio-violations` — supplies the violated rule (by index) that this skill promotes
+- **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`); note this skill *creates* a new PreToolUse hook as its output
 
 When a rule in CLAUDE.md is being broken by the agent at scale (visible
 via `/sio-violations`), text alone isn't enforcing it. Promote it to a

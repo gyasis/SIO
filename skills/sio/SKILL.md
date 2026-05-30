@@ -2,9 +2,19 @@
 name: sio
 description: "SIO Suite — Session Intelligence Observer. Master skill that routes to the right SIO sub-command. Say 'sio' with any question about sessions, errors, patterns, workflows, training data, or recall."
 user-invocable: true
+requires:
+  cli: "sio>=0.3.0"
+  skills: [sio-briefing, sio-scan, sio-discover, sio-suggest, sio-validate, sio-review, sio-apply, sio-violations, sio-promote-rule, sio-velocity, sio-budget, sio-feedback, sio-status, sio-flows, sio-distill, sio-promote-flow, sio-codify-workflow, sio-recall, sio-export]
+  hooks: []
+  optional: [prd]
 ---
 
 # SIO — Session Intelligence Observer
+
+## Dependencies
+- **CLI:** `sio >= 0.3.0`
+- **Skills:** this is the master **router** — it dispatches to the full SIO skill family (see the Quick Reference table below); install the whole `skills/` folder.
+- **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`).
 
 SIO mines your Claude Code session history to find errors, discover workflows, distill playbooks, recall solutions, and export training data. This master skill routes your request to the right tool.
 

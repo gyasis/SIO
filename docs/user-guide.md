@@ -425,6 +425,198 @@ sio train --task routing --model azure/gpt-5-mini
 
 ---
 
+## Cross-Agent Search & Session-Scoped Analysis
+
+SIO absorbed the standalone `session-search` tool. `sio search` finds sessions across all six
+coding-agent harnesses. Every analysis command (`mine`, `errors`, `suggest`, `collect-recall`)
+can be scoped to a single session with `--session`, turning SIO into a targeted debugger for one
+transcript. Session IDs are canonical **`agent:native_id`** URIs (e.g. `claude:<uuid>`,
+`goose:<name>`); legacy bare IDs are matched transparently. The pipe idiom ties the two together:
+`sio search "dbt" --files | sio errors --session -`.
+
+---
+
+### `sio search`
+
+Search coding-agent session history across all harnesses. All flags pass through to the absorbed
+`session-search` engine, whose `--help` lists the full flag set.
+
+```bash
+sio search "<pattern>" [--agent <harness>] [--recent <days>] [--files] [--count]
+                       [--specstory] [--backups] [--all] [--format <fmt>]
+                       [--case-sensitive] [--fast | --no-fast]
+                       [--limit <n>] [--context <n>] [--clean]
+                       [--list-agents]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `<pattern>` | (required) | Search pattern (plain text) |
+| `--agent` | `claude` | Which harness to search: `claude`, `codex`, `goose`, `opencode`, `gemini`, `aider`, or `all` |
+| `--recent <N>` | `0` (all time) | Only files with mtime within N days |
+| `--limit <N>` | `0` (unlimited) | Cap matches per agent |
+| `--files` | off | Emit unique source file paths (one per line; pipe into `--session`) |
+| `--count` | off | Emit per-file match counts (`N\tpath`) |
+| `--specstory` | off | Claude: search SpecStory MD only |
+| `--backups` | off | Claude: include `~/.claude/backups` |
+| `--all` | off | Claude: JSONL + SpecStory + backups |
+| `--format` | `jsonl` | Output format for Python parsers: `jsonl` or `text` |
+| `--context <N>` | `1` | Lines of context (fast/legacy modes) |
+| `--case-sensitive` | off | Case-sensitive match |
+| `--clean` | off | Un-escape JSON escapes in content |
+| `--fast` | auto | Force ripgrep fast path (claude only) |
+| `--no-fast` | — | Disable ripgrep fast path |
+| `--list-agents` | — | Print inventory of agents with on-disk history, then exit |
+
+**Cross-agent adapters:**
+
+Claude uses a direct file adapter against `~/.claude/projects/**/*.jsonl`.  All other agents
+(`codex`, `goose`, `opencode`, `gemini`, `aider`) use a *search-backed adapter* built on their
+respective on-disk stores:
+
+| Agent | Store location |
+|-------|---------------|
+| `codex` | `~/.codex/history.jsonl` + `~/.codex/sessions/` |
+| `goose` | `~/.local/share/goose/sessions/` |
+| `opencode` | `~/.local/share/opencode/opencode.db` |
+| `gemini` | `~/.gemini/tmp/` |
+| `aider` | per-repo `.aider.chat.history.md` files under `~/dev/` |
+
+Pass `--agent all` to fan out across all six harnesses in one call. Use `--list-agents` to see
+which harnesses have on-disk history on this machine.
+
+**Examples:**
+
+```bash
+# Search Claude transcripts (default)
+sio search "dbt compile" --recent 7
+
+# Search all harnesses for a pattern
+sio search "snowflake" --agent all --recent 30
+
+# Emit file paths for piping
+sio search "PromptChain" --files
+
+# Emit path + hit count
+sio search "playwright" --count
+
+# Check which agents have history installed
+sio search --list-agents
+```
+
+---
+
+### `--session <handle>` — Scope a command to one session
+
+Every analysis command accepts `--session` to restrict processing to a single transcript.
+
+**Handle forms accepted:**
+
+| Form | Example | Behaviour |
+|------|---------|-----------|
+| Canonical URI | `claude:<uuid>` | Parsed directly |
+| Other-agent URI | `goose:<name>` | Routed to that agent's adapter |
+| File path | `/home/user/.claude/projects/-x/abc-123.jsonl` | Agent inferred from path; stem becomes native ID |
+| Bare/partial ID | `c6428f4f` | Assumed `claude:`; fuzzy-resolved against DB (lists candidates if ambiguous) |
+| `sio search --count` line | `3\t/path/to/abc.jsonl` | Path extracted from tab-separated line |
+| `-` (hyphen) | `-` | Read handle from stdin (first line) |
+
+**Commands that accept `--session`:**
+
+| Command | Option name | Behaviour when set |
+|---------|------------|-------------------|
+| `sio mine` | `--session` | Mine ONE session; `--since` becomes optional |
+| `sio errors` | `--session` | Filter error table to ONE session |
+| `sio suggest` | `--session` | Run the full cluster → suggest pipeline on ONE session |
+| `sio collect-recall` | `--session` | Distill a specific session JSONL path |
+
+`sio mine` routes non-Claude sessions through the cross-agent adapter EXTRACT layer automatically.
+`sio errors` and `sio suggest` apply fuzzy partial-ID resolution: a short bare id is expanded
+against the DB and reports candidates when more than one session matches.
+
+**Pipe idiom:**
+
+```bash
+# Find sessions, then scope errors to the first result
+sio search "dbt compile error" --files | head -1 | sio errors --session -
+
+# One-liner equivalent
+sio errors --session "$(sio search 'dbt compile error' --files | head -1)"
+```
+
+---
+
+### `sio watch`
+
+Live-tail a session's events as they happen (Phase B; Claude-native sessions only so far).
+`--session` is **required**.
+
+```bash
+sio watch --session <handle> [--from-start] [--tools-only]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--session` | (required) | Session to watch (`agent:native_id`, a file path, `-` for stdin, or a bare id) |
+| `--from-start` | off | Replay existing events first, then follow new ones |
+| `--tools-only` | off | Only surface `tool_use` events |
+
+**Examples:**
+
+```bash
+# Watch the current Claude session live
+sio watch --session claude:<uuid>
+
+# Replay from the beginning, then follow
+sio watch --session claude:<uuid> --from-start
+
+# Filter to tool calls only
+sio watch --session claude:<uuid> --tools-only
+```
+
+---
+
+### `sio db backfill-sessions`
+
+Migrate legacy bare session IDs (pre-merge rows, no colon) to the canonical `agent:<id>` form.
+Idempotent and non-destructive: only rows without a colon are touched. A timestamped backup is
+created before any write.
+
+```bash
+sio db backfill-sessions [--db-path <path>] [--agent <name>] [--dry-run]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--db-path` | `~/.sio/sio.db` | Path to the SIO database |
+| `--agent` | `claude` | Agent namespace to prefix legacy bare IDs with |
+| `--dry-run` | off | Show what would change without writing (skips the backup step) |
+
+**Examples:**
+
+```bash
+# Preview what would be migrated
+sio db backfill-sessions --dry-run
+
+# Run the migration (auto-backup taken first)
+sio db backfill-sessions
+
+# If your legacy rows belong to a different agent
+sio db backfill-sessions --agent goose
+```
+
+After the migration, `--session` handles will resolve correctly for both old (bare) and new
+(canonical) rows during the transition window — the match helper matches both forms
+transparently until all rows are canonical.
+
+---
+
 ## v1 Commands — Telemetry & Optimization
 
 ### `sio install`
