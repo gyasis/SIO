@@ -108,24 +108,42 @@ The v004 remediation hardened every stage of the pipeline:
 ### Install
 
 The package name on pypi is `self-improving-organism`; the CLI binary stays
-`sio` for ergonomics. (Pypi publish hasn't happened yet — install from the
-GitHub release for now.)
+`sio` for ergonomics. (Pypi publish hasn't happened yet — install from GitHub
+for now.)
+
+**Recommended: an isolated install** so SIO's dependencies (DSPy, fastembed,
+onnxruntime, …) never touch your global or project Python:
 
 ```bash
-# Recommended: pin to a release tag (latest = v0.3.0)
-pip install git+https://github.com/gyasisutton/SIO.git@v0.3.0
+# ⭐ uv tool — isolated env, `sio` on PATH (uv 0.4+)
+uv tool install "self-improving-organism[all] @ git+https://github.com/gyasis/SIO.git@v0.3.1"
 
-# Or grab the wheel directly from the release page (no build step)
-pip install https://github.com/gyasisutton/SIO/releases/download/v0.3.0/self_improving_organism-0.3.0-py3-none-any.whl
-
-# Or from source (editable, for tinkering)
-git clone https://github.com/gyasisutton/SIO.git
-cd SIO
-pip install -e ".[all,dev]"
+# or pipx — same isolation, pipx-managed venv
+pipx install "self-improving-organism[all] @ git+https://github.com/gyasis/SIO.git@v0.3.1"
 
 # Verify
-sio --version          # → 0.3.0
+sio --version          # → 0.3.1
 ```
+
+Plain pip also works (use a venv so it stays isolated):
+
+```bash
+python -m venv .venv && . .venv/bin/activate
+pip install "git+https://github.com/gyasis/SIO.git@v0.3.1#egg=self-improving-organism[all]"
+
+# Or from source (editable, for tinkering)
+git clone https://github.com/gyasis/SIO.git && cd SIO && pip install -e ".[all,dev]"
+```
+
+> **⚠️ Isolated installs + data capture — read this.** `sio init` registers the
+> telemetry hooks in `~/.claude/settings.json` pinned to the **interpreter that
+> ran `sio init`** (`<python> -m …`). With an isolated install that's the tool's
+> own venv — capture works great. But:
+> - **Don't bootstrap capture with ephemeral `uvx`** — its env is thrown away, so the pinned hook path dies immediately. Use `uv tool install` (persistent).
+> - **Re-run `sio init` after any `uv tool upgrade` / `pipx reinstall`** that could move the venv, or the hooks silently stop firing.
+> - `sio doctor` flags a stale hook path. Data *access* (reading transcripts, `~/.sio/*.db`) is always fine — those are HOME paths, unaffected by isolation.
+
+See [`docs/getting-started.md`](docs/getting-started.md) for the full isolated-install guide and `sio init` details.
 
 ### Bootstrap your harness (`sio init`)
 
@@ -184,8 +202,8 @@ After `sio init`, your tree should look like:
 ### Upgrade
 
 ```bash
-pip install --upgrade git+https://github.com/gyasisutton/SIO.git@v0.3.0
-sio init                    # safe — never clobbers user-edited files
+pip install --upgrade git+https://github.com/gyasis/SIO.git@v0.3.1
+sio init                    # safe — never clobbers user-edited files; re-pins hooks after the upgrade
 sio init --status           # confirm what shipped vs what's drifted
 ```
 
@@ -742,7 +760,7 @@ sio recall "query"                             (uses trained model — $0)
 ### Setup
 
 ```bash
-git clone https://github.com/gyasisutton/SIO.git
+git clone https://github.com/gyasis/SIO.git
 cd SIO
 pip install -e ".[all,dev]"
 sio init                         # Stage 19 slash commands + tool rule into ~/.claude/

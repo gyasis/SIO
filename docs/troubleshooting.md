@@ -203,6 +203,48 @@ sio init --harness claude-code --force
 
 ---
 
+## Data capture stopped after upgrading / reinstalling `sio` (isolated installs)
+
+**Symptom**
+
+```
+# Capture worked, then after `uv tool upgrade` / `pipx reinstall` / moving the
+# install, no new rows land in ~/.sio/<platform>/behavior_invocations.db.
+sio doctor
+# Harness install   WARN   claude-code: hook command points at a missing interpreter
+```
+
+**Cause — the hook command is pinned to the install's interpreter**
+
+`sio init` registers each hook in `~/.claude/settings.json` as
+`<sys.executable> -m <module>` — the **absolute path of the Python that ran
+`sio init`**. With an isolated install (`uv tool`, `pipx`) that path lives
+inside the tool's venv. If the venv is rebuilt at a new path (a `uv tool
+upgrade`/`--reinstall`, a `pipx reinstall`) or removed, the pinned command no
+longer resolves and Claude Code silently skips the hook — capture stops.
+
+A special case: bootstrapping with **ephemeral `uvx`** writes a path that is
+discarded the moment the command finishes, so capture never starts.
+
+**Fix**
+
+```bash
+# Re-pin the hooks to the current interpreter
+sio init --harness claude-code --force
+
+# Confirm the command now points at a python that exists
+sio doctor
+grep -A3 PostToolUse ~/.claude/settings.json
+```
+
+**Avoid the recurrence**
+
+- Use **`uv tool install`** (persistent), not `uvx`, for the capture setup.
+- Make **`sio init`** part of your upgrade routine: `uv tool upgrade … && sio init --force`.
+- Data *access* (reading transcripts, `~/.sio/*.db`) is never affected — only the hook-invocation path is.
+
+---
+
 ## DSPy import errors or version conflicts
 
 **Symptom**

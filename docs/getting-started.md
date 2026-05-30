@@ -8,22 +8,56 @@
 
 ## Installation
 
+### Isolated install (recommended for using SIO)
+
+SIO pulls in DSPy, fastembed, onnxruntime, and friends. Install it in an
+**isolated environment** so those never collide with your global or project
+Python — the `sio` binary still lands on your PATH:
+
 ```bash
-# Clone the repo
-git clone https://github.com/yourusername/SIO.git
-cd SIO
+# ⭐ uv tool — isolated venv, sio on PATH (uv 0.4+)
+uv tool install "self-improving-organism[all] @ git+https://github.com/gyasis/SIO.git@v0.3.1"
 
-# Install in editable mode with all dependencies
-pip install -e ".[all,dev]"
+# or pipx — equivalent isolation
+pipx install "self-improving-organism[all] @ git+https://github.com/gyasis/SIO.git@v0.3.1"
 
-# Install Claude Code slash commands (10 skills)
-bash scripts/install-skills.sh
-
-# Verify installation
+# then stage skills + register hooks, and verify
+sio init
 sio --version
 ```
 
-The `[all]` extra includes DSPy, Parquet, and Gemini polish dependencies. If you only need the core error mining pipeline, `pip install -e ".[dev]"` is sufficient.
+### Plain pip (use a venv to stay isolated)
+
+```bash
+python -m venv .venv && . .venv/bin/activate
+pip install "git+https://github.com/gyasis/SIO.git@v0.3.1#egg=self-improving-organism[all]"
+sio init && sio --version
+```
+
+### From source (editable, for development)
+
+```bash
+git clone https://github.com/gyasis/SIO.git
+cd SIO
+pip install -e ".[all,dev]"      # [all] = DSPy + Parquet + Gemini polish; ".[dev]" = core only
+sio init                          # stages the SIO skill suite + registers hooks
+sio --version
+```
+
+> **⚠️ Isolation and data capture — the one rule.** `sio init` writes the
+> telemetry hooks into `~/.claude/settings.json` as `<python> -m <module>`,
+> pinned to the **interpreter that ran `sio init`**. In an isolated install
+> that's the tool's own venv, so capture works perfectly — with two caveats:
+>
+> | Situation | What happens | Do this |
+> |-----------|--------------|---------|
+> | Bootstrap with ephemeral **`uvx`** | env is discarded → pinned hook path is dead | use **`uv tool install`** (persistent), not `uvx`, for the capture setup |
+> | **`uv tool upgrade`** / **`pipx reinstall`** moves the venv | hooks silently stop firing | **re-run `sio init`** afterward |
+> | Not sure if capture is live | — | run **`sio doctor`** (it flags stale hook paths) |
+>
+> **Data *access* is never affected** by isolation: SIO reads transcripts from
+> `~/.claude/projects/` and reads/writes `~/.sio/*.db` — those are HOME paths,
+> independent of which Python environment `sio` runs in.
 
 ## First Run
 
