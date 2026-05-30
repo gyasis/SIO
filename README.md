@@ -272,6 +272,32 @@ fresh install should never silently dispatch to the wrong provider.
 | `sio errors` | List individual error records with filtering |
 | `sio errors --grep "FileNotFound"` | Search errors by text |
 
+### Cross-Agent Search & Session-Scoped Analysis
+
+SIO absorbed the standalone `session-search` tool: **`sio search`** finds sessions
+across **all six coding-agent harnesses** (Claude, Codex, Goose, OpenCode, Gemini,
+Aider). Every analysis command can be **scoped to one session** via `--session`,
+turning SIO into a targeted debugger for a single session/process. Session ids are
+canonical **`agent:native_id`** "Session URIs" (e.g. `claude:<uuid>`,
+`goose:<name>`); legacy bare ids are matched transparently.
+
+| Command | Description |
+|---------|-------------|
+| `sio search "pattern" --agent all` | Search session history across all 6 harnesses (absorbed `session-search`) |
+| `sio search "pattern" --agent claude --files` | Emit matching session file paths (pipe into `--session`) |
+| `sio errors --session <handle>` | Scope error browsing to ONE session (`agent:id`, a path, a bare id, or `-` for stdin) |
+| `sio errors --session c6428f4f` | Fuzzy partial-id resolve (lists candidates if ambiguous) |
+| `sio suggest --session <handle>` | Generate rules from a single session |
+| `sio mine --session <handle>` | Mine ONE session (Claude via file scan; other agents via the adapter layer); `--since` optional |
+| `sio watch --session <handle>` | **Live**-tail a session's events in real time (Claude); `--tools-only` filters to tool calls |
+| `sio search ... --files \| sio errors --session -` | Pipe search results straight into scoped analysis |
+
+#### Database maintenance
+
+| Command | Description |
+|---------|-------------|
+| `sio db backfill-sessions [--dry-run]` | Migrate legacy bare session ids to canonical `agent:<id>` (idempotent, auto-backup) |
+
 ### Dataset Management
 
 | Command | Description |
