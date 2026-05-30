@@ -1329,8 +1329,18 @@ def patterns(error_type, project):
     default=None,
     help="Exclude error types. Comma-separated (e.g. 'repeated_attempt,tool_failure').",
 )
+@click.option(
+    "--session",
+    "session_handle",
+    default=None,
+    help=(
+        "Scope to ONE session by handle (agent:native_id, e.g. "
+        "claude:<uuid>; a bare id is assumed claude). Matches legacy and "
+        "canonical forms. Pipe from search: `sio search ... --files`."
+    ),
+)
 @runlogged("errors")
-def errors(error_type, limit, grep_term, project, exclude_types):
+def errors(error_type, limit, grep_term, project, exclude_types, session_handle):
     """Browse mined errors with optional type and content filters."""
     from rich.console import Console
     from rich.table import Table
@@ -1358,6 +1368,13 @@ def errors(error_type, limit, grep_term, project, exclude_types):
         if project:
             where_clauses.append("source_file LIKE ?")
             params.append(f"%{project}%")
+
+        if session_handle:
+            from sio.core.session_handle import session_match_clause
+
+            clause, sp = session_match_clause(session_handle)
+            where_clauses.append(clause)
+            params.extend(sp)
 
         if grep_term:
             # Comma-separated terms use OR logic across all content fields
@@ -1779,6 +1796,16 @@ def inspect(pattern_id):
     default=24,
     help="Max age in hours for --use-cache to accept without warning. Default: 24.",
 )
+@click.option(
+    "--session",
+    "session_handle",
+    default=None,
+    help=(
+        "Scope the whole pipeline to ONE session (agent:native_id, e.g. "
+        "claude:<uuid>; bare id assumed claude). Turns suggest into a targeted "
+        "single-session analyzer. Pipe from `sio search ... --files`."
+    ),
+)
 @runlogged("suggest")
 def suggest(
     error_type,
@@ -1796,6 +1823,7 @@ def suggest(
     within_csv,
     use_cache,
     cache_ttl_hours,
+    session_handle,
 ):
     """Run the full pipeline: cluster -> persist -> dataset -> suggestions."""
     import uuid
@@ -1890,7 +1918,9 @@ def suggest(
         else:
             # Normal path — load from DB and apply Hop-1 filters
             # 1. Get all errors (no limit), filtered by project if specified
-            all_errors = get_error_records(conn, limit=0, project=project)
+            all_errors = get_error_records(
+                conn, limit=0, project=project, session_id=session_handle
+            )
             if not all_errors:
                 filter_hint = f" for project '{project}'" if project else ""
                 click.echo(

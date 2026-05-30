@@ -270,8 +270,12 @@ def get_error_records(
     query = "SELECT * FROM error_records WHERE 1=1"
     params: list = []
     if session_id:
-        query += " AND session_id = ?"
-        params.append(session_id)
+        # Transition-safe: match bare legacy id OR canonical agent:native_id.
+        from sio.core.session_handle import session_match_clause
+
+        clause, sp = session_match_clause(session_id)
+        query += f" AND {clause}"
+        params.extend(sp)
     if error_type:
         query += " AND error_type = ?"
         params.append(error_type)
