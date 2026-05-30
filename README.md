@@ -20,6 +20,22 @@ These patterns are buried in session transcripts. SIO extracts them, finds the s
 
 > **Design stance:** SIO is **measured assist, not autonomous override**. Detection, generation, and outcome measurement are automatic. Application, deprecation, and final judgment are human. See [`docs/SIO_PHILOSOPHY.md`](docs/SIO_PHILOSOPHY.md) for the full design rationale.
 
+## Documentation
+
+| Doc | What it covers |
+|-----|----------------|
+| 🖼️ [Feature infographic](docs/sio-feature-infographic.html) | One-page visual map of everything SIO can do (open in a browser) |
+| [Getting started](docs/getting-started.md) | Install, `sio init`, first-run walkthrough |
+| [User guide](docs/user-guide.md) | Full CLI reference for every command |
+| [Configuration & env vars](docs/configuration.md) | `config.toml` options + all `SIO_*` environment variables |
+| [Architecture](docs/architecture.md) | Data flow, DB schema, file layout |
+| [Optimizer ladder guide](docs/optimizer-guide.md) | Bootstrap → AMPLIFY → MIPROv2 → GEPA, discipline gates, cost awareness |
+| [Amplify guide](docs/AMPLIFY_GUIDE.md) | Deep-dive on `sio amplify` synthetic data expansion |
+| [Troubleshooting](docs/troubleshooting.md) | Common failure modes → causes → fixes |
+| [Cookbook](docs/cookbook.md) · [Use cases](docs/use-cases/README.md) | Narrative end-to-end workflows |
+| [Design philosophy](docs/SIO_PHILOSOPHY.md) | "Measured assist, not autonomous override" |
+| [Contributing](CONTRIBUTING.md) | Dev setup, tests, spec workflow, PR checklist |
+
 ## How It Works
 
 ```

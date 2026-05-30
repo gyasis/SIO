@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SIO — What It Can Do · Feature Infographic</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --accent:#2A7B9B; --accent-hover:#1F6280; --accent-light:#E4F2F7; --accent-muted:#5A9DB8;
+    --ink:#16242B; --ink-soft:#4A5B63; --line:#D9E4E9; --bg:#F7FBFC; --card:#FFFFFF;
+    --c-observe:#2A7B9B; --c-suggest:#C9743D; --c-recall:#6C5CE7; --c-optimize:#1E9E6A;
+    --c-measure:#B8455F; --c-integrate:#8A6D3B;
+    --shadow:0 1px 2px rgba(22,36,43,.05),0 8px 24px rgba(22,36,43,.07);
+    --shadow-lg:0 12px 40px rgba(22,36,43,.13);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{font-family:'DM Sans',system-ui,sans-serif;color:var(--ink);background:var(--bg);line-height:1.55;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+  h1,h2,h3,.display{font-family:'Bricolage Grotesque',sans-serif;letter-spacing:-.02em;line-height:1.05}
+  code,.mono{font-family:'JetBrains Mono',monospace}
+
+  /* ── Hero ── */
+  .hero{position:relative;overflow:hidden;background:
+    radial-gradient(1200px 480px at 80% -10%,rgba(42,123,155,.18),transparent 60%),
+    linear-gradient(180deg,#0E3340 0%,#12414F 55%,#16505F 100%);color:#EAF6FA;padding:84px 0 96px}
+  .hero .wrap{position:relative;z-index:2}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:#9FD6E6;margin-bottom:18px}
+  .eyebrow .dot{width:7px;height:7px;border-radius:50%;background:#62C7E0;box-shadow:0 0 0 4px rgba(98,199,224,.2)}
+  .hero h1{font-size:clamp(40px,6vw,76px);font-weight:800;color:#fff}
+  .hero h1 .sub{display:block;font-size:clamp(18px,2.4vw,30px);font-weight:500;color:#9FD6E6;margin-top:10px;letter-spacing:-.01em}
+  .tagline{font-size:clamp(17px,2vw,22px);color:#CDEAF2;max-width:680px;margin:22px 0 0;font-weight:300}
+  .tagline strong{color:#fff;font-weight:600}
+
+  /* ── Pipeline flow ── */
+  .flow{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:40px}
+  .flow .step{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16);
+    padding:11px 16px;border-radius:12px;backdrop-filter:blur(6px)}
+  .flow .step .n{font-family:'JetBrains Mono';font-size:12px;color:#7FCBE0}
+  .flow .step .lbl{font-weight:600;font-size:15px;color:#fff}
+  .flow .arrow{color:#5A9DB8;font-size:20px;font-weight:700}
+  .flow .loop{margin-left:auto;font-size:13px;color:#9FD6E6;border:1px dashed rgba(159,214,230,.5);border-radius:999px;padding:6px 14px}
+
+  /* ── Section ── */
+  section{padding:72px 0}
+  .sec-head{text-align:center;max-width:720px;margin:0 auto 48px}
+  .sec-head .kicker{font-size:13px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:12px}
+  .sec-head h2{font-size:clamp(28px,4vw,42px);font-weight:700}
+  .sec-head p{color:var(--ink-soft);font-size:18px;margin-top:14px}
+
+  /* ── Capability grid ── */
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:22px}
+  .card{position:relative;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:28px 26px;
+    box-shadow:var(--shadow);transition:transform .18s ease,box-shadow .18s ease;overflow:hidden}
+  .card:hover{transform:translateY(-4px);box-shadow:var(--shadow-lg)}
+  .card::before{content:"";position:absolute;inset:0 0 auto 0;height:5px;background:var(--cc,var(--accent))}
+  .card .ic{width:52px;height:52px;border-radius:14px;display:grid;place-items:center;font-size:26px;
+    background:color-mix(in srgb,var(--cc,var(--accent)) 14%,white);margin-bottom:16px}
+  .card .step-no{position:absolute;top:22px;right:24px;font-family:'Bricolage Grotesque';font-weight:800;font-size:40px;color:color-mix(in srgb,var(--cc) 16%,white)}
+  .card h3{font-size:23px;font-weight:700;color:var(--ink)}
+  .card .verb{font-size:12.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--cc);margin-bottom:4px}
+  .card p.desc{color:var(--ink-soft);font-size:15px;margin:12px 0 18px}
+  .chips{display:flex;flex-wrap:wrap;gap:7px}
+  .chip{font-family:'JetBrains Mono';font-size:12.5px;font-weight:500;color:var(--ink);background:var(--bg);
+    border:1px solid var(--line);border-radius:8px;padding:5px 9px;white-space:nowrap}
+  .chip.key{background:color-mix(in srgb,var(--cc) 12%,white);border-color:color-mix(in srgb,var(--cc) 30%,white);color:color-mix(in srgb,var(--cc) 60%,black)}
+
+  /* ── DSPy brain band ── */
+  .brain{background:linear-gradient(135deg,#13313C,#1C4E5E);color:#EAF6FA;border-radius:24px;padding:48px 44px;margin-top:8px}
+  .brain h2{font-size:clamp(26px,3.4vw,38px);color:#fff;font-weight:700}
+  .brain .lede{color:#BFE4EE;max-width:640px;margin:14px 0 32px;font-size:17px}
+  .ladder{display:flex;flex-wrap:wrap;gap:0;align-items:stretch;border-radius:14px;overflow:hidden;border:1px solid rgba(255,255,255,.14)}
+  .rung{flex:1 1 180px;padding:20px 22px;background:rgba(255,255,255,.05)}
+  .rung+.rung{border-left:1px solid rgba(255,255,255,.12)}
+  .rung .r-no{font-family:'JetBrains Mono';font-size:12px;color:#7FCBE0}
+  .rung h4{font-family:'Bricolage Grotesque';font-size:20px;color:#fff;margin:4px 0 6px;font-weight:700}
+  .rung p{font-size:13.5px;color:#AFD9E4;line-height:1.45}
+  .brain-foot{display:flex;flex-wrap:wrap;gap:24px;margin-top:28px;font-size:14px;color:#BFE4EE}
+  .brain-foot b{color:#fff}
+
+  /* ── Philosophy ── */
+  .philo{background:var(--accent-light);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .philo .wrap{display:grid;grid-template-columns:1.2fr 1fr;gap:48px;align-items:center}
+  .philo h2{font-size:clamp(26px,3.4vw,38px);font-weight:700;color:var(--ink)}
+  .philo .quote{font-size:19px;color:var(--ink);margin-top:16px;font-weight:300}
+  .philo .quote b{font-weight:700;color:var(--accent-hover)}
+  .split{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:8px;box-shadow:var(--shadow)}
+  .split .row{display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:11px}
+  .split .row+.row{margin-top:4px}
+  .split .auto{background:#EAF7F0}
+  .split .human{background:#FBEFE9}
+  .split .tag{font-family:'JetBrains Mono';font-size:11px;font-weight:600;padding:4px 8px;border-radius:6px}
+  .split .auto .tag{background:#1E9E6A;color:#fff}
+  .split .human .tag{background:#C9743D;color:#fff}
+  .split .row span{font-size:14.5px;color:var(--ink-soft)}
+  .split .row b{color:var(--ink)}
+
+  /* ── Stats ── */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:18px;margin-top:8px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px;text-align:center;box-shadow:var(--shadow)}
+  .stat .num{font-family:'Bricolage Grotesque';font-weight:800;font-size:40px;color:var(--accent);line-height:1}
+  .stat .lab{font-size:13.5px;color:var(--ink-soft);margin-top:8px}
+
+  footer{background:#0E3340;color:#9FD6E6;text-align:center;padding:38px 0;font-size:14px}
+  footer .mono{color:#CDEAF2}
+  footer a{color:#7FCBE0;text-decoration:none}
+
+  @media(max-width:760px){
+    .philo .wrap{grid-template-columns:1fr}
+    .flow .loop{margin-left:0}
+    section{padding:54px 0}
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════ HERO ════════ -->
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow"><span class="dot"></span> Session Intelligence Observer · v0.3.1</div>
+    <h1>SIO<span class="sub">Everything your self-improving agent loop can do</span></h1>
+    <p class="tagline">SIO mines your AI coding sessions for mistakes, clusters them into patterns, and writes the <strong>CLAUDE.md rules</strong> that stop your agent from making the same mistake twice — then measures whether the rule actually helped.</p>
+
+    <div class="flow" aria-label="SIO pipeline">
+      <div class="step"><span class="n">01</span><span class="lbl">Sessions</span></div>
+      <span class="arrow">→</span>
+      <div class="step"><span class="n">02</span><span class="lbl">Mine errors</span></div>
+      <span class="arrow">→</span>
+      <div class="step"><span class="n">03</span><span class="lbl">Cluster patterns</span></div>
+      <span class="arrow">→</span>
+      <div class="step"><span class="n">04</span><span class="lbl">Suggest rules</span></div>
+      <span class="arrow">→</span>
+      <div class="step"><span class="n">05</span><span class="lbl">Review &amp; apply</span></div>
+      <span class="arrow">→</span>
+      <div class="step"><span class="n">06</span><span class="lbl">Measure</span></div>
+      <span class="loop">⟲ feedback loop — outcomes feed the next mining cycle</span>
+    </div>
+  </div>
+</header>
+
+<!-- ════════ CAPABILITY MAP ════════ -->
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">The Capability Map</div>
+      <h2>Six things SIO does — ~45 commands, one loop</h2>
+      <p>Each cluster is a stage in the self-improvement loop. Hover a card to lift it; key commands are highlighted.</p>
+    </div>
+
+    <div class="grid">
+
+      <!-- OBSERVE -->
+      <article class="card" style="--cc:var(--c-observe)">
+        <span class="step-no">01</span>
+        <div class="ic">👁️</div>
+        <div class="verb">Observe</div>
+        <h3>See what's going wrong</h3>
+        <p class="desc">Mine every Claude Code session transcript for tool failures, repeated attempts, and user corrections — then cluster them into named error patterns and spot the workflows that <em>work</em>.</p>
+        <div class="chips">
+          <span class="chip key">sio mine</span>
+          <span class="chip key">sio patterns</span>
+          <span class="chip">sio errors</span>
+          <span class="chip">sio flows</span>
+          <span class="chip">sio differential-flows</span>
+          <span class="chip">sio trend</span>
+          <span class="chip">sio status</span>
+        </div>
+      </article>
+
+      <!-- SUGGEST -->
+      <article class="card" style="--cc:var(--c-suggest)">
+        <span class="step-no">02</span>
+        <div class="ic">✍️</div>
+        <div class="verb">Suggest</div>
+        <h3>Turn patterns into rules</h3>
+        <p class="desc">Generate targeted CLAUDE.md rules from error clusters with a two-hop search (<code>--refine</code> / <code>--strategy</code>), review them interactively, then apply or roll back — every change reversible.</p>
+        <div class="chips">
+          <span class="chip key">sio suggest</span>
+          <span class="chip">sio suggest-review</span>
+          <span class="chip">sio approve</span>
+          <span class="chip">sio reject</span>
+          <span class="chip key">sio apply</span>
+          <span class="chip">sio rollback</span>
+          <span class="chip">sio promote-rule</span>
+        </div>
+      </article>
+
+      <!-- RECALL -->
+      <article class="card" style="--cc:var(--c-recall)">
+        <span class="step-no">03</span>
+        <div class="ic">🧠</div>
+        <div class="verb">Recall</div>
+        <h3>Never re-solve a solved problem</h3>
+        <p class="desc">Ask how a task was done before. SIO topic-filters distilled sessions, detects struggle→fix transitions, and surfaces the winning approach so the agent doesn't rediscover it from cold.</p>
+        <div class="chips">
+          <span class="chip key">sio recall</span>
+          <span class="chip">sio distill</span>
+          <span class="chip">sio collect-recall</span>
+          <span class="chip">sio briefing</span>
+          <span class="chip">/done-before</span>
+        </div>
+      </article>
+
+      <!-- OPTIMIZE -->
+      <article class="card" style="--cc:var(--c-optimize)">
+        <span class="step-no">04</span>
+        <div class="ic">🔬</div>
+        <div class="verb">Optimize · the DSPy brain</div>
+        <h3>Make the rule-writer smarter</h3>
+        <p class="desc">Compound-optimize the suggestion generator through a disciplined ladder — Bootstrap → AMPLIFY → MIPROv2 → GEPA — with cost gates, crash-safe resume, and content-addressable trainsets.</p>
+        <div class="chips">
+          <span class="chip key">sio optimize-ladder</span>
+          <span class="chip">sio optimize</span>
+          <span class="chip key">sio amplify</span>
+          <span class="chip">sio curate</span>
+          <span class="chip">sio train</span>
+          <span class="chip">sio ground-truth</span>
+          <span class="chip">sio promote-to-gold</span>
+        </div>
+      </article>
+
+      <!-- MEASURE -->
+      <article class="card" style="--cc:var(--c-measure)">
+        <span class="step-no">05</span>
+        <div class="ic">✅</div>
+        <div class="verb">Measure &amp; Govern</div>
+        <h3>Did the rule actually help?</h3>
+        <p class="desc">Track per-rule outcomes and error-velocity deltas, flag rules being ignored, and keep the pipeline honest with health checks and observable optimizer runs.</p>
+        <div class="chips">
+          <span class="chip key">sio velocity --by-rule</span>
+          <span class="chip">sio rule-outcomes</span>
+          <span class="chip">sio rule-audit</span>
+          <span class="chip">sio violations</span>
+          <span class="chip">sio doctor</span>
+          <span class="chip">sio gepa-status</span>
+        </div>
+      </article>
+
+      <!-- INTEGRATE -->
+      <article class="card" style="--cc:var(--c-integrate)">
+        <span class="step-no">06</span>
+        <div class="ic">🛂</div>
+        <div class="verb">Integrate</div>
+        <h3>Plug into any agent harness</h3>
+        <p class="desc">One-command install wires up hooks and 19 slash-command skills. Schedule background mining, and mine history across six coding harnesses — not just Claude Code.</p>
+        <div class="chips">
+          <span class="chip key">sio init</span>
+          <span class="chip">sio install</span>
+          <span class="chip">sio schedule</span>
+          <span class="chip">hooks</span>
+          <span class="chip">19 skills</span>
+          <span class="chip key">--agent goose|aider…</span>
+        </div>
+      </article>
+
+    </div>
+  </div>
+</section>
+
+<!-- ════════ DSPy BRAIN BAND ════════ -->
+<section style="padding-top:0">
+  <div class="wrap">
+    <div class="brain">
+      <h2>The optimizer ladder — discipline, not guesswork</h2>
+      <p class="lede">SIO refuses to burn compute on the wrong rung. Each stage gates the next: cheap broadening before expensive search, data-size floors before MIPROv2, amplification before GEPA.</p>
+      <div class="ladder">
+        <div class="rung"><div class="r-no">RUNG 1</div><h4>Bootstrap</h4><p>Few-shot from any trainset. Fast, runs on minimal labeled data.</p></div>
+        <div class="rung"><div class="r-no">RUNG 2</div><h4>AMPLIFY</h4><p>Paired-debate synthetic expansion to clear the row floor.</p></div>
+        <div class="rung"><div class="r-no">RUNG 3</div><h4>MIPROv2</h4><p>Few-shot + instruction optimization. Gated on valset size.</p></div>
+        <div class="rung"><div class="r-no">RUNG 4</div><h4>GEPA</h4><p>Reflective multi-step. Task/reflection LM split; ≥300-row floor.</p></div>
+      </div>
+      <div class="brain-foot">
+        <div><b>Crash-safe</b> · <code>--resume-from</code> skips completed rungs</div>
+        <div><b>Cost-gated</b> · estimates &amp; confirms before each run</div>
+        <div><b>Proven</b> · GEPA #15 scored <b>0.8653</b> vs 0.6768 baseline</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ PHILOSOPHY ════════ -->
+<section class="philo">
+  <div class="wrap">
+    <div>
+      <div class="kicker" style="color:var(--accent);font-size:13px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;margin-bottom:12px">Design stance</div>
+      <h2>Measured assist, not autonomous override</h2>
+      <p class="quote">Detection, generation, and outcome measurement are <b>automatic</b>. Application, deprecation, and final judgment stay <b>human</b>. SIO produces; you remain the editor.</p>
+    </div>
+    <div class="split" aria-label="who does what">
+      <div class="row auto"><span class="tag">AUTO</span><span><b>Mine</b> sessions for errors</span></div>
+      <div class="row auto"><span class="tag">AUTO</span><span><b>Cluster</b> &amp; name patterns</span></div>
+      <div class="row auto"><span class="tag">AUTO</span><span><b>Generate</b> candidate rules + measure outcomes</span></div>
+      <div class="row human"><span class="tag">HUMAN</span><span><b>Review</b> &amp; approve each rule</span></div>
+      <div class="row human"><span class="tag">HUMAN</span><span><b>Apply</b>, deprecate, final judgment</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ STATS ════════ -->
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">At a glance</div>
+      <h2>SIO by the numbers</h2>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="num">~45</div><div class="lab">CLI commands</div></div>
+      <div class="stat"><div class="num">6</div><div class="lab">capability clusters</div></div>
+      <div class="stat"><div class="num">3</div><div class="lab">DSPy optimizers</div></div>
+      <div class="stat"><div class="num">19</div><div class="lab">slash-command skills</div></div>
+      <div class="stat"><div class="num">6</div><div class="lab">coding harnesses mined</div></div>
+      <div class="stat"><div class="num">1</div><div class="lab">SQLite store · ~/.sio/sio.db</div></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="doclinks" style="display:flex;flex-wrap:wrap;gap:10px 22px;justify-content:center;margin-bottom:18px;font-size:14px">
+      <a href="getting-started.md">Getting started</a>
+      <a href="user-guide.md">CLI reference</a>
+      <a href="configuration.md">Config &amp; env vars</a>
+      <a href="optimizer-guide.md">Optimizer ladder</a>
+      <a href="troubleshooting.md">Troubleshooting</a>
+      <a href="SIO_PHILOSOPHY.md">Design philosophy</a>
+      <a href="../CONTRIBUTING.md">Contributing</a>
+    </div>
+    <div class="mono">SIO · Session Intelligence Observer · v0.3.1</div>
+    <div style="margin-top:8px">Detection is automatic. Judgment is yours.</div>
+  </div>
+</footer>
+
+</body>
+</html>
