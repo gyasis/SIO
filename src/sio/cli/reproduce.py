@@ -33,7 +33,8 @@ def reproduce_cmd(module_id, copy):
     """
     db = os.path.expanduser(os.environ.get("SIO_DB_PATH",
                                             str(Path.home() / ".sio" / "sio.db")))
-    conn = sqlite3.connect(db); conn.row_factory = sqlite3.Row
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
     row = conn.execute(
         "SELECT * FROM optimized_modules WHERE id = ?", (module_id,)
     ).fetchone()

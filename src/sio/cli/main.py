@@ -505,7 +505,9 @@ def doctor() -> None:
     if fixes:
         console.print("\n[bold]Suggested fixes:[/bold]")
         for c in fixes:
-            console.print(f"  [{color_map[c.status]}]{c.name}[/{color_map[c.status]}]: {c.fix_hint}")
+            console.print(
+                f"  [{color_map[c.status]}]{c.name}[/{color_map[c.status]}]: {c.fix_hint}"
+            )
 
     if report.has_errors:
         raise SystemExit(1)
@@ -1730,7 +1732,8 @@ def inspect(pattern_id):
     help=(
         "Hop-2 narrowing strategy (used with --refine). "
         "'filter' (default): narrow errors by --refine, feed subset to DSPy. Fast, shallow. "
-        "'recluster': re-cluster Hop-1's errors and select sub-clusters matching --refine. Slower, deep. "
+        "'recluster': re-cluster Hop-1's errors and select sub-clusters matching --refine. "
+        "Slower, deep. "
         "'hybrid': filter by --refine, then re-cluster the survivors. Balance."
     ),
 )
@@ -1755,7 +1758,8 @@ def inspect(pattern_id):
         "Path to a Hop-1 errors CSV (from a previous --preview run). "
         "Skips DB load + --grep / --project / --type filters (those were applied in Hop-1). "
         "Feeds the cached errors directly into clustering + Hop-2. "
-        "Use '~/.sio/previews/errors_preview.csv' (latest preview) by default if --use-cache is set."
+        "Use '~/.sio/previews/errors_preview.csv' (latest preview) by default "
+        "if --use-cache is set."
     ),
 )
 @click.option(
@@ -1987,7 +1991,8 @@ def suggest(
         if hop2_refine_terms:
             filter_msg += (
                 f" | Hop-2 strategy={hop2_strategy.lower()} refine='{refine_term}'"
-                f" ({hop1_error_count} -> {len(errors_to_cluster)} errors after pre-cluster narrowing)"
+                f" ({hop1_error_count} -> {len(errors_to_cluster)}"
+                f" errors after pre-cluster narrowing)"
             )
         console.print(
             f"[bold]Step 1:[/bold] Clustering {len(errors_to_cluster)} errors{filter_msg}..."
@@ -4111,7 +4116,8 @@ def promote_positives_cmd(since, min_confidence, dry_run):
                     """,
                     (
                         r["pattern_id"] or "tool_failure__unclassified",
-                        '[{"error_text": "' + (r["error_text"] or "").replace('"', '\\"')[:300] + '"}]',
+                        '[{"error_text": "' + (r["error_text"] or "").replace(
+                            '"', '\\"')[:300] + '"}]',
                         r["error_type"],
                         f"User-confirmed recovery: {(r['signal_text'] or '')[:200]}",
                         f"Recovery-paired rule for {r['pattern_id'] or 'unclassified'}",
@@ -4538,10 +4544,15 @@ def optimize_cmd(
     }
     if task_mode:
         os.environ["SIO_TASK_LM"] = _MODE_TO_MODEL["task"][task_mode]
-        console.print(f"  [dim]--task-mode={task_mode} → SIO_TASK_LM={os.environ['SIO_TASK_LM']}[/dim]")
+        console.print(
+            f"  [dim]--task-mode={task_mode} → SIO_TASK_LM={os.environ['SIO_TASK_LM']}[/dim]"
+        )
     if reflection_mode:
         os.environ["SIO_REFLECTION_LM"] = _MODE_TO_MODEL["reflection"][reflection_mode]
-        console.print(f"  [dim]--reflection-mode={reflection_mode} → SIO_REFLECTION_LM={os.environ['SIO_REFLECTION_LM']}[/dim]")
+        console.print(
+            f"  [dim]--reflection-mode={reflection_mode} → "
+            f"SIO_REFLECTION_LM={os.environ['SIO_REFLECTION_LM']}[/dim]"
+        )
     if gepa_budget:
         os.environ["SIO_GEPA_BUDGET"] = gepa_budget
         console.print(f"  [dim]--gepa-budget={gepa_budget} → SIO_GEPA_BUDGET={gepa_budget}[/dim]")
@@ -4806,7 +4817,8 @@ def optimize_cmd(
                         f"id=[cyan]{ds_row['id']}[/cyan] (sha={sha[:12]}).\n"
                         f"\n  The optimizer ladder is "
                         f"[bold]Bootstrap → MIPROv2 → GEPA[/bold]. Run MIPROv2 first:\n"
-                        f"    [dim]sio optimize --optimizer mipro --trainset-file {trainset_file}[/dim]\n"
+                        f"    [dim]sio optimize --optimizer mipro"
+                        f" --trainset-file {trainset_file}[/dim]\n"
                         f"\n  Or override with [bold]--skip-ladder[/bold] if you have "
                         f"a specific reason (logged for SIO mining)."
                     )
@@ -4939,7 +4951,9 @@ def optimize_cmd(
                 ds_id = register_dataset(
                     source_path=tf,
                     slug=tf.stem,
-                    description="Auto-registered from sio optimize --trainset-file (was unregistered)",
+                    description=(
+                        "Auto-registered from sio optimize --trainset-file (was unregistered)"
+                    ),
                     source="manual",
                 )
             else:
@@ -5154,7 +5168,10 @@ def optimize_ladder_cmd(
     if ds_row is None:
         needs_amplify = True  # unregistered — assume amplification needed
         amplified_path = None
-    elif (ds_row["source"] or "") == "curate" or (ds_row["row_count"] or 0) < target_amplified_rows:
+    elif (
+        (ds_row["source"] or "") == "curate"
+        or (ds_row["row_count"] or 0) < target_amplified_rows
+    ):
         needs_amplify = True
         amplified_path = str(_P.home() / ".sio" / "amplified" /
                              f"{tf.stem}_amplified.jsonl")
@@ -5246,7 +5263,11 @@ def optimize_ladder_cmd(
     state_file = state_dir / "ladder_status.json"
 
     def _now_iso() -> str:
-        return _dt2.datetime.now(_dt2.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+        return (
+            _dt2.datetime.now(_dt2.timezone.utc)
+            .isoformat(timespec="seconds")
+            .replace("+00:00", "Z")
+        )
 
     ladder_state = {
         "started_at": _now_iso(),
@@ -7060,7 +7081,9 @@ def promote_rule(rule_index: int, mode: str, since: str | None, write: bool) -> 
                     f"[bold]Slug:[/bold]             {result.slug}\n"
                     f"[bold]promoted_hooks id:[/bold] {result.promoted_hook_id}"
                 )
-                console.print(Panel(wrote_body, title="Promoted (mode=" + mode + ")", expand=False))
+                console.print(Panel(
+                    wrote_body, title="Promoted (mode=" + mode + ")", expand=False
+                ))
                 console.print(
                     "[green]✓ Hook installed.[/green] Restart Claude Code so the "
                     "harness picks up the new PreToolUse registration. The hook "
@@ -8233,6 +8256,11 @@ cli.add_command(_multi_train_cmd)
 from sio.cli.reproduce import reproduce_cmd as _reproduce_cmd  # noqa: E402
 
 cli.add_command(_reproduce_cmd)
+
+# Register sio search (absorbed cross-harness session-search; merge Phase 0)
+from sio.cli.search import search_cmd as _search_cmd  # noqa: E402
+
+cli.add_command(_search_cmd)
 
 
 @cli.command("gepa-status")

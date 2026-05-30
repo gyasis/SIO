@@ -71,7 +71,8 @@ def _check_ladder_discipline() -> CheckResult:
     from pathlib import Path
     db = str(Path.home() / ".sio" / "sio.db")
     try:
-        conn = sqlite3.connect(db); conn.row_factory = sqlite3.Row
+        conn = sqlite3.connect(db)
+        conn.row_factory = sqlite3.Row
         # Active GEPA modules
         gepa_rows = conn.execute(
             "SELECT id, module_type, trainset_id FROM optimized_modules "
@@ -126,7 +127,8 @@ def _check_reproducibility_gaps() -> CheckResult:
     from pathlib import Path
     db = str(Path.home() / ".sio" / "sio.db")
     try:
-        conn = sqlite3.connect(db); conn.row_factory = sqlite3.Row
+        conn = sqlite3.connect(db)
+        conn.row_factory = sqlite3.Row
         # Recent active modules
         rows = conn.execute(
             "SELECT id, optimizer_used, task_lm, reflection_lm, trainset_id, seed "
@@ -850,7 +852,9 @@ def _check_ladder_state() -> CheckResult:
                     f"Re-run `sio optimize-ladder` to resume from the last "
                     f"completed rung."
                 ),
-                fix_hint=f"sio optimize-ladder --trainset-file {st.get('trainset_file', '<X>')} --yes",
+                fix_hint=(
+                    f"sio optimize-ladder --trainset-file {st.get('trainset_file', '<X>')} --yes"
+                ),
             )
         if age_h > 2 and not alive:
             return CheckResult(
