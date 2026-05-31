@@ -607,6 +607,252 @@ def inventory() -> list[tuple[str, str, bool]]:
     return rows
 
 
+# --------------------- session skeleton (discovery view) --------------------- #
+
+# Match-location categories, in priority order (most → least meaningful).
+CAT_DISCUSSED = "discussed"  # in a human prompt or assistant prose block
+CAT_EDITED = "edited"        # pattern in a tool_use file_path (Write/Edit/Read target)
+CAT_COMMAND = "command"      # pattern in a Bash command (non-search)
+CAT_OUTPUT = "output"        # pattern in tool_result / toolUseResult text
+# Sessions whose ONLY match is the agent searching FOR the pattern are noise,
+# not real hits — e.g. a stored `session-search "redpen"` Bash invocation.
+_SEARCH_NOISE = "__search_noise__"
+_SEARCH_TOOLS_RE = re.compile(r"\b(session-search|sio\s+search|rg|ripgrep|grep|ag)\b")
+
+
+@dataclass
+class SessionHit:
+    session_id: str  # = the session UUID (jsonl stem)
+    project: str
+    ts: str
+    label: str
+    n_hits: int
+    snippet: str
+    source_path: str
+
+
+def _project_name(jsonl: Path) -> str:
+    """Friendly project from the encoded project dir, e.g. PromptChain, dev-kid."""
+    m = re.search(r"-code-(.+)$", jsonl.parent.name)
+    return m.group(1) if m else jsonl.parent.name
+
+
+def _claude_line_categories(
+    entry: dict, pattern: str, cs: bool
+) -> tuple[set[str], str]:
+    """Return (categories, snippet) for where `pattern` appears in one JSONL entry.
+
+    Unlike the per-match parser (which reads only ``message.content[].text``),
+    this also inspects tool_use inputs, tool_result content, and the top-level
+    ``toolUseResult`` — the fields that hold real work the agent did. A Bash
+    command that is itself a search for the pattern is tagged search-noise.
+    """
+    cats: set[str] = set()
+    snippet = ""
+
+    def note(text: str, cat: str) -> None:
+        nonlocal snippet
+        if text and _matches(text, pattern, cs):
+            cats.add(cat)
+            if not snippet or cat == CAT_DISCUSSED:
+                snippet = " ".join(text.split())[:160]
+
+    msg = entry.get("message") or {}
+    blocks = msg.get("content")
+    if isinstance(blocks, list):
+        for b in blocks:
+            if not isinstance(b, dict):
+                note(str(b), CAT_DISCUSSED)
+                continue
+            btype = b.get("type")
+            if btype == "text":
+                note(b.get("text", ""), CAT_DISCUSSED)
+            elif btype == "tool_use":
+                inp = b.get("input") or {}
+                fp = (
+                    inp.get("file_path")
+                    or inp.get("path")
+                    or inp.get("notebook_path")
+                    or ""
+                )
+                note(str(fp), CAT_EDITED)
+                cmd = str(inp.get("command", ""))
+                if cmd and _matches(cmd, pattern, cs):
+                    if _SEARCH_TOOLS_RE.search(cmd):
+                        cats.add(_SEARCH_NOISE)
+                    else:
+                        note(cmd, CAT_COMMAND)
+            elif btype == "tool_result":
+                rc = b.get("content")
+                if isinstance(rc, list):
+                    rc = " ".join(
+                        x.get("text", "") if isinstance(x, dict) else str(x)
+                        for x in rc
+                    )
+                note(str(rc or ""), CAT_OUTPUT)
+    elif blocks is not None:
+        note(str(blocks), CAT_DISCUSSED)
+
+    tur = entry.get("toolUseResult")  # stdout/stderr outside message.content
+    if tur is not None:
+        note(
+            tur if isinstance(tur, str) else json.dumps(tur, ensure_ascii=False),
+            CAT_OUTPUT,
+        )
+
+    return cats, snippet
+
+
+def _label_for(cats: set[str]) -> str | None:
+    """Strongest real category, or None if the session only has search-noise."""
+    for c in (CAT_DISCUSSED, CAT_EDITED, CAT_COMMAND, CAT_OUTPUT):
+        if c in cats:
+            return c
+    return None
+
+
+def iter_claude_session_hits(
+    pattern: str, cs: bool, cutoff: float | None
+) -> Iterator[SessionHit]:
+    """Skeleton discovery: one row per SESSION that genuinely touched `pattern`.
+
+    Dedups by session UUID, classifies the strongest match, and drops sessions
+    whose only match is the agent searching for the pattern. This is the
+    human-facing default — a map of relevant sessions, not a raw match count.
+    """
+    if not CLAUDE_PROJECTS.exists():
+        return
+    for jsonl in CLAUDE_PROJECTS.rglob("*.jsonl"):
+        if not _file_within(jsonl, cutoff):
+            continue
+        cats_all: set[str] = set()
+        n_hits = 0
+        snippet = ""
+        latest_ts = ""
+        try:
+            with jsonl.open(encoding="utf-8", errors="replace") as fh:
+                for raw in fh:
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    try:
+                        entry = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    cats, snip = _claude_line_categories(entry, pattern, cs)
+                    real = cats - {_SEARCH_NOISE}
+                    if not real:
+                        continue
+                    cats_all |= real
+                    n_hits += 1
+                    if snip and (not snippet or CAT_DISCUSSED in real):
+                        snippet = snip
+                    ts = entry.get("timestamp", "") or ""
+                    if ts > latest_ts:
+                        latest_ts = ts
+        except OSError:
+            continue
+        label = _label_for(cats_all)
+        if label is None:
+            continue
+        yield SessionHit(
+            session_id=jsonl.stem,
+            project=_project_name(jsonl),
+            ts=latest_ts,
+            label=label,
+            n_hits=n_hits,
+            snippet=snippet,
+            source_path=str(jsonl),
+        )
+
+
+def emit_skeleton(hits: list[SessionHit]) -> int:
+    """Print the session-level discovery table. Returns exit code."""
+    if not hits:
+        print("# no sessions matched", file=sys.stderr)
+        return 2
+    hits = sorted(hits, key=lambda h: h.ts, reverse=True)
+    proj_w = min(max((len(h.project) for h in hits), default=7), 24)
+    for h in hits:
+        date = h.ts[:10] if h.ts else "—"
+        print(
+            f"{h.session_id}  {h.project[:proj_w].ljust(proj_w)}  {date}  "
+            f"{h.label:<9} ×{h.n_hits}"
+        )
+        if h.snippet:
+            print(f"    {h.snippet}")
+    print(
+        f"\n# {len(hits)} session(s). Full history: sio search --session <uuid>",
+        file=sys.stderr,
+    )
+    return 0
+
+
+def _print_transcript_line(entry: dict, clean: bool) -> None:
+    msg = entry.get("message") or {}
+    role = entry.get("type") or msg.get("role") or "?"
+    ts = (entry.get("timestamp", "") or "")[:19]
+    blocks = msg.get("content")
+    parts: list[str] = []
+    if isinstance(blocks, list):
+        for b in blocks:
+            if not isinstance(b, dict):
+                parts.append(str(b))
+                continue
+            bt = b.get("type")
+            if bt == "text":
+                parts.append(b.get("text", ""))
+            elif bt == "tool_use":
+                inp = json.dumps(b.get("input") or {}, ensure_ascii=False)
+                parts.append(f"[tool_use {b.get('name', '')}] {inp[:1000]}")
+            elif bt == "tool_result":
+                rc = b.get("content")
+                if isinstance(rc, list):
+                    rc = " ".join(
+                        x.get("text", "") if isinstance(x, dict) else str(x)
+                        for x in rc
+                    )
+                parts.append(f"[tool_result] {str(rc)[:2000]}")
+    elif blocks is not None:
+        parts.append(str(blocks))
+    text = " ".join(p for p in parts if p).strip()
+    if clean:
+        text = _clean(text)
+    if not text:
+        return
+    print(f"[{role} {ts}] {text}")
+
+
+def expand_sessions(uuids: list[str], clean: bool) -> int:
+    """Dump the full transcript of each session, looked up by UUID."""
+    wanted = [u.strip() for part in uuids for u in part.split(",") if u.strip()]
+    found = 0
+    for uuid in wanted:
+        matches = sorted(CLAUDE_PROJECTS.rglob(f"{uuid}.jsonl"))
+        if not matches:
+            print(f"# session not found: {uuid}", file=sys.stderr)
+            continue
+        for jsonl in matches:
+            found += 1
+            print(f"# ===== session {uuid} =====")
+            print(f"# {jsonl}\n")
+            try:
+                with jsonl.open(encoding="utf-8", errors="replace") as fh:
+                    for raw in fh:
+                        raw = raw.strip()
+                        if not raw:
+                            continue
+                        try:
+                            entry = json.loads(raw)
+                        except json.JSONDecodeError:
+                            continue
+                        _print_transcript_line(entry, clean)
+            except OSError as e:
+                print(f"# read error: {e}", file=sys.stderr)
+            print()
+    return 0 if found else 2
+
+
 # --------------------- main --------------------- #
 
 
@@ -657,8 +903,34 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--format",
         choices=["jsonl", "text"],
-        default="jsonl",
-        help="Output format for python parsers (default jsonl).",
+        default=None,
+        help=(
+            "Output format for python parsers. When omitted, interactive "
+            "(TTY) claude search shows the session skeleton; piped output "
+            "defaults to jsonl."
+        ),
+    )
+    # Session skeleton (discovery) + expand-by-UUID
+    p.add_argument(
+        "--skeleton",
+        "--sessions",
+        dest="skeleton",
+        action="store_true",
+        help=(
+            "Session-level discovery view: one deduped row per session UUID "
+            "(claude), classified discussed/edited/command/output, search-noise "
+            "dropped. This is the default for interactive claude search."
+        ),
+    )
+    p.add_argument(
+        "--session",
+        metavar="UUID",
+        action="append",
+        default=None,
+        help=(
+            "Expand: print the FULL transcript of one or more sessions by UUID "
+            "(comma-separated, or repeat the flag). Pairs with --skeleton."
+        ),
     )
     # Case
     p.add_argument("--case-sensitive", action="store_true", help="Case-sensitive match.")
@@ -714,15 +986,39 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {mark}  {agent.ljust(width)}  {path}")
         return 0
 
+    # Expand: full transcript of one or more sessions by UUID (no pattern needed).
+    if args.session:
+        return expand_sessions(args.session, args.clean)
+
     if not args.pattern:
         p.print_help(sys.stderr)
         return 1
+
+    # Resolve output format. Explicit --format wins; otherwise interactive claude
+    # search shows the skeleton, and piped output stays jsonl for machine callers.
+    explicit_format = args.format is not None
+    claude_only = args.agent == "claude"
+    want_skeleton = args.skeleton or (
+        not explicit_format
+        and claude_only
+        and not args.files
+        and not args.count
+        and not args.fast
+        and not args.specstory
+        and sys.stdout.isatty()
+    )
+    args.format = args.format or "jsonl"
+
+    if want_skeleton:
+        cs = args.case_sensitive
+        cutoff = time.time() - args.recent * 86400 if args.recent > 0 else None
+        hits = list(iter_claude_session_hits(args.pattern, cs, cutoff))
+        return emit_skeleton(hits)
 
     # Determine claude source mix (needed for both fast and python paths)
     args.search_jsonl = not args.specstory  # default unless --specstory alone
 
     # Decide: fast path or python parsers
-    claude_only = args.agent == "claude"
     fast_eligible = (
         claude_only
         and not args.no_fast
