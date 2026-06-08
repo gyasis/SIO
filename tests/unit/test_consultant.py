@@ -126,6 +126,10 @@ class TestEmptyDB:
                 "sio.suggestions.consultant._section_budget",
                 return_value=None,
             ),
+            patch(
+                "sio.suggestions.consultant._section_search_discipline",
+                return_value=None,
+            ),
         ):
             result = build_session_briefing(db, config=config)
         assert "All clear" in result
@@ -139,6 +143,10 @@ class TestEmptyDB:
             ),
             patch(
                 "sio.suggestions.consultant._section_budget",
+                return_value=None,
+            ),
+            patch(
+                "sio.suggestions.consultant._section_search_discipline",
                 return_value=None,
             ),
         ):
@@ -356,6 +364,10 @@ class TestCleanDB:
             ),
             patch(
                 "sio.suggestions.consultant._section_budget",
+                return_value=None,
+            ),
+            patch(
+                "sio.suggestions.consultant._section_search_discipline",
                 return_value=None,
             ),
         ):

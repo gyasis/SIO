@@ -204,32 +204,3 @@ def format_recall_output(filtered: dict, struggles: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def build_gemini_polish_prompt(filtered: dict, struggles: list[dict], query: str) -> str:
-    """Build the prompt for Gemini to polish the raw recall output into a clean runbook.
-
-    Returns a string suitable for gemini_brainstorm context parameter.
-    """
-    steps_text = []
-    for step in filtered.get("steps", [])[:50]:  # Cap at 50 for token budget
-        status = "success"
-        if any(s["failure_step"] == step["step_num"] for s in struggles):
-            status = "FAILED"
-        steps_text.append(f"Step {step['step_num']}: [{status}] {step.get('summary', '?')}")
-
-    struggle_text = ""
-    if struggles:
-        struggle_text = "\n\nSTRUGGLE→FIX TRANSITIONS:\n"
-        for s in struggles:
-            struggle_text += f"- Problem: {s['failure_summary']} → Fix: {s['fix_summary']}\n"
-
-    return (
-        f"Create a clean 10-15 step runbook for: {query}\n\n"
-        f"Below are the raw steps extracted from a session (failures removed, topic-filtered).\n"
-        f"Rules:\n"
-        f"1. Identify the Fix: Format as 'Problem: X → Fix: Y'\n"
-        f"2. Prune noise: Skip ls, cat, git status unless they reveal something\n"
-        f"3. Consolidate: If the same command ran 5 times, show only the final successful one\n"
-        f"4. Environment first: Put exports, cd, and setup in the first 3 steps\n"
-        f"5. Include the EXACT bash commands that worked\n\n"
-        f"RAW STEPS:\n" + "\n".join(steps_text) + struggle_text
-    )

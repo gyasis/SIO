@@ -88,6 +88,43 @@ harness produced it — and search, mine, analyze, or live-watch it.
     telemetry-cohort concept; backend module is named `cohort` to avoid
     collision with `core/arena/experiment.py`.
 
+### Search & Data-Sourcing Remediation (005-search-data-remediation, US1–US6)
+
+#### Changed
+
+- **`sio search` now defaults to recency-gated, newest-first output (US1 / FR-001).**
+  The default window is 7 days (`--recent 7` implicit). Raw/text/JSONL output is
+  sorted newest-first within each source. `--recent 0` and `--all` remain explicit
+  full-history overrides. When the default window returns 0 results the tool emits
+  a `"widen with --recent 0"` hint (FR-002). Zero regression for CMP callers
+  (`--files`, `--count`) — ordering changes, result sets do not (SC-007).
+- **`sio suggest` now bounded-loads the error DB (US4 / FR-007–009).**
+  Default cap: 30-day window + 5 000-row maximum. `--since` and an explicit row cap
+  override the bound and surface it in the log. The preview cache is size-bounded
+  with a TTL check; `--use-cache` respects `--cache-ttl`.
+
+#### Added
+
+- **`--around N` context window on `sio search` (US2 / FR-003–004).** Given a hit,
+  returns ±N turns around the matching turn — role-aware (user/assistant/tool), not
+  raw lines (`rg -C`). Clamps gracefully at transcript start and end. Enables
+  "forward-walk from a struggle hit to the subsequent fix turns" without a second
+  search call. Kept orthogonal to the existing `--context N` (raw line context)
+  and `--session <uuid>` (full-session dump).
+- **Hop-2 cascade reachable from `sio search` (US3 / FR-005–006).** Flags
+  `--refine <term>`, `--strategy filter|recluster|hybrid`, `--within <csv>`, and
+  `--use-cache` are now surfaced on `sio search` (were previously `sio suggest`-only)
+  via the shared `sio.clustering.hop2` module. A configurable `--noise-threshold N`
+  triggers a non-blocking Hop-2 suggestion when Hop-1 returns more than N hits.
+- **`recall --polish` is real (US5 / FR-010–013).** `sio recall --polish` now calls
+  the configured LLM (default: free Ollama model; `--polish-model` to override) and
+  emits cost before the call (cost-control.md compliant). Without a configured model
+  it fails loudly instead of emitting a raw prompt string.
+- **`sio search-discipline` report (US6 / FR-011–012).** Computes per-discipline
+  rates (recency-first, multi-hop/refine, files-first, context-walk-back) from
+  invocation telemetry over a configurable window. Sub-target rates are flagged in
+  `sio briefing` as a regression signal (FR-012).
+
 (Next minor will also add the DSPy callback-based unified
 optimizer-progress emitter, JudgeVariants Tier 2 meta-optimization if
 needed, and the distilabel attic move.)

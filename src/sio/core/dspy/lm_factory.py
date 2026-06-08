@@ -304,6 +304,50 @@ def _build_lm(model: str, temperature: float, max_tokens: int, cache: bool) -> d
     return dspy.LM(model, cache=cache, temperature=temperature, max_tokens=max_tokens)
 
 
+def is_forbidden_model(model: str) -> bool:
+    """Return True if *model* is in the globally-forbidden gpt-4o family.
+
+    Enforces the cost-control rule (``~/.claude/rules/domains/cost-control.md``):
+    the full gpt-4o family is forbidden EXCEPT ``gpt-4o-mini`` which is cheap
+    and explicitly allowed.
+
+    The check strips the provider prefix so every routing alias is caught.
+
+    Truth table (bare = model.split('/')[-1].lower()):
+
+        Model string                         bare                     forbidden?
+        -----------------------------------  -----------------------  ----------
+        "gpt-4o"                             "gpt-4o"                 YES (exact)
+        "openai/gpt-4o"                      "gpt-4o"                 YES
+        "azure/gpt-4o"                       "gpt-4o"                 YES
+        "gpt-4o-2024-05-13"                  "gpt-4o-2024-05-13"      YES (starts
+                                                                       with "gpt-4o-",
+                                                                       not "gpt-4o-mini")
+        "openai/gpt-4o-2024-08-06"           "gpt-4o-2024-08-06"      YES
+        "openrouter/openai/gpt-4o"           "gpt-4o"                 YES
+        "gpt-4o-mini"                        "gpt-4o-mini"            NO  (allowed)
+        "openai/gpt-4o-mini"                 "gpt-4o-mini"            NO  (allowed)
+        "ollama/qwen3-coder:30b"             "qwen3-coder:30b"        NO
+        "gemini/gemini-flash-latest"         "gemini-flash-latest"    NO
+
+    P0 guard: the condition deliberately checks for "gpt-4o-mini" BEFORE the
+    broader "gpt-4o-" prefix so the mini model is never accidentally refused.
+    """
+    bare = model.split("/")[-1].lower()
+    return bare == "gpt-4o" or (
+        bare.startswith("gpt-4o-") and not bare.startswith("gpt-4o-mini")
+    )
+
+
+def is_free_model(model: str) -> bool:
+    """Return True if *model* is cost-free (i.e. a local Ollama model).
+
+    ``ollama/*`` is the only known cost-free provider on this setup.
+    All other providers (openai/*, anthropic/*, gemini/*, etc.) incur API cost.
+    """
+    return model.startswith("ollama/")
+
+
 @_functools.lru_cache(maxsize=1)
 def _banned_models_cached(cfg_mtime: float) -> tuple[str, ...]:
     """Read [llm.banned].models once per config-file mtime. P2 fix: avoid
@@ -321,13 +365,37 @@ def _banned_models_cached(cfg_mtime: float) -> tuple[str, ...]:
 
 
 def _check_banned(lm: dspy.LM) -> dspy.LM:
-    """Refuse to return an LM whose model is EXACTLY in [llm.banned].models.
+    """Refuse to return an LM whose model is banned.
 
-    P0 fix (2026-05-16): was using `b in lm.model` substring match, which
-    refused 'openai/gpt-4o-mini' because 'openai/gpt-4' is a prefix. Now
-    requires exact equality — bans MUST list the exact model id to refuse.
-    See ~/.claude/rules/domains/cost-control.md.
+    Two independent enforcement layers, both applied on every construction path
+    (get_task_lm, get_reflection_lm, make_lm):
+
+    Layer 1 — family ban (ALWAYS enforced, even if config read fails):
+        ``is_forbidden_model(lm.model)`` rejects the entire gpt-4o family
+        except gpt-4o-mini.  Implements the global cost-control rule at
+        ``~/.claude/rules/domains/cost-control.md``.
+
+    Layer 2 — config exact-match ban (enforced when config is readable):
+        Models listed in ``[llm.banned].models`` in ``~/.sio/config.toml`` are
+        rejected by EXACT model-id equality (not substring).
+
+        P0 fix (2026-05-16): was using ``b in lm.model`` substring match, which
+        refused 'openai/gpt-4o-mini' because 'openai/gpt-4' is a prefix. Now
+        requires exact equality — bans MUST list the exact model id to refuse.
+
+    The family check in Layer 1 raises before the config try/except block so a
+    config read failure (IOError, etc.) can never silently suppress it.
     """
+    # Layer 1 — family ban (unconditional, no config dependency).
+    if is_forbidden_model(lm.model):
+        raise ValueError(
+            f"Refusing to load forbidden model '{lm.model}': "
+            "the gpt-4o family (except gpt-4o-mini) is banned by the global "
+            "cost-control rule. Use 'openai/gpt-4o-mini', a Gemini model, or "
+            "an Ollama model. See ~/.claude/rules/domains/cost-control.md."
+        )
+
+    # Layer 2 — config-based exact-match ban.
     try:
         cfg_path = os.path.expanduser("~/.sio/config.toml")
         mtime = os.path.getmtime(cfg_path) if os.path.exists(cfg_path) else 0.0

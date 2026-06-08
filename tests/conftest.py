@@ -1,10 +1,11 @@
 """Shared pytest fixtures for SIO test suite."""
 
 import json
+import os
 import shutil
 import sqlite3
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -696,17 +697,268 @@ def fake_fastembed(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def freeze_utc_now(monkeypatch: pytest.MonkeyPatch) -> str:
-    """Patch sio.core.util.time.utc_now_iso to return a fixed timestamp.
+    """Pin "now" to a fixed UTC instant for deterministic recency math.
+
+    Patches both ``sio.core.util.time.utc_now_iso`` (used by DB writers) and
+    ``time.time`` inside ``sio.search.cli`` (used by the ``--recent N`` cutoff
+    at ``cli.py:468,480,1014,1041``).  The two are kept consistent: the
+    ``time.time()`` epoch matches the ISO string to the second.
 
     Returns the frozen ISO-8601 string so tests can assert against it.
     """
-    FROZEN = "2026-04-20T12:00:00+00:00"
+    FROZEN_ISO = "2026-06-07T12:00:00+00:00"
+    FROZEN_EPOCH = datetime.fromisoformat(FROZEN_ISO).timestamp()
 
     try:
         import sio.core.util.time as _time_mod
 
-        monkeypatch.setattr(_time_mod, "utc_now_iso", lambda: FROZEN)
+        monkeypatch.setattr(_time_mod, "utc_now_iso", lambda: FROZEN_ISO)
     except ImportError:
         pass  # Module not yet implemented; fixture is a no-op in that case.
 
-    return FROZEN
+    # Freeze time.time() inside the search CLI so --recent N cutoffs are
+    # deterministic regardless of wall-clock drift during a test run.
+    try:
+        import sio.search.cli as _search_cli
+
+        monkeypatch.setattr(_search_cli.time, "time", lambda: FROZEN_EPOCH)
+    except (ImportError, AttributeError):
+        pass  # Search module not yet refactored; silently skip.
+
+    return FROZEN_ISO
+
+
+# ---------------------------------------------------------------------------
+# 005-search-data-remediation fixtures (Wave 1 / T002)
+# ---------------------------------------------------------------------------
+
+# Frozen "now" used by fake_session_corpus and fake_error_db so all age
+# calculations are relative to the same instant as freeze_utc_now.
+_CORPUS_NOW = datetime(2026, 6, 7, 12, 0, 0, tzinfo=timezone.utc)
+
+# Ages chosen so tests can assert inside/outside typical recency windows:
+#   TODAY_OFFSET  →  within any recency window (0 h ago)
+#   WEEK_OFFSET   →  inside a 14-day window, outside a 3-day window (~8 days)
+#   OLD_OFFSET    →  outside a 30-day window (~45 days)
+_CORPUS_OFFSETS: dict[str, timedelta] = {
+    "today": timedelta(hours=1),
+    "week": timedelta(days=8),
+    "old": timedelta(days=45),
+}
+
+
+def _make_claude_jsonl_entry(
+    role: str,
+    text: str,
+    ts: str,
+    session_id: str,
+) -> dict:
+    """Build one line of a Claude Code JSONL session file.
+
+    Mirrors the real on-disk shape read by ``_iter_claude_jsonl`` in
+    ``src/sio/search/cli.py:117-167``:
+      - top-level keys: ``type``, ``uuid``, ``timestamp``, ``message``,
+        ``sessionId``
+      - ``message.role`` and ``message.content`` list of ``{"type":"text","text":…}``
+    """
+    return {
+        "type": role,
+        "uuid": f"fake-{role}-{ts[:10]}",
+        "timestamp": ts,
+        "sessionId": session_id,
+        "message": {
+            "role": role,
+            "content": [{"type": "text", "text": text}],
+        },
+    }
+
+
+@pytest.fixture
+def fake_session_corpus(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Create a directory of synthetic Claude JSONL session files at three ages.
+
+    Returns a ``Path`` to the corpus root.  Three sub-directories mirror the
+    ``~/.claude/projects/<project>/`` layout; each contains one ``.jsonl``
+    session file whose **file mtime** is set to match its logical age so that
+    ``_file_within(path, cutoff_epoch)`` (``search/cli.py:84-91``) correctly
+    places the file inside or outside a recency window.
+
+    File ages (relative to ``_CORPUS_NOW = 2026-06-07T12:00:00Z``):
+
+    * ``session-today.jsonl``  — mtime 1 hour ago  (inside any recency window)
+    * ``session-week.jsonl``   — mtime 8 days ago  (outside 3-day, inside 30-day)
+    * ``session-old.jsonl``    — mtime 45 days ago (outside 30-day window)
+
+    The JSONL shape matches the real Claude session format consumed by
+    ``_iter_claude_jsonl`` in ``src/sio/search/cli.py:117-167``.
+    """
+    root = tmp_path_factory.mktemp("claude_corpus")
+    proj_dir = root / "-home-fake-code-test-project"
+    proj_dir.mkdir(parents=True)
+
+    for label, offset in _CORPUS_OFFSETS.items():
+        session_dt = _CORPUS_NOW - offset
+        ts_iso = session_dt.isoformat()
+        session_id = f"session-{label}"
+        filename = f"{session_id}.jsonl"
+        entries = [
+            _make_claude_jsonl_entry("human", f"User turn in {label} session.", ts_iso, session_id),
+            _make_claude_jsonl_entry(
+                "assistant",
+                f"Assistant reply in {label} session. sio search --recent 7 example",
+                ts_iso,
+                session_id,
+            ),
+        ]
+        fpath = proj_dir / filename
+        with fpath.open("w", encoding="utf-8") as fh:
+            for entry in entries:
+                fh.write(json.dumps(entry) + "\n")
+
+        # Set file mtime to the intended age so _file_within() sees it correctly.
+        mtime_epoch = session_dt.timestamp()
+        os.utime(fpath, (mtime_epoch, mtime_epoch))
+
+    return root
+
+
+# Columns from ``_ERROR_RECORD_COLS`` in ``src/sio/core/db/queries.py:229-247``
+# that ``get_error_records`` selects/filters on.
+_ERROR_RECORD_INSERT_COLS = (
+    "session_id",
+    "timestamp",
+    "source_type",
+    "source_file",
+    "tool_name",
+    "error_text",
+    "user_message",
+    "context_before",
+    "context_after",
+    "error_type",
+    "tool_input",
+    "tool_output",
+    "mined_at",
+    "is_subagent",
+    "parent_session_id",
+    "pattern_id",
+    "active_rules",
+)
+
+_ERROR_RECORD_TABLE_DDL = """
+CREATE TABLE IF NOT EXISTS error_records (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id     TEXT NOT NULL,
+    timestamp      TEXT NOT NULL,
+    source_type    TEXT NOT NULL,
+    source_file    TEXT NOT NULL,
+    tool_name      TEXT,
+    error_text     TEXT NOT NULL,
+    user_message   TEXT,
+    context_before TEXT,
+    context_after  TEXT,
+    error_type     TEXT,
+    tool_input     TEXT,
+    tool_output    TEXT,
+    mined_at       TEXT NOT NULL,
+    is_subagent    INTEGER NOT NULL DEFAULT 0,
+    parent_session_id TEXT,
+    pattern_id     TEXT,
+    active_rules   TEXT
+)
+"""
+
+
+@pytest.fixture
+def fake_error_db(tmp_path: Path) -> sqlite3.Connection:
+    """In-memory SQLite DB with ``error_records`` rows spanning a 60-day range.
+
+    Mirrors the schema and columns that ``get_error_records`` in
+    ``src/sio/core/db/queries.py:278-314`` selects and filters on
+    (``timestamp``, ``error_type``, ``tool_name``, ``session_id``,
+    ``source_file`` / ``project``).
+
+    Rows are spread across three age buckets matching ``fake_session_corpus``:
+
+    * 5 rows timestamped today  (within any recency window)
+    * 5 rows timestamped 8 days ago
+    * 5 rows timestamped 45 days ago (outside a 30-day window)
+
+    Returns an open ``sqlite3.Connection``; caller is responsible for closing.
+    Connection has ``row_factory = sqlite3.Row`` set so
+    ``_row_to_dict`` works as in production.
+    """
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute(_ERROR_RECORD_TABLE_DDL)
+    conn.commit()
+
+    placeholders = ", ".join(["?"] * len(_ERROR_RECORD_INSERT_COLS))
+    col_names = ", ".join(_ERROR_RECORD_INSERT_COLS)
+    insert_sql = f"INSERT INTO error_records ({col_names}) VALUES ({placeholders})"
+
+    rows: list[tuple] = []
+    for label, offset in _CORPUS_OFFSETS.items():
+        row_dt = _CORPUS_NOW - offset
+        ts_iso = row_dt.isoformat()
+        mined_iso = _CORPUS_NOW.isoformat()
+        for i in range(5):
+            session_id = f"claude:session-{label}-{i:02d}"
+            source_file = f"/fake/projects/-home-fake-code-test-project/session-{label}.jsonl"
+            rows.append((
+                session_id,          # session_id
+                ts_iso,              # timestamp
+                "jsonl",             # source_type
+                source_file,         # source_file
+                "Bash",              # tool_name
+                f"Error in {label} session #{i}: FileNotFoundError",  # error_text
+                f"User asked to run command in {label} session #{i}",  # user_message
+                "Prior assistant turn context.",                        # context_before
+                "Next assistant turn context.",                         # context_after
+                "tool_failure",      # error_type
+                '{"command": "ls /missing"}',  # tool_input
+                None,                # tool_output
+                mined_iso,           # mined_at
+                0,                   # is_subagent
+                None,                # parent_session_id
+                None,                # pattern_id
+                None,                # active_rules
+            ))
+
+    conn.executemany(insert_sql, rows)
+    conn.commit()
+    return conn
+
+
+@pytest.fixture
+def tmp_previews_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Temp directory standing in for ``~/.sio/previews/``.
+
+    ``sio suggest --use-cache`` hard-codes the preview CSV path as
+    ``os.path.expanduser("~/.sio/previews/errors_preview.csv")``
+    (``src/sio/cli/main.py:2079,2381``).  This fixture monkeypatches
+    ``os.path.expanduser`` inside ``sio.cli.main`` so that the ``~/.sio``
+    prefix resolves to ``tmp_path / "dot-sio"`` instead, keeping tests
+    hermetic and preventing writes to the real ``~/.sio/`` directory.
+
+    Returns the ``Path`` to the synthetic previews dir (already created).
+    """
+    fake_sio_home = tmp_path / "dot-sio"
+    fake_previews = fake_sio_home / "previews"
+    fake_previews.mkdir(parents=True, exist_ok=True)
+
+    real_expanduser = os.path.expanduser
+
+    def _patched_expanduser(path: str) -> str:
+        if isinstance(path, str) and path.startswith("~/.sio"):
+            return path.replace("~/.sio", str(fake_sio_home), 1)
+        return real_expanduser(path)
+
+    try:
+        import sio.cli.main as _main_mod
+
+        monkeypatch.setattr(_main_mod.os.path, "expanduser", _patched_expanduser)
+    except (ImportError, AttributeError):
+        pass  # Module not yet available; fixture is a no-op.
+
+    return fake_previews
