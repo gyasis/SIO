@@ -71,6 +71,9 @@ class Record:
     source_path: str
     metadata: dict = field(default_factory=dict)
     line: int = 0  # 1-based line number in source_path; 0 when N/A
+    # Internal only — full untruncated turn text for --refine predicate.
+    # NEVER serialised to JSONL/text output (popped in emit_jsonl).
+    match_text: str = ""
 
 
 def _matches(text: str, pattern: str, case_sensitive: bool) -> bool:
@@ -162,6 +165,7 @@ def _iter_claude_jsonl(
                                 "source_kind": source_kind,
                             },
                             line=lineno,
+                            match_text=text,
                         )
         except OSError:
             continue
@@ -213,6 +217,7 @@ def search_claude_specstory(
                     source_path=str(md),
                     metadata={"source_kind": "specstory"},
                     line=lineno,
+                    match_text=line,
                 )
 
 
@@ -243,6 +248,7 @@ def search_codex(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Recor
                             source_path=str(hist),
                             metadata={"store": "history"},
                             line=lineno,
+                            match_text=text,
                         )
         except OSError:
             pass
@@ -269,6 +275,7 @@ def search_codex(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Recor
                 content=text[:2000],
                 source_path=str(fp),
                 metadata={"store": "rollout"},
+                match_text=text,
             )
 
 
@@ -310,6 +317,7 @@ def search_goose(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Recor
                                 source_path=str(fp),
                                 metadata=meta,
                                 line=lineno,
+                                match_text=text,
                             )
                         continue
                     role = entry.get("role", "unknown")
@@ -328,6 +336,7 @@ def search_goose(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Recor
                             source_path=str(fp),
                             metadata=meta,
                             line=lineno,
+                            match_text=text,
                         )
         except OSError:
             continue
@@ -364,14 +373,16 @@ def search_opencode(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Re
                             content = json.dumps(content)
                 except json.JSONDecodeError:
                     pass
+                _content_str = str(content)
                 yield Record(
                     agent="opencode",
                     session_id=row["session_id"],
                     ts=_iso(row["time_created"]),
                     role=role,
-                    content=str(content)[:2000],
+                    content=_content_str[:2000],
                     source_path=str(db),
                     metadata={"message_id": row["id"], "table": "message"},
+                    match_text=_content_str,
                 )
         conn.close()
     except sqlite3.Error:
@@ -408,6 +419,7 @@ def search_gemini(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Reco
                     content=text[:2000],
                     source_path=str(fp),
                     metadata={"project_hash": proj},
+                    match_text=text,
                 )
 
 
@@ -441,6 +453,7 @@ def search_aider(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Recor
                     content=block[:2000],
                     source_path=str(fp),
                     metadata={"repo": repo},
+                    match_text=block,
                 )
 
 
@@ -504,22 +517,32 @@ def fast_path(args: argparse.Namespace) -> int:
         )
         return 1  # signal to caller: fall back
 
-    files: list[str] = []
+    files_raw: list[str] = []
     if args.specstory:
-        files += _find_specstory(args.recent)
+        files_raw += _find_specstory(args.recent)
     else:
         if args.search_jsonl:
-            files += _find_recent(CLAUDE_PROJECTS, args.recent, "*.jsonl")
+            files_raw += _find_recent(CLAUDE_PROJECTS, args.recent, "*.jsonl")
         if args.backups or args.all:
-            files += _find_recent(CLAUDE_BACKUPS, args.recent, "*.jsonl")
+            files_raw += _find_recent(CLAUDE_BACKUPS, args.recent, "*.jsonl")
         if args.all:
-            files += _find_specstory(args.recent)
+            files_raw += _find_specstory(args.recent)
 
-    if not files:
+    if not files_raw:
         print("# Total matches: 0  (no files in scope)", file=sys.stderr)
         return 2
 
-    rg_args = [rg, "--no-heading"]
+    # B3 fix: ripgrep parallelizes across files and emits matches in COMPLETION
+    # order, so pre-sorting the file list does NOT guarantee newest-first output.
+    # rg --sortr=modified (rg 14+) sorts results by mtime descending AND forces
+    # deterministic single-threaded ordered output — matching the python path's
+    # newest-first contract.
+    files: list[str] = files_raw
+
+    # -H forces the path prefix even when exactly one file is in scope (rg omits
+    # it otherwise), so the match-count regex below stays valid for single-file
+    # scope (NEW-ISSUE #1: single-file --recent windows reported 0).
+    rg_args = [rg, "--no-heading", "--with-filename", "--sortr=modified"]
     if not args.case_sensitive:
         rg_args.append("-i")
     if args.files:
@@ -552,8 +575,29 @@ def fast_path(args: argparse.Namespace) -> int:
     rc = proc.returncode
     # rg: 0=match, 1=no match, 2=error
     if rc == 0:
-        # count matches roughly for summary
-        n = out.count("\n") if out else 0
+        # B8 fix: count only real match lines (file:line:content pattern) rather
+        # than all output lines (which include rg's "--" context separators and
+        # blank context lines from -C).
+        if args.files or args.count:
+            # In --files mode rg emits one path per file; in --count, "path:N".
+            n = out.count("\n") if out else 0
+        else:
+            # B8 fix: count only real match lines.
+            # rg --no-heading -n emits:
+            #   match line:   <path>:<lineno>:<content>  — colon separators
+            #   context line: <path>-<lineno>-<content>  — dash separators
+            #   separator:    --
+            # We count lines where the path:lineno: prefix appears at the
+            # START (anchored), using a colon immediately after the path and
+            # a colon after the lineno digits.  We cannot simply search for
+            # ":\d+:" anywhere in the line because JSON content (e.g. ISO
+            # timestamps "12:00:00") also matches that pattern.
+            # Heuristic: split on the first ":digit+:" occurrence that is
+            # preceded by a non-dash character.  A match line's path never
+            # contains a bare "-digit-" at the same position, so checking
+            # that position 0 to the separator uses only ":" (not "-") works.
+            _match_re = re.compile(r"^[^:\n]+:\d+:")
+            n = sum(1 for line in out.splitlines() if _match_re.match(line))
         print(
             f"# Total matches: {n}  (claude-fast, {len(files)} files)",
             file=sys.stderr,
@@ -566,11 +610,151 @@ def fast_path(args: argparse.Namespace) -> int:
     return rc
 
 
+# --------------------- context window API (FR-003, FR-004) --------------------- #
+
+
+def turns_from_jsonl(
+    path: Path,
+    *,
+    return_line_map: bool = False,
+) -> list[dict] | tuple[list[dict], dict[int, int]]:
+    """Parse all turns from a Claude JSONL session file.
+
+    Returns a list of dicts, each with at minimum:
+        role    (str) — "user" | "assistant" | "tool" | "system" | "unknown"
+        content (str) — full text of the turn (newlines preserved)
+        ts      (str) — ISO-8601 timestamp (empty string if absent)
+        _src_line (int) — 1-based file line number of this turn (B2 fix)
+
+    Turn boundaries follow the on-disk Claude JSONL format:
+    each line is one JSON object representing one message/event.  Blank lines
+    and JSON-decode failures are skipped silently (same policy as the main
+    parser).  This is role-aware: a multi-line assistant response is ONE turn
+    regardless of how many newline characters it contains, unlike rg -C which
+    counts raw lines.
+
+    When *return_line_map* is True, also returns a dict mapping 1-based file
+    line numbers to 0-based turn indices (B2 fix: allows callers to convert
+    ``rec.line`` → correct turn index even when blank/malformed lines exist).
+    """
+    turns: list[dict] = []
+    # B2 fix: map file-line-number (1-based) → turn index (0-based)
+    line_to_turn_idx: dict[int, int] = {}
+    try:
+        with path.open(encoding="utf-8", errors="replace") as fh:
+            for lineno, raw in enumerate(fh, start=1):
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    entry = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                msg = entry.get("message") or {}
+                role = entry.get("type") or msg.get("role") or "unknown"
+                content_blocks = msg.get("content")
+                if isinstance(content_blocks, list):
+                    text = "\n".join(
+                        b.get("text", "") if isinstance(b, dict) else str(b)
+                        for b in content_blocks
+                        if b
+                    ).strip()
+                else:
+                    text = str(content_blocks or entry.get("text", "")).strip()
+                turn_idx = len(turns)
+                line_to_turn_idx[lineno] = turn_idx
+                turns.append(
+                    {
+                        "role": role,
+                        "content": text,
+                        "ts": entry.get("timestamp", ""),
+                        "uuid": entry.get("uuid", ""),
+                        "session_id": entry.get("sessionId", ""),
+                        "_src_line": lineno,
+                    }
+                )
+    except OSError:
+        pass
+    if return_line_map:
+        return turns, line_to_turn_idx
+    return turns
+
+
+def turns_around(turns: list[dict], offset: int, n: int) -> list[dict]:
+    """Return the ±N turns around *offset* in *turns*, clamped at boundaries.
+
+    Args:
+        turns:  Ordered list of turn dicts as returned by ``turns_from_jsonl``.
+        offset: Zero-based index of the hit turn within *turns*.
+        n:      Number of turns to include on each side of the hit.
+
+    Returns:
+        A new list (subset of *turns* by value) spanning
+        ``[max(0, offset-n) .. min(len(turns)-1, offset+n)]`` inclusive.
+        When n=0, returns exactly ``[turns[offset]]``.
+        Raises ``IndexError`` if *offset* is out of range.
+
+    This is DISTINCT from:
+    - rg ``-C N`` — which counts raw *lines*, not role-aware turns.
+    - ``--session <uuid>`` — which dumps the FULL transcript with no offset.
+    """
+    if not turns:
+        return []
+    if offset < 0 or offset >= len(turns):
+        raise IndexError(
+            f"offset {offset} out of range for transcript of length {len(turns)}"
+        )
+    start = max(0, offset - n)
+    end = min(len(turns) - 1, offset + n)
+    return turns[start : end + 1]
+
+
+def window_for_session(session_path: Path, hit_offset: int, n: int) -> list[dict]:
+    """Convenience wrapper: parse *session_path* then return ``turns_around``.
+
+    Args:
+        session_path: Path to a Claude JSONL session file.
+        hit_offset:   Zero-based turn index of the search hit.
+        n:            Context window half-width in turns.
+
+    Returns:
+        List of turn dicts (role, content, ts) spanning ±N turns around the hit,
+        clamped at transcript boundaries.
+    """
+    turns_result = turns_from_jsonl(session_path)
+    # turns_from_jsonl returns list[dict] by default (return_line_map=False)
+    turns: list[dict] = turns_result  # type: ignore[assignment]
+    return turns_around(turns, hit_offset, n)
+
+
+def _emit_window_as_jsonl(
+    turns: list[dict],
+    session_id: str,
+    source_path: str,
+    hit_offset: int,
+) -> None:
+    """Emit the context window as JSONL Records on stdout (FR-003)."""
+    for i, turn in enumerate(turns):
+        rec = Record(
+            agent="claude",
+            session_id=session_id,
+            ts=turn.get("ts", ""),
+            role=turn.get("role", "unknown"),
+            content=turn.get("content", ""),
+            source_path=source_path,
+            metadata={"context_window": True, "hit_offset": hit_offset},
+            line=0,
+        )
+        print(json.dumps(asdict(rec), ensure_ascii=False))
+
+
 # --------------------- output emitters --------------------- #
 
 
 def emit_jsonl(rec: Record) -> None:
-    print(json.dumps(asdict(rec), ensure_ascii=False))
+    d = asdict(rec)
+    d.pop("match_text", None)  # internal field — never in on-wire schema
+    print(json.dumps(d, ensure_ascii=False))
 
 
 def emit_text(rec: Record, clean: bool) -> None:
@@ -883,8 +1067,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--recent",
         type=int,
-        default=0,
-        help="Only files whose mtime is within N days (0=all).",
+        default=None,
+        help=(
+            "Only files whose mtime is within N days (default: 7). "
+            "Use 0 to search full history (overrides the default window). "
+            "With --all and no explicit --recent, defaults to full history; "
+            "an explicit --recent N is still honored alongside --all. "
+            "Aligns with the Cascade Memory Protocol recency-first gate."
+        ),
     )
     p.add_argument(
         "--limit", type=int, default=0, help="Cap matches per agent (0=unlimited)."
@@ -894,6 +1084,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--count", action="store_true", help="Emit per-file match counts.")
     p.add_argument(
         "--context", type=int, default=1, help="Lines of context (fast/legacy only)."
+    )
+    p.add_argument(
+        "--around",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Context window: when a search hit is found in a session, return the "
+            "±N TURNS around that hit (role-aware: user/assistant/tool), clamped at "
+            "transcript boundaries.  Distinct from --context (raw rg lines) and from "
+            "--session (full transcript dump).  When --around is set the output is the "
+            "windowed turns around each hit in JSONL Record format. (FR-003 / FR-004)"
+        ),
     )
     p.add_argument(
         "--clean",
@@ -950,6 +1153,51 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print inventory of agents with on-disk history, then exit.",
     )
+    # ---------------------------------------------------------------
+    # US3 / FR-005: Two-hop cascade flags (T033).
+    # Delegating to sio.clustering.hop2 (shared with sio suggest).
+    # ---------------------------------------------------------------
+    p.add_argument(
+        "--refine",
+        dest="refine",
+        default=None,
+        metavar="TERM",
+        help=(
+            "Hop-2 refinement: AND-narrow the search result set by a second "
+            "filter term (comma-separated for OR within Hop-2). Applied after "
+            "records are collected and sorted: only records whose content "
+            "contains the refine term(s) are emitted. "
+            "(FR-005 / US3)"
+        ),
+    )
+    p.add_argument(
+        "--strategy",
+        dest="hop2_strategy",
+        choices=["filter", "recluster", "hybrid"],
+        default="filter",
+        metavar="STRATEGY",
+        help=(
+            "Hop-2 narrowing strategy (used with --refine). "
+            "'filter' (default): keep only records containing the refine term. "
+            "Fast, no embeddings. "
+            "'recluster' and 'hybrid' are not supported for sio search (session "
+            "records do not map to the error-DB cluster schema); passing either "
+            "raises an error. "
+            "(FR-005 / US3)"
+        ),
+    )
+    p.add_argument(
+        "--noise-threshold",
+        dest="noise_threshold",
+        type=int,
+        default=20,
+        metavar="N",
+        help=(
+            "When the first-hop result count exceeds N, emit a Hop-2 refine "
+            "suggestion to stderr (non-blocking). Default: 20. "
+            "(FR-006 / US3)"
+        ),
+    )
     return p
 
 
@@ -994,6 +1242,36 @@ def main(argv: list[str] | None = None) -> int:
         p.print_help(sys.stderr)
         return 1
 
+    # B7 fix: reject negative --around values (silently-empty window).
+    if getattr(args, "around", None) is not None and args.around < 0:
+        print(
+            f"# error: --around N must be ≥ 0, got {args.around}",
+            file=sys.stderr,
+        )
+        return 1
+
+    # B1 fix: reject recluster/hybrid for sio search (session records don't map
+    # to the error-DB cluster schema; the hop2 module operates on error dicts).
+    hop2_strategy = getattr(args, "hop2_strategy", "filter")
+    if getattr(args, "refine", None) and hop2_strategy in ("recluster", "hybrid"):
+        print(
+            f"# error: --strategy {hop2_strategy} is not supported for sio search. "
+            "Session transcript records do not have the error-DB schema required by "
+            "cluster_errors(). Use --strategy filter (the default) for sio search, "
+            "or use 'sio suggest --refine' for the full recluster/hybrid cascade.",
+            file=sys.stderr,
+        )
+        return 1
+
+    # FR-001: resolve the --recent sentinel. --all and --recent stay ORTHOGONAL
+    # (--all = source expansion: JSONL + SpecStory + backups; --recent = time window).
+    # When --recent is unset (None): default to 7 days, OR full history (0) if --all
+    # is set (since --all alone means "find every time" historical research). An
+    # EXPLICIT --recent N is always honored, including alongside --all
+    # (e.g. `--all --recent 7` = all sources, last 7 days).
+    if args.recent is None:
+        args.recent = 0 if args.all else 7
+
     # Resolve output format. Explicit --format wins; otherwise interactive claude
     # search shows the skeleton, and piped output stays jsonl for machine callers.
     explicit_format = args.format is not None
@@ -1018,10 +1296,15 @@ def main(argv: list[str] | None = None) -> int:
     # Determine claude source mix (needed for both fast and python paths)
     args.search_jsonl = not args.specstory  # default unless --specstory alone
 
+    # B4 fix: --around requires the python parser (windowing only runs there).
+    # Force the python path when --around is set so windowing always applies.
+    around_set = getattr(args, "around", None) is not None
+
     # Decide: fast path or python parsers
     fast_eligible = (
         claude_only
         and not args.no_fast
+        and not around_set  # B4: --around forces python path
         and args.format != "jsonl"  # fast path emits ripgrep text, not JSONL
         # ↑ if user wants JSONL records, use the python parser even for claude
     )
@@ -1062,6 +1345,11 @@ def main(argv: list[str] | None = None) -> int:
     files_seen: set[str] = set()
     per_file_counts: dict[str, int] = defaultdict(int)
 
+    # Collect records so we can sort newest-first before emitting (FR-001).
+    # --files and --count are aggregation modes that don't emit individual
+    # records, so they bypass the sort buffer and stay O(1) memory.
+    inline_records: list[Record] = []
+
     for label, parser in parsers:
         try:
             for rec in parser(args.pattern, cs, cutoff):
@@ -1076,15 +1364,119 @@ def main(argv: list[str] | None = None) -> int:
                 if args.count:
                     per_file_counts[rec.source_path] += 1
                     continue
-                if args.format == "jsonl":
-                    emit_jsonl(rec)
-                else:
-                    emit_text(rec, args.clean)
+                # Buffer for newest-first sort.
+                inline_records.append(rec)
         except Exception as e:  # noqa: BLE001
             print(
                 f"# WARN: {label} parser failed: {type(e).__name__}: {e}",
                 file=sys.stderr,
             )
+
+    # Emit buffered records newest-first (FR-001).
+    # --skeleton already sorts by ts; skip double-sort there.
+    if inline_records:
+        inline_records.sort(key=lambda r: r.ts or "", reverse=True)
+
+        # B1 fix: apply Hop-2 --refine narrowing on the search result records.
+        # Map each Record to the minimal dict shape _hop2_matches expects:
+        # it AND-matches refine terms against the error's text fields; for
+        # search records we expose ``content`` as ``error_text`` and populate
+        # the remaining fields so the predicate has something to scan.
+        refine_term = getattr(args, "refine", None)
+        if refine_term:
+            from sio.clustering.hop2 import _hop2_matches  # noqa: PLC0415
+
+            refine_terms = [t.strip().lower() for t in refine_term.split(",") if t.strip()]
+
+            def _rec_as_error_dict(r: Record) -> dict:
+                return {
+                    # Use full untruncated text so --refine sees the whole turn,
+                    # not just the 2000-char preview stored in r.content.
+                    "error_text": r.match_text or r.content,
+                    "user_message": "",
+                    "context_before": "",
+                    "context_after": "",
+                    "source_file": r.source_path,
+                }
+
+            inline_records = [
+                r for r in inline_records
+                if _hop2_matches(_rec_as_error_dict(r), refine_terms)
+            ]
+            # Recount total after narrowing so the summary is accurate.
+            total = len(inline_records)
+
+        # FR-003 / FR-004: --around N replaces the normal per-record emitter with a
+        # role-aware ±N turn context window around each hit.  This is DISTINCT from:
+        #   rg -C  (raw lines, not role-aware)
+        #   --session (full transcript, no offset)
+        #
+        # B2 fix: use the line→turn-index map so the window is correct even when
+        # blank or malformed lines exist in the JSONL (previously hit_offset used
+        # rec.line - 1 which miscounted because turns_from_jsonl skips those lines).
+        #
+        # B5 fix: window ALL hits per session (up to MAX_WINDOWS_PER_SESSION) rather
+        # than only the first/newest. Emit a note to stderr if hits are capped.
+        MAX_WINDOWS_PER_SESSION = 5
+        if around_set:
+            # Cache parsed turns + line maps per session path to avoid re-parsing
+            # on each hit.
+            _session_cache: dict[str, tuple[list[dict], dict[int, int]]] = {}
+            # Track how many windows have been emitted per session.
+            _session_window_counts: dict[str, int] = defaultdict(int)
+            _session_hit_counts: dict[str, int] = defaultdict(int)
+
+            for rec in inline_records:
+                _session_hit_counts[rec.source_path] += 1
+
+            for rec in inline_records:
+                sp = rec.source_path
+                cap = _session_window_counts[sp]
+                if cap >= MAX_WINDOWS_PER_SESSION:
+                    continue
+                _session_window_counts[sp] += 1
+
+                # Load + cache turns and line map for this session.
+                if sp not in _session_cache:
+                    result = turns_from_jsonl(Path(sp), return_line_map=True)
+                    # turns_from_jsonl with return_line_map=True returns a tuple
+                    _session_cache[sp] = result  # type: ignore[assignment]
+                turns, line_map = _session_cache[sp]
+
+                # B2 fix: resolve file line number → turn index via the line map
+                # instead of using (rec.line - 1) which is wrong when blank/
+                # malformed lines precede the hit.
+                if rec.line and rec.line in line_map:
+                    hit_offset = line_map[rec.line]
+                else:
+                    # Fallback for records without a line number (non-JSONL sources).
+                    hit_offset = max(0, rec.line - 1) if rec.line else 0
+
+                try:
+                    window = turns_around(turns, hit_offset, args.around)
+                    _emit_window_as_jsonl(window, rec.session_id, sp, hit_offset)
+                except (IndexError, OSError) as exc:
+                    print(
+                        f"# WARN: --around failed for {sp}: {exc}",
+                        file=sys.stderr,
+                    )
+
+            # B5: note any sessions where hits were capped.
+            for sp, total_hits in _session_hit_counts.items():
+                emitted = _session_window_counts.get(sp, 0)
+                if total_hits > emitted:
+                    print(
+                        f"# NOTE: {sp}: {total_hits} hits, showed windows for "
+                        f"{emitted} (cap={MAX_WINDOWS_PER_SESSION}). "
+                        "Re-run with a narrower pattern to see all hits.",
+                        file=sys.stderr,
+                    )
+        else:
+            for rec in inline_records:
+                if args.format == "jsonl":
+                    emit_jsonl(rec)
+                else:
+                    emit_text(rec, args.clean)
 
     # Aggregate emitters
     if args.files:
@@ -1096,6 +1488,38 @@ def main(argv: list[str] | None = None) -> int:
 
     summary = ", ".join(f"{a}={c}" for a, c in per_label_counts.items()) or "none"
     print(f"# Total matches: {total}  ({summary})", file=sys.stderr)
+
+    # FR-002: On zero results within the default window, emit a widen hint.
+    # The hint fires only when a non-zero default window was active (i.e. the
+    # caller did NOT explicitly pass --recent 0 / --all).  We detect the
+    # default by checking that args.recent > 0 and args.all is False.
+    if total == 0 and args.recent > 0 and not args.all:
+        print(
+            f"# 0 results in last {args.recent} days — widen with `--recent 0` "
+            "to search full history.",
+            file=sys.stderr,
+        )
+
+    # FR-006 / T034: When Hop-1 is noisy, suggest a concrete Hop-2 refine
+    # command (non-blocking: emitted to stderr, never an error or hard stop).
+    # Only fires when no --refine was already active (the operator already knows
+    # about multi-hop if they typed --refine).
+    if (
+        total > 0
+        and not getattr(args, "refine", None)
+        and args.pattern
+    ):
+        noise_threshold = getattr(args, "noise_threshold", 20)
+        from sio.clustering.hop2 import build_noise_hint  # noqa: PLC0415
+
+        hint = build_noise_hint(
+            hop1_count=total,
+            noise_threshold=noise_threshold,
+            pattern=args.pattern,
+        )
+        if hint:
+            print(hint, file=sys.stderr)
+
     return 0 if total > 0 else 2
 
 

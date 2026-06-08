@@ -168,6 +168,71 @@ def _section_session_stats(db: sqlite3.Connection) -> str | None:
     return f"## Session Trend\n- Last 5 error counts: {trend}"
 
 
+def _section_search_discipline(
+    invocations_db: sqlite3.Connection | None = None,
+    *,
+    window_days: int = 14,
+) -> str | None:
+    """Return a search-discipline regression flag, or None if all rates healthy.
+
+    Reads the behavior_invocations DB (separate from the SIO main DB), computes
+    per-discipline rates over *window_days*, and returns a warning section when
+    any rate with a BASELINE target falls below that target.
+
+    Parameters
+    ----------
+    invocations_db:
+        Open connection to behavior_invocations.db.  If None or if telemetry is
+        absent, returns None (graceful degradation — no crash, no false alarm).
+    window_days:
+        Look-back window in days (default 14).
+    """
+    try:
+        from sio.reporting.search_discipline import (  # noqa: PLC0415
+            TARGETS,
+            compute_discipline_rates,
+            open_invocations_db,
+        )
+
+        conn = invocations_db
+        own_conn = False
+        if conn is None:
+            conn = open_invocations_db()
+            own_conn = True
+
+        if conn is None:
+            return None  # DB absent — degrade gracefully
+
+        try:
+            rates = compute_discipline_rates(conn, window_days=window_days)
+        finally:
+            if own_conn:
+                conn.close()
+
+        if rates["total_search_invocations"] == 0:
+            return None
+
+        sub: list[str] = []
+        for metric, target in TARGETS.items():
+            rate = rates.get(metric, 0.0)
+            if rate < target:
+                sub.append(
+                    f"{metric.replace('_', '-')}={rate:.0%} (target ≥{target:.0%})"
+                )
+
+        if not sub:
+            return None
+
+        lines = ["## Search Discipline Regression"]
+        lines.extend(f"- {item}" for item in sub)
+        lines.append("  Run `sio search-discipline` for the full report.")
+        return "\n".join(lines)
+
+    except Exception:
+        # Non-critical — briefing must not crash due to telemetry issues
+        return None
+
+
 def build_session_briefing(
     db: sqlite3.Connection,
     config: SIOConfig | None = None,
@@ -215,6 +280,10 @@ def build_session_briefing(
     stats = _section_session_stats(db)
     if stats:
         sections.append(stats)
+
+    discipline = _section_search_discipline()
+    if discipline:
+        sections.append(discipline)
 
     if not sections:
         return "All clear -- no issues detected."

@@ -314,3 +314,128 @@ def test_no_direct_dspy_lm_calls_outside_factory():
         "SC-022 violation — direct dspy.LM( calls found outside lm_factory.py:\n"
         + "\n".join(f"  {v}" for v in violations)
     )
+
+
+# ---------------------------------------------------------------------------
+# 8. is_forbidden_model() — gpt-4o family ban truth table
+# ---------------------------------------------------------------------------
+
+
+def _import_is_forbidden_model():
+    from sio.core.dspy.lm_factory import is_forbidden_model  # noqa: PLC0415
+
+    return is_forbidden_model
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        "gpt-4o",
+        "openai/gpt-4o",
+        "azure/gpt-4o",
+        "gpt-4o-2024-05-13",
+        "openai/gpt-4o-2024-08-06",
+        "openrouter/openai/gpt-4o",
+    ],
+)
+def test_is_forbidden_model_rejects_gpt4o_family(model):
+    """is_forbidden_model() returns True for all gpt-4o family variants."""
+    is_forbidden_model = _import_is_forbidden_model()
+    assert is_forbidden_model(model) is True, (
+        f"Expected is_forbidden_model({model!r}) to be True"
+    )
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        "gpt-4o-mini",
+        "openai/gpt-4o-mini",
+        "ollama/qwen3-coder:30b",
+        "gemini/gemini-flash-latest",
+    ],
+)
+def test_is_forbidden_model_allows_safe_models(model):
+    """is_forbidden_model() returns False for gpt-4o-mini and non-gpt-4o models."""
+    is_forbidden_model = _import_is_forbidden_model()
+    assert is_forbidden_model(model) is False, (
+        f"Expected is_forbidden_model({model!r}) to be False"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 9. is_free_model() — canonical free/paid policy helper in lm_factory
+# ---------------------------------------------------------------------------
+
+
+def _import_is_free_model():
+    from sio.core.dspy.lm_factory import is_free_model  # noqa: PLC0415
+
+    return is_free_model
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        "ollama/qwen3-coder:30b",
+        "ollama/llama3:8b",
+        "ollama/mistral",
+    ],
+)
+def test_is_free_model_ollama(model):
+    """is_free_model() returns True for ollama/* models."""
+    is_free_model = _import_is_free_model()
+    assert is_free_model(model) is True
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        "openai/gpt-4o-mini",
+        "anthropic/claude-sonnet-4-20250514",
+        "gemini/gemini-flash-latest",
+        "openai/gpt-4o",
+    ],
+)
+def test_is_free_model_paid_providers(model):
+    """is_free_model() returns False for non-ollama models."""
+    is_free_model = _import_is_free_model()
+    assert is_free_model(model) is False
+
+
+# ---------------------------------------------------------------------------
+# 10. make_lm() — family ban enforced, gpt-4o-mini NOT refused
+# ---------------------------------------------------------------------------
+
+
+def test_make_lm_raises_for_forbidden_gpt4o(monkeypatch):
+    """make_lm('azure/gpt-4o', ...) raises ValueError for forbidden model."""
+    from sio.core.dspy.lm_factory import make_lm  # noqa: PLC0415
+
+    with pytest.raises(ValueError, match="forbidden"):
+        make_lm("azure/gpt-4o", temperature=0.0, max_tokens=1024)
+
+
+def test_make_lm_gpt4o_mini_not_refused_by_ban(monkeypatch):
+    """make_lm('openai/gpt-4o-mini', ...) must NOT raise the family-ban ValueError.
+
+    The model may fail for other reasons (missing API key in test env), but it
+    must NOT raise a ValueError whose message contains 'forbidden' or 'banned'
+    for the family-ban reason.  We isolate the ban check by catching ValueError
+    and asserting the reason is NOT the family-ban message.
+    """
+    from sio.core.dspy.lm_factory import make_lm  # noqa: PLC0415
+
+    try:
+        make_lm("openai/gpt-4o-mini", temperature=0.0, max_tokens=1024)
+        # If it didn't raise at all, that's fine too (key may be set in env)
+    except ValueError as exc:
+        msg = str(exc).lower()
+        assert "forbidden" not in msg, (
+            "make_lm raised ValueError about 'forbidden' for gpt-4o-mini — "
+            "the P0 landmine was reintroduced. Check is_forbidden_model()."
+        )
+        assert "banned" not in msg or "gpt-4o-mini" not in msg, (
+            "make_lm raised a ban ValueError for gpt-4o-mini. "
+            "Check [llm.banned] in config.toml or is_forbidden_model()."
+        )

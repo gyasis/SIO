@@ -1267,7 +1267,29 @@ def distill(session_path, latest, output, project):
 @click.option(
     "--polish/--no-polish",
     default=False,
-    help="Use Gemini to polish into a clean runbook (costs ~$0.02).",
+    help=(
+        "Polish the runbook via an LM (default: ollama/qwen3-coder:30b — free). "
+        "Override model with --polish-model or SIO_POLISH_LM env var."
+    ),
+)
+@click.option(
+    "--polish-model",
+    default=None,
+    envvar="SIO_POLISH_LM",
+    help=(
+        "Model to use for polishing (e.g. 'ollama/qwen3-coder:30b', "
+        "'openai/gpt-4o-mini'). Default: ollama/qwen3-coder:30b. "
+        "Paid (non-ollama) models require --confirm-cost."
+    ),
+)
+@click.option(
+    "--confirm-cost",
+    is_flag=True,
+    default=False,
+    help=(
+        "Pre-confirm cost for paid polish models (skips interactive prompt). "
+        "Required for non-interactive use with non-ollama models."
+    ),
 )
 @click.option(
     "--output",
@@ -1276,23 +1298,24 @@ def distill(session_path, latest, output, project):
     help="Save runbook to file.",
 )
 @runlogged("recall")
-def recall(query, session, project, polish, output):
+def recall(query, session, project, polish, polish_model, confirm_cost, output):
     """Recall how a specific task was solved in a previous session.
 
     Topic-filters a distilled session to only the steps matching your query,
-    detects struggle→fix transitions, and optionally polishes via Gemini.
+    detects struggle→fix transitions, and optionally polishes via an LM.
 
     Examples:
-        sio recall "dbt setup"                    # Cheap: filter + format
-        sio recall "dbt setup" --polish            # Expensive: + Gemini runbook
-        sio recall "auth fix" --project my-app     # Filter by project
+        sio recall "dbt setup"                              # filter + format (free)
+        sio recall "dbt setup" --polish                     # polish via ollama (free)
+        sio recall "dbt setup" --polish --polish-model openai/gpt-4o-mini --confirm-cost
+        sio recall "auth fix" --project my-app
         sio recall "snowflake deploy" -o runbook.md
     """
+    import sys
     from pathlib import Path
 
     from sio.mining.jsonl_parser import parse_jsonl
     from sio.mining.recall import (
-        build_gemini_polish_prompt,
         detect_struggles,
         format_recall_output,
         topic_filter,
@@ -1342,21 +1365,25 @@ def recall(query, session, project, polish, output):
         click.echo(f"Found {len(struggles)} struggle→fix transitions")
 
     # Step 4: Format output
+    raw_runbook = format_recall_output(filtered, struggles)
+
     if polish:
-        # Build Gemini prompt
-        prompt = build_gemini_polish_prompt(filtered, struggles, query)
-        click.echo("Polishing via Gemini...")
-        click.echo(f"\n--- GEMINI POLISH PROMPT ({len(prompt)} chars) ---")
-        click.echo("Run this manually or use --no-polish for raw output:")
-        click.echo(f"  gemini_brainstorm(topic='Create runbook: {query}', context='...')")
-        click.echo("--- END PROMPT ---\n")
-        # For CLI, we output the prompt. The /sio-recall skill will call Gemini directly.
-        runbook = format_recall_output(filtered, struggles)
-        runbook += (
-            "\n\n---\n*Gemini polish prompt saved. Use /sio-recall skill for auto-polish.*\n"
-        )
+        from sio.recall_polish import PolishError, polish_runbook
+
+        interactive = sys.stdout.isatty()
+        try:
+            runbook = polish_runbook(
+                raw_runbook,
+                query,
+                model=polish_model or None,
+                confirm_cost=confirm_cost,
+                interactive=interactive,
+            )
+        except PolishError as exc:
+            click.echo(f"Error: {exc}", err=True)
+            raise SystemExit(1) from exc
     else:
-        runbook = format_recall_output(filtered, struggles)
+        runbook = raw_runbook
 
     if output:
         out_path = Path(output)
@@ -1998,6 +2025,29 @@ def inspect(pattern_id):
         "Composable with --grep / --type / --project."
     ),
 )
+@click.option(
+    "--since",
+    "since_window",
+    default=None,
+    help=(
+        "Load only errors newer than this cutoff. "
+        "Accepts an ISO date ('2024-01-01'), a relative spec ('90d', '7d', '2w'), "
+        "or '0' / 'all' to disable the default 30-day window and load full history. "
+        "Default: 30d (FR-007)."
+    ),
+)
+@click.option(
+    "--max-rows",
+    "max_rows",
+    type=int,
+    default=None,
+    help=(
+        "Maximum error rows to load from the DB per run. "
+        "Default: 5000. "
+        "Pass 0 to remove the row cap (loads all rows within --since window). "
+        "FR-008."
+    ),
+)
 @runlogged("suggest")
 def suggest(
     error_type,
@@ -2017,6 +2067,8 @@ def suggest(
     cache_ttl_hours,
     session_handle,
     experiment_name,
+    since_window,
+    max_rows,
 ):
     """Run the full pipeline: cluster -> persist -> dataset -> suggestions."""
     import uuid
@@ -2034,6 +2086,7 @@ def suggest(
     from rich.console import Console
     from rich.table import Table
 
+    from sio.clustering import hop2
     from sio.clustering.pattern_clusterer import cluster_errors
     from sio.clustering.ranker import rank_patterns
     from sio.core.db.queries import (
@@ -2065,6 +2118,63 @@ def suggest(
             click.echo(f"Error: {exc}")
             raise SystemExit(1) from exc
 
+    # --- FR-007/FR-008: Resolve the effective since-cutoff and row cap -------
+    # Default: 30-day window + 5000-row cap to guard the 951 MB DB.
+    # --since overrides the window; --max-rows overrides the row cap.
+    # --since 0 / --since all disables the time window entirely.
+    # --max-rows 0 removes the row cap (explicit opt-in to unbounded load).
+    _SUGGEST_DEFAULT_SINCE_DAYS = 30
+    _SUGGEST_DEFAULT_ROW_CAP = 5000
+    _SUGGEST_CACHE_MAX_ROWS = 10000  # FR-009: preview cache size bound
+
+    # Resolve since_iso from the --since flag or the default window.
+    # (datetime and timezone already imported at function top; add timedelta + re)
+    import re as _re
+    from datetime import timedelta as _timedelta
+
+    def _parse_since_window(spec: str | None) -> str | None:
+        """Convert --since spec to an ISO-8601 datetime string, or None for no cutoff."""
+        if spec is None:
+            # Default: 30-day window
+            cutoff = datetime.now(timezone.utc) - _timedelta(days=_SUGGEST_DEFAULT_SINCE_DAYS)
+            return cutoff.isoformat()
+        spec_lower = spec.strip().lower()
+        if spec_lower in ("0", "all", "none", ""):
+            return None  # Caller explicitly wants no time window
+        # Relative specs: Nd, Nw, Nm (days, weeks, months)
+        m = _re.match(r"^(\d+)\s*([dwm]?)$", spec_lower)
+        if m:
+            n = int(m.group(1))
+            unit = m.group(2) or "d"
+            days = n if unit == "d" else n * 7 if unit == "w" else n * 30
+            cutoff = datetime.now(timezone.utc) - _timedelta(days=days)
+            return cutoff.isoformat()
+        # Try parsing as ISO date/datetime directly (e.g. "2024-01-01")
+        for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S%z"):
+            try:
+                dt = datetime.strptime(spec, fmt)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt.isoformat()
+            except ValueError:
+                continue
+        # Fall back to default window with a warning if spec is unrecognized
+        click.echo(
+            f"[warning] Unrecognized --since spec {spec!r}; "
+            f"using default {_SUGGEST_DEFAULT_SINCE_DAYS}d window.",
+            err=True,
+        )
+        cutoff = datetime.now(timezone.utc) - _timedelta(days=_SUGGEST_DEFAULT_SINCE_DAYS)
+        return cutoff.isoformat()
+
+    effective_since = _parse_since_window(since_window)
+
+    # Resolve row cap.
+    if max_rows is None:
+        effective_limit = _SUGGEST_DEFAULT_ROW_CAP
+    else:
+        effective_limit = max_rows  # 0 = no cap (explicit opt-in)
+
     with _db_conn(db_path) as conn:
         console = Console()
 
@@ -2079,8 +2189,6 @@ def suggest(
             csv_path = os.path.expanduser("~/.sio/previews/errors_preview.csv")
 
         if csv_path:
-            import csv as _csv
-
             csv_abs = os.path.expanduser(csv_path)
             if not os.path.exists(csv_abs):
                 click.echo(
@@ -2089,7 +2197,7 @@ def suggest(
                 )
                 return
 
-            # TTL check
+            # TTL check (FR-009)
             age_hours = (time.time() - os.path.getmtime(csv_abs)) / 3600.0
             if age_hours > cache_ttl_hours:
                 console.print(
@@ -2102,29 +2210,20 @@ def suggest(
                     f"({age_hours:.1f}h old, TTL={cache_ttl_hours}h)[/dim]"
                 )
 
-            loaded_errors: list[dict] = []
-            with open(csv_abs, newline="") as f:
-                reader = _csv.DictReader(f)
-                for row in reader:
-                    loaded_errors.append(
-                        {
-                            "id": int(row["id"]) if row.get("id", "").isdigit() else row.get("id"),
-                            "error_type": row.get("error_type") or "",
-                            "error_text": row.get("error_text") or "",
-                            "tool_name": row.get("tool_name") or "",
-                            "session_id": row.get("session_id") or "",
-                            "timestamp": row.get("timestamp") or "",
-                            "source_file": row.get("source_file") or "",
-                            "user_message": row.get("user_message") or "",
-                            # fields truncated in CSV but still sufficient for Hop-2 filtering
-                            "context_before": "",
-                            "context_after": "",
-                        }
-                    )
+            loaded_errors: list[dict] = hop2.load_errors_from_csv(csv_abs)
 
             if not loaded_errors:
                 click.echo(f"--within CSV is empty: {csv_abs}")
                 return
+
+            # FR-009: size-bound the cache on read (guard against oversized CSVs)
+            if len(loaded_errors) > _SUGGEST_CACHE_MAX_ROWS:
+                console.print(
+                    f"[yellow]⚠ Cache has {len(loaded_errors)} rows — "
+                    f"truncating to {_SUGGEST_CACHE_MAX_ROWS} (size bound). "
+                    f"Re-run --preview to refresh.[/yellow]"
+                )
+                loaded_errors = loaded_errors[:_SUGGEST_CACHE_MAX_ROWS]
 
             errors_to_cluster = loaded_errors
             all_errors = loaded_errors  # so downstream doesn't mis-reference
@@ -2133,15 +2232,43 @@ def suggest(
                 f"(skipping DB query + --grep/--project/--type Hop-1 filters)[/dim]"
             )
         else:
-            # Normal path — load from DB and apply Hop-1 filters
-            # 1. Get all errors (no limit), filtered by project if specified
+            # Normal path — load from DB with bounded defaults (FR-007).
+            # Replaced unbounded limit=0 with effective_since window + row cap.
+            _since_label = (
+                f"since {effective_since[:10]}"
+                if effective_since
+                else "all history (no window)"
+            )
+            _limit_label = (
+                f"cap={effective_limit} rows" if effective_limit > 0 else "no row cap"
+            )
+            console.print(
+                f"[dim]Loading errors: {_since_label}, {_limit_label} "
+                f"(default window={_SUGGEST_DEFAULT_SINCE_DAYS}d, "
+                f"cap={_SUGGEST_DEFAULT_ROW_CAP}; use --since / --max-rows to override)[/dim]"
+            )
             all_errors = get_error_records(
-                conn, limit=0, project=project, session_id=session_handle
+                conn,
+                limit=effective_limit,
+                since=effective_since,
+                project=project,
+                session_id=session_handle,
             )
             if not all_errors:
                 filter_hint = f" for project '{project}'" if project else ""
+                since_hint = (
+                    f" in the last {_SUGGEST_DEFAULT_SINCE_DAYS} days"
+                    if effective_since and since_window is None
+                    else ""
+                )
                 click.echo(
-                    f"No errors mined yet{filter_hint}. Run 'sio mine --since \"7 days\"' first."
+                    f"No errors mined yet{filter_hint}{since_hint}. "
+                    f"Run 'sio mine --since \"7 days\"' first."
+                    + (
+                        " Or widen with --since 90d to look further back."
+                        if effective_since
+                        else ""
+                    )
                 )
                 return
 
@@ -2215,27 +2342,14 @@ def suggest(
         if refine_term:
             hop2_refine_terms = [t.strip().lower() for t in refine_term.split(",") if t.strip()]
 
-        def _hop2_matches(e: dict) -> bool:
-            if not hop2_refine_terms:
-                return True
-            searchable = (
-                "error_text",
-                "user_message",
-                "context_before",
-                "context_after",
-                "source_file",
-            )
-            for field in searchable:
-                val = (e.get(field) or "").lower()
-                for term in hop2_refine_terms:
-                    if term in val:
-                        return True
-            return False
-
         hop1_error_count = len(errors_to_cluster)
         if hop2_refine_terms and hop2_strategy.lower() in ("filter", "hybrid"):
-            # Pre-cluster narrowing — shrinks the set that clustering sees
-            errors_to_cluster = [e for e in errors_to_cluster if _hop2_matches(e)]
+            # Pre-cluster narrowing — shrinks the set that clustering sees.
+            # Delegates to hop2._hop2_matches (single source of truth).
+            errors_to_cluster = [
+                e for e in errors_to_cluster
+                if hop2._hop2_matches(e, hop2_refine_terms)
+            ]
 
         if not errors_to_cluster:
             filter_desc = []
@@ -2296,7 +2410,7 @@ def suggest(
                         return True
                 for eid in p.get("error_ids", []):
                     e = error_index.get(eid)
-                    if e and _hop2_matches(e):
+                    if e and hop2._hop2_matches(e, hop2_refine_terms):
                         return True
                 return False
 
@@ -2407,8 +2521,15 @@ def suggest(
                         ]
                     )
 
-            # Export filtered errors dataset
+            # Export filtered errors dataset (FR-009: size-bounded write)
             errors_csv = os.path.join(preview_dir, "errors_preview.csv")
+            errors_to_write = errors_to_cluster
+            if len(errors_to_write) > _SUGGEST_CACHE_MAX_ROWS:
+                console.print(
+                    f"[dim]Preview cache: truncating {len(errors_to_write)} → "
+                    f"{_SUGGEST_CACHE_MAX_ROWS} rows (size bound FR-009).[/dim]"
+                )
+                errors_to_write = errors_to_write[:_SUGGEST_CACHE_MAX_ROWS]
             with open(errors_csv, "w", newline="") as f:
                 writer = csv.writer(f)
                 writer.writerow(
@@ -2423,7 +2544,7 @@ def suggest(
                         "user_message",
                     ]
                 )
-                for e in errors_to_cluster:
+                for e in errors_to_write:
                     writer.writerow(
                         [
                             e.get("id", ""),
@@ -3913,6 +4034,72 @@ def briefing(as_json):
         click.echo(_json.dumps({"briefing": text}))
     else:
         click.echo(text)
+
+
+# ---------------------------------------------------------------------------
+# Search-discipline report command (US6, T062, FR-011)
+# ---------------------------------------------------------------------------
+
+
+@cli.command("search-discipline")
+@click.option(
+    "--window",
+    "window_days",
+    default=14,
+    show_default=True,
+    type=int,
+    help="Look-back window in days. Pass 0 for full history.",
+)
+@click.option(
+    "--db-path",
+    "invocations_db_path",
+    default=None,
+    help="Path to behavior_invocations.db. Defaults to ~/.sio/<platform>/behavior_invocations.db.",
+)
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+@runlogged("search-discipline")
+def search_discipline(window_days, invocations_db_path, as_json):
+    """Report search-discipline rates from invocation telemetry.
+
+    Emits recency-rate, multi-hop-rate, files-first-rate, and context-walk-rate
+    over a time window.  Rates with a BASELINE target are flagged when below
+    that target.
+
+    Rate definitions (from research.md §B):
+      recency-rate       = --recent / total search invocations\n
+      multi-hop-rate     = --refine|--within|--use-cache|--strategy / total\n
+      files-first-rate   = --files / total\n
+      context-walk-rate  = --context / total
+
+    Targets (BASELINE.md): recency >= 85%, multi-hop >= 5%, context-walk >= 15%.
+    """
+    from sio.reporting.search_discipline import (
+        compute_discipline_rates,
+        format_discipline_report,
+        open_invocations_db,
+    )
+
+    conn = open_invocations_db(invocations_db_path)
+    if conn is None:
+        msg = (
+            "behavior_invocations.db not found. "
+            "Run SIO hooks to start capturing telemetry, or pass --db-path."
+        )
+        if as_json:
+            click.echo(_json.dumps({"error": msg}))
+        else:
+            click.echo(msg)
+        return
+
+    try:
+        rates = compute_discipline_rates(conn, window_days=window_days)
+    finally:
+        conn.close()
+
+    if as_json:
+        click.echo(_json.dumps(rates))
+    else:
+        click.echo(format_discipline_report(rates))
 
 
 # ---------------------------------------------------------------------------
