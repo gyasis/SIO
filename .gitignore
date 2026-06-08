@@ -54,7 +54,13 @@ secrets/
 credentials/
 
 # dev-kid lightweight-init transient assets — swept in accidentally.
+# dev-kid orchestration state belongs in dev-kid's own repo, NOT here.
 # PRD sio_autotag_experiments anti-pattern: do NOT commit these.
+.dk/
+/tasks.md
+execution_plan.json
+.devkid/
+dev-kid.yml
 .playwright-mcp/
 dspy-course/
 distilabel-course/
