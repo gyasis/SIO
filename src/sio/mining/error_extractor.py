@@ -115,6 +115,92 @@ _ADMISSION_PATTERNS: list[re.Pattern[str]] = [
 _GIT_PUSH_PATTERN: re.Pattern[str] = re.compile(r"\bgit\s+push\b", re.IGNORECASE)
 
 
+# ---------------------------------------------------------------------------
+# Agent-recognizer corpus — categories of agent SELF-STATE (not errors).
+# Grounded in research/papers/ and documented in docs/agent-recognizers.md.
+# Exposed via detect_agent_states(); intentionally NOT wired into
+# extract_errors() — the uncertainty/overconfidence/assumption markers are
+# common enough that emitting them as mined-error records would flood the
+# top-N rankings (the same pollution _is_hook_block_noise guards against).
+# ---------------------------------------------------------------------------
+
+# Epistemic hedging / weakened commitment.  Source: arxiv:2302.13439 (Table 6 weakeners, Table 5)
+_UNCERTAINTY_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"\bi\s+think\b", re.IGNORECASE),
+    re.compile(r"\b(?:it\s+)?might\s+be\b", re.IGNORECASE),
+    re.compile(r"\b(?:it\s+)?could\s+be\b", re.IGNORECASE),
+    re.compile(r"\bmaybe\b", re.IGNORECASE),
+    re.compile(r"\bperhaps\b", re.IGNORECASE),
+    re.compile(r"\bprobably\b", re.IGNORECASE),
+    re.compile(r"\bpossibly\b", re.IGNORECASE),
+    re.compile(r"\bi['']?m\s+not\s+(?:sure|certain)\b", re.IGNORECASE),
+    re.compile(r"\bi\s+suppose\b", re.IGNORECASE),
+    re.compile(r"\bi\s+guess\b", re.IGNORECASE),
+    re.compile(r"\bi\s+believe\b", re.IGNORECASE),
+    re.compile(r"\bif\s+i\s+recall\b", re.IGNORECASE),
+]
+
+# Asserted certainty / boosters.  Source: arxiv:2302.13439 (Table 6 strengtheners, Table 5)
+# NOTE: low precision — these also occur in benign prose; tune before using as a hard signal.
+_OVERCONFIDENCE_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"\bdefinitely\b", re.IGNORECASE),
+    re.compile(r"\bcertainly\b", re.IGNORECASE),
+    re.compile(r"\bundoubtedly\b", re.IGNORECASE),
+    re.compile(r"\bwithout\s+a\s+doubt\b", re.IGNORECASE),
+    re.compile(r"\bi['']?m\s+(?:certain|sure)\b", re.IGNORECASE),
+    re.compile(r"\bi\s+am\s+(?:certain|sure)\b", re.IGNORECASE),
+    re.compile(r"\b100%\s+(?:sure|confident|certain)\b", re.IGNORECASE),
+    re.compile(r"\bit\s+must\s+be\b", re.IGNORECASE),
+    re.compile(r"\bguaranteed\b", re.IGNORECASE),
+    re.compile(r"\b(?:obviously|evidently)\b", re.IGNORECASE),
+]
+
+# Post-failure reflection + revised strategy.  Source: arxiv:2303.11366, arxiv:2409.12917
+_SELF_REFLECTION_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"\bon\s+reflection\b", re.IGNORECASE),
+    re.compile(r"\blooking\s+back\b", re.IGNORECASE),
+    re.compile(r"\bmy\s+previous\s+attempt\b", re.IGNORECASE),
+    re.compile(r"\bfailed\s+because\b", re.IGNORECASE),
+    re.compile(r"\bin\s+the\s+next\s+(?:trial|attempt|time)\b", re.IGNORECASE),
+    re.compile(r"\bi\s+(?:now\s+)?realize\s+that\b", re.IGNORECASE),
+    re.compile(r"\bi\s+misunderstood\b", re.IGNORECASE),
+    re.compile(r"\bi\s+did\s+not\s+take\s+into\s+account\b", re.IGNORECASE),
+    re.compile(r"\bi\s+need\s+to\s+reconsider\b", re.IGNORECASE),
+]
+
+# Critique of own current output before revising.  Source: arxiv:2305.11738, arxiv:2303.17651
+_SELF_CRITIQUE_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"\blet\s+me\s+verify\b", re.IGNORECASE),
+    re.compile(r"\blet\s+me\s+double[-\s]?check\b", re.IGNORECASE),
+    re.compile(r"\bchecking\s+my\s+work\b", re.IGNORECASE),
+    re.compile(r"\bthe\s+answer\s+is\s+not\s+reasonable\b", re.IGNORECASE),
+    re.compile(r"\bthis\s+could\s+be\s+improved\b", re.IGNORECASE),
+    re.compile(r"\ba\s+better\s+(?:approach|solution)\b", re.IGNORECASE),
+    re.compile(r"\blet\s+me\s+reconsider\b", re.IGNORECASE),
+]
+
+# Explicit assumption / inferred-info flag.  Source: arxiv:2302.13439 (plausibility shields)
+_ASSUMPTION_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"\bi['']?ll\s+assume\b", re.IGNORECASE),
+    re.compile(r"\bi\s+(?:would\s+)?assume\b", re.IGNORECASE),
+    re.compile(r"\bassuming\s+that\b", re.IGNORECASE),
+    re.compile(r"\bi['']?m\s+guessing\b", re.IGNORECASE),
+    re.compile(r"\bpresumably\b", re.IGNORECASE),
+    re.compile(r"\bto\s+the\s+best\s+of\s+my\s+knowledge\b", re.IGNORECASE),
+    re.compile(r"\bas\s+far\s+as\s+i['']?m?\s+aware\b", re.IGNORECASE),
+]
+
+# Impasse / repeated failure (tier C — validate before trusting).  Source: arxiv:2303.11366/17651/2409.12917
+_STUCK_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"\bi['']?m\s+(?:not\s+able|unable)\s+to\b", re.IGNORECASE),
+    re.compile(r"\bi\s+can['']?t\s+figure\s+(?:this\s+)?out\b", re.IGNORECASE),
+    re.compile(r"\bi\s+keep\s+failing\b", re.IGNORECASE),
+    re.compile(r"\bi['']?m\s+stuck\b", re.IGNORECASE),
+    re.compile(r"\bi\s+cannot\s+(?:solve|determine)\b", re.IGNORECASE),
+    re.compile(r"\bi['']?ve\s+tried\s+(?:multiple|several)\b", re.IGNORECASE),
+]
+
+
 # Hook-success / guardrail-intervention signatures that look like tool failures
 # but are actually the guardrail working as designed. Filtering these at ingest
 # prevents them from polluting the top-N error pattern rankings, where they
@@ -313,9 +399,45 @@ def _is_admission(content: str) -> bool:
     return any(pat.search(content) for pat in _ADMISSION_PATTERNS)
 
 
+# Registry of the agent-recognizer corpus: label -> compiled patterns.
+# agent_admission is handled by _is_admission (kept as the canonical shipped
+# recognizer); the rest are the docs/agent-recognizers.md expansion.
+_AGENT_STATE_PATTERNS: dict[str, list[re.Pattern[str]]] = {
+    "agent_uncertainty": _UNCERTAINTY_PATTERNS,
+    "agent_overconfidence": _OVERCONFIDENCE_PATTERNS,
+    "agent_self_reflection": _SELF_REFLECTION_PATTERNS,
+    "agent_self_critique": _SELF_CRITIQUE_PATTERNS,
+    "agent_assumption": _ASSUMPTION_PATTERNS,
+    "agent_stuck": _STUCK_PATTERNS,
+}
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+
+def detect_agent_states(content: str) -> list[str]:
+    """Return every agent-recognizer label whose patterns match *content*.
+
+    Multi-label: one message can express several states at once (e.g.
+    uncertainty + assumption). ``agent_admission`` is included for completeness.
+    This is a pure classifier over agent self-state — it does NOT emit error
+    records and is independent of :func:`extract_errors`. Callers decide what to
+    do with the labels.
+
+    See ``docs/agent-recognizers.md`` for the corpus, confidence tiers, and the
+    arXiv grounding of each pattern set.
+    """
+    if not content:
+        return []
+    labels: list[str] = []
+    if _is_admission(content):
+        labels.append("agent_admission")
+    for label, patterns in _AGENT_STATE_PATTERNS.items():
+        if any(pat.search(content) for pat in patterns):
+            labels.append(label)
+    return labels
 
 
 def extract_errors(
