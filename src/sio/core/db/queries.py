@@ -244,6 +244,9 @@ _ERROR_RECORD_COLS = [
     "parent_session_id",
     "pattern_id",  # added 2026-05-15 so classify-on-mine hook writes through
     "active_rules",  # added 2026-05-15 T1.L.1 — JSON array of rule-ids active at session start
+    "project_tag",  # added 2026-06-13 — Stage-1 structural tag (sio.mining.tagging)
+    "command_category",  # added 2026-06-13 — Stage-1 structural tag
+    "time_bucket",  # added 2026-06-13 — Stage-1 day bucket
 ]
 
 # Default values for cols that have NOT NULL constraints and may be absent in
