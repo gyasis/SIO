@@ -661,6 +661,16 @@ def init_db(db_path: str) -> sqlite3.Connection:
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Migration (PRD prd-corpus-problem-miner 2026-06-13): Stage-1 structural tags on
+    # error_records — project_tag / command_category / time_bucket, derived generically
+    # by sio.mining.tagging and written on mine (error_extractor._build_record). Lets the
+    # autopsy/cluster stage read persisted tags instead of recomputing per run.
+    for _tag_col in ("project_tag", "command_category", "time_bucket"):
+        try:
+            conn.execute(f"ALTER TABLE error_records ADD COLUMN {_tag_col} TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
     # Migration P3a (PRD sio_dataset_versioning_2026-05-16): ensure the
     # `trainsets` content-addressable table exists at init_db time, not
     # lazily on first register_dataset() call. Before this hook, fresh

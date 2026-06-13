@@ -24,6 +24,8 @@ import re
 from datetime import datetime, timezone
 from typing import Any  # noqa: UP035
 
+from sio.mining.tagging import derive_all  # Stage-1 structural tags (project/command/time)
+
 
 def _to_text(value: Any) -> str | None:
     """Coerce a value to a TEXT-safe string for SQLite storage."""
@@ -258,6 +260,11 @@ def _build_record(
 
     timestamp: str = msg.get("timestamp") or _now_iso()
 
+    tool_input_text = _to_text(msg.get("tool_input"))
+    # Stage-1 structural tags, derived generically (no per-project hardcoding) so the
+    # autopsy/cluster stage reads persisted tags instead of recomputing per run.
+    tags = derive_all(source_file, tool_name, tool_input_text, timestamp)
+
     return {
         "session_id": session_id,
         "timestamp": timestamp,
@@ -269,9 +276,12 @@ def _build_record(
         "context_before": context_before,
         "context_after": context_after,
         "error_type": error_type,
-        "tool_input": _to_text(msg.get("tool_input")),
+        "tool_input": tool_input_text,
         "tool_output": _to_text(msg.get("tool_output")),
         "mined_at": mined_at,
+        "project_tag": tags["project_tag"],
+        "command_category": tags["command_category"],
+        "time_bucket": tags["time_bucket"],
     }
 
 

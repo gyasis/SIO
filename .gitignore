@@ -66,3 +66,8 @@ dspy-course/
 distilabel-course/
 sio-course/
 /*.png
+
+# SIO corpus-miner generated outputs (regenerable)
+ANTIPATTERNS.md
+SIGNATURE_LIFECYCLE.md
+scripts/runs/
