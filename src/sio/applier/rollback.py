@@ -14,6 +14,10 @@ from pathlib import Path
 _ALLOWED_ROOTS: list[Path] = [
     Path.home() / ".sio",
     Path.home() / ".claude",
+    # Multi-agent (Tier-3) instruction-file homes — see PRD.md §3.
+    Path.home() / ".codex",  # codex AGENTS.md
+    Path.home() / ".gemini",  # gemini GEMINI.md
+    Path.home() / ".config" / "goose",  # goose .goosehints
 ]
 
 
@@ -62,7 +66,9 @@ def rollback_change(
             "reason": "Change already rolled back",
         }
 
-    target_path = Path(change["target_file"])
+    # expanduser so non-claude harness targets like "~/.codex/AGENTS.md"
+    # resolve to the user's home (no-op for existing ~-less Claude paths).
+    target_path = Path(change["target_file"]).expanduser()
 
     path_error = _validate_target_path(target_path)
     if path_error:

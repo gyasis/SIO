@@ -1049,4 +1049,48 @@ On every platform the user works on.
 
 ---
 
+## Implementation Status — Multi-Agent mine→suggest→apply (2026-06-14)
+
+**Shipped (branch `feat/multi-agent-mine-suggest-apply`): the Tier-3
+transcript-mining loop for codex, gemini, and goose.** A user can now run the
+full closed loop against these agents using their session transcripts (no live
+hooks required):
+
+```bash
+sio mine --agent codex --since "30 days"   # also: --agent gemini | goose
+sio suggest --harness codex                # also: --harness gemini | goose
+sio suggest-review                         # approve
+sio apply <id>                             # writes the agent's instruction file
+sio rollback <change_id>                   # undo
+```
+
+What it does, per the §3 platform model:
+- **MINE** — `sio mine --agent <a>` enumerates the agent's store via the
+  absorbed session-search parsers and runs the content-level error extractor
+  (text-pattern errors: user corrections, agent admissions). Bulk + per-session
+  (`--session <a>:<id>`) both supported.
+- **SUGGEST** — `sio suggest --harness <a>` routes every suggestion to that
+  agent's single persistent-instruction file: codex→`~/.codex/AGENTS.md`,
+  gemini→`~/.gemini/GEMINI.md`, goose→`~/.config/goose/.goosehints`. New
+  `suggestions.target_harness` column; claude-code default unchanged.
+- **APPLY / ROLLBACK** — the three allowlists now permit those instruction-file
+  homes; `~`-targets are expanded. Budget check, delta-merge, backup, and
+  rollback all work for the new targets (verified end-to-end against the real
+  codex store, 2026-06-14).
+
+**Deferred (saved for a follow-up): live, hook-based telemetry where the tier
+allows it.** Codex (Tier 3) and Goose (Tier 3) have no interception hooks, so
+their loop is inherently transcript-only. The Tier-2 surfaces still to build:
+- **Gemini CLI** — 11 lifecycle hooks (`BeforeTool` deny / `AfterTool` capture)
+  registered in `~/.gemini/settings.json`; native extension bundle.
+- **Goose** — MCP recipe + instruction-injected self-report telemetry.
+- **Codex** — `notify` callback for post-hoc observation.
+- **Harness install adapters** — `harnesses/{codex,gemini,goose}.py` +
+  registration in `ALL_ADAPTERS`, so `sio init --harness <a>` stages assets and
+  wires the above. (Today the loop runs without `sio init` for these agents.)
+
+Aider remains search-only (not in the §3 platform matrix; no real session id).
+
+---
+
 *This document is a living artifact. It will be optimized by SIO itself.*

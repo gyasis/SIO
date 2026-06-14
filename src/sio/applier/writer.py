@@ -21,6 +21,10 @@ from sio.core.config import SIOConfig, load_config
 _ALLOWED_ROOTS: list[Path] = [
     Path.home() / ".sio",
     Path.home() / ".claude",
+    # Multi-agent (Tier-3) instruction-file homes — see PRD.md §3.
+    Path.home() / ".codex",  # codex AGENTS.md
+    Path.home() / ".gemini",  # gemini GEMINI.md
+    Path.home() / ".config" / "goose",  # goose .goosehints
 ]
 
 
@@ -205,7 +209,9 @@ def apply_change(
             "reason": (f"Suggestion is not approved (status: {suggestion['status']})"),
         }
 
-    target_path = Path(suggestion["target_file"])
+    # expanduser so non-claude harness targets like "~/.codex/AGENTS.md"
+    # resolve to the user's home (no-op for existing ~-less Claude paths).
+    target_path = Path(suggestion["target_file"]).expanduser()
 
     path_error = _validate_target_path(target_path)
     if path_error:

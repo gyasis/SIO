@@ -286,10 +286,26 @@ def get_error_records(
     since: str = None,
     limit: int = 500,
     project: str = None,
+    agent: str = None,
 ) -> list[dict]:
-    """Get error records with optional filters."""
+    """Get error records with optional filters.
+
+    ``agent`` scopes results to one coding agent's records (multi-agent
+    isolation). Non-claude agents store canonical ``<agent>:<id>`` session ids;
+    ``agent="claude"`` returns everything that is NOT prefixed by a known
+    non-claude agent (claude rows are bare uuids or ``claude:`` canonical).
+    """
     query = "SELECT * FROM error_records WHERE 1=1"
     params: list = []
+    if agent:
+        _NON_CLAUDE = ("codex", "gemini", "goose", "aider", "opencode")
+        if agent == "claude":
+            query += "".join(
+                f" AND session_id NOT LIKE '{a}:%'" for a in _NON_CLAUDE
+            )
+        else:
+            query += " AND session_id LIKE ?"
+            params.append(f"{agent}:%")
     if session_id:
         # Transition-safe: match bare legacy id OR canonical agent:native_id.
         from sio.core.session_handle import session_match_clause
@@ -547,6 +563,7 @@ _SUGGESTION_COLS = [
     "proposed_change",
     "target_file",
     "change_type",
+    "target_harness",
     "status",
     "ai_explanation",
     "user_note",
@@ -560,6 +577,9 @@ def insert_suggestion(conn: sqlite3.Connection, record: dict) -> int:
     cols = _SUGGESTION_COLS
     placeholders = ", ".join(["?"] * len(cols))
     col_names = ", ".join(cols)
+    # target_harness is NOT NULL; default it for callers that predate
+    # multi-agent support and don't set it.
+    record = {**record, "target_harness": record.get("target_harness") or "claude-code"}
     values = [record.get(c) for c in cols]
     cur = conn.execute(
         f"INSERT INTO suggestions ({col_names}) VALUES ({placeholders})",
