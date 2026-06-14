@@ -32,7 +32,13 @@ def _build_allowlist_roots() -> list[Path]:
     ``SIO_APPLY_EXTRA_ROOTS`` environment variable (colon-separated list of
     absolute paths).
     """
-    roots: list[Path] = [Path.home() / ".claude"]
+    roots: list[Path] = [
+        Path.home() / ".claude",
+        # Multi-agent (Tier-3) instruction-file homes — see PRD.md §3.
+        Path.home() / ".codex",  # codex AGENTS.md
+        Path.home() / ".gemini",  # gemini GEMINI.md
+        Path.home() / ".config" / "goose",  # goose .goosehints
+    ]
     extra = os.environ.get("SIO_APPLY_EXTRA_ROOTS", "").strip()
     if extra:
         for part in extra.split(":"):

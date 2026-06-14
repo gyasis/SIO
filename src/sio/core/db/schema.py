@@ -168,6 +168,7 @@ CREATE TABLE IF NOT EXISTS suggestions (
     proposed_change TEXT NOT NULL,
     target_file TEXT NOT NULL,
     change_type TEXT NOT NULL,
+    target_harness TEXT NOT NULL DEFAULT 'claude-code',
     status TEXT NOT NULL DEFAULT 'pending',
     ai_explanation TEXT,
     user_note TEXT,
@@ -618,6 +619,17 @@ def init_db(db_path: str) -> sqlite3.Connection:
         pass  # Column already exists
     try:
         conn.execute("ALTER TABLE suggestions ADD COLUMN skill_file_path TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    # Multi-agent support: which harness a suggestion targets (claude-code,
+    # codex, gemini, goose). Defaults to claude-code so existing rows + the
+    # Claude path are unchanged. Non-claude harnesses route to a single
+    # instruction file (AGENTS.md / GEMINI.md / .goosehints).
+    try:
+        conn.execute(
+            "ALTER TABLE suggestions ADD COLUMN "
+            "target_harness TEXT NOT NULL DEFAULT 'claude-code'"
+        )
     except sqlite3.OperationalError:
         pass  # Column already exists
     # T105: Add quality_assessment column to ground_truth

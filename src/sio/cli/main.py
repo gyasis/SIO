@@ -798,6 +798,77 @@ def _mine_session_via_adapter(db_path: str, handle: str, agent: str) -> None:
     )
 
 
+def _mine_agent_bulk(db_path: str, agent: str, since: str | None) -> None:
+    """Bulk-mine every session of a non-claude agent in the time window.
+
+    Enumerates the agent's store ONCE via the absorbed session-search parser,
+    groups records by native session id, and runs the same content-level error
+    extractor the per-session adapter path uses. Search parsers do not carry
+    tool_input/output, so tool_failure detection is limited — text-pattern
+    errors (agent admissions, user corrections) are still caught.
+    """
+    import datetime
+    from collections import defaultdict
+
+    from sio.core.db.queries import insert_error_record
+    from sio.core.session_handle import to_canonical
+    from sio.mining.error_extractor import extract_errors
+    from sio.search.cli import PARSERS
+
+    parser = PARSERS.get(agent)
+    if parser is None:
+        click.echo(f"No session parser for agent '{agent}'.")
+        return
+
+    cutoff_epoch: float | None = None
+    if since:
+        from sio.mining.time_filter import parse_since
+
+        cutoff_epoch = parse_since(since).timestamp()
+
+    # One store scan; group events by native session id. Empty pattern matches
+    # every non-empty event (same convention as SearchBackedAdapter).
+    by_session: dict[str, list] = defaultdict(list)
+    for rec in parser("", False, cutoff_epoch):
+        if rec.session_id:
+            by_session[rec.session_id].append(rec)
+
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    total_sessions = 0
+    total_errors = 0
+    with _db_conn(db_path) as conn:
+        for sid, recs in by_session.items():
+            canonical = to_canonical(f"{agent}:{sid}")
+            messages = [
+                {
+                    "role": r.role,
+                    "content": r.content,
+                    "tool_name": (r.metadata or {}).get("tool"),
+                    "tool_input": None,
+                    "tool_output": None,
+                    "error": None,
+                    "timestamp": r.ts,
+                    "session_id": canonical,
+                }
+                for r in recs
+            ]
+            errors = extract_errors(
+                messages, source_file=f"{agent}:{sid}", source_type="adapter"
+            )
+            for er in errors:
+                er.setdefault("session_id", canonical)
+                er.setdefault("mined_at", now)
+                er.setdefault("is_subagent", 0)
+                insert_error_record(conn, er, _batch=True)
+            total_sessions += 1
+            total_errors += len(errors)
+        conn.commit()
+    click.echo(
+        f"Bulk-mined {agent}: {total_sessions} sessions "
+        f"-> {total_errors} errors inserted."
+    )
+
+
 @cli.command()
 @click.option(
     "--since",
@@ -811,6 +882,17 @@ def _mine_session_via_adapter(db_path: str, handle: str, agent: str) -> None:
     ),
 )
 @click.option("--project", default=None, help="Filter by project name.")
+@click.option(
+    "--agent",
+    type=click.Choice(["claude", "codex", "gemini", "goose"]),
+    default="claude",
+    help=(
+        "Which coding agent's sessions to mine in bulk. 'claude' uses the "
+        "native JSONL/SpecStory scan; codex/gemini/goose enumerate that agent's "
+        "store via the session-search parsers (content-level errors only). "
+        "Ignored when --session is given."
+    ),
+)
 @click.option(
     "--source",
     type=click.Choice(["specstory", "jsonl", "both"]),
@@ -842,7 +924,7 @@ def _mine_session_via_adapter(db_path: str, handle: str, agent: str) -> None:
     ),
 )
 @runlogged("mine")
-def mine(since, project, source, exclude_sidechains, session_handle, experiment_name):
+def mine(since, project, agent, source, exclude_sidechains, session_handle, experiment_name):
     """Mine recent sessions for errors and failures.
 
     The user-visible verb in the PRD is ``scan``; ``mine`` is the
@@ -872,6 +954,13 @@ def mine(since, project, source, exclude_sidechains, session_handle, experiment_
                 db_path, session_handle, parse_handle(session_handle)[0]
             )
             return
+    # Bulk mine of a non-claude agent -> enumerate its store via the
+    # session-search parsers and run the content-level error extractor.
+    if agent != "claude" and not session_handle:
+        db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        _mine_agent_bulk(db_path, agent, since)
+        return
     if not since and not session_handle and not experiment_name:
         raise click.UsageError(
             "Provide --since, or --session (one session), or --experiment (a cohort)."
@@ -2048,6 +2137,18 @@ def inspect(pattern_id):
         "FR-008."
     ),
 )
+@click.option(
+    "--harness",
+    "harness",
+    type=click.Choice(["claude-code", "codex", "gemini", "goose"]),
+    default="claude-code",
+    help=(
+        "Target harness for generated suggestions. claude-code uses the tiered "
+        "config surface (CLAUDE.md + rules/ + skills/); codex/gemini/goose each "
+        "route to their single instruction file (AGENTS.md / GEMINI.md / "
+        ".goosehints)."
+    ),
+)
 @runlogged("suggest")
 def suggest(
     error_type,
@@ -2069,6 +2170,7 @@ def suggest(
     experiment_name,
     since_window,
     max_rows,
+    harness,
 ):
     """Run the full pipeline: cluster -> persist -> dataset -> suggestions."""
     import uuid
@@ -2247,12 +2349,17 @@ def suggest(
                 f"(default window={_SUGGEST_DEFAULT_SINCE_DAYS}d, "
                 f"cap={_SUGGEST_DEFAULT_ROW_CAP}; use --since / --max-rows to override)[/dim]"
             )
+            # Multi-agent isolation: a harness learns only from its OWN
+            # sessions. "claude-code" -> claude rows (excludes other agents);
+            # codex/gemini/goose -> only that agent's rows.
+            _scope_agent = "claude" if harness == "claude-code" else harness
             all_errors = get_error_records(
                 conn,
                 limit=effective_limit,
                 since=effective_since,
                 project=project,
                 session_id=session_handle,
+                agent=_scope_agent,
             )
             if not all_errors:
                 filter_hint = f" for project '{project}'" if project else ""
@@ -2646,14 +2753,16 @@ def suggest(
             conn,
             verbose=verbose,
             mode=mode,
+            harness=harness,
         )
 
         # Insert new cycle's suggestions — stale ones already deactivated in step 2 (FR-003)
         for s in suggestions:
             conn.execute(
                 "INSERT INTO suggestions (pattern_id, dataset_id, description, "
-                "confidence, proposed_change, target_file, change_type, status, "
-                "created_at, cycle_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "confidence, proposed_change, target_file, change_type, "
+                "target_harness, status, created_at, cycle_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     s["pattern_id"],
                     s["dataset_id"],
@@ -2662,6 +2771,7 @@ def suggest(
                     s["proposed_change"],
                     s["target_file"],
                     s["change_type"],
+                    s.get("target_harness", harness),
                     "pending",
                     now_iso,
                     cycle_id,

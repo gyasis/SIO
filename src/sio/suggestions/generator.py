@@ -45,6 +45,23 @@ _TARGET_FILE_MAP: dict[str, str] = {
     "hook_config": ".claude/hooks/",
 }
 
+# Multi-agent (Tier-3) harness routing.
+#
+# Claude Code has a tiered config surface (CLAUDE.md + rules/ + skills/ +
+# hooks/). The other harnesses each read ONE persistent-instructions file, so
+# every suggestion for them routes there. Paths are the per-user GLOBAL
+# instruction file each agent reads (mirrors how Claude's SIO writes to the
+# global ~/.claude). See PRD.md §3 (Platform Compatibility).
+#
+# Maps harness -> (absolute instruction file, change_type label).
+DEFAULT_HARNESS = "claude-code"
+
+_HARNESS_INSTRUCTION_FILES: dict[str, tuple[str, str]] = {
+    "codex": ("~/.codex/AGENTS.md", "agents_md_rule"),
+    "gemini": ("~/.gemini/GEMINI.md", "gemini_md_rule"),
+    "goose": ("~/.config/goose/.goosehints", "goosehints_rule"),
+}
+
 # Known tool name -> rule file mapping for tiered routing
 _TOOL_RULE_FILES: dict[str, str] = {
     "graphiti": ".claude/rules/tools/graphiti.md",
@@ -90,8 +107,11 @@ def _record_generation_failure(
         pass
 
 
-def _infer_change_type(pattern: dict) -> str:
+def _infer_change_type(pattern: dict, harness: str = DEFAULT_HARNESS) -> str:
     """Infer the change type from pattern metadata.
+
+    For non-claude harnesses (Tier 3) there is a single instructions file, so
+    every suggestion gets that harness's instruction-rule change_type.
 
     CLAUDE.md Constitution: CLAUDE.md must stay under 200 lines.
     Tool-specific rules go to ~/.claude/rules/tools/{tool}.md.
@@ -105,6 +125,9 @@ def _infer_change_type(pattern: dict) -> str:
     - Patterns about skills -> "skill_update"
     - Patterns about general behavior -> "claude_md_rule" (ONLY if no tool match)
     """
+    if harness in _HARNESS_INSTRUCTION_FILES:
+        return _HARNESS_INSTRUCTION_FILES[harness][1]
+
     tool_name: str = (pattern.get("tool_name") or "").lower()
 
     # Check if this matches a known tool rule file
@@ -125,12 +148,18 @@ def _infer_change_type(pattern: dict) -> str:
     return "claude_md_rule"
 
 
-def _infer_target_file(pattern: dict, change_type: str) -> str:
+def _infer_target_file(
+    pattern: dict, change_type: str, harness: str = DEFAULT_HARNESS
+) -> str:
     """Determine the exact target file for a suggestion.
 
+    For non-claude harnesses, returns that harness's single instruction file.
     For tool_rule type, tries to match to an existing rule file.
     Falls back to creating a new one based on tool name.
     """
+    if harness in _HARNESS_INSTRUCTION_FILES:
+        return _HARNESS_INSTRUCTION_FILES[harness][0]
+
     if change_type != "tool_rule":
         return _TARGET_FILE_MAP.get(change_type, "CLAUDE.md")
 
@@ -721,6 +750,7 @@ def generate_suggestions(
     *,
     verbose: bool = False,
     mode: str | None = None,
+    harness: str = DEFAULT_HARNESS,
 ) -> list[dict[str, Any]]:
     """Generate improvement suggestion dicts from ranked patterns and datasets.
 
@@ -868,8 +898,8 @@ def generate_suggestions(
         # --- Template path (deterministic fallback) ---
         examples = _load_dataset_examples(dataset)
 
-        change_type = _infer_change_type(pattern)
-        target_file = _infer_target_file(pattern, change_type)
+        change_type = _infer_change_type(pattern, harness)
+        target_file = _infer_target_file(pattern, change_type, harness)
         confidence = score_confidence(pattern, dataset)
         proposed_change = _build_proposed_change(pattern, examples)
         description = _build_description(pattern, dataset, examples)
@@ -895,6 +925,18 @@ def generate_suggestions(
 
     # --- SECOND PASS: Refine all suggestions for specificity ---
     suggestions = _refine_all_suggestions(suggestions, datasets, _log)
+
+    # --- Harness routing normalization (DSPy + template paths) ---
+    # Stamp every suggestion with its target harness. For non-claude (Tier-3)
+    # harnesses, retarget to that harness's single instruction file regardless
+    # of how the body was generated — the DSPy/template-produced *content* is
+    # kept, only its destination changes.
+    for s in suggestions:
+        s["target_harness"] = harness
+        if harness in _HARNESS_INSTRUCTION_FILES:
+            target, change_type = _HARNESS_INSTRUCTION_FILES[harness]
+            s["target_file"] = target
+            s["change_type"] = change_type
 
     return suggestions
 
