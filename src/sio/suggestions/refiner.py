@@ -179,21 +179,31 @@ def _try_openai(prompt: str, system: str) -> str | None:
 
 
 def _try_gemini(prompt: str, system: str) -> str | None:
-    """Try to refine using the Google Gemini API."""
+    """Refine using Gemini via litellm — the same LM path as the rest of SIO.
+
+    Replaces the deprecated `google.generativeai` SDK + retired hardcoded model.
+    Default is the rolling `gemini/gemini-flash-latest` alias (auto-tracks newest
+    flash); override with SIO_REFINER_GEMINI_MODEL (litellm format).
+    """
     api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if not api_key:
         return None
 
     try:
-        import google.generativeai as genai
+        import litellm
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(
-            "gemini-2.0-flash",
-            system_instruction=system,
+        model_name = os.environ.get(
+            "SIO_REFINER_GEMINI_MODEL", "gemini/gemini-flash-latest"
         )
-        response = model.generate_content(prompt)
-        return response.text
+        response = litellm.completion(
+            model=model_name,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            api_key=api_key,
+        )
+        return response.choices[0].message.content
     except Exception as exc:
         # XIII LOUD WARNING — refiner writes rules to CLAUDE.md.
         import sys as _sys
