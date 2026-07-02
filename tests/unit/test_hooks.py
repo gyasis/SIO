@@ -583,50 +583,54 @@ class TestSessionStart:
         result = handle_session_start("not-json")
         assert result == ""
 
-    def test_returns_empty_on_exception(self, tmp_path, monkeypatch):
-        from sio.adapters.claude_code.hooks.session_start import (
-            handle_session_start,
-        )
+    def test_returns_empty_on_store_read_error(self, tmp_path, monkeypatch):
+        """The hook is a pure store reader; if the store read itself raises, it
+        degrades to '' and logs — it never blocks the session."""
+        import sio.adapters.claude_code.hooks.session_start as ss
 
-        # Point to an existing but non-SQLite file to trigger an error
-        bad_db = tmp_path / "bad.db"
-        bad_db.write_text("not a database")
-        monkeypatch.setattr(
-            "sio.adapters.claude_code.hooks.session_start._DB_PATH",
-            str(bad_db),
-        )
+        # A DB must appear to exist so the hook proceeds to read the store.
+        db_path = tmp_path / "sio.db"
+        db_path.write_text("x")
+        monkeypatch.setattr(ss, "_DB_PATH", str(db_path))
         log_path = str(tmp_path / "hook_errors.log")
+        monkeypatch.setattr(ss, "_ERROR_LOG", log_path)
+
+        # Force the store read to raise.
+        def _boom():
+            raise RuntimeError("store unreadable")
+
         monkeypatch.setattr(
-            "sio.adapters.claude_code.hooks.session_start._ERROR_LOG",
-            log_path,
+            "sio.suggestions.briefing_store.read_store", _boom, raising=True
         )
 
-        payload = json.dumps({"session_id": "sess-bad-db"})
-        result = handle_session_start(payload)
+        result = ss.handle_session_start(json.dumps({"session_id": "sess-bad"}))
         assert result == ""
-
-        # Error should be logged
         if os.path.exists(log_path):
-            content = open(log_path).read()
-            assert "SessionStart" in content
+            assert "SessionStart" in open(log_path).read()
 
-    def test_returns_briefing_when_db_exists(self, tmp_path, monkeypatch):
-        """When a valid SIO db exists, the hook produces a non-empty string."""
-        from sio.adapters.claude_code.hooks.session_start import (
-            handle_session_start,
-        )
+    def test_reads_store_when_present(self, tmp_path, monkeypatch):
+        """When a DB exists and the store has content, the hook returns it verbatim."""
+        import sio.adapters.claude_code.hooks.session_start as ss
 
-        # Create a minimal SIO database via init_db
-        db_path = str(tmp_path / "sio.db")
-        conn = init_db(db_path)
-        conn.close()
+        db_path = tmp_path / "sio.db"
+        db_path.write_text("x")
+        store = tmp_path / "briefing.txt"
+        store.write_text("## Recent Violations\n- x")
+        monkeypatch.setattr(ss, "_DB_PATH", str(db_path))
+        monkeypatch.setenv("SIO_BRIEFING_STORE", str(store))
 
-        monkeypatch.setattr(
-            "sio.adapters.claude_code.hooks.session_start._DB_PATH",
-            db_path,
-        )
+        result = ss.handle_session_start(json.dumps({"session_id": "sess-ok"}))
+        assert result == "## Recent Violations\n- x"
 
-        payload = json.dumps({"session_id": "sess-brief"})
-        result = handle_session_start(payload)
-        # The briefing may be empty if no data, but should not raise
-        assert isinstance(result, str)
+    def test_disabled_env_returns_empty(self, tmp_path, monkeypatch):
+        import sio.adapters.claude_code.hooks.session_start as ss
+
+        db_path = tmp_path / "sio.db"
+        db_path.write_text("x")
+        store = tmp_path / "briefing.txt"
+        store.write_text("nonempty")
+        monkeypatch.setattr(ss, "_DB_PATH", str(db_path))
+        monkeypatch.setenv("SIO_BRIEFING_STORE", str(store))
+        monkeypatch.setenv("SIO_BRIEFING_DISABLED", "1")
+
+        assert ss.handle_session_start("{}") == ""

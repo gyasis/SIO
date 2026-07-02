@@ -85,12 +85,34 @@ still works, refreshed by whatever else runs `sio briefing --refresh`).
 | `SIO_BRIEFING_STORE` | `~/.sio/cache/session_briefing.txt` | Store path override. |
 | `SIO_BRIEFING_DISABLED` | unset | `1` disables the briefing entirely. |
 
-## Phase B (follow-up): incremental rollup / deltas
+## Phase B: fix the actual bottleneck (algorithmic, not a rollup)
 
-The off-session refresh still *recomputes* the whole briefing. Phase B replaces
-the full scan with a `briefing_rollup(day, dimension, key, count)` table
-maintained incrementally by the PostToolUse telemetry hook (`INSERT … ON
-CONFLICT DO UPDATE count+1`, O(1) at write time). The `_section_*` functions
-then read a windowed `SUM … WHERE day ≥ now-14d` — milliseconds, never a full
-scan — which makes the refresh cheap regardless of corpus size. The rolling
-14-day window is handled by per-day buckets aging out of the `WHERE` clause.
+The plan was a `briefing_rollup` delta table to avoid "recomputing the whole
+thing." Profiling the 6 sections first showed that was the **wrong fix**:
+
+| section | time |
+|---|---|
+| budget / pending / session_stats / declining_rules | < 0.9s total |
+| search_discipline (131 MB scan) | **0.13s** (indexed) |
+| **violations** | **minutes** |
+
+The DBs are small and well-indexed (error_records = 5,466 rows). The entire
+cost was in **`detect_violations`**, which recomputed rule-invariant work inside
+its `for error × for rule` double loop: it rebuilt each rule's content-word set
+and **recompiled a `\bword\b` regex per term, per rule, per error** — tens of
+millions of `re.compile`/`.search` calls (420 rules × ~600 records).
+
+A rollup would not have helped (the cost isn't a DB scan) and would have been
+*invalidated on every rule-file edit* (violation counts depend on the mutable
+rule set). The correct fix is algorithmic and behaviour-preserving:
+
+1. **Hoist** all rule-invariant work out of the error loop (compute per rule once).
+2. **Tokenise** each record once (`set(re.findall(r"\w+", text))`) and match plain
+   words by **token-set membership** — a `\bword\b` match for a pure-`\w+` term is
+   exactly "the term is a token of the text". Replaces ~290k regex `.search`
+   calls with O(1) set lookups.
+
+Verified byte-identical to the old algorithm (same violation set, fingerprinted
+with `PYTHONHASHSEED=0`). Result: **violations minutes → ~1.9s** (283× on the
+per-record cost), full off-session briefing compute **2–10 min → ~10s**. Even a
+full recompute is now cheap, so no delta table is needed.
