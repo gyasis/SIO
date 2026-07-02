@@ -281,6 +281,27 @@ class TestDetectViolations:
         assert violations[0].match_type == "keyword"
         assert violations[0].confidence == 1.0
 
+    def test_plain_word_match_respects_word_boundaries(self) -> None:
+        """Token-set matching (perf optimisation) must keep \\bword\\b semantics:
+        a plain word term matches only as a whole token, never as a substring."""
+        rule = Rule(
+            text="Always run migrate before deploy",
+            file_path="CLAUDE.md",
+            line_number=1,
+        )
+        # 'migrate'/'deploy' appear only INSIDE larger words -> must NOT match.
+        no_match = detect_violations(
+            [rule],
+            [_error_record("premigrated the deployment via redeployer")],
+        )
+        assert no_match == []
+        # Same words as whole tokens -> must match.
+        yes_match = detect_violations(
+            [rule],
+            [_error_record("did not migrate before deploy step")],
+        )
+        assert len(yes_match) == 1
+
     def test_relative_path_violation_detected(self) -> None:
         """Error about relative paths matches 'Always use absolute paths'."""
         rules = [

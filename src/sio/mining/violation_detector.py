@@ -328,10 +328,50 @@ def detect_violations(
 
     violations: list[Violation] = []
 
-    # Pre-compute key terms for each rule.
-    rule_terms: dict[int, list[str]] = {}
+    # Pre-compute, ONCE per rule, everything that depends only on the rule text.
+    # Previously this work (extracting base content words + compiling a
+    # word-boundary regex per term) ran *inside* the per-error loop, i.e.
+    # O(errors x rules x terms) regex compilations — 420 rules x thousands of
+    # error records took minutes.  Hoisting it out makes matching O(rules) setup
+    # + O(errors x rules) cheap substring/precompiled-regex checks.  Behaviour is
+    # identical; only the redundant recompilation is removed.
+    #
+    # Per rule we precompute:
+    #   plain_words   : list[str]  deduped \w+ terms — matched by TOKEN membership
+    #   compound_terms: list[str]  lower-cased non-\w+ terms (substring match)
+    #   min_word_matches: int      the multi-keyword threshold
+    #
+    # A plain word term is matched with `\bword\b` semantics.  Because the term
+    # is a pure ``\w+`` run, ``\bword\b`` is TRUE iff ``word`` occurs as a
+    # complete word token of the searchable text — i.e. iff it is a member of
+    # ``set(re.findall(r"\w+", text))``.  So we replace ~thousands of per-record
+    # regex ``.search`` scans (the profiled hot spot: 290k calls / 17s) with one
+    # tokenisation per record + O(1) set lookups.  Behaviour is unchanged.
+    rule_precomp: dict[int, tuple[list[str], list[str], int]] = {}
     for i, rule in enumerate(rules):
-        rule_terms[i] = _extract_key_terms(rule.text)
+        terms = _extract_key_terms(rule.text)
+        # Dedupe by lower-cased term so that a term repeated in the rule counts
+        # once — matching the original set-based `distinct_matches` semantics.
+        seen_words: set[str] = set()
+        plain_words: list[str] = []
+        compound_terms: list[str] = []
+        for term in terms:
+            term_lower = term.lower()
+            if re.fullmatch(r"\w+", term_lower):
+                if term_lower in seen_words:
+                    continue
+                seen_words.add(term_lower)
+                plain_words.append(term_lower)
+            else:
+                compound_terms.append(term_lower)
+
+        base_content_words = {
+            w.lower()
+            for w in re.findall(r"\b[A-Za-z]{3,}\b", rule.text)
+            if w.lower() not in _STOP_WORDS
+        }
+        min_word_matches = 1 if len(base_content_words) <= 3 else 2
+        rule_precomp[i] = (plain_words, compound_terms, min_word_matches)
 
     for error in error_records:
         # Build a combined searchable text from all relevant error fields.
@@ -354,13 +394,16 @@ def detect_violations(
                 searchable_parts.append(_strip_rule_injections(str(val)))
         searchable = " ".join(searchable_parts)
         searchable_lower = searchable.lower()
+        # Tokenise once per record: a `\bword\b` match for a pure-\w+ term is
+        # equivalent to that term being one of these tokens (see precompute note).
+        token_set = frozenset(re.findall(r"\w+", searchable_lower))
 
         for i, rule in enumerate(rules):
-            terms = rule_terms[i]
-            if not terms:
+            plain_words, compound_terms, min_word_matches = rule_precomp[i]
+            if not plain_words and not compound_terms:
                 continue
 
-            # Multi-keyword match policy (added 2026-05-13).
+            # Multi-keyword match policy (added 2026-05-13; precomputed above).
             #
             # Single-keyword matching was producing 1000x+ false positives:
             # generic words common to many rules (RETRY, LOOP, HOOK, etc.)
@@ -372,40 +415,25 @@ def detect_violations(
             #   - "Strong" terms (quoted phrases / compound patterns like
             #     `git push --force` or `SELECT *`) → single match wins.
             #   - Plain-word terms → require N distinct matches, where N
-            #     scales with the rule's base content-word count (computed
-            #     from the rule text itself, NOT the expanded variants
-            #     list, which inflates the count via plural/singular
-            #     pairs):
-            #         <=3 base content words: N=1  (short focused rule;
-            #             every word carries weight)
-            #         >3 base content words:  N=2  (longer rule has more
-            #             chance for spurious single-word matches)
-            base_content_words = {
-                w.lower()
-                for w in re.findall(r"\b[A-Za-z]{3,}\b", rule.text)
-                if w.lower() not in _STOP_WORDS
-            }
-            min_word_matches = 1 if len(base_content_words) <= 3 else 2
-
-            distinct_matches: set[str] = set()
+            #     scales with the rule's base content-word count.
             has_strong_match = False  # quoted / compound term hit
+            for term_lower in compound_terms:
+                # Compound / special-char term — single substring match is enough.
+                if term_lower in searchable_lower:
+                    has_strong_match = True
+                    break
 
-            for term in terms:
-                term_lower = term.lower()
-                if re.fullmatch(r"\w+", term_lower):
-                    # Plain word — requires word-boundary match
-                    if re.search(
-                        r"\b" + re.escape(term_lower) + r"\b",
-                        searchable_lower,
-                    ):
-                        distinct_matches.add(term_lower)
-                else:
-                    # Compound / special-char term — single match is enough
-                    if term_lower in searchable_lower:
-                        has_strong_match = True
-                        break
-
-            matched = has_strong_match or len(distinct_matches) >= min_word_matches
+            if has_strong_match:
+                matched = True
+            else:
+                distinct_matches = 0
+                for word in plain_words:
+                    # Plain word — \bword\b == "word is a token of the text".
+                    if word in token_set:
+                        distinct_matches += 1
+                        if distinct_matches >= min_word_matches:
+                            break
+                matched = distinct_matches >= min_word_matches
 
             if matched:
                 violations.append(

@@ -135,6 +135,17 @@ def run_analysis(
             logger.warning("Home file write failed: %s", exc)
             home_file = ""
 
+        # --- Refresh the off-session briefing store -------------------------
+        # Materialise the session-start briefing here, off-session, so no coding
+        # agent ever computes it on the hot path (session-start hooks just read
+        # the store). See sio.suggestions.briefing_store.
+        try:
+            from sio.suggestions.briefing_store import refresh_store  # noqa: PLC0415
+
+            refresh_store()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Briefing store refresh failed: %s", exc)
+
     finally:
         conn.close()
 

@@ -1,12 +1,20 @@
 """SessionStart hook handler — injects a brief SIO briefing at session start.
 
-Runs ``build_session_briefing`` and outputs a compact plain-text summary
-that Claude Code injects into the agent's context.  If the SIO database
-does not exist yet or the briefing is empty, the hook outputs nothing
-(exit 0 with no stdout) so the agent context is not cluttered.
+Pure reader (rewritten 2026-07-02)
+----------------------------------
+The briefing is expensive to compute (it scans SIO DBs that have grown to
+hundreds of MB).  It is therefore materialised **off-session** into a small
+store (see ``sio.suggestions.briefing_store``) by the scheduler / a systemd
+user timer / the passive-analysis pipeline — NEVER on a session's hot path.
 
-Designed to complete in <2 000 ms. Failures are silent — a missing
-briefing is acceptable; blocking the session is not.
+This hook just *reads* that store: an instant file read, zero compute, zero
+subprocess.  If the store is missing/empty (e.g. a brand-new machine before the
+timer's first run), it injects nothing and stays silent — the store will be
+warm by the next session.
+
+The same store module is shared in core, so every coding-agent adapter's
+session-start reads the identical pre-computed briefing — this is not
+Claude-Code-specific.
 """
 
 from __future__ import annotations
@@ -30,54 +38,32 @@ def _log_error(msg: str) -> None:
         pass
 
 
-def _build_briefing() -> str:
-    """Build the session briefing text.
+def handle_session_start(stdin_json: str) -> str:  # noqa: ARG001
+    """Process a SessionStart event — instantly, off the DB-scan critical path.
 
-    Returns empty string if no database or nothing to report.
-    """
-    if not os.path.exists(_DB_PATH):
-        return ""
-
-    import sqlite3
-
-    from sio.core.config import load_config
-    from sio.suggestions.consultant import build_session_briefing
-
-    config = load_config()
-    conn = sqlite3.connect(_DB_PATH)
-    conn.row_factory = sqlite3.Row
-    try:
-        text = build_session_briefing(conn, config=config)
-    finally:
-        conn.close()
-
-    return text.strip() if text else ""
-
-
-def handle_session_start(stdin_json: str) -> str:
-    """Process a SessionStart hook event.
-
-    Builds a brief SIO session briefing and returns it as user-visible
-    output.  Claude Code injects hook stdout into the agent context, so
-    we output plain text (not JSON action) — the hook is non-blocking.
-
-    If there is nothing to report, returns empty string so nothing is
-    injected.
+    Reads the pre-computed briefing store and returns it verbatim.  Never
+    computes, never spawns, never blocks.
 
     Args:
-        stdin_json: JSON string from stdin (session_id etc.).
+        stdin_json: JSON string from stdin (session_id etc.).  Unused, kept for
+            signature compatibility with the Claude Code hook contract.
 
     Returns:
-        Plain-text briefing string, or empty string.
+        The materialised briefing text, or "" when there is nothing to inject.
     """
     try:
-        briefing = _build_briefing()
-        if briefing:
-            return briefing
-    except Exception as err:
-        _log_error(f"briefing failed: {err!r}")
+        if os.environ.get("SIO_BRIEFING_DISABLED") == "1":
+            return ""
+        # No canonical DB -> nothing could ever have been briefed.
+        if not os.path.exists(_DB_PATH):
+            return ""
 
-    return ""
+        from sio.suggestions.briefing_store import read_store
+
+        return read_store()
+    except Exception as err:  # noqa: BLE001
+        _log_error(f"briefing read failed: {err!r}")
+        return ""
 
 
 def main():
