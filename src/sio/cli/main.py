@@ -171,6 +171,39 @@ def init(
                 "~/.sio/sio.db  canonical DB schema verify"
             )
 
+    # Off-session briefing refresh (systemd user timer). Wired into init so a
+    # fresh machine gets the store kept warm automatically — portable, not a
+    # manual per-machine step. Degrades gracefully where systemd --user is absent.
+    if not status:
+        from sio.scheduler import systemd_briefing  # noqa: PLC0415
+
+        console.print("\n[bold magenta]→ off-session briefing refresh[/bold magenta]")
+        if uninstall:
+            rep = systemd_briefing.uninstall()
+            removed = ", ".join(rep.get("removed") or ["(nothing)"])
+            console.print(f"  [white]{'removed':<14}[/white] {removed}")
+        elif dry_run:
+            console.print(
+                "  [dim](dry-run)[/dim] [white]would-install [/white] "
+                "sio-briefing-refresh.timer (systemd --user, Persistent)"
+            )
+        else:
+            rep = systemd_briefing.install()
+            if not rep.get("available"):
+                console.print(
+                    f"  [yellow]{'skip':<14}[/yellow] {rep.get('reason')}"
+                )
+            elif rep.get("installed"):
+                console.print(
+                    f"  [green]{'installed':<14}[/green] {rep['timer']} "
+                    f"(every {rep['interval_hours']}h, Persistent, idle-gated)"
+                )
+            else:
+                console.print(
+                    f"  [yellow]{'warn':<14}[/yellow] timer install failed: "
+                    f"{rep.get('detail')} — continuing"
+                )
+
     if harness:
         try:
             adapters = [get_adapter(harness)]
@@ -3801,6 +3834,61 @@ def schedule_status():
     click.echo(f"Daily enabled:  {'yes' if daily else 'no'}")
     click.echo(f"Weekly enabled: {'yes' if weekly else 'no'}")
 
+    from sio.scheduler import systemd_briefing
+
+    bst = systemd_briefing.status()
+    if not bst.get("available"):
+        click.echo("Briefing timer: systemd --user unavailable")
+    else:
+        bstate = (
+            "enabled"
+            if bst.get("enabled")
+            else "installed"
+            if bst.get("installed")
+            else "not installed"
+        )
+        click.echo(f"Briefing timer: {bstate}")
+
+
+@schedule.command("install-briefing")
+@click.option(
+    "--interval-hours",
+    default=6,
+    show_default=True,
+    type=int,
+    help="How often the off-session briefing refresh runs (systemd user timer).",
+)
+def schedule_install_briefing(interval_hours):
+    """Install the off-session briefing-store refresh (systemd user timer).
+
+    Laptop-safe: Persistent=true catches up missed runs after wake/boot, and the
+    service is niced + idle-gated so it never competes with an active session.
+    Also invoked automatically by `sio init`.
+    """
+    from sio.scheduler import systemd_briefing
+
+    report = systemd_briefing.install(interval_hours=interval_hours)
+    if not report.get("available"):
+        click.echo(f"Skipped: {report.get('reason')}", err=True)
+        return
+    if report.get("installed"):
+        click.echo(
+            f"Briefing timer installed ({report['timer']}, every "
+            f"{report['interval_hours']}h, Persistent). {report.get('detail', '')}"
+        )
+    else:
+        click.echo(f"Install failed: {report.get('detail')}", err=True)
+        raise SystemExit(1)
+
+
+@schedule.command("uninstall-briefing")
+def schedule_uninstall_briefing():
+    """Remove the off-session briefing-store refresh timer."""
+    from sio.scheduler import systemd_briefing
+
+    report = systemd_briefing.uninstall()
+    click.echo(f"Removed: {', '.join(report.get('removed') or ['(nothing)'])}")
+
 
 @cli.command("status")
 @click.option("--plain", is_flag=True, help="Plain text output (no Rich tables).")
@@ -4122,28 +4210,102 @@ def sio_status(plain: bool = False):
 # ---------------------------------------------------------------------------
 
 
+def _briefing_should_refresh_now(idle_threshold: int = 300, max_stale: int = 12 * 3600) -> bool:
+    """Idle-gate for the off-session refresh timer.
+
+    Refresh when the store is missing/too stale (backstop), or when the user is
+    measurably idle.  Skip when the user is active and the store is still fresh.
+    If idle can't be measured (no probe / Wayland), fall back to the staleness
+    backstop so freshness is still guaranteed on a bounded cadence.
+    """
+    import shutil  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+
+    from sio.suggestions import briefing_store  # noqa: PLC0415
+
+    age = briefing_store.store_age()
+    if age is None or age > max_stale:
+        return True  # missing or too stale -> always refresh
+
+    # Try to measure user idle time (seconds). xprintidle -> ms (X11).
+    if shutil.which("xprintidle"):
+        try:
+            out = subprocess.run(
+                ["xprintidle"], capture_output=True, text=True, timeout=5
+            ).stdout.strip()
+            return (int(out) / 1000.0) >= idle_threshold
+        except Exception:  # noqa: BLE001
+            pass
+    # No usable idle probe: rely on the staleness backstop above (store is fresh
+    # here, so skip this tick rather than compete with a possibly-active user).
+    return False
+
+
 @cli.command("briefing")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+@click.option(
+    "--refresh",
+    is_flag=True,
+    help="Recompute the briefing and write the off-session store (timer/scheduler path).",
+)
+@click.option(
+    "--if-idle",
+    is_flag=True,
+    help="With --refresh: only refresh when the user is idle or the store is too stale.",
+)
+@click.option(
+    "--live",
+    is_flag=True,
+    help="Force a live compute instead of reading the store (debugging).",
+)
 @runlogged("briefing")
-def briefing(as_json):
-    """Show a brief session-start briefing of actionable SIO insights."""
-    from sio.core.config import load_config
-    from sio.suggestions.consultant import build_session_briefing
+def briefing(as_json, refresh, if_idle, live):
+    """Show or refresh the session-start briefing of actionable SIO insights.
 
-    db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
-    if not os.path.exists(db_path):
-        click.echo("No SIO database found. Run 'sio mine' first.")
+    Default: read the pre-computed store (instant — this is what session-start
+    hooks do).  ``--refresh`` materialises the store off-session; the systemd
+    user timer runs ``sio briefing --refresh --if-idle``.
+    """
+    from sio.suggestions import briefing_store
+
+    if refresh:
+        if if_idle and not _briefing_should_refresh_now():
+            if as_json:
+                click.echo(_json.dumps({"refreshed": False, "reason": "active/fresh"}))
+            else:
+                click.echo("Skipped: user active and store still fresh.")
+            return
+        text = briefing_store.refresh_store()
+        if as_json:
+            click.echo(_json.dumps({"refreshed": True, "briefing": text}))
+        else:
+            click.echo(
+                f"Briefing store refreshed ({len(text)} chars) -> "
+                f"{briefing_store.store_path()}"
+            )
         return
 
-    config = load_config()
+    if live:
+        from sio.core.config import load_config
+        from sio.suggestions.consultant import build_session_briefing
 
-    with _db_conn(db_path) as conn:
-        text = build_session_briefing(conn, config=config)
+        db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
+        if not os.path.exists(db_path):
+            click.echo("No SIO database found. Run 'sio mine' first.")
+            return
+        config = load_config()
+        with _db_conn(db_path) as conn:
+            text = build_session_briefing(conn, config=config)
+    else:
+        text = briefing_store.read_store()
 
     if as_json:
         click.echo(_json.dumps({"briefing": text}))
     else:
-        click.echo(text)
+        click.echo(
+            text
+            or "(no briefing yet — off-session refresh has not run; try `sio briefing --refresh`)"
+        )
 
 
 # ---------------------------------------------------------------------------
