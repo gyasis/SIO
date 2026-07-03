@@ -580,6 +580,35 @@ sio watch --session claude:<uuid> --tools-only
 
 ---
 
+### `sio live`
+
+Discover and read **in-progress** (still-being-written) sessions — the one thing
+`sio search` can't do, because it only indexes *finished* transcripts. Finds live
+sessions by transcript mtime, resolves each one's repo/branch/worktree, and
+**flags collisions** when two live sessions share a working tree. Full guide:
+[docs/live-sessions.md](live-sessions.md).
+
+```bash
+sio live ls                 # active sessions (last 60 min) + collision flags
+sio live ls -m 15 --as-json # tighter window, machine-readable
+sio live show <id>          # snapshot the tail of one session (bare/partial id ok)
+sio live show <id> --follow # snapshot, then keep streaming
+sio live attach <id>        # attach read-only to a peer session and follow it
+```
+
+| Command | Key options | Description |
+|--------|-------------|-------------|
+| `sio live ls` | `-m/--minutes` (60), `--repo PATH`, `--as-json` | List live sessions; flag same-working-tree collisions |
+| `sio live show <id>` | `-n/--tail` (40), `-f/--follow`, `--tools-only` | Print a session's recent tail; optionally follow |
+| `sio live attach <id>` | `-c/--context` (15), `--tools-only` | Follow a peer session read-only from another session |
+
+Collision key is the **working tree root**: two live sessions in the same
+checkout collide (`⚠`); sessions in separate git worktrees of one repo do not.
+Claude sessions are resolved richly (their JSONL carries `cwd`+`gitBranch`); other
+harnesses are listed best-effort. See `/sio-live`.
+
+---
+
 ### `sio db backfill-sessions`
 
 Migrate legacy bare session IDs (pre-merge rows, no colon) to the canonical `agent:<id>` form.

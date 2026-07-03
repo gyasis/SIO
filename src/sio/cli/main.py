@@ -9423,6 +9423,11 @@ from sio.cli.search import search_cmd as _search_cmd  # noqa: E402
 
 cli.add_command(_search_cmd)
 
+# Register sio live (discover + read/attach to in-progress sessions)
+from sio.cli.live import live_cmd as _live_cmd  # noqa: E402
+
+cli.add_command(_live_cmd)
+
 
 @cli.command("gepa-status")
 @click.option("--watch", is_flag=True, default=False,
