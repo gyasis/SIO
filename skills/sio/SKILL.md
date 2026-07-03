@@ -4,7 +4,7 @@ description: "SIO Suite — Session Intelligence Observer. Master skill that rou
 user-invocable: true
 requires:
   cli: "sio>=0.3.0"
-  skills: [sio-briefing, sio-scan, sio-discover, sio-suggest, sio-validate, sio-review, sio-apply, sio-violations, sio-promote-rule, sio-velocity, sio-budget, sio-feedback, sio-status, sio-flows, sio-distill, sio-promote-flow, sio-codify-workflow, sio-recall, sio-export]
+  skills: [sio-briefing, sio-scan, sio-discover, sio-suggest, sio-validate, sio-review, sio-apply, sio-violations, sio-promote-rule, sio-velocity, sio-budget, sio-feedback, sio-status, sio-flows, sio-distill, sio-promote-flow, sio-codify-workflow, sio-recall, sio-export, sio-search, sio-watch, sio-live]
   hooks: []
   optional: [prd]
 ---
@@ -41,6 +41,10 @@ SIO mines your Claude Code session history to find errors, discover workflows, d
 | **Codify a successful workflow as a new skill** | `/sio-codify-workflow` | distill + promote + optimize | ~$0.05 (LLM) |
 | **Recall a workflow** | `/sio-recall` | `sio recall "query"` | Free / ~$0.02 with --polish |
 | **Export training data** | `/sio-export` | `sio export-dataset --task all` | Free |
+| **See LIVE sessions / detect collisions** | `/sio-live` | `sio live ls` | Free |
+| **Read/attach to a live session** | `/sio-live` | `sio live show`/`attach <id>` | Free |
+| **Search INDEXED session history** | `/sio-search` | `sio search "query"` | Free |
+| **Tail one session by handle** | `/sio-watch` | `sio watch --session <h>` | Free |
 
 ## How to Route (for the agent)
 
@@ -142,6 +146,16 @@ Exports structured JSONL/Parquet datasets for ML training.
 ### "How is SIO doing?" / "pipeline status"
 → `/sio-status`
 Shows current state: errors mined, patterns found, suggestions pending.
+
+### "What sessions are running RIGHT NOW?" / "any concurrent sessions?" / "are we about to collide?" / "attach to session X"
+→ `/sio-live`
+Discovers **in-progress** (still-being-written) sessions — which `sio search`
+can't see, because it only indexes finished transcripts. Shows each live
+session's repo/branch/worktree and **flags collisions** when two live sessions
+share a working tree (concurrent-edit hazard). `sio live show <id>` reads a
+session's tail; `sio live attach <id>` follows a peer read-only from another
+session. Distinct from `/sio-search` (INDEXED history) and `/sio-watch` (tail
+one known handle).
 
 ## The SIO Pipeline (How It All Connects)
 
