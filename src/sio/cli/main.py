@@ -2173,8 +2173,8 @@ def inspect(pattern_id):
 @click.option(
     "--harness",
     "harness",
-    type=click.Choice(["claude-code", "codex", "gemini", "goose"]),
-    default="claude-code",
+    type=click.Choice([DEFAULT_PLATFORM, "codex", "gemini", "goose"]),
+    default=DEFAULT_PLATFORM,
     help=(
         "Target harness for generated suggestions. claude-code uses the tiered "
         "config surface (CLAUDE.md + rules/ + skills/); codex/gemini/goose each "
@@ -2383,9 +2383,9 @@ def suggest(
                 f"cap={_SUGGEST_DEFAULT_ROW_CAP}; use --since / --max-rows to override)[/dim]"
             )
             # Multi-agent isolation: a harness learns only from its OWN
-            # sessions. "claude-code" -> claude rows (excludes other agents);
+            # sessions. claude-code -> claude rows (excludes other agents);
             # codex/gemini/goose -> only that agent's rows.
-            _scope_agent = "claude" if harness == "claude-code" else harness
+            _scope_agent = "claude" if harness == DEFAULT_PLATFORM else harness
             all_errors = get_error_records(
                 conn,
                 limit=effective_limit,

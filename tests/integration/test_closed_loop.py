@@ -18,6 +18,9 @@ from pathlib import Path
 
 import pytest
 
+# run_optimize drives a real DSPy optimizer with live LM/network calls — opt-in.
+pytestmark = pytest.mark.network
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

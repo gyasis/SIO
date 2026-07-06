@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import sqlite3
 
+import pytest
+
 from sio.suggestions.generator import generate_suggestions
 
 # ---------------------------------------------------------------------------
@@ -49,6 +51,9 @@ _REQUIRED_SUGGESTION_KEYS: frozenset[str] = frozenset(
 # domain-specific rule files. Import from the source of truth so the
 # test can't drift from production again.
 from sio.suggestions.generator import _TARGET_FILE_MAP as _PROD_CHANGE_TYPES
+
+# generate_suggestions falls through to a real DSPy LM call — opt-in only.
+pytestmark = pytest.mark.network
 
 _VALID_CHANGE_TYPES: frozenset[str] = frozenset(_PROD_CHANGE_TYPES.keys()) | frozenset(
     # DSPy-output surfaces (legacy 7) — also acceptable when real LM path runs

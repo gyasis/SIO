@@ -63,8 +63,16 @@ def test_get_task_lm_returns_dspy_lm():
     assert isinstance(lm, dspy.LM), f"Expected dspy.LM, got {type(lm)}"
 
 
-def test_get_task_lm_has_cache_true():
-    """get_task_lm() must return a dspy.LM with cache=True."""
+def test_get_task_lm_has_cache_true(monkeypatch):
+    """get_task_lm() must return a dspy.LM with cache=True.
+
+    Hermetic: neutralize any ambient ~/.sio/config.toml override (some machines
+    set [llm.task] cache=false to dodge an unrelated DSPy/litellm bug) and the
+    SIO_TASK_LM env var, so this verifies the hard-coded default_cache=True.
+    """
+    lm_factory = _import_lm_factory()
+    monkeypatch.setattr(lm_factory, "_read_config_role", lambda *a, **k: None)
+    monkeypatch.delenv("SIO_TASK_LM", raising=False)
     get_task_lm = _import_get_task_lm()
     lm = get_task_lm()
     assert getattr(lm, "cache", None) is True, (
@@ -109,13 +117,20 @@ def test_get_task_lm_env_override(monkeypatch):
 
 
 def test_get_task_lm_default_model_without_env(monkeypatch):
-    """Without SIO_TASK_LM env var, get_task_lm() uses default model."""
+    """Without SIO_TASK_LM env var or config override, get_task_lm() uses the
+    hard default model.
+
+    Hermetic: neutralize any ambient ~/.sio/config.toml so this exercises the
+    code's hard default, not the local machine's configured model.
+    """
+    lm_factory = _import_lm_factory()
+    monkeypatch.setattr(lm_factory, "_read_config_role", lambda *a, **k: None)
     monkeypatch.delenv("SIO_TASK_LM", raising=False)
     get_task_lm = _import_get_task_lm()
     lm = get_task_lm()
-    # Default from contract is openai/gpt-4o-mini
-    assert lm.model == "openai/gpt-4o-mini", (
-        f"Expected default model='openai/gpt-4o-mini', got {lm.model!r}"
+    # Hard default is gemini/gemini-flash-latest (see get_task_lm docstring).
+    assert lm.model == "gemini/gemini-flash-latest", (
+        f"Expected default model='gemini/gemini-flash-latest', got {lm.model!r}"
     )
 
 
@@ -145,7 +160,7 @@ def test_get_adapter_openai_returns_chat_adapter_with_native_fc(monkeypatch):
     monkeypatch.delenv("SIO_FORCE_NATIVE_FC", raising=False)
     get_adapter = _import_get_adapter()
 
-    monkeypatch.setenv("SIO_TASK_LM", "openai/gpt-4o")
+    monkeypatch.setenv("SIO_TASK_LM", "openai/gpt-4o-mini")
     get_task_lm = _import_get_task_lm()
     lm = get_task_lm()
 
@@ -224,7 +239,7 @@ def test_force_adapter_json_env_override(monkeypatch):
     monkeypatch.delenv("SIO_FORCE_NATIVE_FC", raising=False)
     get_adapter = _import_get_adapter()
 
-    monkeypatch.setenv("SIO_TASK_LM", "openai/gpt-4o")
+    monkeypatch.setenv("SIO_TASK_LM", "openai/gpt-4o-mini")
     get_task_lm = _import_get_task_lm()
     lm = get_task_lm()
 

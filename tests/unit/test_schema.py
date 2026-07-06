@@ -9,6 +9,8 @@ import pytest
 
 from sio.core.db.schema import init_db
 
+pytestmark = pytest.mark.slow
+
 
 @pytest.fixture()
 def db_path(tmp_path: Path) -> str:

@@ -32,9 +32,12 @@ def label_latest(
         return False
 
     # Find most recent invocation for this session
+    from sio.core.session_handle import session_match_clause
+
+    clause, params = session_match_clause(session_id)
     row = conn.execute(
-        "SELECT id FROM behavior_invocations WHERE session_id = ? ORDER BY timestamp DESC LIMIT 1",
-        (session_id,),
+        f"SELECT id FROM behavior_invocations WHERE {clause} ORDER BY timestamp DESC LIMIT 1",
+        params,
     ).fetchone()
 
     if not row:

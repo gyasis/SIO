@@ -6,6 +6,8 @@ Creates all tables with WAL mode, indexes, and pragmas per data-model.md.
 import logging
 import sqlite3
 
+from sio.core.constants import DEFAULT_PLATFORM
+
 logger = logging.getLogger(__name__)
 
 _BEHAVIOR_INVOCATIONS_DDL = """
@@ -158,7 +160,7 @@ CREATE TABLE IF NOT EXISTS datasets (
 )
 """
 
-_SUGGESTIONS_DDL = """
+_SUGGESTIONS_DDL = f"""
 CREATE TABLE IF NOT EXISTS suggestions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     pattern_id INTEGER REFERENCES patterns(id),
@@ -168,7 +170,7 @@ CREATE TABLE IF NOT EXISTS suggestions (
     proposed_change TEXT NOT NULL,
     target_file TEXT NOT NULL,
     change_type TEXT NOT NULL,
-    target_harness TEXT NOT NULL DEFAULT 'claude-code',
+    target_harness TEXT NOT NULL DEFAULT '{DEFAULT_PLATFORM}',
     status TEXT NOT NULL DEFAULT 'pending',
     ai_explanation TEXT,
     user_note TEXT,
@@ -628,7 +630,7 @@ def init_db(db_path: str) -> sqlite3.Connection:
     try:
         conn.execute(
             "ALTER TABLE suggestions ADD COLUMN "
-            "target_harness TEXT NOT NULL DEFAULT 'claude-code'"
+            f"target_harness TEXT NOT NULL DEFAULT '{DEFAULT_PLATFORM}'"
         )
     except sqlite3.OperationalError:
         pass  # Column already exists

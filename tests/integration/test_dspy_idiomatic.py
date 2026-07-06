@@ -27,6 +27,9 @@ from unittest.mock import MagicMock, patch
 import dspy
 import pytest
 
+# Exercises real DSPy example/optimizer construction with live LM calls — opt-in.
+pytestmark = pytest.mark.network
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

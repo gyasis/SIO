@@ -85,7 +85,7 @@ def test_hook_health_healthy_state():
 
 def test_hook_health_warn_state():
     """last_success 2h ago must report 'warn' state for each hook."""
-    from sio.cli.status import EXPECTED_HOOKS, hook_health_rows  # noqa: PLC0415
+    from sio.cli.status import EXPECTED_HOOKS, TRIGGER_DRIVEN, hook_health_rows  # noqa: PLC0415
 
     with tempfile.TemporaryDirectory() as tmpdir:
         health_file = Path(tmpdir) / ".sio" / "hook_health.json"
@@ -105,6 +105,14 @@ def test_hook_health_warn_state():
             rows = hook_health_rows()
 
     for hook_name, state, detail in rows:
+        if hook_name in TRIGGER_DRIVEN:
+            # Trigger-driven hooks (e.g. pre_compact) are legitimately idle
+            # between events — staleness alone keeps them 'healthy', not 'warn'.
+            assert state == "healthy", (
+                f"Trigger-driven hook {hook_name!r} should stay 'healthy' when "
+                f"idle, got {state!r}: {detail}"
+            )
+            continue
         assert state == "warn", (
             f"Hook {hook_name!r} should be 'warn' (stale 2h) but got {state!r}: {detail}"
         )

@@ -54,7 +54,8 @@ class TestGetReviewableReturnsUnlabeled:
         )
         results = get_reviewable(tmp_db, platform="claude-code", session_id="sess-A")
         assert len(results) == 2
-        assert all(r["session_id"] == "sess-A" for r in results)
+        # session_id is canonicalized to <agent>:<id> on write (multi-agent).
+        assert all(r["session_id"] == "claude:sess-A" for r in results)
 
     def test_empty_when_all_labeled(self, tmp_db, sample_invocation):
         _insert_many(

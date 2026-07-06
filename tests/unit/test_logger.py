@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sqlite3
 
+from sio.core.session_handle import ensure_canonical
 from sio.core.telemetry.logger import log_invocation
 
 
@@ -36,7 +37,8 @@ class TestCreatesRowWithAllFields:
             "SELECT * FROM behavior_invocations WHERE id = ?", (row_id,)
         ).fetchone()
         assert row is not None
-        assert row["session_id"] == inv["session_id"]
+        # session_id is canonicalized to <agent>:<id> on write (multi-agent).
+        assert row["session_id"] == ensure_canonical(inv["session_id"])
         assert row["actual_action"] == inv["actual_action"]
         assert row["platform"] == inv["platform"]
         assert row["user_message"] == inv["user_message"]
@@ -105,10 +107,10 @@ class TestDuplicateDetection:
             "same row id, not insert a new row."
         )
 
-        # Confirm only one row exists
+        # Confirm only one row exists (session_id is canonicalized on write).
         count = tmp_db.execute(
             "SELECT COUNT(*) FROM behavior_invocations WHERE session_id = ?",
-            ("dedup-session-001",),
+            ("claude:dedup-session-001",),
         ).fetchone()[0]
         assert count == 1
 

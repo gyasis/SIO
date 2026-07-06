@@ -6,6 +6,8 @@ import logging
 import sqlite3
 from datetime import datetime, timezone
 
+from sio.core.constants import DEFAULT_PLATFORM
+
 logger = logging.getLogger(__name__)
 
 _INVOCATION_COLS = [
@@ -109,9 +111,12 @@ def get_by_skill(conn: sqlite3.Connection, skill_name: str, platform: str = None
 
 
 def get_by_session(conn: sqlite3.Connection, session_id: str) -> list[dict]:
+    from sio.core.session_handle import session_match_clause
+
+    clause, params = session_match_clause(session_id)
     rows = conn.execute(
-        "SELECT * FROM behavior_invocations WHERE session_id = ? ORDER BY timestamp",
-        (session_id,),
+        f"SELECT * FROM behavior_invocations WHERE {clause} ORDER BY timestamp",
+        params,
     ).fetchall()
     return [_row_to_dict(r) for r in rows]
 
@@ -579,7 +584,7 @@ def insert_suggestion(conn: sqlite3.Connection, record: dict) -> int:
     col_names = ", ".join(cols)
     # target_harness is NOT NULL; default it for callers that predate
     # multi-agent support and don't set it.
-    record = {**record, "target_harness": record.get("target_harness") or "claude-code"}
+    record = {**record, "target_harness": record.get("target_harness") or DEFAULT_PLATFORM}
     values = [record.get(c) for c in cols]
     cur = conn.execute(
         f"INSERT INTO suggestions ({col_names}) VALUES ({placeholders})",

@@ -30,10 +30,13 @@ def detect_undo(
     Returns True if the previous invocation in this session used a tool
     like git checkout/revert and occurred within 30 seconds.
     """
+    from sio.core.session_handle import session_match_clause
+
+    clause, params = session_match_clause(session_id)
     rows = conn.execute(
         "SELECT actual_action, user_message, timestamp FROM behavior_invocations "
-        "WHERE session_id = ? ORDER BY timestamp DESC LIMIT 2",
-        (session_id,),
+        f"WHERE {clause} ORDER BY timestamp DESC LIMIT 2",
+        params,
     ).fetchall()
 
     if len(rows) < 2:
@@ -74,10 +77,13 @@ def detect_re_invocation(
     if not intent:
         return False
 
+    from sio.core.session_handle import session_match_clause
+
+    clause, params = session_match_clause(session_id)
     rows = conn.execute(
         "SELECT actual_action, user_message FROM behavior_invocations "
-        "WHERE session_id = ? ORDER BY timestamp DESC LIMIT 5",
-        (session_id,),
+        f"WHERE {clause} ORDER BY timestamp DESC LIMIT 5",
+        params,
     ).fetchall()
 
     if len(rows) < 2:
