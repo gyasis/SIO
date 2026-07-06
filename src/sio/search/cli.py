@@ -24,7 +24,7 @@ Usage:
     session-search "pattern" --specstory          # SpecStory MD only
     session-search "pattern" --backups            # claude backups only
     session-search "pattern" --agent goose        # single non-Claude harness
-    session-search "pattern" --agent all          # fan out across all 6 harnesses
+    session-search "pattern" --agent all          # fan out across all harnesses
     session-search "pattern" --recent 7           # files modified within last N days
     session-search "pattern" --files              # emit unique source paths only
     session-search "pattern" --count              # per-file match counts
@@ -457,6 +457,87 @@ def search_aider(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Recor
                 )
 
 
+def _promptchain_session_names() -> dict[str, str]:
+    """Map session-uuid -> friendly name from the PromptChain sessions.db.
+
+    Best-effort: the transcripts live under <uuid>/messages.jsonl but the DB
+    holds the human name (default/dogfood/...). Returns {} if the DB is absent
+    or unreadable so search still works off the dir names alone.
+    """
+    db = HOME / ".promptchain" / "sessions" / "sessions.db"
+    if not db.exists():
+        return {}
+    try:
+        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        try:
+            rows = conn.execute("SELECT id, name FROM sessions").fetchall()
+        finally:
+            conn.close()
+        return {str(sid): str(name) for sid, name in rows}
+    except sqlite3.Error:
+        return {}
+
+
+def search_promptchain(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Record]:
+    """Search the PromptChain TUI/CLI coding-agent transcripts.
+
+    Layout: ~/.promptchain/sessions/<uuid>/messages.jsonl — one JSON object per
+    turn ({role, content, timestamp, metadata}). ``timestamp`` is a stringified
+    epoch and ``metadata`` is a Python-repr string (single quotes), so both are
+    parsed defensively.
+    """
+    root = HOME / ".promptchain" / "sessions"
+    if not root.exists():
+        return
+    names = _promptchain_session_names()
+    for session_dir in sorted(root.iterdir()):
+        if not session_dir.is_dir():
+            continue
+        fp = session_dir / "messages.jsonl"
+        if not fp.exists() or not _file_within(fp, cutoff):
+            continue
+        uuid = session_dir.name
+        session_id = names.get(uuid, uuid)
+        try:
+            with fp.open(encoding="utf-8", errors="replace") as fh:
+                for lineno, raw in enumerate(fh, start=1):
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    try:
+                        entry = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    text = entry.get("content", "") or ""
+                    if not _matches(text, pattern, cs):
+                        continue
+                    ts_raw = entry.get("timestamp")
+                    try:
+                        ts = _iso(float(ts_raw)) if ts_raw is not None else ""
+                    except (TypeError, ValueError):
+                        ts = ""
+                    meta = {"uuid": uuid, "session_name": names.get(uuid, "")}
+                    # metadata is a repr-string; pull model_name if present.
+                    raw_meta = entry.get("metadata")
+                    if isinstance(raw_meta, str) and "model_name" in raw_meta:
+                        m = re.search(r"model_name['\"]?\s*[:=]\s*['\"]([^'\"]+)", raw_meta)
+                        if m:
+                            meta["model_name"] = m.group(1)
+                    yield Record(
+                        agent="promptchain",
+                        session_id=session_id,
+                        ts=ts,
+                        role=entry.get("role", "unknown"),
+                        content=text[:2000],
+                        source_path=str(fp),
+                        metadata=meta,
+                        line=lineno,
+                        match_text=text,
+                    )
+        except OSError:
+            continue
+
+
 PARSERS = {
     "claude": search_claude,
     "codex": search_codex,
@@ -464,6 +545,7 @@ PARSERS = {
     "opencode": search_opencode,
     "gemini": search_gemini,
     "aider": search_aider,
+    "promptchain": search_promptchain,
 }
 
 
@@ -780,6 +862,7 @@ def inventory() -> list[tuple[str, str, bool]]:
         ("opencode", str(HOME / ".local/share/opencode/opencode.db")),
         ("gemini", str(HOME / ".gemini/tmp")),
         ("aider", str(DEV_ROOT) + " (per-repo .aider.chat.history.md)"),
+        ("promptchain", str(HOME / ".promptchain/sessions")),
     ]
     rows = []
     for agent, path in checks:
@@ -1052,7 +1135,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="claude",
         help=(
             "Which agent's history to search (default: claude). "
-            "'all' fans out to all 6 harnesses."
+            "'all' fans out to every known harness."
         ),
     )
     # Claude-specific source toggles (only meaningful for --agent claude)
