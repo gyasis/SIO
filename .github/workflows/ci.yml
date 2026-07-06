@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install package + test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]"
+
+      # Non-blocking for now: the repo has a pre-existing lint backlog. Flip
+      # continue-on-error to false (or drop it) once `ruff check .` is clean.
+      - name: Lint (ruff) — informational
+        continue-on-error: true
+        run: ruff check --output-format=github .
+
+      # The default suite is fast and hermetic: tests marked `slow`/`network`
+      # are opt-in (see tests/conftest.py), and tests needing a live ~/.sio DB
+      # or LM auto-skip when absent. This is the drift guardrail.
+      - name: Test (default suite)
+        run: pytest -p no:cacheprovider
