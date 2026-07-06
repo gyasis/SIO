@@ -293,15 +293,17 @@ fresh install should never silently dispatch to the wrong provider.
 ### Cross-Agent Search & Session-Scoped Analysis
 
 SIO absorbed the standalone `session-search` tool: **`sio search`** finds sessions
-across **all six coding-agent harnesses** (Claude, Codex, Goose, OpenCode, Gemini,
-Aider). Every analysis command can be **scoped to one session** via `--session`,
+across **all coding-agent harnesses** (Claude, Codex, Goose, OpenCode, Gemini,
+Aider, PromptChain) — pick one with `--agent <harness>` (default `claude`) or `--agent all`.
+Every analysis command can be **scoped to one session** via `--session`,
 turning SIO into a targeted debugger for a single session/process. Session ids are
 canonical **`agent:native_id`** "Session URIs" (e.g. `claude:<uuid>`,
 `goose:<name>`); legacy bare ids are matched transparently.
 
 | Command | Description |
 |---------|-------------|
-| `sio search "pattern" --agent all` | Search session history across all 6 harnesses (absorbed `session-search`) |
+| `sio search "pattern" --agent all` | Search session history across all harnesses (absorbed `session-search`) |
+| `sio search "pattern" --agent <harness>` | Target ONE coding agent: `claude` (default), `codex`, `gemini`, `goose`, `opencode`, `aider`, `promptchain` |
 | `sio search "pattern" --agent claude --files` | Emit matching session file paths (pipe into `--session`) |
 | `sio errors --session <handle>` | Scope error browsing to ONE session (`agent:id`, a path, a bare id, or `-` for stdin) |
 | `sio errors --session c6428f4f` | Fuzzy partial-id resolve (lists candidates if ambiguous) |

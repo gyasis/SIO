@@ -427,8 +427,8 @@ sio train --task routing --model azure/gpt-5-mini
 
 ## Cross-Agent Search & Session-Scoped Analysis
 
-SIO absorbed the standalone `session-search` tool. `sio search` finds sessions across all six
-coding-agent harnesses. Every analysis command (`mine`, `errors`, `suggest`, `collect-recall`)
+SIO absorbed the standalone `session-search` tool. `sio search` finds sessions across all
+coding-agent harnesses (targeted with `--agent <harness>`). Every analysis command (`mine`, `errors`, `suggest`, `collect-recall`)
 can be scoped to a single session with `--session`, turning SIO into a targeted debugger for one
 transcript. Session IDs are canonical **`agent:native_id`** URIs (e.g. `claude:<uuid>`,
 `goose:<name>`); legacy bare IDs are matched transparently. The pipe idiom ties the two together:
@@ -454,7 +454,7 @@ sio search "<pattern>" [--agent <harness>] [--recent <days>] [--files] [--count]
 | Option | Default | Description |
 |--------|---------|-------------|
 | `<pattern>` | (required) | Search pattern (plain text) |
-| `--agent` | `claude` | Which harness to search: `claude`, `codex`, `goose`, `opencode`, `gemini`, `aider`, or `all` |
+| `--agent` | `claude` | Which harness to search: `claude`, `codex`, `goose`, `opencode`, `gemini`, `aider`, `promptchain`, or `all` |
 | `--recent <N>` | `0` (all time) | Only files with mtime within N days |
 | `--limit <N>` | `0` (unlimited) | Cap matches per agent |
 | `--files` | off | Emit unique source file paths (one per line; pipe into `--session`) |
@@ -473,8 +473,8 @@ sio search "<pattern>" [--agent <harness>] [--recent <days>] [--files] [--count]
 **Cross-agent adapters:**
 
 Claude uses a direct file adapter against `~/.claude/projects/**/*.jsonl`.  All other agents
-(`codex`, `goose`, `opencode`, `gemini`, `aider`) use a *search-backed adapter* built on their
-respective on-disk stores:
+(`codex`, `goose`, `opencode`, `gemini`, `aider`, `promptchain`) use a *search-backed adapter*
+built on their respective on-disk stores:
 
 | Agent | Store location |
 |-------|---------------|
@@ -483,8 +483,9 @@ respective on-disk stores:
 | `opencode` | `~/.local/share/opencode/opencode.db` |
 | `gemini` | `~/.gemini/tmp/` |
 | `aider` | per-repo `.aider.chat.history.md` files under `~/dev/` |
+| `promptchain` | `~/.promptchain/sessions/<uuid>/messages.jsonl` (the PromptChain TUI/CLI agent; uuid→name via `sessions.db`) |
 
-Pass `--agent all` to fan out across all six harnesses in one call. Use `--list-agents` to see
+Pass `--agent all` to fan out across every harness in one call. Use `--list-agents` to see
 which harnesses have on-disk history on this machine.
 
 **Examples:**

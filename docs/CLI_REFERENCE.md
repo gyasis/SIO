@@ -1418,9 +1418,9 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
-  --agent {claude,codex,goose,opencode,gemini,aider,all}
+  --agent {claude,codex,goose,opencode,gemini,aider,promptchain,all}
                         Which agent's history to search (default: claude).
-                        'all' fans out to all 6 harnesses.
+                        'all' fans out to every harness.
   --specstory           Search SpecStory MD only.
   --backups             Include ~/.claude/backups.
   --all                 Claude: JSONL + SpecStory + backups. Equivalent to
