@@ -2,7 +2,6 @@
 
 import json
 import os
-import shutil
 import sqlite3
 import tempfile
 from datetime import datetime, timedelta, timezone
@@ -567,28 +566,55 @@ def sample_error_records():
 
 @pytest.fixture
 def tmp_sio_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Clone of ~/.sio/sio.db sandboxed in tmp_path with heavy rows trimmed.
+    """Lightweight clone of ~/.sio/sio.db sandboxed in tmp_path.
 
-    Copies the live DB if it exists, deletes rows beyond rowid 1000 in the
-    two heaviest tables, and sets SIO_DB_PATH so the app under test uses the
-    clone instead of the real store.
+    Recreates the full schema and copies up to 1000 rows per table, instead of
+    byte-copying the live DB (which can be multiple GB and made this fixture
+    pathologically slow). Sets SIO_DB_PATH so the app under test uses the clone.
 
-    Skips (not fails) the test when no live DB is present so CI stays green.
+    Skips (not fails) the test when no live DB is present so the suite stays green.
     """
     src = Path.home() / ".sio" / "sio.db"
     if not src.exists():
         pytest.skip("no live ~/.sio/sio.db to clone from")
     dst = tmp_path / "sio.db"
-    shutil.copy2(src, dst)
-    con = sqlite3.connect(str(dst))
+    # uri=True lets us ATTACH the source read-only.
+    con = sqlite3.connect(str(dst), uri=True)
     try:
-        con.execute("DELETE FROM error_records WHERE rowid > 1000")
-        con.execute("DELETE FROM flow_events WHERE rowid > 1000")
+        con.execute("ATTACH DATABASE ? AS src", (f"file:{src}?mode=ro",))
+        master = con.execute(
+            "SELECT type, name, sql FROM src.sqlite_master "
+            "WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+        # 1. Recreate tables.
+        for typ, name, sql in master:
+            if typ == "table":
+                con.execute(sql)
+        # 2. Copy a bounded sample of each table's rows.
+        for typ, name, sql in master:
+            if typ != "table":
+                continue
+            try:
+                con.execute(
+                    f'INSERT INTO main."{name}" SELECT * FROM src."{name}" LIMIT 1000'
+                )
+            except sqlite3.OperationalError:
+                # Odd table shape (e.g. generated columns) — leave it empty
+                # rather than fail the whole fixture.
+                pass
+        # 3. Recreate indexes / triggers / views after the data is loaded.
+        for typ, name, sql in master:
+            if typ in ("index", "trigger", "view"):
+                try:
+                    con.execute(sql)
+                except sqlite3.OperationalError:
+                    pass  # e.g. an index already implied by the table DDL
         con.commit()
-    except sqlite3.OperationalError:
-        # Tables may not exist in older schemas — not a blocker.
-        con.rollback()
     finally:
+        try:
+            con.execute("DETACH DATABASE src")
+        except sqlite3.OperationalError:
+            pass
         con.close()
     monkeypatch.setenv("SIO_DB_PATH", str(dst))
     return dst

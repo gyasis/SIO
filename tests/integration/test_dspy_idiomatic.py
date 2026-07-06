@@ -262,7 +262,7 @@ def test_mipro_is_recognized(tmp_sio_db):
         )
 
         try:
-            result = run_optimize(
+            run_optimize(
                 module_name="suggestion_generator",
                 optimizer_name="mipro",
                 trainset_size=5,
@@ -320,7 +320,7 @@ def test_bootstrap_is_recognized(tmp_sio_db):
         )
 
         try:
-            result = run_optimize(
+            run_optimize(
                 module_name="suggestion_generator",
                 optimizer_name="bootstrap",
                 trainset_size=5,

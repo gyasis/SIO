@@ -18,8 +18,6 @@ from unittest.mock import patch
 
 import pytest
 
-pytestmark = pytest.mark.slow
-
 
 def _import_datasets():
     from sio.core.dspy import datasets  # noqa: PLC0415
