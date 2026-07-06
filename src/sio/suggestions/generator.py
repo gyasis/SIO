@@ -27,6 +27,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from sio.core.constants import DEFAULT_PLATFORM
 from sio.suggestions.confidence import score_confidence
 
 # ---------------------------------------------------------------------------
@@ -54,7 +55,7 @@ _TARGET_FILE_MAP: dict[str, str] = {
 # global ~/.claude). See PRD.md §3 (Platform Compatibility).
 #
 # Maps harness -> (absolute instruction file, change_type label).
-DEFAULT_HARNESS = "claude-code"
+DEFAULT_HARNESS = DEFAULT_PLATFORM
 
 _HARNESS_INSTRUCTION_FILES: dict[str, tuple[str, str]] = {
     "codex": ("~/.codex/AGENTS.md", "agents_md_rule"),

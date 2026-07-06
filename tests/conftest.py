@@ -13,6 +13,48 @@ import numpy as np
 import pytest
 
 
+# ---------------------------------------------------------------------------
+# Opt-in markers for slow / live-network tests.
+#
+# `slow`    — genuinely slow but hermetic (heavy fixtures, e.g. full-schema
+#             re-init or a large ~/.sio/sio.db clone).
+# `network` — needs a live LM / network round-trip (real optimizer runs,
+#             mining/classifier LM calls). These can hang indefinitely
+#             depending on network conditions, so they are OFF by default.
+#
+# Default `pytest` run skips both so the suite is fast and never hangs.
+# Run them explicitly with `--runslow` and/or `--runnetwork`.
+# ---------------------------------------------------------------------------
+def pytest_addoption(parser):
+    parser.addoption(
+        "--runslow", action="store_true", default=False,
+        help="run tests marked @pytest.mark.slow",
+    )
+    parser.addoption(
+        "--runnetwork", action="store_true", default=False,
+        help="run tests marked @pytest.mark.network (need a live LM/network)",
+    )
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "slow: slow but hermetic test (opt-in via --runslow)")
+    config.addinivalue_line(
+        "markers", "network: needs a live LM/network (opt-in via --runnetwork)"
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    run_slow = config.getoption("--runslow")
+    run_network = config.getoption("--runnetwork")
+    skip_slow = pytest.mark.skip(reason="slow test — pass --runslow to run")
+    skip_network = pytest.mark.skip(reason="network test — pass --runnetwork to run")
+    for item in items:
+        if not run_slow and "slow" in item.keywords:
+            item.add_marker(skip_slow)
+        if not run_network and "network" in item.keywords:
+            item.add_marker(skip_network)
+
+
 @pytest.fixture(autouse=True)
 def _allow_tmp_path_for_applier():
     """Allow writer/rollback path validation to accept pytest tmp dirs."""

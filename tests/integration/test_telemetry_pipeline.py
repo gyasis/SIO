@@ -80,14 +80,14 @@ class TestTwentyHookCallsProduceTwentyRows:
         # Verify exactly 20 rows in the database
         row_count = tmp_db.execute(
             "SELECT COUNT(*) FROM behavior_invocations "
-            "WHERE session_id = 'integration-session-001'"
+            "WHERE session_id = 'claude:integration-session-001'"
         ).fetchone()[0]
         assert row_count == 20, f"Expected 20 rows for 20 distinct tool calls, got {row_count}"
 
         # Verify no duplicates -- each tool_name should appear exactly once
         distinct_actions = tmp_db.execute(
             "SELECT DISTINCT actual_action FROM behavior_invocations "
-            "WHERE session_id = 'integration-session-001'"
+            "WHERE session_id = 'claude:integration-session-001'"
         ).fetchall()
         action_names = {row["actual_action"] for row in distinct_actions}
         assert len(action_names) == 20, (
@@ -104,7 +104,7 @@ class TestTwentyHookCallsProduceTwentyRows:
         # Check rows where user_message originally had a secret (even indices)
         rows = tmp_db.execute(
             "SELECT user_message, actual_action FROM behavior_invocations "
-            "WHERE session_id = 'integration-session-001'"
+            "WHERE session_id = 'claude:integration-session-001'"
         ).fetchall()
 
         for row in rows:
@@ -119,7 +119,7 @@ class TestTwentyHookCallsProduceTwentyRows:
             handle_post_tool_use(stdin_json, conn=tmp_db)
 
         rows = tmp_db.execute(
-            "SELECT * FROM behavior_invocations WHERE session_id = 'integration-session-001'"
+            "SELECT * FROM behavior_invocations WHERE session_id = 'claude:integration-session-001'"
         ).fetchall()
 
         for row in rows:

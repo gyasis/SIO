@@ -23,8 +23,11 @@ def get_reviewable(
     params: list = [platform]
 
     if session_id:
-        query += " AND session_id = ?"
-        params.append(session_id)
+        from sio.core.session_handle import session_match_clause
+
+        clause, sp = session_match_clause(session_id)
+        query += f" AND {clause}"
+        params.extend(sp)
 
     query += " ORDER BY timestamp ASC LIMIT ?"
     params.append(limit)

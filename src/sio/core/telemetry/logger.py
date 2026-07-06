@@ -7,6 +7,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 from sio.core.db.queries import insert_invocation
+from sio.core.session_handle import ensure_canonical
 from sio.core.telemetry.auto_labeler import auto_label
 from sio.core.telemetry.secret_scrubber import scrub
 
@@ -34,13 +35,17 @@ def log_invocation(
     try:
         now = datetime.now(timezone.utc).isoformat()
         scrubbed_message = scrub(user_message) if user_message else user_message
+        # Canonicalize once: insert_invocation stores the canonical
+        # <agent>:<id> form, so the dedup lookup below MUST query the same
+        # canonical value or it can never match its own prior writes.
+        canonical_session_id = ensure_canonical(session_id)
 
         # Deduplication: check for existing record within 1s window
         existing = conn.execute(
             "SELECT id FROM behavior_invocations "
             "WHERE session_id = ? AND actual_action = ? "
             "AND ABS(JULIANDAY(timestamp) - JULIANDAY(?)) < (1.0 / 86400.0)",
-            (session_id, tool_name, now),
+            (canonical_session_id, tool_name, now),
         ).fetchone()
         if existing:
             return existing[0]
@@ -53,7 +58,7 @@ def log_invocation(
         # tool_name being non-NULL for INSERT OR IGNORE dedup to work across
         # sync and re-ingest. Previously only actual_action carried tool_name.
         record = {
-            "session_id": session_id,
+            "session_id": canonical_session_id,
             "timestamp": now,
             "platform": platform,
             "user_message": scrubbed_message,

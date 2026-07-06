@@ -44,7 +44,8 @@ class TestGetInvocationById:
         row_id = insert_invocation(tmp_db, record)
         result = get_invocation_by_id(tmp_db, row_id)
         assert result is not None
-        assert result["session_id"] == "sess-abc"
+        # session_id is canonicalized to <agent>:<id> on write (multi-agent).
+        assert result["session_id"] == "claude:sess-abc"
         assert result["actual_action"] == "Bash"
 
     def test_returns_none_for_missing_id(self, tmp_db):

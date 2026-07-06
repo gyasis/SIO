@@ -14,6 +14,9 @@ from __future__ import annotations
 
 import pytest
 
+# Real optimizer runs (GEPA) make live LM/network calls — opt-in only.
+pytestmark = pytest.mark.network
+
 # ---------------------------------------------------------------------------
 # Registry structure tests — these PASS because Wave 4 T043 built the registry
 # ---------------------------------------------------------------------------

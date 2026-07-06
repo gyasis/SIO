@@ -12,6 +12,9 @@ from sio.core.arena.txlog import TxLog
 from sio.core.config import SIOConfig
 from sio.core.db.schema import init_db
 
+# run_cycle() drives a real mining/classifier pass with live LM calls — opt-in.
+pytestmark = pytest.mark.network
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
