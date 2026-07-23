@@ -6,11 +6,11 @@ T060: discipline report emits recency-rate, multi-hop-rate, files-first-rate,
 T061: a sub-target rate is flagged in sio briefing (AS-2).
 
 Rate definitions (from research.md §B + BASELINE.md):
-  recency-rate       = invocations with --recent  / total search invocations
-  multi-hop-rate     = invocations with --refine|--within|--use-cache|--strategy
-                       / total search invocations
-  files-first-rate   = invocations with --files   / total search invocations
-  context-walk-rate  = invocations with --context  / total search invocations
+  recency-rate       = invocations with --recent            / total search invocations
+  multi-hop-rate     = invocations with --refine|--strategy  / total search invocations
+                       (--within/--use-cache are sio-suggest-only; never on search)
+  files-first-rate   = invocations with --files             / total search invocations
+  context-walk-rate  = invocations with --context|--around  / total search invocations
 
 Targets (BASELINE.md § "Target deltas"):
   recency-first   >= 85%
@@ -206,6 +206,56 @@ class TestDisciplineReport:
         conn.close()
 
 
+class TestDisciplineFlagSemantics:
+    """BUGFIX lock-in: grade only real flags; credit --around; exclude phantoms."""
+
+    def test_phantom_flags_do_not_count_as_multi_hop(self, tmp_path):
+        """--within / --use-cache are sio-suggest-only and must NOT count."""
+        from sio.reporting.search_discipline import compute_discipline_rates
+
+        conn = init_db(str(tmp_path / "phantom.db"))
+        _insert_rows(
+            conn,
+            [
+                _bash_row("sio search a --within cache.csv", days_ago=1),
+                _bash_row("sio search b --use-cache", days_ago=2),
+            ],
+        )
+        rates = compute_discipline_rates(conn, window_days=14)
+        assert rates["total_search_invocations"] == 2
+        assert rates["multi_hop_rate"] == 0.0  # neither phantom flag counts
+        conn.close()
+
+    def test_strategy_counts_as_multi_hop(self, tmp_path):
+        """--strategy is a real sio-search narrowing flag → multi-hop."""
+        from sio.reporting.search_discipline import compute_discipline_rates
+
+        conn = init_db(str(tmp_path / "strategy.db"))
+        _insert_rows(
+            conn,
+            [_bash_row("sio search a --refine x --strategy filter", days_ago=1)],
+        )
+        rates = compute_discipline_rates(conn, window_days=14)
+        assert rates["multi_hop_rate"] == 1.0
+        conn.close()
+
+    def test_around_counts_as_context_walk(self, tmp_path):
+        """--around is the modern role-aware context walk → context-walk credit."""
+        from sio.reporting.search_discipline import compute_discipline_rates
+
+        conn = init_db(str(tmp_path / "around.db"))
+        _insert_rows(
+            conn,
+            [
+                _bash_row("sio search a --around 3", days_ago=1),
+                _bash_row("session-search b --context 2", days_ago=2),
+            ],
+        )
+        rates = compute_discipline_rates(conn, window_days=14)
+        assert rates["context_walk_rate"] == 1.0  # both --around and --context
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # T060 — also–stars: windows respects `window_days` parameter
 # ---------------------------------------------------------------------------
@@ -298,7 +348,7 @@ class TestBriefingRegressionFlag:
             )
         # 2 --refine rows (multi-hop; no --recent, so recency unchanged)
         rows.append(_bash_row("sio search x --refine narrow", days_ago=1))
-        rows.append(_bash_row("sio search y --within cache.csv", days_ago=2))
+        rows.append(_bash_row("sio search y --refine cache", days_ago=2))
         # Total: 20 rows, 18 with --recent (14+4), 2 with --refine, 4 with --context
         _insert_rows(invocations_db, rows)
 

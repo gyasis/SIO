@@ -38,6 +38,7 @@ Exit codes: 0 ok, 1 usage error, 2 no matches.
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import os
 import re
@@ -76,12 +77,31 @@ class Record:
     match_text: str = ""
 
 
+@functools.lru_cache(maxsize=512)
+def _compile_pattern(pattern: str, case_sensitive: bool) -> re.Pattern[str]:
+    """Compile *pattern* as a REGEX, matching the ripgrep fast path's semantics.
+
+    BUGFIX (search-expand): the python parser path previously matched patterns
+    as a LITERAL substring while the ripgrep fast path matched them as a regex.
+    Same query, two answers — e.g. ``promptchain|graphiti`` returned 0 on the
+    python/``--files`` path but 785 via ``--fast``. Alternation (the natural way
+    to EXPAND a search across synonyms) silently returned nothing. This unifies
+    both paths on regex semantics (the documented default, see module docstring).
+
+    An invalid regex falls back to a literal (escaped) match so a stray
+    metacharacter never raises — it just behaves like the old substring search.
+    """
+    flags = 0 if case_sensitive else re.IGNORECASE
+    try:
+        return re.compile(pattern, flags)
+    except re.error:
+        return re.compile(re.escape(pattern), flags)
+
+
 def _matches(text: str, pattern: str, case_sensitive: bool) -> bool:
     if not text:
         return False
-    if case_sensitive:
-        return pattern in text
-    return pattern.lower() in text.lower()
+    return _compile_pattern(pattern, case_sensitive).search(text) is not None
 
 
 def _file_within(path: Path, cutoff_epoch: float | None) -> bool:
@@ -1388,6 +1408,7 @@ def main(argv: list[str] | None = None) -> int:
         claude_only
         and not args.no_fast
         and not around_set  # B4: --around forces python path
+        and not getattr(args, "refine", None)  # refine (Hop-2) forces python path
         and args.format != "jsonl"  # fast path emits ripgrep text, not JSONL
         # ↑ if user wants JSONL records, use the python parser even for claude
     )
@@ -1433,11 +1454,45 @@ def main(argv: list[str] | None = None) -> int:
     # records, so they bypass the sort buffer and stay O(1) memory.
     inline_records: list[Record] = []
 
+    # BUGFIX (refine-in-files): apply the Hop-2 --refine predicate HERE, at the
+    # single choke point before aggregation, so --files / --count / record output
+    # all narrow identically. Previously --refine was applied only to the buffered
+    # ``inline_records`` AFTER the loop, so --files (which short-circuits into
+    # ``files_seen`` and never buffers) silently ignored --refine — e.g.
+    # ``promptchain --files`` and ``promptchain --refine graphiti --files`` both
+    # returned 144. --refine also now forces the python path (see fast_eligible),
+    # so the fast/ripgrep path can no longer bypass it either.
+    refine_term = getattr(args, "refine", None)
+    refine_terms = (
+        [t.strip().lower() for t in refine_term.split(",") if t.strip()]
+        if refine_term
+        else []
+    )
+    if refine_terms:
+        from sio.clustering.hop2 import _hop2_matches  # noqa: PLC0415
+
+    def _rec_as_error_dict(r: Record) -> dict:
+        # Use the full untruncated turn text so --refine sees the whole turn,
+        # not just the 2000-char preview stored in r.content.
+        return {
+            "error_text": r.match_text or r.content,
+            "user_message": "",
+            "context_before": "",
+            "context_after": "",
+            "source_file": r.source_path,
+        }
+
     for label, parser in parsers:
         try:
             for rec in parser(args.pattern, cs, cutoff):
                 if args.limit and per_label_counts[label] >= args.limit:
                     break
+                # Hop-2 CONTRACT: drop records failing the refine predicate before
+                # any aggregation, so files/count/records narrow the same way.
+                if refine_terms and not _hop2_matches(
+                    _rec_as_error_dict(rec), refine_terms
+                ):
+                    continue
                 per_label_counts[label] += 1
                 total += 1
 
@@ -1460,34 +1515,9 @@ def main(argv: list[str] | None = None) -> int:
     if inline_records:
         inline_records.sort(key=lambda r: r.ts or "", reverse=True)
 
-        # B1 fix: apply Hop-2 --refine narrowing on the search result records.
-        # Map each Record to the minimal dict shape _hop2_matches expects:
-        # it AND-matches refine terms against the error's text fields; for
-        # search records we expose ``content`` as ``error_text`` and populate
-        # the remaining fields so the predicate has something to scan.
-        refine_term = getattr(args, "refine", None)
-        if refine_term:
-            from sio.clustering.hop2 import _hop2_matches  # noqa: PLC0415
-
-            refine_terms = [t.strip().lower() for t in refine_term.split(",") if t.strip()]
-
-            def _rec_as_error_dict(r: Record) -> dict:
-                return {
-                    # Use full untruncated text so --refine sees the whole turn,
-                    # not just the 2000-char preview stored in r.content.
-                    "error_text": r.match_text or r.content,
-                    "user_message": "",
-                    "context_before": "",
-                    "context_after": "",
-                    "source_file": r.source_path,
-                }
-
-            inline_records = [
-                r for r in inline_records
-                if _hop2_matches(_rec_as_error_dict(r), refine_terms)
-            ]
-            # Recount total after narrowing so the summary is accurate.
-            total = len(inline_records)
+        # NOTE: Hop-2 --refine narrowing is now applied inline in the collection
+        # loop above (BUGFIX refine-in-files), so it covers --files/--count too;
+        # inline_records here are already filtered.
 
         # FR-003 / FR-004: --around N replaces the normal per-record emitter with a
         # role-aware ±N turn context window around each hit.  This is DISTINCT from:
@@ -1582,6 +1612,24 @@ def main(argv: list[str] | None = None) -> int:
             "to search full history.",
             file=sys.stderr,
         )
+
+    # Multi-word literal-phrase trap: a pattern is matched as a REGEX, so a
+    # multi-word natural-language phrase (e.g. "salary Europe pay comparison")
+    # only matches when those words appear ADJACENT — almost always 0 hits.
+    # When we got nothing and the pattern looks like a plain multi-word phrase
+    # (whitespace-separated, no regex operators), suggest OR-alternation to
+    # EXPAND across any of the terms. Non-blocking hint on stderr.
+    if total == 0 and args.pattern:
+        _words = args.pattern.split()
+        _has_regex_ops = any(ch in args.pattern for ch in "|()[]{}*+?^$\\")
+        if len(_words) >= 2 and not _has_regex_ops:
+            _alt = "|".join(_words)
+            print(
+                f"# hint: '{args.pattern}' matched as a literal PHRASE (adjacent "
+                f"words). To match ANY term, EXPAND with alternation: "
+                f"`sio search \"{_alt}\"` — then --refine to narrow.",
+                file=sys.stderr,
+            )
 
     # FR-006 / T034: When Hop-1 is noisy, suggest a concrete Hop-2 refine
     # command (non-blocking: emitted to stderr, never an error or hard stop).

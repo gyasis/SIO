@@ -948,3 +948,124 @@ class TestRefineSeesFullText:
             assert "match_text" not in rec, (
                 "match_text is an internal field and must not be present in JSONL output"
             )
+
+
+# ---------------------------------------------------------------------------
+# BUGFIX (search-expand): python parser path must honor REGEX like the fast path
+# ---------------------------------------------------------------------------
+
+
+class TestRegexExpand:
+    """The python/--files path must match patterns as a regex (like ripgrep),
+    so `|` alternation EXPANDS across synonyms instead of matching a literal
+    'a|b' string (which returned 0 — the reported expand bug)."""
+
+    def _build_corpus(self, tmp_path: Path) -> Path:
+        proj_dir = tmp_path / "-fake-proj"
+        proj_dir.mkdir(parents=True)
+        now = time.time()
+        _write_session(
+            proj_dir, "sess-alpha",
+            [{"role": "user", "content": "alpha appears here"}], mtime=now,
+        )
+        _write_session(
+            proj_dir, "sess-beta",
+            [{"role": "user", "content": "beta appears here"}], mtime=now - 60,
+        )
+        return tmp_path
+
+    def test_alternation_matches_either_term(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`alpha|beta` (regex) must match records from BOTH sessions."""
+        corpus = self._build_corpus(tmp_path)
+        out, _, rc = _run_search(
+            monkeypatch, corpus,
+            ["alpha|beta", "--no-fast", "--recent", "0", "--format", "jsonl"],
+        )
+        assert rc == 0
+        recs = _parse_jsonl_records(out)
+        contents = " ".join(r.get("content", "") for r in recs)
+        assert "alpha" in contents and "beta" in contents, (
+            f"regex alternation must expand across BOTH terms; got {contents!r}"
+        )
+        assert len(recs) >= 2
+
+    def test_literal_multiword_phrase_matches_nothing_and_hints(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A non-adjacent multi-word phrase matches 0 AND emits an alternation hint."""
+        corpus = self._build_corpus(tmp_path)
+        _, err, rc = _run_search(
+            monkeypatch, corpus,
+            ["alpha beta", "--no-fast", "--recent", "0", "--format", "jsonl"],
+        )
+        assert rc == 2  # no adjacency → no match
+        assert "alpha|beta" in err, f"expected an alternation hint; stderr:\n{err}"
+
+    def test_invalid_regex_falls_back_to_literal(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A stray metacharacter must not raise — it falls back to literal match."""
+        proj_dir = tmp_path / "-fake-proj"
+        proj_dir.mkdir(parents=True)
+        _write_session(
+            proj_dir, "sess-paren",
+            [{"role": "user", "content": "value is foo(bar"}], mtime=time.time(),
+        )
+        out, _, rc = _run_search(
+            monkeypatch, tmp_path,
+            ["foo(bar", "--no-fast", "--recent", "0", "--format", "jsonl"],
+        )
+        assert rc == 0, "invalid regex must fall back to literal, not crash"
+        recs = _parse_jsonl_records(out)
+        assert any("foo(bar" in r.get("content", "") for r in recs)
+
+
+# ---------------------------------------------------------------------------
+# BUGFIX (refine-in-files): --files must honor --refine (was a silent no-op)
+# ---------------------------------------------------------------------------
+
+
+class TestRefineInFilesMode:
+    """--refine must narrow --files output too. Previously --files short-circuited
+    into files_seen and skipped the refine predicate entirely, so
+    `X --files` and `X --refine Y --files` returned the SAME file set."""
+
+    def _build_corpus(self, tmp_path: Path) -> Path:
+        proj_dir = tmp_path / "-fake-proj"
+        proj_dir.mkdir(parents=True)
+        now = time.time()
+        # 3 files contain both dbt + zeno; 2 files contain only dbt.
+        for i in range(3):
+            _write_session(
+                proj_dir, f"both-{i:02d}",
+                [{"role": "user", "content": f"dbt zeno error {i}"}], mtime=now - i,
+            )
+        for i in range(2):
+            _write_session(
+                proj_dir, f"dbtonly-{i:02d}",
+                [{"role": "user", "content": f"dbt only {i}"}], mtime=now - 100 - i,
+            )
+        return tmp_path
+
+    def _files(self, stdout: str) -> list[str]:
+        return [ln for ln in stdout.splitlines() if ln and not ln.startswith("#")]
+
+    def test_files_mode_honors_refine(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        corpus = self._build_corpus(tmp_path)
+        out1, _, _ = _run_search(
+            monkeypatch, corpus, ["dbt", "--recent", "0", "--files"],
+        )
+        out2, _, _ = _run_search(
+            monkeypatch, corpus, ["dbt", "--recent", "0", "--files", "--refine", "zeno"],
+        )
+        files1 = self._files(out1)
+        files2 = self._files(out2)
+        assert len(files1) == 5, f"Hop-1 --files should list 5 files; got {files1}"
+        assert len(files2) == 3, (
+            f"--refine zeno must narrow --files to the 3 zeno files; got {files2}"
+        )
+        assert all("both" in f for f in files2)
