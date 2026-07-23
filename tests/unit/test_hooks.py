@@ -634,3 +634,133 @@ class TestSessionStart:
         monkeypatch.setenv("SIO_BRIEFING_DISABLED", "1")
 
         assert ss.handle_session_start("{}") == ""
+
+
+# ---------------------------------------------------------------------------
+# Search-feedback capture ("you must" narrowing loop)
+# ---------------------------------------------------------------------------
+
+
+def _insert_search_row(conn, session_id, command, *, seconds_ago=10):
+    """Insert a Bash behavior_invocations row for a search command."""
+    from datetime import datetime, timedelta, timezone
+
+    ts = (datetime.now(timezone.utc) - timedelta(seconds=seconds_ago)).isoformat()
+    conn.execute(
+        "INSERT INTO behavior_invocations "
+        "(session_id, timestamp, platform, user_message, behavior_type, "
+        " tool_name, tool_input) VALUES (?, ?, 'claude-code', '', 'skill', "
+        " 'Bash', ?)",
+        (session_id, ts, json.dumps({"command": command})),
+    )
+    conn.commit()
+
+
+class TestSearchFeedbackCapture:
+    """A narrowing correction right after a search labels that search's row."""
+
+    def test_labels_last_search_on_narrow_feedback(self, tmp_path):
+        from sio.adapters.claude_code.hooks.user_prompt_submit import (
+            _capture_search_feedback,
+        )
+
+        db_path = str(tmp_path / "inv.db")
+        conn = init_db(db_path)
+        _insert_search_row(conn, "sess-fb", 'sio search "salary Europe pay"')
+        conn.close()
+
+        assert _capture_search_feedback(
+            "sess-fb", "you must narrow that down", db_path=db_path
+        ) is True
+
+        conn = init_db(db_path)
+        row = conn.execute(
+            "SELECT user_satisfied, correct_action, user_note, labeled_by "
+            "FROM behavior_invocations WHERE session_id = 'sess-fb'"
+        ).fetchone()
+        conn.close()
+        assert row["user_satisfied"] == 0
+        assert row["correct_action"] == 0
+        assert "search-narrow-feedback" in row["user_note"]
+        assert "narrow" in row["user_note"]
+        assert row["labeled_by"] == "search_feedback_hook"
+
+    def test_generic_correction_after_search_also_captured(self, tmp_path):
+        from sio.adapters.claude_code.hooks.user_prompt_submit import (
+            _capture_search_feedback,
+        )
+
+        db_path = str(tmp_path / "inv.db")
+        conn = init_db(db_path)
+        _insert_search_row(conn, "sess-fb2", "session-search foo --files")
+        conn.close()
+        # A bare correction counts because a search preceded it (the gate).
+        assert _capture_search_feedback(
+            "sess-fb2", "no, that's not what I wanted", db_path=db_path
+        ) is True
+
+    def test_no_capture_when_prior_action_not_search(self, tmp_path):
+        from sio.adapters.claude_code.hooks.user_prompt_submit import (
+            _capture_search_feedback,
+        )
+
+        db_path = str(tmp_path / "inv.db")
+        conn = init_db(db_path)
+        _insert_search_row(conn, "sess-fb3", "git status")  # not a search
+        conn.close()
+        assert _capture_search_feedback(
+            "sess-fb3", "you must narrow that", db_path=db_path
+        ) is False
+
+    def test_no_capture_on_normal_message(self, tmp_path):
+        from sio.adapters.claude_code.hooks.user_prompt_submit import (
+            _capture_search_feedback,
+        )
+
+        db_path = str(tmp_path / "inv.db")
+        conn = init_db(db_path)
+        _insert_search_row(conn, "sess-fb4", 'sio search "x"')
+        conn.close()
+        assert _capture_search_feedback(
+            "sess-fb4", "great, thanks!", db_path=db_path
+        ) is False
+
+    def test_no_capture_outside_window(self, tmp_path):
+        from sio.adapters.claude_code.hooks.user_prompt_submit import (
+            _capture_search_feedback,
+        )
+
+        db_path = str(tmp_path / "inv.db")
+        conn = init_db(db_path)
+        _insert_search_row(conn, "sess-fb5", 'sio search "x"', seconds_ago=5000)
+        conn.close()
+        assert _capture_search_feedback(
+            "sess-fb5", "you must narrow that", db_path=db_path
+        ) is False
+
+    def test_hook_wires_capture_via_env_db(self, tmp_path, session_state_file, monkeypatch):
+        """End-to-end: handle_user_prompt_submit labels the search row."""
+        from sio.adapters.claude_code.hooks.user_prompt_submit import (
+            handle_user_prompt_submit,
+        )
+
+        db_path = str(tmp_path / "inv.db")
+        conn = init_db(db_path)
+        _insert_search_row(conn, "sess-wire", 'sio search "too broad phrase"')
+        conn.close()
+        monkeypatch.setenv("SIO_INVOCATIONS_DB_PATH", db_path)
+
+        payload = json.dumps(
+            {"session_id": "sess-wire", "user_message": "you must refine that search"}
+        )
+        result = json.loads(
+            handle_user_prompt_submit(payload, state_path=session_state_file)
+        )
+        assert result == {"action": "allow"}
+
+        conn = init_db(db_path)
+        row = conn.execute(
+            "SELECT labeled_by FROM behavior_invocations WHERE session_id = 'sess-wire'"
+        ).fetchone()
+        conn.close()
+        assert row["labeled_by"] == "search_feedback_hook"
