@@ -8,11 +8,13 @@ Rate definitions (from research.md §B + BASELINE.md)
 Total denominator: Bash rows whose ``tool_input`` JSON command contains
   "session-search" or "sio search" within the requested window.
 
-  recency_rate       = rows with ``--recent``  / total
-  multi_hop_rate     = rows with ``--refine|--within|--use-cache|--strategy``
-                       / total
-  files_first_rate   = rows with ``--files``   / total
-  context_walk_rate  = rows with ``--context`` / total
+  recency_rate       = rows with ``--recent``            / total
+  multi_hop_rate     = rows with ``--refine|--strategy``  / total
+                       (``sio search``'s real narrowing flags; ``--within`` /
+                        ``--use-cache`` are ``sio suggest``-only and never occur
+                        on a search command, so grading on them was a phantom.)
+  files_first_rate   = rows with ``--files``             / total
+  context_walk_rate  = rows with ``--context|--around``  / total
 
 Targets (BASELINE.md "Target deltas"):
   recency_rate       >= 85%   (was ~50% before US1)
@@ -67,10 +69,11 @@ def _flag_recency(command: str) -> bool:
 
 
 def _flag_multi_hop(command: str) -> bool:
-    return any(
-        flag in command
-        for flag in ("--refine", "--within", "--use-cache", "--strategy")
-    )
+    # BUGFIX: only grade on flags that actually EXIST on `sio search` and narrow
+    # it. `--within`/`--use-cache` are `sio suggest`-only flags — never present
+    # on a search invocation — so grading on them made multi-hop_rate impossible
+    # to satisfy honestly. `sio search` narrows via `--refine` (+ `--strategy`).
+    return any(flag in command for flag in ("--refine", "--strategy"))
 
 
 def _flag_files_first(command: str) -> bool:
@@ -78,7 +81,9 @@ def _flag_files_first(command: str) -> bool:
 
 
 def _flag_context_walk(command: str) -> bool:
-    return "--context" in command
+    # BUGFIX: `--around N` is the modern role-aware context walk (FR-003) and was
+    # not being credited — only the legacy `--context` was. Count both.
+    return "--context" in command or "--around" in command
 
 
 def compute_discipline_rates(
@@ -238,9 +243,9 @@ def format_discipline_report(
 
     metrics = [
         ("recency_rate", "recency-first (--recent)"),
-        ("multi_hop_rate", "multi-hop (--refine/--within/--use-cache/--strategy)"),
+        ("multi_hop_rate", "multi-hop (--refine/--strategy)"),
         ("files_first_rate", "files-first (--files)"),
-        ("context_walk_rate", "context walk-back (--context)"),
+        ("context_walk_rate", "context walk-back (--context/--around)"),
     ]
 
     for key, label in metrics:
