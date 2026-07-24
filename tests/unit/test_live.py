@@ -104,9 +104,13 @@ class TestDiscover:
         )
 
     def _wire(self, monkeypatch, tmp_path, projects):
-        # Point Claude at our fixture tree; silence the other harnesses.
+        # Point Claude at our fixture tree; silence the other harnesses (incl.
+        # the real on-disk goose/opencode SQLite stores, so they can't leak
+        # sessions into these assertions).
         monkeypatch.setattr(live, "CLAUDE_PROJECTS", projects)
-        for attr in ("GOOSE_SESSIONS", "CODEX_SESSIONS", "GEMINI_TMP", "KIMI_SESSIONS"):
+        monkeypatch.setattr(live, "GOOSE_DB", tmp_path / "nope" / "sessions.db")
+        monkeypatch.setattr(live, "OPENCODE_DB", tmp_path / "nope" / "opencode.db")
+        for attr in ("CODEX_SESSIONS", "GEMINI_TMP", "KIMI_SESSIONS"):
             monkeypatch.setattr(live, attr, tmp_path / "nope" / attr)
         monkeypatch.setattr(live, "KIMI_SESSION_INDEX", tmp_path / "nope" / "index.jsonl")
 

@@ -299,114 +299,142 @@ def search_codex(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Recor
             )
 
 
+GOOSE_DB = HOME / ".local" / "share" / "goose" / "sessions" / "sessions.db"
+OPENCODE_DB = HOME / ".local" / "share" / "opencode" / "opencode.db"
+
+
+def _goose_content_text(content_json: str | None) -> str:
+    """Join the ``text`` of a goose ``content_json`` block array into one string."""
+    if not content_json:
+        return ""
+    try:
+        blocks = json.loads(content_json)
+    except json.JSONDecodeError:
+        return str(content_json)
+    if isinstance(blocks, list):
+        return " ".join(
+            b.get("text", "") if isinstance(b, dict) else str(b) for b in blocks
+        )
+    return str(blocks)
+
+
 def search_goose(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Record]:
-    root = HOME / ".local" / "share" / "goose" / "sessions"
-    if not root.exists():
+    """Search Goose CLI session transcripts (SQLite, WAL mode).
+
+    Storage: ``~/.local/share/goose/sessions/sessions.db`` — ``messages`` holds
+    one row per turn (session_id, role, content_json, created_timestamp epoch
+    SECONDS); content_json is a JSON array of blocks (join the ``text`` of
+    ``{"type":"text",...}`` blocks).
+    """
+    if not GOOSE_DB.exists():
         return
-    for fp in sorted(root.glob("*.jsonl")):
-        if not _file_within(fp, cutoff):
-            continue
-        session_id = fp.stem
-        try:
-            with fp.open(encoding="utf-8", errors="replace") as fh:
-                first = True
-                meta = {}
-                for lineno, raw in enumerate(fh, start=1):
-                    raw = raw.strip()
-                    if not raw:
-                        continue
-                    try:
-                        entry = json.loads(raw)
-                    except json.JSONDecodeError:
-                        continue
-                    if first:
-                        meta = {
-                            "working_dir": entry.get("working_dir"),
-                            "description": entry.get("description"),
-                            "total_tokens": entry.get("total_tokens"),
-                        }
-                        first = False
-                        text = entry.get("description", "") or ""
-                        if _matches(text, pattern, cs):
-                            yield Record(
-                                agent="goose",
-                                session_id=session_id,
-                                ts="",
-                                role="info",
-                                content=text[:2000],
-                                source_path=str(fp),
-                                metadata=meta,
-                                line=lineno,
-                                match_text=text,
-                            )
-                        continue
-                    role = entry.get("role", "unknown")
-                    blocks = entry.get("content") or []
-                    text = " ".join(
-                        b.get("text", "") if isinstance(b, dict) else str(b)
-                        for b in blocks
-                    )
-                    if _matches(text, pattern, cs):
-                        yield Record(
-                            agent="goose",
-                            session_id=session_id,
-                            ts=_iso(entry.get("created")),
-                            role=role,
-                            content=text[:2000],
-                            source_path=str(fp),
-                            metadata=meta,
-                            line=lineno,
-                            match_text=text,
-                        )
-        except OSError:
-            continue
+    try:
+        conn = sqlite3.connect(f"file:{GOOSE_DB}?mode=ro&immutable=0", uri=True)
+    except (sqlite3.Error, OSError):
+        return
+    try:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.execute(
+            "SELECT session_id, role, content_json, created_timestamp, "
+            "message_id FROM messages ORDER BY created_timestamp ASC"
+        )
+        for row in cursor:
+            ts = row["created_timestamp"]
+            if cutoff is not None and (ts or 0) < cutoff:
+                continue
+            text = _goose_content_text(row["content_json"])
+            if not _matches(text, pattern, cs):
+                continue
+            yield Record(
+                agent="goose",
+                session_id=row["session_id"],
+                ts=_iso(ts),
+                role=row["role"] or "unknown",
+                content=text[:2000],
+                source_path=str(GOOSE_DB),
+                metadata={"source_kind": "sqlite", "message_id": row["message_id"]},
+                match_text=text,
+            )
+    except sqlite3.Error:
+        return
+    finally:
+        conn.close()
+
+
+def _opencode_part_text(data_json: str | None) -> str:
+    """Return the ``text`` of an opencode ``part.data`` block, else "".
+
+    Only ``{"type":"text",...}`` parts carry searchable content — reasoning /
+    step-start / step-finish / tool parts return "".
+    """
+    if not data_json:
+        return ""
+    try:
+        obj = json.loads(data_json)
+    except json.JSONDecodeError:
+        return ""
+    if isinstance(obj, dict) and obj.get("type") == "text":
+        return str(obj.get("text", "") or "")
+    return ""
+
+
+def _opencode_role(data_json: str | None) -> str:
+    """Return the ``role`` of an opencode ``message.data`` blob, else "unknown"."""
+    if not data_json:
+        return "unknown"
+    try:
+        obj = json.loads(data_json)
+    except json.JSONDecodeError:
+        return "unknown"
+    if isinstance(obj, dict):
+        return str(obj.get("role") or "unknown")
+    return "unknown"
 
 
 def search_opencode(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Record]:
-    db = HOME / ".local" / "share" / "opencode" / "opencode.db"
-    if not db.exists() or not _file_within(db, cutoff):
+    """Search OpenCode session transcripts (SQLite).
+
+    Storage: ``~/.local/share/opencode/opencode.db`` — ``message`` holds one
+    row per turn (id, session_id, data JSON w/ top-level ``role``, time_created
+    epoch MILLISECONDS); ``part`` holds a message's sub-parts (data JSON; only
+    ``type=="text"`` parts are searchable — reasoning/step-start/step-finish/
+    tool parts are skipped).
+    """
+    if not OPENCODE_DB.exists():
         return
     try:
-        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        conn = sqlite3.connect(f"file:{OPENCODE_DB}?mode=ro&immutable=0", uri=True)
+    except (sqlite3.Error, OSError):
+        return
+    try:
         conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT id, session_id, time_created, data FROM message "
-            "ORDER BY time_created DESC LIMIT 5000"
+        cursor = conn.execute(
+            "SELECT p.id AS part_id, p.data AS part_data, p.time_created AS ts, "
+            "p.session_id AS session_id, m.data AS message_data "
+            "FROM part p JOIN message m ON m.id = p.message_id "
+            "ORDER BY p.time_created ASC"
         )
         for row in cursor:
-            data_str = row["data"] or ""
-            if _matches(data_str, pattern, cs):
-                role = "unknown"
-                content = data_str
-                try:
-                    blob = json.loads(data_str)
-                    if isinstance(blob, dict):
-                        role = blob.get("role", "unknown")
-                        content = blob.get("content", data_str)
-                        if isinstance(content, list):
-                            content = " ".join(
-                                p.get("text", "") if isinstance(p, dict) else str(p)
-                                for p in content
-                            )
-                        elif not isinstance(content, str):
-                            content = json.dumps(content)
-                except json.JSONDecodeError:
-                    pass
-                _content_str = str(content)
-                yield Record(
-                    agent="opencode",
-                    session_id=row["session_id"],
-                    ts=_iso(row["time_created"]),
-                    role=role,
-                    content=_content_str[:2000],
-                    source_path=str(db),
-                    metadata={"message_id": row["id"], "table": "message"},
-                    match_text=_content_str,
-                )
-        conn.close()
+            ts_ms = row["ts"]
+            if cutoff is not None and ((ts_ms or 0) / 1000.0) < cutoff:
+                continue
+            text = _opencode_part_text(row["part_data"])
+            if not text or not _matches(text, pattern, cs):
+                continue
+            yield Record(
+                agent="opencode",
+                session_id=row["session_id"],
+                ts=_iso(ts_ms),
+                role=_opencode_role(row["message_data"]),
+                content=text[:2000],
+                source_path=str(OPENCODE_DB),
+                metadata={"source_kind": "sqlite", "message_id": row["part_id"]},
+                match_text=text,
+            )
     except sqlite3.Error:
-        pass
+        return
+    finally:
+        conn.close()
 
 
 def search_gemini(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Record]:
@@ -974,8 +1002,8 @@ def inventory() -> list[tuple[str, str, bool]]:
     checks = [
         ("claude", str(CLAUDE_PROJECTS)),
         ("codex", str(HOME / ".codex/sessions")),
-        ("goose", str(HOME / ".local/share/goose/sessions")),
-        ("opencode", str(HOME / ".local/share/opencode/opencode.db")),
+        ("goose", str(GOOSE_DB)),
+        ("opencode", str(OPENCODE_DB)),
         ("gemini", str(HOME / ".gemini/tmp")),
         ("aider", str(DEV_ROOT) + " (per-repo .aider.chat.history.md)"),
         ("promptchain", str(HOME / ".promptchain/sessions")),
