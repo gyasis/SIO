@@ -303,7 +303,9 @@ def get_error_records(
     query = "SELECT * FROM error_records WHERE 1=1"
     params: list = []
     if agent:
-        _NON_CLAUDE = ("codex", "gemini", "goose", "aider", "opencode")
+        _NON_CLAUDE = (
+            "codex", "gemini", "goose", "aider", "opencode", "promptchain", "kimi",
+        )
         if agent == "claude":
             query += "".join(
                 f" AND session_id NOT LIKE '{a}:%'" for a in _NON_CLAUDE

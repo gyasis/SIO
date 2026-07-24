@@ -14,12 +14,13 @@ from sio.adapters.base import SessionManifest
 from sio.core.session_handle import parse_handle
 
 _CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
+_KIMI_SESSIONS = Path.home() / ".kimi-code" / "sessions"
 
 
 def adapter_for(agent: str):
     """Return the :class:`SessionAdapter` for ``agent``.
 
-    Claude uses a direct file adapter; every other agent that has a
+    Claude and Kimi use direct file adapters; every other agent that has a
     ``sio.search.cli`` parser uses the search-backed adapter. Unknown agents
     raise NotImplementedError.
     """
@@ -27,6 +28,11 @@ def adapter_for(agent: str):
         from sio.adapters.claude_code.adapter import ClaudeAdapter
 
         return ClaudeAdapter()
+
+    if agent == "kimi":
+        from sio.adapters.kimi.adapter import KimiAdapter
+
+        return KimiAdapter()
 
     from sio.search.cli import PARSERS
 
@@ -43,9 +49,10 @@ def adapter_for(agent: str):
 def manifest_from_handle(handle: str) -> SessionManifest | None:
     """Resolve a session handle to a :class:`SessionManifest`.
 
-    Claude resolves to a concrete file on disk (returns ``None`` if not found).
-    Other known agents return a store-backed manifest; the search-backed
-    adapter locates the session by native id within the agent's store.
+    Claude and Kimi resolve to a concrete file on disk (returns ``None`` if not
+    found). Other known agents return a store-backed manifest; the
+    search-backed adapter locates the session by native id within the agent's
+    store.
     """
     agent, native = parse_handle(handle)
     if agent == "claude":
@@ -57,6 +64,24 @@ def manifest_from_handle(handle: str) -> SessionManifest | None:
             native_id=native,
             kind="file",
             path=str(matches[0]),
+            encoding="jsonl",
+        )
+
+    if agent == "kimi":
+        # native may be a full "session_<uuid>" dir name or a bare uuid — try
+        # the exact dir name first, then fall back to a wildcard uuid match.
+        matches = sorted(_KIMI_SESSIONS.glob(f"*/{native}/agents/main/wire.jsonl"))
+        if not matches:
+            matches = sorted(_KIMI_SESSIONS.glob(f"*/*{native}*/agents/main/wire.jsonl"))
+        if not matches:
+            return None
+        main_wire = matches[0]
+        session_dir_name = main_wire.parents[2].name
+        return SessionManifest(
+            agent="kimi",
+            native_id=session_dir_name,
+            kind="file",
+            path=str(main_wire),
             encoding="jsonl",
         )
 

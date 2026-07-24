@@ -106,8 +106,9 @@ class TestDiscover:
     def _wire(self, monkeypatch, tmp_path, projects):
         # Point Claude at our fixture tree; silence the other harnesses.
         monkeypatch.setattr(live, "CLAUDE_PROJECTS", projects)
-        for attr in ("GOOSE_SESSIONS", "CODEX_SESSIONS", "GEMINI_TMP"):
+        for attr in ("GOOSE_SESSIONS", "CODEX_SESSIONS", "GEMINI_TMP", "KIMI_SESSIONS"):
             monkeypatch.setattr(live, attr, tmp_path / "nope" / attr)
+        monkeypatch.setattr(live, "KIMI_SESSION_INDEX", tmp_path / "nope" / "index.jsonl")
 
     def test_skips_subagents_and_dedups_by_session_id(self, tmp_path, monkeypatch):
         projects = tmp_path / "projects"
