@@ -20,9 +20,11 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import subprocess
 import time
 from collections import deque
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -30,7 +32,8 @@ import click
 
 HOME = Path.home()
 CLAUDE_PROJECTS = HOME / ".claude" / "projects"
-GOOSE_SESSIONS = HOME / ".local" / "share" / "goose" / "sessions"
+GOOSE_DB = HOME / ".local" / "share" / "goose" / "sessions" / "sessions.db"
+OPENCODE_DB = HOME / ".local" / "share" / "opencode" / "opencode.db"
 CODEX_SESSIONS = HOME / ".codex" / "sessions"
 GEMINI_TMP = HOME / ".gemini" / "tmp"
 KIMI_SESSIONS = HOME / ".kimi-code" / "sessions"
@@ -222,14 +225,112 @@ def _claude_session(path: Path) -> dict[str, Any]:
     }
 
 
-def _goose_cwd(path: Path) -> str | None:
-    """Goose stores working_dir on its first metadata line — best-effort."""
-    try:
-        with open(path, encoding="utf-8", errors="replace") as fh:
-            first = fh.readline()
-        return (json.loads(first) or {}).get("working_dir")
-    except (OSError, json.JSONDecodeError):
+def _epoch_from_any(value: Any) -> float | None:
+    """Best-effort epoch-seconds from a goose ``sessions.updated_at`` value.
+
+    SQLite has no native TIMESTAMP type, so this column can surface as a
+    numeric epoch (seconds or milliseconds) or an ISO-8601 string depending on
+    how it was written. Handles all three; returns None if unparseable.
+    """
+    if value is None:
         return None
+    if isinstance(value, (int, float)):
+        v = float(value)
+        return v / 1000.0 if v > 1e12 else v
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return None
+        try:
+            v = float(s)
+            return v / 1000.0 if v > 1e12 else v
+        except ValueError:
+            pass
+        try:
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.timestamp()
+        except ValueError:
+            return None
+    return None
+
+
+def _goose_sessions_from_db(cutoff: float) -> list[dict[str, Any]]:
+    """Goose sessions (``sessions.db``) touched since ``cutoff`` (epoch secs)."""
+    if not GOOSE_DB.exists():
+        return []
+    try:
+        conn = sqlite3.connect(f"file:{GOOSE_DB}?mode=ro&immutable=0", uri=True)
+    except (sqlite3.Error, OSError):
+        return []
+    rows: list[dict[str, Any]] = []
+    try:
+        conn.row_factory = sqlite3.Row
+        for r in conn.execute("SELECT id, working_dir, updated_at, name FROM sessions"):
+            mtime = _epoch_from_any(r["updated_at"])
+            if mtime is None or mtime < cutoff:
+                continue
+            rows.append(
+                {
+                    "agent": "goose",
+                    "native_id": r["id"],
+                    "path": str(GOOSE_DB),
+                    "cwd": r["working_dir"],
+                    "jsonl_branch": None,
+                    "mtime": mtime,
+                    "msgs": 0,
+                    "last": r["name"] or "—",
+                }
+            )
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    return rows
+
+
+def _opencode_sessions_from_db(cutoff: float) -> list[dict[str, Any]]:
+    """OpenCode sessions (``opencode.db``) with a message since ``cutoff``."""
+    if not OPENCODE_DB.exists():
+        return []
+    try:
+        conn = sqlite3.connect(f"file:{OPENCODE_DB}?mode=ro&immutable=0", uri=True)
+    except (sqlite3.Error, OSError):
+        return []
+    rows: list[dict[str, Any]] = []
+    try:
+        conn.row_factory = sqlite3.Row
+        query = (
+            "SELECT s.id AS id, s.directory AS directory, s.title AS title, "
+            "MAX(m.time_created) AS last_ts "
+            "FROM session s LEFT JOIN message m ON m.session_id = s.id "
+            "GROUP BY s.id"
+        )
+        for r in conn.execute(query):
+            last_ts = r["last_ts"]
+            if last_ts is None:
+                continue
+            mtime = last_ts / 1000.0
+            if mtime < cutoff:
+                continue
+            rows.append(
+                {
+                    "agent": "opencode",
+                    "native_id": r["id"],
+                    "path": str(OPENCODE_DB),
+                    "cwd": r["directory"],
+                    "jsonl_branch": None,
+                    "mtime": mtime,
+                    "msgs": 0,
+                    "last": r["title"] or "—",
+                }
+            )
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    return rows
 
 
 def _simple_session(path: Path, agent: str, cwd: str | None) -> dict[str, Any]:
@@ -323,8 +424,8 @@ def discover_sessions(minutes: int) -> list[dict[str, Any]]:
         if f"{os.sep}subagents{os.sep}" in str(fp):
             continue
         rows.append(_claude_session(fp))
-    for fp in _recent(GOOSE_SESSIONS, "*.jsonl", cutoff):
-        rows.append(_simple_session(fp, "goose", _goose_cwd(fp)))
+    rows.extend(_goose_sessions_from_db(cutoff))
+    rows.extend(_opencode_sessions_from_db(cutoff))
     for fp in _recent(CODEX_SESSIONS, "rollout-*.json", cutoff):
         rows.append(_simple_session(fp, "codex", None))
     for fp in _recent(GEMINI_TMP, "session-*.json", cutoff):
