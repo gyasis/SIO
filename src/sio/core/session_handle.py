@@ -21,6 +21,8 @@ KNOWN_AGENTS: tuple[str, ...] = (
     "opencode",
     "gemini",
     "aider",
+    "promptchain",
+    "kimi",
 )
 
 # Legacy default: a colon-less handle (or one whose prefix is not a known agent)
@@ -104,6 +106,12 @@ def from_path(path_str: str) -> str:
         agent = "gemini"
     elif ".aider" in s:
         agent = "aider"
+    elif "/.kimi-code/" in s:
+        agent = "kimi"
+        # wire.jsonl always stems to "wire" — use the session_<uuid> dir name
+        # instead so the handle round-trips through manifest_from_handle().
+        if p.name == "wire.jsonl" and len(p.parents) >= 3:
+            native = p.parents[2].name
     else:
         agent = LEGACY_AGENT
     return f"{agent}:{native}"

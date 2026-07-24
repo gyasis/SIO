@@ -33,6 +33,8 @@ CLAUDE_PROJECTS = HOME / ".claude" / "projects"
 GOOSE_SESSIONS = HOME / ".local" / "share" / "goose" / "sessions"
 CODEX_SESSIONS = HOME / ".codex" / "sessions"
 GEMINI_TMP = HOME / ".gemini" / "tmp"
+KIMI_SESSIONS = HOME / ".kimi-code" / "sessions"
+KIMI_SESSION_INDEX = HOME / ".kimi-code" / "session_index.jsonl"
 
 # Env vars a harness might expose so a session can identify ITSELF as "you".
 _SELF_ID_ENVS = ("SIO_SESSION_ID", "CLAUDE_SESSION_ID", "CLAUDE_SESSION")
@@ -244,6 +246,56 @@ def _simple_session(path: Path, agent: str, cwd: str | None) -> dict[str, Any]:
     }
 
 
+def _load_kimi_index() -> dict[str, str]:
+    """Map sessionDir -> workDir from ~/.kimi-code/session_index.jsonl.
+
+    Best-effort: returns {} if the index is absent or unreadable.
+    """
+    idx: dict[str, str] = {}
+    if not KIMI_SESSION_INDEX.exists():
+        return idx
+    try:
+        with open(KIMI_SESSION_INDEX, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                sdir, wdir = entry.get("sessionDir"), entry.get("workDir")
+                if sdir and wdir:
+                    idx[sdir] = wdir
+    except OSError:
+        pass
+    return idx
+
+
+def _kimi_session(path: Path, index: dict[str, str]) -> dict[str, Any]:
+    """Build a live-session row for one Kimi wire.jsonl.
+
+    Kimi's ``wire.jsonl`` stem is always "wire" (every agent's transcript is
+    named the same), so — unlike ``_simple_session`` — the native_id here is
+    the ``session_<uuid>`` DIRECTORY name (agents/<agent>/wire.jsonl ->
+    parents[2]), keeping it stable and unique per session across its agents
+    (main/agent-0/agent-1/...). ``cwd`` comes from the top-level session index
+    when available.
+    """
+    session_dir = path.parents[2] if len(path.parents) >= 3 else path.parent
+    st = path.stat()
+    return {
+        "agent": "kimi",
+        "native_id": session_dir.name,
+        "path": str(path),
+        "cwd": index.get(str(session_dir)),
+        "jsonl_branch": None,
+        "mtime": st.st_mtime,
+        "msgs": 0,
+        "last": "—",
+    }
+
+
 def _recent(dirpath: Path, glob: str, cutoff: float) -> list[Path]:
     if not dirpath.exists():
         return []
@@ -277,6 +329,9 @@ def discover_sessions(minutes: int) -> list[dict[str, Any]]:
         rows.append(_simple_session(fp, "codex", None))
     for fp in _recent(GEMINI_TMP, "session-*.json", cutoff):
         rows.append(_simple_session(fp, "gemini", None))
+    kimi_index = _load_kimi_index()
+    for fp in _recent(KIMI_SESSIONS, "wire.jsonl", cutoff):
+        rows.append(_kimi_session(fp, kimi_index))
 
     # Collapse resume/compact continuations that share a session id (newest wins),
     # so one logical session is one row and never collides with itself.

@@ -3,13 +3,13 @@
 session-search — unified cross-harness coding-agent session search.
 
 Searches the on-disk session history of every coding-agent harness installed
-on this box (claude, codex, goose, opencode, gemini, aider) using ONE pattern
-and ONE output schema. Defaults to Claude-native fast mode (ripgrep
-short-circuit, ~189ms) to preserve hardwired callers.
+on this box (claude, codex, goose, opencode, gemini, aider, promptchain, kimi)
+using ONE pattern and ONE output schema. Defaults to Claude-native fast mode
+(ripgrep short-circuit, ~189ms) to preserve hardwired callers.
 
 Output schema (JSONL — one object per match):
     {
-      "agent":        "claude|codex|goose|opencode|gemini|aider",
+      "agent":        "claude|codex|goose|opencode|gemini|aider|promptchain|kimi",
       "session_id":   "<agent-native id>",
       "ts":           "<ISO-8601 UTC, best-effort>",
       "role":         "user|assistant|tool|system|info|unknown",
@@ -558,6 +558,101 @@ def search_promptchain(pattern: str, cs: bool, cutoff: float | None) -> Iterator
             continue
 
 
+def _kimi_text_and_role(obj: dict) -> tuple[str, str] | None:
+    """Extract (text, role) from a searchable kimi wire.jsonl record, else None.
+
+    Only two record types carry human-readable content: ``context.append_message``
+    (message.role + message.content, a list of {"type":"text","text":...} blocks,
+    occasionally a plain string) and ``turn.prompt`` (obj.input, same block shape;
+    role comes from ``obj.origin.kind``, default "user"). Everything else (loop
+    events, llm.request, usage.record, permission/tool/plan_mode bookkeeping,
+    turn.cancel/steer) is noise and returns None.
+    """
+    rtype = obj.get("type")
+    if rtype == "context.append_message":
+        message = obj.get("message") or {}
+        role = message.get("role") or "unknown"
+        content = message.get("content")
+        if isinstance(content, list):
+            text = " ".join(
+                b.get("text", "") if isinstance(b, dict) else str(b) for b in content
+            )
+        else:
+            text = str(content or "")
+        return text, role
+    if rtype == "turn.prompt":
+        blocks = obj.get("input")
+        if isinstance(blocks, list):
+            text = " ".join(
+                b.get("text", "") if isinstance(b, dict) else str(b) for b in blocks
+            )
+        else:
+            text = str(blocks or "")
+        role = (obj.get("origin") or {}).get("kind") or "user"
+        return text, role
+    return None
+
+
+def _kimi_ts(obj: dict) -> str:
+    """Convert kimi's epoch-milliseconds ``time`` field to ISO-8601 UTC."""
+    ms = obj.get("time")
+    if ms is None:
+        return ""
+    try:
+        return datetime.fromtimestamp(int(ms) / 1000, tz=timezone.utc).isoformat()
+    except (TypeError, ValueError, OSError, OverflowError):
+        return ""
+
+
+def search_kimi(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Record]:
+    """Search Kimi Code CLI transcripts.
+
+    Layout: ``~/.kimi-code/sessions/<workspace>/session_<uuid>/agents/<agent>/
+    wire.jsonl`` — one JSON object per line, one or more agents per session
+    (``main`` is primary). Only ``context.append_message`` / ``turn.prompt``
+    lines are searchable content; the rest is skipped (see
+    ``_kimi_text_and_role``).
+    """
+    root = HOME / ".kimi-code" / "sessions"
+    if not root.exists():
+        return
+    for wire in root.rglob("wire.jsonl"):
+        if not _file_within(wire, cutoff):
+            continue
+        # agents/<agent>/wire.jsonl -> parents[0]=<agent>, [1]=agents, [2]=session_<uuid>
+        session_id = wire.parents[2].name if len(wire.parents) >= 3 else wire.parent.name
+        agent_dir = wire.parent.name
+        try:
+            with wire.open(encoding="utf-8", errors="replace") as fh:
+                for lineno, raw in enumerate(fh, start=1):
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    try:
+                        obj = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    extracted = _kimi_text_and_role(obj)
+                    if extracted is None:
+                        continue
+                    text, role = extracted
+                    if not _matches(text, pattern, cs):
+                        continue
+                    yield Record(
+                        agent="kimi",
+                        session_id=session_id,
+                        ts=_kimi_ts(obj),
+                        role=role,
+                        content=text[:2000],
+                        source_path=str(wire),
+                        metadata={"agent_dir": agent_dir, "source_kind": "kimi"},
+                        line=lineno,
+                        match_text=text,
+                    )
+        except OSError:
+            continue
+
+
 PARSERS = {
     "claude": search_claude,
     "codex": search_codex,
@@ -566,6 +661,7 @@ PARSERS = {
     "gemini": search_gemini,
     "aider": search_aider,
     "promptchain": search_promptchain,
+    "kimi": search_kimi,
 }
 
 
@@ -883,6 +979,7 @@ def inventory() -> list[tuple[str, str, bool]]:
         ("gemini", str(HOME / ".gemini/tmp")),
         ("aider", str(DEV_ROOT) + " (per-repo .aider.chat.history.md)"),
         ("promptchain", str(HOME / ".promptchain/sessions")),
+        ("kimi", str(HOME / ".kimi-code" / "sessions")),
     ]
     rows = []
     for agent, path in checks:
