@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import signal
 import sqlite3
 import subprocess
 import time
@@ -283,6 +284,67 @@ class Digest:
             lines.append(f"user: {self.last_user}")
         lines.append(f"CURSOR={self.cursor}")
         return "\n".join(lines)
+
+
+# ----------------------------- cursor persistence --------------------------- #
+
+# Why persist: the resume point is otherwise only in the reading agent's
+# conversation, so a /compact loses it. Stored per session handle so parallel
+# observers of different peers never contend.
+_CURSOR_FILE = "live-cursors.json"
+_CURSOR_KEEP = 200  # bound the file — oldest entries are evicted (economy)
+
+
+def _sio_home() -> Path:
+    """SIO state dir — ``$SIO_HOME`` when set, else ``~/.sio`` (house default)."""
+    env = os.environ.get("SIO_HOME")
+    return Path(env).expanduser() if env else Path.home() / ".sio"
+
+
+def _cursor_path() -> Path:
+    return _sio_home() / _CURSOR_FILE
+
+
+def _load_cursors() -> dict[str, dict[str, str]]:
+    """Read the cursor store. Never raises — a bad store must not break a read."""
+    try:
+        with open(_cursor_path(), encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _get_cursor(handle: str) -> str | None:
+    entry = _load_cursors().get(handle)
+    if isinstance(entry, dict):
+        ts = entry.get("cursor")
+        return ts if isinstance(ts, str) and ts else None
+    return None
+
+
+def _save_cursor(handle: str, cursor: str) -> None:
+    """Record ``handle``'s resume point. Atomic, bounded, and never fatal.
+
+    Written via a temp file + os.replace so two live observers writing at once
+    can't leave a half-file behind (the whole point is parallel sessions).
+    """
+    if not handle or not cursor:
+        return
+    store = _load_cursors()
+    store[handle] = {"cursor": cursor, "updated": datetime.now(timezone.utc).isoformat()}
+    if len(store) > _CURSOR_KEEP:
+        ordered = sorted(store.items(), key=lambda kv: kv[1].get("updated", ""), reverse=True)
+        store = dict(ordered[:_CURSOR_KEEP])
+    path = _cursor_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(f".tmp.{os.getpid()}")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(store, fh, indent=2, sort_keys=True)
+        os.replace(tmp, path)
+    except OSError:
+        pass  # a read must still succeed even if state can't be written
 
 
 def _tool_blocks(raw: dict[str, Any]) -> list[dict[str, Any]]:
@@ -770,16 +832,27 @@ def _stream(
     filt: LiveFilter,
     as_json: bool = False,
     digest: bool = False,
+    handle: str | None = None,
+    save: bool = True,
 ) -> None:
-    """Emit the last ``tail`` MATCHING events, then optionally follow new ones."""
+    """Emit the last ``tail`` MATCHING events, then optionally follow new ones.
+
+    The cursor persisted for ``handle`` is the newest **matched** event — i.e.
+    "everything up to here has been shown to me under my current filter" — so a
+    resume can never skip something this call actually displayed.
+    """
+    last_ts = ""
 
     def _body(ev) -> str:
         return _content_snippet(ev.raw) or ev.content or ""
 
     def _emit(ev) -> None:
+        nonlocal last_ts
         body = _body(ev)
         if not filt.passes(ev, body):  # re-checked so `follow` filters too
             return
+        if ev.ts > last_ts:
+            last_ts = ev.ts
         if as_json:
             click.echo(
                 json.dumps(
@@ -806,22 +879,33 @@ def _stream(
         for ev in matched:
             summary.add(ev, _body(ev))
         click.echo(summary.render())
+        if save and handle and summary.cursor:
+            _save_cursor(handle, summary.cursor)
         return
 
     window = deque(matched, maxlen=tail)
     for ev in window:
         _emit(ev)
     # Trailing cursor so an agent can resume exactly here on the next call.
-    if window and not follow and not as_json:
-        click.echo(f"CURSOR={window[-1].ts}")
-    if follow:
-        try:
-            for ev in adapter.get_live_stream(manifest, from_start=False):
-                _emit(ev)
-        except KeyboardInterrupt:
-            click.echo("\nStopped.")
-        except NotImplementedError as exc:
-            raise click.ClickException(str(exc)) from exc
+    if last_ts and not follow and not as_json:
+        click.echo(f"CURSOR={last_ts}")
+    if not follow:
+        if save and handle and last_ts:
+            _save_cursor(handle, last_ts)
+        return
+    try:
+        for ev in adapter.get_live_stream(manifest, from_start=False):
+            _emit(ev)
+    except KeyboardInterrupt:
+        click.echo("\nStopped.")
+    except NotImplementedError as exc:
+        raise click.ClickException(str(exc)) from exc
+    finally:
+        # Detaching must leave a resume point — that is what makes attach/detach
+        # cycles lossless instead of a reason to hold the stream open.
+        if save and handle and last_ts:
+            _save_cursor(handle, last_ts)
+            click.echo(f"CURSOR={last_ts}", err=True)
 
 
 def _filter_options(fn):
@@ -850,6 +934,35 @@ def _filter_options(fn):
     return fn
 
 
+def _cursor_options(fn):
+    """Shared resume/persist options — survive a /compact in the reading agent."""
+    opts = [
+        click.option(
+            "--resume",
+            is_flag=True,
+            help="Start from this session's SAVED cursor (--since wins if both given).",
+        ),
+        click.option(
+            "--no-save", "no_save", is_flag=True, help="Peek without advancing the saved cursor."
+        ),
+    ]
+    for opt in reversed(opts):
+        fn = opt(fn)
+    return fn
+
+
+def _resolve_since(handle: str, since: str | None, resume: bool) -> str | None:
+    """Explicit --since always wins; --resume falls back to the stored cursor."""
+    if since:
+        return since
+    if resume:
+        stored = _get_cursor(handle)
+        if stored is None:
+            click.echo(f"(no saved cursor for {handle} — reading from the start)", err=True)
+        return stored
+    return None
+
+
 def _build_filter(
     only, tools_only, text_only, since, until, grep_pat, include_blank
 ) -> LiveFilter:
@@ -872,6 +985,7 @@ def _build_filter(
 @click.option("--follow", "-f", is_flag=True, help="Keep streaming new events.")
 @click.option("--digest", is_flag=True, help="Aggregate instead of listing (~200 bytes).")
 @_filter_options
+@_cursor_options
 def live_show(
     session: str,
     tail: int,
@@ -885,6 +999,8 @@ def live_show(
     grep_pat: str | None,
     include_blank: bool,
     as_json: bool,
+    resume: bool,
+    no_save: bool,
 ) -> None:
     """Print the TAIL of one session, locked to its id (bare/partial/handle/path).
 
@@ -899,11 +1015,22 @@ def live_show(
     sio live show <id> --digest                 # counts + CURSOR only
     """
     _agent, adapter, manifest = _locate(session)
+    since = _resolve_since(manifest.handle, since, resume)
     filt = _build_filter(only, tools_only, text_only, since, until, grep_pat, include_blank)
     if not as_json and not digest:
         header = f"── {manifest.handle}  (last {tail})"
         click.echo(header + ("  · following" if follow else ""))
-    _stream(adapter, manifest, tail, follow, filt, as_json=as_json, digest=digest)
+    _stream(
+        adapter,
+        manifest,
+        tail,
+        follow,
+        filt,
+        as_json=as_json,
+        digest=digest,
+        handle=manifest.handle,
+        save=not no_save,
+    )
 
 
 @live_cmd.command("attach")
@@ -917,6 +1044,7 @@ def live_show(
     help="Lines of prior context to print before following.",
 )
 @_filter_options
+@_cursor_options
 def live_attach(
     session: str,
     tail: int,
@@ -928,6 +1056,8 @@ def live_attach(
     grep_pat: str | None,
     include_blank: bool,
     as_json: bool,
+    resume: bool,
+    no_save: bool,
 ) -> None:
     """ATTACH to a live session from another session and follow it read-only.
 
@@ -941,9 +1071,70 @@ def live_attach(
     only when you need real time, and detach when done.
     """
     _agent, adapter, manifest = _locate(session)
+    since = _resolve_since(manifest.handle, since, resume)
     filt = _build_filter(only, tools_only, text_only, since, until, grep_pat, include_blank)
+
+    # A harness detach (`TaskStop`, `timeout`, `kill`) sends SIGTERM, which
+    # Python does NOT raise as an exception — so the cursor save on the way out
+    # would silently never run. Route it through KeyboardInterrupt like Ctrl-C.
+    def _on_term(_signum, _frame):
+        raise KeyboardInterrupt
+
+    try:
+        signal.signal(signal.SIGTERM, _on_term)
+    except ValueError:  # not the main thread — Ctrl-C path still works
+        pass
+
     if not as_json:
         click.echo(
             f"⇢ attached to {manifest.handle}  ({tail} lines context · Ctrl-C to detach)"
         )
-    _stream(adapter, manifest, tail, follow=True, filt=filt, as_json=as_json)
+    _stream(
+        adapter,
+        manifest,
+        tail,
+        follow=True,
+        filt=filt,
+        as_json=as_json,
+        handle=manifest.handle,
+        save=not no_save,
+    )
+
+
+@live_cmd.command("cursors")
+@click.option("--clear", "clear", help="Forget one session's cursor, or 'all'.")
+@click.option("--as-json", "as_json", is_flag=True, help="Machine-readable output.")
+def live_cursors(clear: str | None, as_json: bool) -> None:
+    """List (or clear) saved resume cursors.
+
+    Cursors live in ``$SIO_HOME/live-cursors.json`` (default ``~/.sio``) so a
+    reading agent can resume a peer session even after its own context was
+    compacted away.
+    """
+    if clear:
+        store = {} if clear == "all" else {
+            k: v for k, v in _load_cursors().items() if k != clear and not k.endswith(clear)
+        }
+        path = _cursor_path()
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(f".tmp.{os.getpid()}")
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(store, fh, indent=2, sort_keys=True)
+            os.replace(tmp, path)
+        except OSError as exc:
+            raise click.ClickException(f"could not write {path}: {exc}") from exc
+        click.echo(f"cleared; {len(store)} cursor(s) remain")
+        return
+
+    store = _load_cursors()
+    if as_json:
+        click.echo(json.dumps(store, indent=2, sort_keys=True))
+        return
+    if not store:
+        click.echo(f"No saved cursors ({_cursor_path()}).")
+        return
+    rows = sorted(store.items(), key=lambda kv: kv[1].get("updated", ""), reverse=True)
+    for handle, entry in rows:
+        cur, upd = entry.get("cursor", "?"), entry.get("updated", "?")
+        click.echo(f"{handle}  cursor={cur}  saved={upd}")

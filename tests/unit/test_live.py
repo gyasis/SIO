@@ -231,3 +231,68 @@ class TestFilterBeforeTruncate:
         kept = [e for e in events if f.passes(e, "")]
         assert len(kept) == 2
         assert all(e.tool == "Bash" for e in kept)
+
+
+class TestCursorStore:
+    """Persistence so a /compact in the READING agent can't lose the resume point."""
+
+    def test_roundtrip_and_isolation_by_handle(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SIO_HOME", str(tmp_path))
+        assert live._get_cursor("claude:aaa") is None
+        live._save_cursor("claude:aaa", "2026-07-28T08:00:00Z")
+        live._save_cursor("claude:bbb", "2026-07-28T09:00:00Z")
+        assert live._get_cursor("claude:aaa") == "2026-07-28T08:00:00Z"
+        assert live._get_cursor("claude:bbb") == "2026-07-28T09:00:00Z"
+
+    def test_corrupt_store_degrades_instead_of_raising(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SIO_HOME", str(tmp_path))
+        (tmp_path / "live-cursors.json").write_text("NOT JSON {{{")
+        assert live._load_cursors() == {}
+        assert live._get_cursor("claude:aaa") is None
+
+    def test_empty_values_are_not_written(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SIO_HOME", str(tmp_path))
+        live._save_cursor("claude:aaa", "")
+        live._save_cursor("", "2026-07-28T08:00:00Z")
+        assert live._load_cursors() == {}
+
+    def test_store_is_bounded_and_evicts_oldest(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SIO_HOME", str(tmp_path))
+        for i in range(live._CURSOR_KEEP + 25):
+            live._save_cursor(f"claude:{i:04d}", f"2026-07-28T08:00:{i % 60:02d}Z")
+        assert len(live._load_cursors()) <= live._CURSOR_KEEP
+
+    def test_write_is_atomic_no_tmp_left_behind(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SIO_HOME", str(tmp_path))
+        live._save_cursor("claude:aaa", "2026-07-28T08:00:00Z")
+        assert not list(tmp_path.glob("*.tmp.*"))
+        assert (tmp_path / "live-cursors.json").exists()
+
+    def test_sio_home_env_overrides_default(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SIO_HOME", str(tmp_path))
+        assert live._cursor_path() == tmp_path / "live-cursors.json"
+        monkeypatch.delenv("SIO_HOME")
+        assert live._cursor_path().parent.name == ".sio"
+
+
+class TestResolveSince:
+    def test_explicit_since_beats_resume(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SIO_HOME", str(tmp_path))
+        live._save_cursor("claude:aaa", "2026-07-28T08:00:00Z")
+        assert live._resolve_since("claude:aaa", "2026-07-28T10:00:00Z", True) == (
+            "2026-07-28T10:00:00Z"
+        )
+
+    def test_resume_reads_stored_cursor(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SIO_HOME", str(tmp_path))
+        live._save_cursor("claude:aaa", "2026-07-28T08:00:00Z")
+        assert live._resolve_since("claude:aaa", None, True) == "2026-07-28T08:00:00Z"
+
+    def test_resume_without_stored_cursor_reads_from_start(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SIO_HOME", str(tmp_path))
+        assert live._resolve_since("claude:aaa", None, True) is None
+
+    def test_no_resume_no_since_is_none(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SIO_HOME", str(tmp_path))
+        live._save_cursor("claude:aaa", "2026-07-28T08:00:00Z")
+        assert live._resolve_since("claude:aaa", None, False) is None

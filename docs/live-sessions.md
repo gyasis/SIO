@@ -137,6 +137,8 @@ option below works on **both** `show` and `attach`, and they **compose**.
 | `--include-blank` | keep harness bookkeeping that renders empty (off by default) |
 | `--as-json` | one JSON object per line: `{ts, kind, tool, role, body}` |
 | `--digest` (show only) | aggregate — tool counts, files touched, errors, last user turn, CURSOR |
+| `--resume` | start from this session's **saved** cursor (`--since` wins if both given) |
+| `--no-save` | peek without advancing the saved cursor |
 
 **Kinds.** Every event is exactly one of four: `tool` (what it ran), `text`
 (assistant prose), `user` (what it was told), `system` (harness bookkeeping —
@@ -153,6 +155,40 @@ sio live show <peer> --only text,tool -n 20     # ...interleaved with what it RA
 sio live show <peer> --grep 'episode_audio'     # target the one thing it mentioned
 sio live show <peer> --tools-only --since <CUR> # what has it run since I last looked
 ```
+
+### Cursor persistence — resume survives a `/compact`
+
+A printed `CURSOR=` only lives in the reading agent's conversation, so a compaction
+loses it. Cursors are therefore also **persisted per session handle** in
+`$SIO_HOME/live-cursors.json` (default `~/.sio/live-cursors.json`):
+
+```bash
+sio live show <peer> --digest             # reads, prints CURSOR=, and SAVES it
+#   ...go do 40 minutes of your own work, get compacted, whatever...
+sio live show <peer> --resume --only text,tool   # picks up exactly where you left off
+sio live show <peer> -n 5 --no-save              # peek WITHOUT advancing
+
+sio live cursors                          # list saved cursors
+sio live cursors --clear <id|all>         # forget one, or all
+```
+
+`attach` also saves on the way out — Ctrl-C **and** SIGTERM (what `TaskStop` /
+`timeout` send), so a harness detach leaves a usable resume point rather than
+silently dropping it. That is what makes attach → work → re-attach lossless
+instead of a reason to hold a stream open.
+
+Semantics + guarantees:
+
+- The saved cursor is the newest **matched** event — "everything up to here has
+  been shown to me under my current filter" — so a resume never skips something
+  the previous call actually displayed. Switching to a *wider* filter on resume
+  picks up from that point forward; it does not retroactively replay events the
+  narrower filter excluded. Use `--digest` (unfiltered) for a canonical cursor.
+- Writes are **atomic** (temp file + `os.replace`), so two live observers writing
+  at once cannot leave a half-written store.
+- The store is **bounded** to 200 entries (oldest evicted) and **failure-tolerant**:
+  a missing, unreadable, or corrupt store degrades to "no cursor" and the read
+  still succeeds — state must never break a read.
 
 ---
 
