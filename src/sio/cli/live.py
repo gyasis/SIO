@@ -6,24 +6,37 @@ sessions by real-time signal instead (recent file mtime) and reads their tail
 directly, keyed by repo + branch so you can spot two sessions about to collide
 on the same working tree.
 
-Two commands:
+Three commands:
 
     sio live ls              # list active sessions + flag collisions
     sio live show <id>       # print the tail of one session (locked to its id)
     sio live show <id> -f    # ...then follow it live (delegates to the tailer)
+    sio live attach <id>     # context tail, then follow read-only
 
 Claude Code is covered richly (its JSONL writes ``cwd`` + ``gitBranch`` on every
 line, which nothing else in SIO reads); other harnesses are listed best-effort.
+
+``show`` and ``attach`` share one composable filter set — ``--only`` (kinds
+tool/text/user/system, with ``--tools-only``/``--text-only`` aliases),
+``--since``/``--until``, ``--grep``, ``--include-blank``, ``--as-json`` — plus
+``--digest`` on ``show``. That is deliberate: an observing agent should steer a
+peer session (broad -> narrow -> target) rather than dump it. ``show`` prints a
+trailing ``CURSOR=<ts>`` to feed back as ``--since``, so polling is lossless and
+you never need to hold a stream open. Prefer polling: piping ``attach`` into a
+conversation makes every event a turn that re-reads the whole context.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import time
-from collections import deque
+from collections import Counter, deque
+from dataclasses import dataclass
+from dataclasses import field as dc_field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -158,6 +171,129 @@ def _last_event_label(entry: dict[str, Any]) -> str:
             if isinstance(b, dict) and b.get("type") == "tool_use":
                 return f"[{b.get('name', 'tool')}]"
     return str(role)
+
+
+# ------------------------------ event filtering ----------------------------- #
+
+# The four things an observing agent can ask for. ``tool`` = what the peer RAN,
+# ``text`` = what it CONCLUDED, ``user`` = what it was told, ``system`` = the
+# harness bookkeeping (mode/attachment/queue-operation/...), which is ~63% of a
+# Claude transcript and renders blank, so it is excluded unless asked for.
+_KINDS = ("tool", "text", "user", "system")
+
+
+def _event_kind(ev: Any) -> str:
+    """Classify one SessionEvent into exactly one of ``_KINDS``."""
+    if ev.tool:
+        return "tool"
+    role = (ev.role or "").lower()
+    if role == "assistant":
+        return "text"
+    if role == "user":
+        return "user"
+    return "system"
+
+
+def _resolve_kinds(only: str | None, tools_only: bool, text_only: bool) -> set[str] | None:
+    """Resolve ``--only`` plus its back-compat aliases into a kind set.
+
+    Returns None for "no filtering". ``--only`` is comma-separated and composes
+    with the aliases, so ``--tools-only --text-only`` == ``--only tool,text``.
+    """
+    kinds: set[str] = set()
+    for part in (only or "").split(","):
+        part = part.strip().lower()
+        if not part:
+            continue
+        if part == "all":
+            return None
+        if part not in _KINDS:
+            raise click.ClickException(
+                f"unknown kind {part!r} — choose from {', '.join(_KINDS)} (or 'all')"
+            )
+        kinds.add(part)
+    if tools_only:
+        kinds.add("tool")
+    if text_only:
+        kinds.add("text")
+    return kinds or None
+
+
+@dataclass
+class LiveFilter:
+    """Composable predicate over a session's events (the narrow/target step)."""
+
+    kinds: set[str] | None = None
+    since: str | None = None
+    until: str | None = None
+    grep: re.Pattern[str] | None = None
+    include_blank: bool = False
+
+    def passes(self, ev: Any, body: str) -> bool:
+        if self.kinds is not None and _event_kind(ev) not in self.kinds:
+            return False
+        # ISO-8601 with a fixed offset sorts lexicographically, so plain string
+        # comparison is a correct time window here.
+        if self.since and ev.ts <= self.since:
+            return False
+        if self.until and ev.ts > self.until:
+            return False
+        if not self.include_blank and not body and not ev.tool:
+            return False
+        if self.grep and not (self.grep.search(body) or self.grep.search(ev.tool or "")):
+            return False
+        return True
+
+
+@dataclass
+class Digest:
+    """Aggregate view — the answer without the transcript (~200 bytes)."""
+
+    events: int = 0
+    tools: Counter = dc_field(default_factory=Counter)
+    files: Counter = dc_field(default_factory=Counter)
+    errors: int = 0
+    last_user: str = ""
+    cursor: str = ""
+
+    def add(self, ev: Any, body: str) -> None:
+        self.events += 1
+        if ev.ts > self.cursor:
+            self.cursor = ev.ts
+        if ev.tool:
+            self.tools[ev.tool] += 1
+        if _event_kind(ev) == "user":
+            self.last_user = body[:120]
+        for block in _tool_blocks(ev.raw):
+            path = (block.get("input") or {}).get("file_path")
+            if path:
+                self.files[os.path.basename(path)] += 1
+            if block.get("is_error"):
+                self.errors += 1
+
+    def render(self) -> str:
+        top_t = ", ".join(f"{k}:{v}" for k, v in self.tools.most_common(6)) or "—"
+        top_f = ", ".join(f"{k}:{v}" for k, v in self.files.most_common(5)) or "—"
+        lines = [
+            f"events={self.events} errors={self.errors}",
+            f"tools: {top_t}",
+            f"files: {top_f}",
+        ]
+        if self.last_user:
+            lines.append(f"user: {self.last_user}")
+        lines.append(f"CURSOR={self.cursor}")
+        return "\n".join(lines)
+
+
+def _tool_blocks(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    """tool_use / tool_result blocks of a raw JSONL entry (for digest stats)."""
+    blocks = ((raw or {}).get("message") or {}).get("content")
+    if not isinstance(blocks, list):
+        return []
+    return [
+        b for b in blocks
+        if isinstance(b, dict) and b.get("type") in ("tool_use", "tool_result")
+    ]
 
 
 # ------------------------------ git awareness ------------------------------ #
@@ -626,17 +762,58 @@ def _locate(session: str):
     return agent, adapter_for(agent), manifest
 
 
-def _stream(adapter, manifest, tail: int, follow: bool, tools_only: bool) -> None:
-    """Emit the last ``tail`` events, then optionally follow new ones."""
+def _stream(
+    adapter,
+    manifest,
+    tail: int,
+    follow: bool,
+    filt: LiveFilter,
+    as_json: bool = False,
+    digest: bool = False,
+) -> None:
+    """Emit the last ``tail`` MATCHING events, then optionally follow new ones."""
+
+    def _body(ev) -> str:
+        return _content_snippet(ev.raw) or ev.content or ""
+
     def _emit(ev) -> None:
-        if tools_only and not ev.tool:
+        body = _body(ev)
+        if not filt.passes(ev, body):  # re-checked so `follow` filters too
+            return
+        if as_json:
+            click.echo(
+                json.dumps(
+                    {
+                        "ts": ev.ts,
+                        "kind": _event_kind(ev),
+                        "tool": ev.tool,
+                        "role": ev.role,
+                        "body": body[:400],
+                    }
+                )
+            )
             return
         tag = f"[{ev.tool}]" if ev.tool else ev.role
-        body = _content_snippet(ev.raw) or ev.content
         click.echo(f"{ev.ts[:19]} {tag}: {body[:180]}")
 
-    for ev in deque(adapter.get_events(manifest), maxlen=tail):
+    # Filter BEFORE truncating: a session's trailing records are often
+    # system/attachment/mode entries, so taking the last N *then* dropping
+    # them yields an empty tail (silently, on a busy session).
+    matched = (ev for ev in adapter.get_events(manifest) if filt.passes(ev, _body(ev)))
+
+    if digest:
+        summary = Digest()
+        for ev in matched:
+            summary.add(ev, _body(ev))
+        click.echo(summary.render())
+        return
+
+    window = deque(matched, maxlen=tail)
+    for ev in window:
         _emit(ev)
+    # Trailing cursor so an agent can resume exactly here on the next call.
+    if window and not follow and not as_json:
+        click.echo(f"CURSOR={window[-1].ts}")
     if follow:
         try:
             for ev in adapter.get_live_stream(manifest, from_start=False):
@@ -647,21 +824,86 @@ def _stream(adapter, manifest, tail: int, follow: bool, tools_only: bool) -> Non
             raise click.ClickException(str(exc)) from exc
 
 
+def _filter_options(fn):
+    """Shared narrowing options for ``show`` and ``attach`` (broad → narrow → target)."""
+    opts = [
+        click.option(
+            "--only",
+            help=f"Comma list of kinds to keep: {', '.join(_KINDS)} (or 'all'). Composable.",
+        ),
+        click.option("--tools-only", is_flag=True, help="Alias for --only tool."),
+        click.option(
+            "--text-only", is_flag=True, help="Alias for --only text (the agent's prose)."
+        ),
+        click.option("--since", help="Keep events with ts > SINCE (ISO-8601; resume a CURSOR)."),
+        click.option("--until", help="Keep events with ts <= UNTIL (ISO-8601)."),
+        click.option(
+            "--grep", "grep_pat", help="Keep events whose body or tool name matches REGEX."
+        ),
+        click.option(
+            "--include-blank", is_flag=True, help="Keep events that render empty (harness noise)."
+        ),
+        click.option("--as-json", "as_json", is_flag=True, help="Machine-readable JSON lines."),
+    ]
+    for opt in reversed(opts):
+        fn = opt(fn)
+    return fn
+
+
+def _build_filter(
+    only, tools_only, text_only, since, until, grep_pat, include_blank
+) -> LiveFilter:
+    try:
+        pattern = re.compile(grep_pat, re.IGNORECASE) if grep_pat else None
+    except re.error as exc:
+        raise click.ClickException(f"bad --grep regex: {exc}") from exc
+    return LiveFilter(
+        kinds=_resolve_kinds(only, tools_only, text_only),
+        since=since,
+        until=until,
+        grep=pattern,
+        include_blank=include_blank,
+    )
+
+
 @live_cmd.command("show")
 @click.argument("session")
 @click.option("--tail", "-n", default=40, show_default=True, help="Show last N events.")
 @click.option("--follow", "-f", is_flag=True, help="Keep streaming new events.")
-@click.option("--tools-only", is_flag=True, help="Only surface tool_use events.")
-def live_show(session: str, tail: int, follow: bool, tools_only: bool) -> None:
+@click.option("--digest", is_flag=True, help="Aggregate instead of listing (~200 bytes).")
+@_filter_options
+def live_show(
+    session: str,
+    tail: int,
+    follow: bool,
+    digest: bool,
+    only: str | None,
+    tools_only: bool,
+    text_only: bool,
+    since: str | None,
+    until: str | None,
+    grep_pat: str | None,
+    include_blank: bool,
+    as_json: bool,
+) -> None:
     """Print the TAIL of one session, locked to its id (bare/partial/handle/path).
 
-    Reuses the same locator + live tailer as ``sio watch``; the default is a
-    one-shot snapshot of the last N events (the "catch me up on this session"
-    read), with ``--follow`` to keep streaming.
+    The one-shot "catch me up" read — cheap, because it costs one tool result
+    instead of a notification per event. Narrow with --only/--grep/--since,
+    collapse to counts with --digest, then resume from the printed CURSOR.
+
+    \b
+    sio live show <id> --text-only -n 10        # what the peer CONCLUDED
+    sio live show <id> --tools-only --since T   # what it RAN since T
+    sio live show <id> --grep 'episode_audio'   # target one thing
+    sio live show <id> --digest                 # counts + CURSOR only
     """
     _agent, adapter, manifest = _locate(session)
-    click.echo(f"── {manifest.handle}  (last {tail}){'  · following' if follow else ''}")
-    _stream(adapter, manifest, tail, follow, tools_only)
+    filt = _build_filter(only, tools_only, text_only, since, until, grep_pat, include_blank)
+    if not as_json and not digest:
+        header = f"── {manifest.handle}  (last {tail})"
+        click.echo(header + ("  · following" if follow else ""))
+    _stream(adapter, manifest, tail, follow, filt, as_json=as_json, digest=digest)
 
 
 @live_cmd.command("attach")
@@ -674,15 +916,34 @@ def live_show(session: str, tail: int, follow: bool, tools_only: bool) -> None:
     show_default=True,
     help="Lines of prior context to print before following.",
 )
-@click.option("--tools-only", is_flag=True, help="Only surface tool_use events.")
-def live_attach(session: str, tail: int, tools_only: bool) -> None:
+@_filter_options
+def live_attach(
+    session: str,
+    tail: int,
+    only: str | None,
+    tools_only: bool,
+    text_only: bool,
+    since: str | None,
+    until: str | None,
+    grep_pat: str | None,
+    include_blank: bool,
+    as_json: bool,
+) -> None:
     """ATTACH to a live session from another session and follow it read-only.
 
     The companion to ``sio live ls``: find the peer session, then attach to keep
     watching it as it works — a short context tail, then a live stream. This is
     a read-only observer (it never writes to the attached session); Ctrl-C to
     detach. Live follow currently supports Claude sessions.
+
+    COST NOTE: every streamed event becomes a turn in the observing session,
+    which re-reads its whole context. Prefer ``sio live show`` polling; attach
+    only when you need real time, and detach when done.
     """
     _agent, adapter, manifest = _locate(session)
-    click.echo(f"⇢ attached to {manifest.handle}  ({tail} lines context · Ctrl-C to detach)")
-    _stream(adapter, manifest, tail, follow=True, tools_only=tools_only)
+    filt = _build_filter(only, tools_only, text_only, since, until, grep_pat, include_blank)
+    if not as_json:
+        click.echo(
+            f"⇢ attached to {manifest.handle}  ({tail} lines context · Ctrl-C to detach)"
+        )
+    _stream(adapter, manifest, tail, follow=True, filt=filt, as_json=as_json)

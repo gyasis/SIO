@@ -3,7 +3,7 @@
 Discover and read **in-progress** coding-agent sessions, and get warned before
 two of them collide on the same working tree.
 
-> Skill: `/sio-live` · Commands: `sio live ls` · `sio live show` · `sio live attach`
+> Commands: `sio live ls` · `sio live show` · `sio live attach`
 > Siblings: `/sio-search` (indexed history) · `/sio-watch` (tail one session by handle)
 
 ---
@@ -105,6 +105,7 @@ sio live show aee069b            # last 40 events (default)
 sio live show aee069b -n 15      # last 15
 sio live show aee069b --tools-only
 sio live show aee069b --follow   # snapshot, then keep streaming
+sio live show aee069b --digest   # counts + CURSOR instead of a listing
 ```
 
 ```
@@ -112,6 +113,45 @@ sio live show aee069b --follow   # snapshot, then keep streaming
 2026-07-03T12:44:35 assistant: PR is MERGEABLE, GitGuardian passed, CI test jobs (3.11, 3.12) running…
 2026-07-03T12:44:36 [Bash]: Bash(cd ~/Documents/code/cadastre && gh pr checks 12 --repo gyasis/cadastre --watch)
 2026-07-03T12:44:40 user: test (3.11) fail 16s https://github.com/…  test (3.12) fail 22s https://github.com/…
+CURSOR=2026-07-03T12:44:40.918Z
+```
+
+The trailing `CURSOR=` is the resume point — pass it back as `--since` on the
+next call to get only what happened in between (see *Narrowing*, below).
+
+---
+
+## Narrowing — broad → narrow → target
+
+The same discipline as `sio search`: never dump a session, **steer** it. Every
+option below works on **both** `show` and `attach`, and they **compose**.
+
+| Option | Keeps |
+|---|---|
+| `--only tool,text,user,system` | the listed kinds (comma list; `all` disables filtering) |
+| `--tools-only` | alias for `--only tool` — what the peer **ran** |
+| `--text-only` | alias for `--only text` — what the peer **concluded** (its prose) |
+| `--since TS` | events strictly after `TS` (feed it a `CURSOR=`) |
+| `--until TS` | events at or before `TS` |
+| `--grep REGEX` | events whose body **or tool name** matches (case-insensitive) |
+| `--include-blank` | keep harness bookkeeping that renders empty (off by default) |
+| `--as-json` | one JSON object per line: `{ts, kind, tool, role, body}` |
+| `--digest` (show only) | aggregate — tool counts, files touched, errors, last user turn, CURSOR |
+
+**Kinds.** Every event is exactly one of four: `tool` (what it ran), `text`
+(assistant prose), `user` (what it was told), `system` (harness bookkeeping —
+`attachment` / `mode` / `queue-operation` / …). System records are ~63% of a
+Claude transcript and render **blank**, so blank-bodied events are dropped
+unless you pass `--include-blank`. Tool events are kept even when their body is
+empty, because the tool name is itself the signal.
+
+The pivot this exists for — an agent reading a peer, then drilling in:
+
+```bash
+sio live show <peer> --text-only -n 10          # what did it CONCLUDE?
+sio live show <peer> --only text,tool -n 20     # ...interleaved with what it RAN
+sio live show <peer> --grep 'episode_audio'     # target the one thing it mentioned
+sio live show <peer> --tools-only --since <CUR> # what has it run since I last looked
 ```
 
 ---
@@ -125,7 +165,8 @@ observer** — it never writes to the attached session. Ctrl-C detaches.
 ```bash
 sio live attach aee069b          # 15 lines of context, then follow live
 sio live attach aee069b -c 40    # 40 lines of context first
-sio live attach aee069b --tools-only
+sio live attach aee069b --text-only          # only the peer's prose, live
+sio live attach aee069b --grep 'deploy|fail' # only events that matter to you
 ```
 
 The intended loop for an agent working in one session:
@@ -134,6 +175,27 @@ The intended loop for an agent working in one session:
 sio live ls                 # spot a same-branch peer (⚠)
 sio live attach <peer-id>   # watch what it's doing before you touch shared files
 ```
+
+### ⚠ Cost: prefer `show` polling over `attach` streaming
+
+When an agent harness pipes `attach` into its conversation, **every streamed
+event becomes a new turn**, and each turn re-reads that session's entire
+context. Measured on a real 20-hour attach (60 events delivered):
+
+| | measured |
+|---|---|
+| payload actually delivered | 60 events ≈ **4.8k tokens** |
+| context re-read to deliver it | **19.9M** cache-read + 1.0M cache-write |
+| per single ~80-token event | **≈331k tokens of context** |
+| share of the observing session's total traffic | **~18.5%** |
+
+The cost is **not** the watched session's volume (that was 1.27% of it) — it is
+`notifications × your own context size`, so a long attach gets more expensive
+every hour even if the peer does nothing new.
+
+**Therefore:** `sio live ls` to discover → `sio live show --digest` / `--since`
+to poll (a poll rides a turn you are already having) → `attach` **only** for
+genuine real-time need, and detach as soon as it lands.
 
 ---
 

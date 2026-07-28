@@ -149,3 +149,85 @@ class TestDiscover:
         assert rows["aaaa1111"]["collision"] is True
         assert rows["bbbb2222"]["collision"] is True
         assert rows["cccc3333"]["collision"] is False
+
+
+class _Ev:
+    """Minimal SessionEvent stand-in (ts/role/content/tool/raw)."""
+
+    def __init__(self, ts="2026-07-28T08:00:00Z", role="assistant", content="", tool=None, raw=None):
+        self.ts, self.role, self.content, self.tool = ts, role, content, tool
+        self.raw = raw or {}
+
+
+class TestEventKind:
+    def test_tool_wins_over_role(self):
+        assert live._event_kind(_Ev(role="assistant", tool="Bash")) == "tool"
+
+    def test_assistant_prose_is_text(self):
+        assert live._event_kind(_Ev(role="assistant")) == "text"
+
+    def test_user_and_harness_noise(self):
+        assert live._event_kind(_Ev(role="user")) == "user"
+        assert live._event_kind(_Ev(role="attachment")) == "system"
+
+
+class TestResolveKinds:
+    def test_none_means_no_filter(self):
+        assert live._resolve_kinds(None, False, False) is None
+
+    def test_aliases_compose_into_a_set(self):
+        assert live._resolve_kinds(None, True, True) == {"tool", "text"}
+
+    def test_only_is_comma_separated_and_composes_with_aliases(self):
+        assert live._resolve_kinds("user", True, False) == {"user", "tool"}
+
+    def test_all_disables_filtering(self):
+        assert live._resolve_kinds("all", True, False) is None
+
+    def test_unknown_kind_raises(self):
+        import click
+        import pytest
+
+        with pytest.raises(click.ClickException):
+            live._resolve_kinds("bogus", False, False)
+
+
+class TestLiveFilter:
+    def test_kind_filter(self):
+        f = live.LiveFilter(kinds={"text"})
+        assert f.passes(_Ev(role="assistant"), "prose")
+        assert not f.passes(_Ev(role="assistant", tool="Bash"), "Bash(ls)")
+
+    def test_since_is_exclusive_until_is_inclusive(self):
+        f = live.LiveFilter(since="2026-07-28T08:00:00Z", until="2026-07-28T09:00:00Z")
+        assert not f.passes(_Ev(ts="2026-07-28T08:00:00Z"), "x")  # == since → excluded
+        assert f.passes(_Ev(ts="2026-07-28T08:30:00Z"), "x")
+        assert f.passes(_Ev(ts="2026-07-28T09:00:00Z"), "x")  # == until → included
+        assert not f.passes(_Ev(ts="2026-07-28T09:00:01Z"), "x")
+
+    def test_blank_bodies_dropped_by_default_but_tools_kept(self):
+        f = live.LiveFilter()
+        assert not f.passes(_Ev(role="attachment"), "")
+        assert f.passes(_Ev(role="assistant", tool="Bash"), "")  # tool name is signal
+        assert live.LiveFilter(include_blank=True).passes(_Ev(role="attachment"), "")
+
+    def test_grep_matches_body_or_tool_name(self):
+        import re
+
+        f = live.LiveFilter(grep=re.compile("episode", re.IGNORECASE))
+        assert f.passes(_Ev(), "ran EPISODE_audio.py")
+        assert not f.passes(_Ev(), "unrelated body")
+
+
+class TestFilterBeforeTruncate:
+    """Regression: filtering AFTER truncation silently emptied busy sessions."""
+
+    def test_tail_keeps_n_matching_events_not_n_raw_events(self):
+        # 20 trailing harness-noise records after the only 2 tool calls — the
+        # old code took the last 5 raw records (all noise) and emitted nothing.
+        events = [_Ev(ts=f"2026-07-28T08:00:{i:02d}Z", role="assistant", tool="Bash") for i in range(2)]
+        events += [_Ev(ts=f"2026-07-28T08:01:{i:02d}Z", role="attachment") for i in range(20)]
+        f = live.LiveFilter(kinds={"tool"})
+        kept = [e for e in events if f.passes(e, "")]
+        assert len(kept) == 2
+        assert all(e.tool == "Bash" for e in kept)
