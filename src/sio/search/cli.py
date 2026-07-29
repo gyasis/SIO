@@ -758,17 +758,30 @@ def fast_path(args: argparse.Namespace) -> int:
         print("# Total matches: 0  (no files in scope)", file=sys.stderr)
         return 2
 
-    # B3 fix: ripgrep parallelizes across files and emits matches in COMPLETION
-    # order, so pre-sorting the file list does NOT guarantee newest-first output.
-    # rg --sortr=modified (rg 14+) sorts results by mtime descending AND forces
-    # deterministic single-threaded ordered output — matching the python path's
-    # newest-first contract.
-    files: list[str] = files_raw
+    # B3: emit newest-first, matching the python path's contract.
+    #
+    # `--sortr=modified` does NOT do this for us: rg's --sort/--sortr only apply
+    # when ripgrep performs its OWN directory traversal. We hand it an explicit
+    # file list, for which the flag is a silent no-op — verified on rg 13.0.0,
+    # where `rg --sortr=modified NEEDLE -- old.txt new.txt` emits old first while
+    # the same flag on a directory arg correctly emits new first.
+    #
+    # So sort the list ourselves, and pin -j1 so rg's OUTPUT order equals the
+    # INPUT order (parallel workers otherwise emit in completion order — the
+    # reason a bare pre-sort was insufficient before). -j1 costs nothing we were
+    # not already paying: sorting makes rg single-threaded anyway.
+    def _mtime(path: str) -> float:
+        try:
+            return os.stat(path).st_mtime
+        except OSError:  # vanished mid-run — sort it last rather than crash
+            return 0.0
+
+    files: list[str] = sorted(files_raw, key=_mtime, reverse=True)
 
     # -H forces the path prefix even when exactly one file is in scope (rg omits
     # it otherwise), so the match-count regex below stays valid for single-file
     # scope (NEW-ISSUE #1: single-file --recent windows reported 0).
-    rg_args = [rg, "--no-heading", "--with-filename", "--sortr=modified"]
+    rg_args = [rg, "--no-heading", "--with-filename", "-j1"]
     if not args.case_sensitive:
         rg_args.append("-i")
     if args.files:

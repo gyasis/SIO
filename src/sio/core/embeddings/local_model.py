@@ -24,9 +24,14 @@ class FastEmbedBackend(EmbeddingBackend):
         model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
         cache_dir: str | None = None,
     ):
+        # Set every attribute __del__/close() touches BEFORE anything that can
+        # raise. TextEmbedding() downloads/loads an ONNX model and does raise
+        # (missing file, no network) — and a half-built object then hit
+        # __del__ -> close() -> AttributeError: no attribute '_cache_conn',
+        # masking the real error with a confusing secondary one.
+        self._cache_conn: sqlite3.Connection | None = None
         self.model_name = model_name
         self._model = TextEmbedding(model_name=model_name)
-        self._cache_conn = None
         if cache_dir:
             cache_path = Path(cache_dir) / "embedding_cache.db"
             self._cache_conn = sqlite3.connect(str(cache_path))
@@ -38,13 +43,19 @@ class FastEmbedBackend(EmbeddingBackend):
             self._cache_conn.commit()
 
     def close(self) -> None:
-        """Close the cache database connection."""
-        if self._cache_conn:
-            self._cache_conn.close()
+        """Close the cache database connection. Safe on a half-built object."""
+        conn = getattr(self, "_cache_conn", None)
+        if conn is not None:
+            conn.close()
             self._cache_conn = None
 
     def __del__(self) -> None:
-        self.close()
+        # __del__ must never raise — it would be swallowed as "Exception ignored"
+        # noise that hides whatever actually went wrong.
+        try:
+            self.close()
+        except Exception:  # noqa: BLE001 - best-effort cleanup only
+            pass
 
     def _text_hash(self, text: str) -> str:
         return hashlib.sha256(text.encode("utf-8")).hexdigest()

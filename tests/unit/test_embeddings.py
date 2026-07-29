@@ -64,7 +64,12 @@ class TestFastEmbedCache:
         emb_b = fastembed_backend.encode(["completely different text"])
         assert not np.array_equal(emb_a, emb_b)
 
+    @pytest.mark.network
     def test_fastembed_model_swap_invalidates_cache(self, tmp_path):
+        # Downloads a SECOND ONNX model (paraphrase-multilingual-MiniLM-L12-v2),
+        # so it needs network / a warm fastembed cache — opt in with --runnetwork.
+        # The invalidation LOGIC itself is covered hermetically in
+        # TestFastEmbedCacheInvalidation below.
         backend_v1 = FastEmbedBackend(
             model_name="sentence-transformers/all-MiniLM-L6-v2", cache_dir=str(tmp_path)
         )
@@ -95,3 +100,60 @@ class TestApiEmbedBackend:
         result = backend.encode(["fallback test"])
         assert isinstance(result, np.ndarray)
         assert result.shape[1] == 384
+
+
+class TestFastEmbedCacheInvalidation:
+    """The cache is keyed on (text_hash, model_name) — a model swap must MISS.
+
+    Hermetic: ``TextEmbedding`` is mocked, so the invalidation contract is
+    covered in the default suite without downloading a second ONNX model (the
+    networked end-to-end version is the --runnetwork test above).
+    """
+
+    @staticmethod
+    def _backend(tmp_path, model_name: str, fill: float) -> FastEmbedBackend:
+        """A backend whose model always embeds to a constant vector of `fill`."""
+        with patch("sio.core.embeddings.local_model.TextEmbedding") as mock_te:
+            mock_te.return_value.embed.side_effect = lambda texts: [
+                np.full(384, fill, dtype=np.float32) for _ in texts
+            ]
+            # self._model is the mock instance, which outlives this patch scope.
+            return FastEmbedBackend(model_name=model_name, cache_dir=str(tmp_path))
+
+    def test_model_swap_misses_cache_and_reencodes(self, tmp_path):
+        v1 = self._backend(tmp_path, "model-a", 0.25)
+        assert v1.encode(["seed text"])[0][0] == np.float32(0.25)
+
+        v2 = self._backend(tmp_path, "model-b", 0.75)  # same cache dir, new model
+        out = v2.encode(["seed text"])
+
+        assert out[0][0] == np.float32(0.75), "stale model-a vector served after swap"
+        v2._model.embed.assert_called_once()  # proves it really re-encoded
+
+    def test_same_model_hits_cache_and_skips_the_model(self, tmp_path):
+        first = self._backend(tmp_path, "model-a", 0.25)
+        first.encode(["seed text"])
+
+        second = self._backend(tmp_path, "model-a", 0.99)  # same name, new vector
+        out = second.encode(["seed text"])
+
+        assert out[0][0] == np.float32(0.25), "cache should have been served"
+        second._model.embed.assert_not_called()
+
+    def test_close_is_safe_on_a_half_built_object(self):
+        """Regression: __init__ raising left __del__ -> close() with no _cache_conn.
+
+        TextEmbedding() can raise (missing ONNX file, no network); the resulting
+        AttributeError masked the real error as 'Exception ignored in __del__'.
+        """
+        obj = FastEmbedBackend.__new__(FastEmbedBackend)  # __init__ never ran
+        obj.close()  # must not raise AttributeError
+        obj.__del__()
+
+    def test_constructor_failure_surfaces_the_real_error(self, tmp_path):
+        with patch(
+            "sio.core.embeddings.local_model.TextEmbedding",
+            side_effect=RuntimeError("model file missing"),
+        ):
+            with pytest.raises(RuntimeError, match="model file missing"):
+                FastEmbedBackend(cache_dir=str(tmp_path))
