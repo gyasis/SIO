@@ -125,6 +125,60 @@ harness produced it — and search, mine, analyze, or live-watch it.
   invocation telemetry over a configurable window. Sub-target rates are flagged in
   `sio briefing` as a regression signal (FR-012).
 
+### Live peer sessions — steerable reads + persistent resume cursors
+
+`sio live` gains a composable filter set so an observing agent can **steer** a peer
+session (broad → narrow → target) rather than dump it, plus resume cursors that
+survive the reading agent's own `/compact`. Motivation: piping `attach` into an
+agent conversation makes every streamed event a new turn that re-reads the whole
+context — measured at ~331k tokens per ~80-token event (19.9M cache-read to deliver
+60 events, ~18.5% of the observing session's total traffic), while the watched
+session's own content was only 1.27% of the cost. Cost is
+`notifications × observer context size`, not peer volume, so **polling beats
+streaming**. See `docs/live-sessions.md`.
+
+#### Added
+
+- **Composable narrowing on `sio live show` and `sio live attach`** —
+  `--only tool,text,user,system` (with `--tools-only` / `--text-only` aliases),
+  `--since` / `--until`, `--grep REGEX`, `--include-blank`, `--as-json`, and
+  `--digest` (`show` only). They all compose. Blank harness-bookkeeping events
+  (~63% of a Claude transcript) are dropped by default. `--text-only` exposes the
+  peer's **prose** — what it concluded — which previously had no flag at all.
+- **Persistent resume cursors.** `show` prints a trailing `CURSOR=<ts>` and saves it
+  per session handle to `$SIO_HOME/live-cursors.json` (default `~/.sio`). `--resume`
+  starts from it, `--no-save` peeks without advancing it, and
+  `sio live cursors [--clear <id|all>]` inspects/forgets. `attach` saves on the way
+  out on Ctrl-C **and on SIGTERM** — what `TaskStop`/`timeout` send — so a harness
+  detach always leaves a usable resume point. Writes are atomic (temp +
+  `os.replace`), the store is bounded to 200 entries, and a missing/corrupt store
+  degrades to "no cursor" rather than breaking the read.
+
+#### Fixed
+
+- **`sio live show/attach --tools-only` silently returned NOTHING on busy sessions.**
+  `_stream()` truncated to the last N *raw* records and dropped non-tool events
+  afterwards, so a tail whose trailing records are harness bookkeeping emptied out.
+  Filtering now happens **before** the window. Verified on a 9,362-record session:
+  `-n 5 --tools-only` went from 0 events to 5. This likely pushed observers straight
+  to the expensive `attach` path.
+- **Search fast path did not emit newest-first.** `rg --sortr=modified` only applies
+  when ripgrep performs its **own** directory traversal; with the explicit file list
+  SIO passes, the flag is a silent no-op. The list is now sorted by mtime descending
+  and `-j1` is pinned so rg's output order equals its input order (a bare pre-sort
+  was insufficient because parallel workers emit in completion order). Verified on
+  ripgrep 13.0.0.
+- **`FastEmbedBackend` masked its own constructor failures.** `_cache_conn` was
+  assigned *after* `TextEmbedding(...)`, which can raise (missing ONNX file, no
+  network); the half-built object then hit `__del__` → `close()` →
+  `AttributeError: no attribute '_cache_conn'`, hiding the real error behind
+  "Exception ignored in `__del__`". Every attribute the destructor touches is now
+  set before anything that can raise, `close()` reads defensively, and `__del__`
+  never raises. The model-swap test that exposed this is now `@pytest.mark.network`
+  (it downloads a second ONNX model); its cache-invalidation contract is covered
+  hermetically instead, asserting the model is really re-invoked on a swap and
+  really skipped on a hit.
+
 (Next minor will also add the DSPy callback-based unified
 optimizer-progress emitter, JudgeVariants Tier 2 meta-optimization if
 needed, and the distilabel attic move.)

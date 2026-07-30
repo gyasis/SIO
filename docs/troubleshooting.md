@@ -153,6 +153,55 @@ embedding_api_key  = "your-key"
 
 ---
 
+## `fastembed` fails with `NO_SUCHFILE` / `model_optimized.onnx` doesn't exist
+
+**Symptom**
+
+```
+onnxruntime.capi.onnxruntime_pybind11_state.NoSuchFile: [ONNXRuntimeError] : 3 :
+NO_SUCHFILE : Load model from /tmp/fastembed_cache/models--qdrant--…/snapshots/…/
+model_optimized.onnx failed. File doesn't exist
+```
+
+**Cause**
+
+The model cache directory **exists but is incomplete** — the snapshot folder is
+there while the `.onnx` weights are not. Usually one of:
+
+- the cache lives under `/tmp` (e.g. `/tmp/fastembed_cache`) and `/tmp` was cleared
+  on reboot, leaving partial directories;
+- a first-run download was interrupted;
+- the machine is offline and only metadata was ever fetched.
+
+This is **not** the same as "model not downloaded yet" (that just pauses and
+downloads — see the section above). Here fastembed believes it has a cache hit and
+goes straight to loading a file that isn't there.
+
+**Fix**
+
+Delete the incomplete cache entry and let it re-download:
+
+```bash
+rm -rf /tmp/fastembed_cache            # or ~/.cache/fastembed, ~/.cache/huggingface/hub
+sio doctor                             # or any command that embeds — triggers a clean fetch
+```
+
+Put the cache somewhere that survives reboots so it can't happen again:
+
+```bash
+export FASTEMBED_CACHE_PATH="$HOME/.cache/fastembed"
+```
+
+If you are air-gapped, switch to the API backend or a model you already have —
+see the `embedding_backend = "api"` snippet above.
+
+> Note: a constructor failure here used to surface as a confusing
+> `AttributeError: 'FastEmbedBackend' object has no attribute '_cache_conn'` in
+> `__del__`, which buried the real error. That is fixed — you now see the
+> `NoSuchFile` above directly.
+
+---
+
 ## `sio init` or hook registration does nothing / hooks are missing
 
 **Symptom**

@@ -470,6 +470,13 @@ sio search "<pattern>" [--agent <harness>] [--recent <days>] [--files] [--count]
 | `--no-fast` | — | Disable ripgrep fast path |
 | `--list-agents` | — | Print inventory of agents with on-disk history, then exit |
 
+**Result ordering (both paths):** results are emitted **newest-first by file mtime**,
+so the most recent sessions appear at the top — the recency-first discipline
+`sio search-discipline` measures. The fast path achieves this by sorting the file
+list itself and running ripgrep single-threaded (`-j1`); note that rg's own
+`--sort`/`--sortr` flags do **not** help here, because they only apply when ripgrep
+performs its own directory traversal, not when it is handed an explicit file list.
+
 **Cross-agent adapters:**
 
 Claude uses a direct file adapter against `~/.claude/projects/**/*.jsonl`.  All other agents
