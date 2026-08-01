@@ -102,8 +102,13 @@ The v004 remediation hardened every stage of the pipeline:
 ### Prerequisites
 
 - Python 3.11+
-- An AI coding tool that produces session transcripts. Claude Code is supported
-  out of the box; Cursor / Windsurf / OpenCode adapters are stubs (PRs welcome).
+- An AI coding tool that produces session transcripts. Coverage differs by
+  direction — the two are easy to conflate because both are called "adapters":
+  - **Reading** sessions (`sio search`, `sio mine`): claude, codex, goose,
+    opencode, gemini, aider, promptchain, kimi. `sio search --list-agents`
+    shows which have data on this machine.
+  - **Installing into** a harness (`sio init` — skills, rules, hook telemetry):
+    Claude Code only. Cursor and OpenCode error out (PRs welcome).
 
 ### Install
 
@@ -111,25 +116,32 @@ The package name on pypi is `self-improving-organism`; the CLI binary stays
 `sio` for ergonomics. (Pypi publish hasn't happened yet — install from GitHub
 for now.)
 
+> **Install from `@main`, not from a tag.** The newest tag (`v0.3.1`, 2026-05-19)
+> predates `sio search` and every non-Claude harness adapter — a tag install
+> silently gives you a CLI with no cross-agent session search. Once a release is
+> cut past those, pin to it here.
+
 **Recommended: an isolated install** so SIO's dependencies (DSPy, fastembed,
 onnxruntime, …) never touch your global or project Python:
 
 ```bash
 # ⭐ uv tool — isolated env, `sio` on PATH (uv 0.4+)
-uv tool install "self-improving-organism[all] @ git+https://github.com/gyasis/SIO.git@v0.3.1"
+uv tool install "self-improving-organism[all] @ git+https://github.com/gyasis/SIO.git@main"
 
 # or pipx — same isolation, pipx-managed venv
-pipx install "self-improving-organism[all] @ git+https://github.com/gyasis/SIO.git@v0.3.1"
+pipx install "self-improving-organism[all] @ git+https://github.com/gyasis/SIO.git@main"
 
-# Verify
-sio --version          # → 0.3.1
+# Verify — `sio --version` reports the pyproject version, which does not move
+# between releases; `sio search` is the real check that you got a current build.
+sio --version          # → 0.4.0
+sio search --list-agents
 ```
 
 Plain pip also works (use a venv so it stays isolated):
 
 ```bash
 python -m venv .venv && . .venv/bin/activate
-pip install "git+https://github.com/gyasis/SIO.git@v0.3.1#egg=self-improving-organism[all]"
+pip install "git+https://github.com/gyasis/SIO.git@main#egg=self-improving-organism[all]"
 
 # Or from source (editable, for tinkering)
 git clone https://github.com/gyasis/SIO.git && cd SIO && pip install -e ".[all,dev]"
@@ -202,7 +214,7 @@ After `sio init`, your tree should look like:
 ### Upgrade
 
 ```bash
-pip install --upgrade git+https://github.com/gyasis/SIO.git@v0.3.1
+pip install --upgrade git+https://github.com/gyasis/SIO.git@main
 sio init                    # safe — never clobbers user-edited files; re-pins hooks after the upgrade
 sio init --status           # confirm what shipped vs what's drifted
 ```
