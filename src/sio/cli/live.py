@@ -545,6 +545,38 @@ def _simple_session(path: Path, agent: str, cwd: str | None) -> dict[str, Any]:
     }
 
 
+def _codex_session(path: Path) -> dict[str, Any]:
+    """Probe of one Codex rollout-*.jsonl session (cwd from its session_meta).
+
+    The ``session_meta`` record is always line 1 (``ordinal: 0``), so this is
+    a single cheap line read rather than a full-file parse -- same spirit as
+    ``_claude_session`` reading only the tail. ``msgs`` uses the same "total
+    lines" proxy ``_claude_session`` uses, since Codex has no single message
+    count field either.
+    """
+    cwd = None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            first = fh.readline()
+        if first.strip():
+            entry = json.loads(first)
+            if entry.get("type") == "session_meta":
+                cwd = (entry.get("payload") or {}).get("cwd")
+    except (OSError, json.JSONDecodeError):
+        pass
+    st = path.stat()
+    return {
+        "agent": "codex",
+        "native_id": path.stem,
+        "path": str(path),
+        "cwd": cwd,
+        "jsonl_branch": None,
+        "mtime": st.st_mtime,
+        "msgs": _count_lines(path),
+        "last": "—",
+    }
+
+
 def _load_kimi_index() -> dict[str, str]:
     """Map sessionDir -> workDir from ~/.kimi-code/session_index.jsonl.
 
@@ -624,9 +656,9 @@ def discover_sessions(minutes: int) -> list[dict[str, Any]]:
         rows.append(_claude_session(fp))
     rows.extend(_goose_sessions_from_db(cutoff))
     rows.extend(_opencode_sessions_from_db(cutoff))
-    for fp in _recent(CODEX_SESSIONS, "rollout-*.json", cutoff):
-        rows.append(_simple_session(fp, "codex", None))
-    for fp in _recent(GEMINI_TMP, "session-*.json", cutoff):
+    for fp in _recent(CODEX_SESSIONS, "rollout-*.jsonl", cutoff):
+        rows.append(_codex_session(fp))
+    for fp in _recent(GEMINI_TMP, "session-*.jsonl", cutoff):
         rows.append(_simple_session(fp, "gemini", None))
     kimi_index = _load_kimi_index()
     for fp in _recent(KIMI_SESSIONS, "wire.jsonl", cutoff):

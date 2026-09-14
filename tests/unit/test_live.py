@@ -151,6 +151,74 @@ class TestDiscover:
         assert rows["cccc3333"]["collision"] is False
 
 
+class TestCodexDiscovery:
+    """Regression: the codex glob was "rollout-*.json" (real files are
+    .jsonl) matched non-recursively against a flat dir, while real files
+    live nested under sessions/YYYY/MM/DD/ -- so codex sessions were NEVER
+    discovered at any window (see live._recent, which IS recursive; only the
+    extension was wrong).
+    """
+
+    def _wire(self, monkeypatch, tmp_path, codex_sessions):
+        monkeypatch.setattr(live, "CLAUDE_PROJECTS", tmp_path / "nope" / "projects")
+        monkeypatch.setattr(live, "GOOSE_DB", tmp_path / "nope" / "sessions.db")
+        monkeypatch.setattr(live, "OPENCODE_DB", tmp_path / "nope" / "opencode.db")
+        monkeypatch.setattr(live, "CODEX_SESSIONS", codex_sessions)
+        monkeypatch.setattr(live, "GEMINI_TMP", tmp_path / "nope" / "gemini")
+        monkeypatch.setattr(live, "KIMI_SESSIONS", tmp_path / "nope" / "kimi")
+        monkeypatch.setattr(live, "KIMI_SESSION_INDEX", tmp_path / "nope" / "index.jsonl")
+
+    def test_discovers_nested_jsonl_rollout_and_reads_cwd(self, tmp_path, monkeypatch):
+        codex_sessions = tmp_path / ".codex" / "sessions"
+        day_dir = codex_sessions / "2026" / "09" / "13"
+        day_dir.mkdir(parents=True)
+        rollout = day_dir / "rollout-2026-09-13T11-53-49-01a09b79-8bf8-77c2-80be-56ff9aec6e56.jsonl"
+        rollout.write_text(
+            json.dumps(
+                {
+                    "timestamp": "2026-09-13T15:54:21.118Z",
+                    "type": "session_meta",
+                    "payload": {"cwd": "/home/x/code", "originator": "codex-tui"},
+                }
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "timestamp": "2026-09-13T15:54:22.451Z",
+                    "type": "response_item",
+                    "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hi"}]},
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        self._wire(monkeypatch, tmp_path, codex_sessions)
+        monkeypatch.setattr(
+            live, "_repo_info",
+            lambda cwd: {"toplevel": None, "common_dir": None, "branch": None},
+        )
+
+        rows = live.discover_sessions(minutes=600)
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["agent"] == "codex"
+        assert row["native_id"] == "rollout-2026-09-13T11-53-49-01a09b79-8bf8-77c2-80be-56ff9aec6e56"
+        assert row["cwd"] == "/home/x/code"
+        assert row["msgs"] == 2
+
+    def test_a_wrong_extension_file_is_never_matched(self, tmp_path, monkeypatch):
+        codex_sessions = tmp_path / ".codex" / "sessions"
+        day_dir = codex_sessions / "2026" / "09" / "13"
+        day_dir.mkdir(parents=True)
+        (day_dir / "rollout-2026-09-13T00-00-00-deadbeef.json").write_text("{}", encoding="utf-8")
+        self._wire(monkeypatch, tmp_path, codex_sessions)
+        monkeypatch.setattr(
+            live, "_repo_info",
+            lambda cwd: {"toplevel": None, "common_dir": None, "branch": None},
+        )
+        assert live.discover_sessions(minutes=600) == []
+
+
 class _Ev:
     """Minimal SessionEvent stand-in (ts/role/content/tool/raw)."""
 

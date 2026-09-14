@@ -18,14 +18,16 @@ _CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
 _KIMI_SESSIONS = Path.home() / ".kimi-code" / "sessions"
 _GOOSE_DB = Path.home() / ".local" / "share" / "goose" / "sessions" / "sessions.db"
 _OPENCODE_DB = Path.home() / ".local" / "share" / "opencode" / "opencode.db"
+_CODEX_SESSIONS = Path.home() / ".codex" / "sessions"
 
 
 def adapter_for(agent: str):
     """Return the :class:`SessionAdapter` for ``agent``.
 
-    Claude, Kimi, Goose and OpenCode use direct adapters (file- or SQLite-
-    backed); every other agent that has a ``sio.search.cli`` parser uses the
-    generic search-backed adapter. Unknown agents raise NotImplementedError.
+    Claude, Kimi, Goose, OpenCode and Codex use direct adapters (file- or
+    SQLite-backed); every other agent that has a ``sio.search.cli`` parser
+    uses the generic search-backed adapter. Unknown agents raise
+    NotImplementedError.
     """
     if agent == "claude":
         from sio.adapters.claude_code.adapter import ClaudeAdapter
@@ -46,6 +48,11 @@ def adapter_for(agent: str):
         from sio.adapters.opencode.adapter import OpenCodeAdapter
 
         return OpenCodeAdapter()
+
+    if agent == "codex":
+        from sio.adapters.codex.adapter import CodexAdapter
+
+        return CodexAdapter()
 
     from sio.search.cli import PARSERS
 
@@ -96,6 +103,26 @@ def manifest_from_handle(handle: str) -> SessionManifest | None:
             native_id=session_dir_name,
             kind="file",
             path=str(main_wire),
+            encoding="jsonl",
+        )
+
+    if agent == "codex":
+        # native may be the full "rollout-<iso>-<uuid>" stem (what discovery
+        # and sio search --files hand back) or a bare/partial uuid (what a
+        # human copies out of a transcript) -- try the exact stem first, then
+        # widen to a substring match. Multiple hits sort newest-last (the
+        # YYYY/MM/DD directory layout sorts lexicographically = chronologically).
+        matches = sorted(_CODEX_SESSIONS.rglob(f"{native}.jsonl"))
+        if not matches:
+            matches = sorted(_CODEX_SESSIONS.rglob(f"*{native}*.jsonl"))
+        if not matches:
+            return None
+        path = matches[-1]
+        return SessionManifest(
+            agent="codex",
+            native_id=path.stem,
+            kind="file",
+            path=str(path),
             encoding="jsonl",
         )
 
