@@ -810,7 +810,9 @@ def _mine_session_via_adapter(db_path: str, handle: str, agent: str) -> None:
             "tool_name": ev.tool,
             "tool_input": None,
             "tool_output": None,
-            "error": None,
+            # An adapter that saw the harness flag a failure (pi's isError
+            # toolResult) surfaces it here so it is filed as a tool_failure.
+            "error": getattr(ev, "error", None),
             "timestamp": ev.ts,
             "session_id": canonical,
         }
@@ -879,7 +881,9 @@ def _mine_agent_bulk(db_path: str, agent: str, since: str | None) -> None:
                     "tool_name": (r.metadata or {}).get("tool"),
                     "tool_input": None,
                     "tool_output": None,
-                    "error": None,
+                    # Parsers that carry a harness-flagged failure (pi's
+                    # isError) put it in metadata["error"]; others leave None.
+                    "error": (r.metadata or {}).get("error"),
                     "timestamp": r.ts,
                     "session_id": canonical,
                 }
@@ -917,13 +921,14 @@ def _mine_agent_bulk(db_path: str, agent: str, since: str | None) -> None:
 @click.option("--project", default=None, help="Filter by project name.")
 @click.option(
     "--agent",
-    type=click.Choice(["claude", "codex", "gemini", "goose"]),
+    type=click.Choice(["claude", "codex", "gemini", "goose", "pi"]),
     default="claude",
     help=(
         "Which coding agent's sessions to mine in bulk. 'claude' uses the "
-        "native JSONL/SpecStory scan; codex/gemini/goose enumerate that agent's "
-        "store via the session-search parsers (content-level errors only). "
-        "Ignored when --session is given."
+        "native JSONL/SpecStory scan; codex/gemini/goose/pi enumerate that "
+        "agent's store via the session-search parsers (content-level errors, "
+        "plus harness-flagged tool failures where the parser carries them -- pi "
+        "does). Ignored when --session is given."
     ),
 )
 @click.option(
