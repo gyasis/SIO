@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS flow_events (
     mined_at TEXT,
     is_subagent INTEGER NOT NULL DEFAULT 0,
     parent_session_id TEXT,
+    agent TEXT NOT NULL DEFAULT '',
     UNIQUE(file_path, session_id, flow_hash)
 );
 CREATE TABLE IF NOT EXISTS behavior_invocations (
@@ -70,6 +71,7 @@ CREATE TABLE IF NOT EXISTS processed_sessions (
     last_mtime REAL,
     is_subagent INTEGER NOT NULL DEFAULT 0,
     parent_session_id TEXT,
+    agent TEXT NOT NULL DEFAULT '',
     UNIQUE(file_path)
 );
 CREATE TABLE IF NOT EXISTS patterns (
