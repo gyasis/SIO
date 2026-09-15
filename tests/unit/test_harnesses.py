@@ -267,6 +267,13 @@ class TestPiAdapter:
         touched = {ch.path for ch in report.changes}
         assert foreign not in touched
         assert (skills / "toolbelt" / "SKILL.md") not in touched
+        # ...and the report names them, so the boundary is visible (also on dry-run).
+        assert any(
+            "2 existing skill(s) not managed by SIO" in n and "promptchain, toolbelt" in n
+            for n in report.notes
+        ), report.notes
+        dry = adapter.install(dry_run=True)
+        assert any("promptchain, toolbelt" in n for n in dry.notes)
 
     def test_same_named_untracked_skill_is_skipped_without_force(self, tmp_path: Path) -> None:
         """A SKILL.md with an SIO name that SIO did NOT install is foreign, not stale."""

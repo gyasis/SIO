@@ -309,6 +309,22 @@ class PiAdapter(HarnessAdapter):
                     transformed.append(f"{skill_dir}: {change}")
             files.append((str(rel_path), self.config_dir / rel_path, text))
 
+        # Say out loud which existing skills SIO is leaving alone, so a user
+        # with their own ~/.pi/agent/skills/ can see the boundary in the output.
+        skills_root = self.config_dir / "skills"
+        if skills_root.is_dir():
+            sio_names = {Path(key).parts[1] for key, _t, _x in files}
+            foreign = sorted(
+                p.name
+                for p in skills_root.iterdir()
+                if not p.name.startswith(".") and p.name not in sio_names
+            )
+            if foreign:
+                notes.append(
+                    f"{len(foreign)} existing skill(s) not managed by SIO — left "
+                    f"untouched: {', '.join(foreign)}"
+                )
+
         if unsupported_rules:
             notes.append(
                 f"{unsupported_rules} bundled rule file(s) not supported on pi "
