@@ -68,6 +68,27 @@ def _allow_tmp_path_for_applier():
     _rb._ALLOWED_ROOTS.remove(tmp_root)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_backup_root(tmp_path_factory, monkeypatch, request):
+    """Keep atomic_write backups out of the real ~/.sio/backups.
+
+    BACKUP_ROOT is computed from Path.home() at import, so without this every test
+    that calls atomic_write wrote real .bak files. Targets outside home land in
+    BACKUP_ROOT/extra/<parent-dir-name>, and pytest reuses leaf names like
+    ``test_foo0`` across runs -- so failure-path tests (which skip pruning)
+    accumulated one file per run in the SAME real folder, and any test counting
+    backups read that stale state. One folder per test node, created lazily.
+    """
+    import re
+
+    import sio.core.applier.writer as _cwr
+
+    node = re.sub(r"[^A-Za-z0-9_.-]", "_", request.node.nodeid)[-120:]
+    monkeypatch.setattr(
+        _cwr, "BACKUP_ROOT", tmp_path_factory.getbasetemp() / "sio-backups" / node
+    )
+
+
 @pytest.fixture
 def tmp_db():
     """In-memory SQLite database with SIO schema applied."""
