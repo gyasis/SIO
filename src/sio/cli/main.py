@@ -14,6 +14,7 @@ from sio.core.constants import DEFAULT_PLATFORM
 from sio.core.observability import log_failure
 from sio.core.runlog import current as _runlog_current
 from sio.core.runlog import runlogged
+from sio.core.session_handle import KNOWN_AGENTS as _KNOWN_AGENTS
 
 _DEFAULT_DB_DIR = os.path.expanduser(f"~/.sio/{DEFAULT_PLATFORM}")
 
@@ -779,21 +780,99 @@ def export(platform, fmt, output):
 # ---------------------------------------------------------------------------
 
 
+def _session_signature(messages: list[dict]) -> str:
+    """Cheap change-detector for a non-claude session: event count + last ts.
+
+    Stored in ``processed_sessions.file_hash`` for the session's row (keyed by
+    its canonical ``agent:native_id``). An unchanged session reproduces the
+    same signature and is skipped on re-mine; a session that grew gets a new
+    one, is re-read, and the UNIQUE error fingerprint drops the overlap so
+    only the new errors land. No filesystem hashing, so it works the same for
+    file-backed (pi, codex, kimi) and store-backed (goose, opencode) agents.
+
+    Counts only events WITH content: the search parsers behind the bulk path
+    drop empty-content events, the adapters behind ``--session`` keep them, and
+    the two paths must produce the same signature for the same session or a
+    session mined one way is never "unchanged" the other way.
+    """
+    with_content = [m for m in messages if (m.get("content") or "").strip()]
+    last_ts = max((m.get("timestamp") or "" for m in with_content), default="")
+    return f"events={len(with_content)};last={last_ts}"
+
+
+def _non_claude_session_processed(conn, key: str, signature: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM processed_sessions WHERE file_path = ? AND file_hash = ?",
+        (key, signature),
+    ).fetchone()
+    return row is not None
+
+
+def _mark_non_claude_session_processed(
+    conn, key: str, signature: str, agent: str, n_events: int, path: str | None
+) -> None:
+    """Upsert the non-claude session's row in processed_sessions.
+
+    ``file_path`` holds the canonical ``agent:native_id`` (a stable key that
+    does not depend on where the harness keeps its files); ``last_mtime`` is
+    the session file's mtime when there is one.
+    """
+    import datetime
+    import os as _os
+
+    mtime = None
+    if path and _os.path.isfile(path):
+        try:
+            mtime = _os.path.getmtime(path)
+        except OSError:
+            mtime = None
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    conn.execute(
+        """
+        INSERT INTO processed_sessions
+            (file_path, file_hash, message_count, tool_call_count, skipped,
+             mined_at, last_mtime, agent)
+        VALUES (?, ?, ?, 0, 0, ?, ?, ?)
+        ON CONFLICT(file_path, file_hash) DO UPDATE SET
+            mined_at = excluded.mined_at,
+            last_mtime = excluded.last_mtime
+        """,
+        (key, signature, n_events, now, mtime, agent),
+    )
+
+
+def _insert_counting(conn, errors: list[dict], canonical: str, now: str) -> tuple[int, int]:
+    """Insert extracted errors; return ``(inserted, already_present)``."""
+    from sio.core.db.queries import insert_error_record
+
+    inserted = present = 0
+    for rec in errors:
+        rec.setdefault("session_id", canonical)
+        rec.setdefault("mined_at", now)
+        rec.setdefault("is_subagent", 0)
+        if insert_error_record(conn, rec, _batch=True) is None:
+            present += 1
+        else:
+            inserted += 1
+    return inserted, present
+
+
 def _mine_session_via_adapter(db_path: str, handle: str, agent: str) -> None:
     """Mine ONE non-claude session through the adapter EXTRACT layer.
 
     Routes a non-claude `mine --session` via the adapter Protocol: locate the
-    session, pull its events, run the error extractor, and insert (canonical
-    session id applied at the write path). Claude keeps its richer file-scan
-    path untouched. Non-claude extraction is content-level (the search-backed
-    adapters do not carry tool_input/output), so tool_failure detection is
-    limited — text-pattern errors (admissions, corrections) are still caught.
+    session, pull its events, run the error extractor, and insert. The rows
+    are stamped with the FULL canonical id ``<agent>:<manifest.native_id>``
+    — the id the adapter resolved, never the (possibly partial) handle the
+    user typed — so `--session pi:01a0` and a later bulk mine file the same
+    session under one id. Claude keeps its richer file-scan path untouched.
+    Non-claude extraction is content-level (the search-backed adapters do not
+    carry tool_input/output), so tool_failure detection is limited —
+    text-pattern errors (admissions, corrections) are still caught.
     """
     import datetime
 
     from sio.adapters.factory import adapter_for, manifest_from_handle
-    from sio.core.db.queries import insert_error_record
-    from sio.core.session_handle import to_canonical
     from sio.mining.error_extractor import extract_errors
 
     try:
@@ -806,7 +885,7 @@ def _mine_session_via_adapter(db_path: str, handle: str, agent: str) -> None:
         return
 
     adapter = adapter_for(agent)
-    canonical = to_canonical(handle)
+    canonical = f"{manifest.agent}:{manifest.native_id}"
     events = list(adapter.get_events(manifest))
     messages = [
         {
@@ -823,18 +902,25 @@ def _mine_session_via_adapter(db_path: str, handle: str, agent: str) -> None:
         }
         for ev in events
     ]
-    errors = extract_errors(messages, source_file=manifest.handle, source_type="adapter")
+    signature = _session_signature(messages)
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     with _db_conn(db_path) as conn:
-        for rec in errors:
-            rec.setdefault("session_id", canonical)
-            rec.setdefault("mined_at", now)
-            rec.setdefault("is_subagent", 0)
-            insert_error_record(conn, rec, _batch=True)
+        _warn_if_agent_migration_pending(conn)
+        if _non_claude_session_processed(conn, canonical, signature):
+            click.echo(
+                f"Skipped {canonical}: unchanged since last mine "
+                f"({len(events)} events) — nothing new to extract."
+            )
+            return
+        errors = extract_errors(messages, source_file=manifest.handle, source_type="adapter")
+        inserted, present = _insert_counting(conn, errors, canonical, now)
+        _mark_non_claude_session_processed(
+            conn, canonical, signature, manifest.agent, len(events), manifest.path
+        )
         conn.commit()
     click.echo(
-        f"Adapter-mined {manifest.handle}: {len(events)} events "
-        f"-> {len(errors)} errors inserted."
+        f"Adapter-mined {canonical}: {len(events)} events -> {len(errors)} errors "
+        f"({inserted} new, {present} already present)."
     )
 
 
@@ -843,14 +929,16 @@ def _mine_agent_bulk(db_path: str, agent: str, since: str | None) -> None:
 
     Enumerates the agent's store ONCE via the absorbed session-search parser,
     groups records by native session id, and runs the same content-level error
-    extractor the per-session adapter path uses. Search parsers do not carry
-    tool_input/output, so tool_failure detection is limited — text-pattern
-    errors (agent admissions, user corrections) are still caught.
+    extractor the per-session adapter path uses. The parser's session id is
+    the same native id the adapter resolves (pi/codex: file stem; kimi:
+    session dir; goose/opencode: the store's own id), so both paths stamp one
+    canonical ``<agent>:<native_id>``. Sessions whose signature (event count +
+    last timestamp) is unchanged since the last mine are skipped; a grown
+    session is re-read and only its new errors land.
     """
     import datetime
     from collections import defaultdict
 
-    from sio.core.db.queries import insert_error_record
     from sio.core.session_handle import to_canonical
     from sio.mining.error_extractor import extract_errors
     from sio.search.cli import PARSERS
@@ -874,9 +962,10 @@ def _mine_agent_bulk(db_path: str, agent: str, since: str | None) -> None:
             by_session[rec.session_id].append(rec)
 
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    total_sessions = 0
-    total_errors = 0
+    total_sessions = skipped_sessions = 0
+    total_errors = total_inserted = total_present = 0
     with _db_conn(db_path) as conn:
+        _warn_if_agent_migration_pending(conn)
         for sid, recs in by_session.items():
             canonical = to_canonical(f"{agent}:{sid}")
             messages = [
@@ -894,21 +983,44 @@ def _mine_agent_bulk(db_path: str, agent: str, since: str | None) -> None:
                 }
                 for r in recs
             ]
+            signature = _session_signature(messages)
+            if _non_claude_session_processed(conn, canonical, signature):
+                skipped_sessions += 1
+                continue
             errors = extract_errors(
                 messages, source_file=f"{agent}:{sid}", source_type="adapter"
             )
-            for er in errors:
-                er.setdefault("session_id", canonical)
-                er.setdefault("mined_at", now)
-                er.setdefault("is_subagent", 0)
-                insert_error_record(conn, er, _batch=True)
+            inserted, present = _insert_counting(conn, errors, canonical, now)
+            _mark_non_claude_session_processed(
+                conn, canonical, signature, agent, len(messages), recs[0].source_path
+            )
             total_sessions += 1
             total_errors += len(errors)
+            total_inserted += inserted
+            total_present += present
         conn.commit()
     click.echo(
         f"Bulk-mined {agent}: {total_sessions} sessions "
-        f"-> {total_errors} errors inserted."
+        f"({skipped_sessions} unchanged, skipped) -> {total_errors} errors "
+        f"({total_inserted} new, {total_present} already present)."
     )
+
+
+def _warn_if_agent_migration_pending(conn) -> None:
+    """One-line nudge when the 006 agent-isolation data migration has not run.
+
+    The column/trigger/views are applied on every open, so new rows are
+    filed correctly regardless; what a pending migration means is that OLD
+    rows still carry ``agent=''`` and duplicates are not yet collapsed.
+    """
+    from sio.core.db.agents import agent_migration_pending
+
+    if agent_migration_pending(conn):
+        click.echo(
+            "note: agent-isolation migration pending — run `sio db migrate` "
+            "to backfill `agent` on existing rows and dedupe.",
+            err=True,
+        )
 
 
 @cli.command()
@@ -1052,6 +1164,7 @@ def mine(since, project, agent, source, exclude_sidechains, session_handle, expe
         return
 
     with _db_conn(db_path) as conn:
+        _warn_if_agent_migration_pending(conn)
         result = run_mine(
             conn,
             source_dirs,
@@ -1093,6 +1206,11 @@ def mine(since, project, agent, source, exclude_sidechains, session_handle, expe
         f"${total_cost:.2f}" if total_cost else "$0.00",
     )
     table.add_row("Errors captured (new this run)", str(errors_found))
+    already_present = result.get("already_present", 0)
+    if already_present:
+        # Extracted again but identical to a row already stored (UNIQUE
+        # fingerprint) -- say so rather than letting it look like nothing.
+        table.add_row("Already present (identical, not re-inserted)", str(already_present))
 
     # A run that captures nothing new is NOT a window with no errors, and the
     # old label could not tell those apart. Observed 2026-09-02:
@@ -1101,7 +1219,7 @@ def mine(since, project, agent, source, exclude_sidechains, session_handle, expe
     # wider run, so the sessions were skipped as already-processed. The number
     # was true and the reader's question ("how much friction just now?") got
     # the wrong answer. Absence of NEW must never render as absence.
-    window_total = _errors_in_window(db_path, since)
+    window_total = _errors_in_window(db_path, since, agent="claude")
     if window_total is not None:
         label = "Errors in window (total)"
         if errors_found == 0 and window_total > 0:
@@ -1113,9 +1231,10 @@ def mine(since, project, agent, source, exclude_sidechains, session_handle, expe
     console.print(table)
 
 
-def _errors_in_window(db_path: str, since: str | None) -> int | None:
+def _errors_in_window(db_path: str, since: str | None, agent: str | None = None) -> int | None:
     """Errors ALREADY IN THE DB for the mined window, regardless of which run
-    captured them.
+    captured them. ``agent`` scopes the count to one coding agent's rows so
+    a Claude mine never reports pi's errors as its window.
 
     Returns None when the count cannot be taken (no DB, unreadable schema) so
     the caller omits the row entirely rather than printing a zero it did not
@@ -1130,14 +1249,18 @@ def _errors_in_window(db_path: str, since: str | None) -> int | None:
     except _sqlite3.Error:
         return None
     try:
+        where: list[str] = []
+        params: list = []
         if since:
-            cutoff = _parse_since(since)
-            row = conn.execute(
-                "SELECT COUNT(*) FROM error_records WHERE timestamp >= ?",
-                (cutoff,),
-            ).fetchone()
-        else:
-            row = conn.execute("SELECT COUNT(*) FROM error_records").fetchone()
+            where.append("timestamp >= ?")
+            params.append(_parse_since(since))
+        if agent:
+            where.append("agent = ?")
+            params.append(agent)
+        sql = "SELECT COUNT(*) FROM error_records"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        row = conn.execute(sql, params).fetchone()
         return int(row[0]) if row else None
     except _sqlite3.Error:
         return None
@@ -1701,8 +1824,18 @@ def patterns(error_type, project):
         "canonical forms. Pipe from search: `sio search ... --files`."
     ),
 )
+@click.option(
+    "--agent",
+    "agent_filter",
+    default=None,
+    type=click.Choice(list(_KNOWN_AGENTS)),
+    help=(
+        "Scope to ONE coding agent's errors (the `agent` column — the same "
+        "rows the `errors_<agent>` view returns)."
+    ),
+)
 @runlogged("errors")
-def errors(error_type, limit, grep_term, project, exclude_types, session_handle):
+def errors(error_type, limit, grep_term, project, exclude_types, session_handle, agent_filter):
     """Browse mined errors with optional type and content filters."""
     from rich.console import Console
     from rich.table import Table
@@ -1716,6 +1849,10 @@ def errors(error_type, limit, grep_term, project, exclude_types, session_handle)
         # Build query based on filters
         where_clauses = ["1=1"]
         params: list = []
+
+        if agent_filter:
+            where_clauses.append("agent = ?")
+            params.append(agent_filter)
 
         if error_type:
             where_clauses.append("error_type = ?")
@@ -9091,7 +9228,71 @@ def db_migrate(db_path):
             applied += 1
 
     conn.close()
-    click.echo(f"Migration complete. {applied} script(s) applied.")
+
+    # In-package migrations (not scripts/): 006 agent isolation — backup,
+    # backfill `agent`, merge partial ids, dedupe, UNIQUE fingerprint.
+    from sio.core.db.agents import (
+        format_migration_report,
+        migrate_006_agent_isolation,
+    )
+
+    report = migrate_006_agent_isolation(db_path)
+    click.echo(format_migration_report(report))
+    if report.get("status") == "applied":
+        applied += 1
+
+    click.echo(f"Migration complete. {applied} migration(s) applied.")
+
+
+@db.command("drop-agent")
+@click.argument("agent")
+@click.option(
+    "--db-path",
+    default=None,
+    help="Path to the SIO database (default: $SIO_DB_PATH or ~/.sio/sio.db).",
+)
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    help="Execute the deletion. Without it this is a DRY RUN that prints counts only.",
+)
+@click.option(
+    "--including-claude",
+    is_flag=True,
+    help="Required to drop 'claude' — it is the bulk of the data.",
+)
+def db_drop_agent(agent, db_path, yes, including_claude):
+    """Delete ONE coding agent's mined rows from SIO's database.
+
+    Removes that agent's rows from every mined-data table (error_records,
+    flow_events, positive_records, session_metrics, processed_sessions) and
+    the rows that reference them (pattern_errors, experiment_runs), in one
+    transaction, after a backup-API copy into <db dir>/backups/.
+
+    DRY RUN by default: prints per-table counts and writes nothing. Pass
+    --yes to execute. Unknown agent names are refused; 'claude' additionally
+    needs --including-claude.
+
+    This touches ONLY SIO's mined data. The agent's own session files on disk
+    (~/.pi, ~/.codex, ~/.claude/projects, ...) are never read or modified —
+    re-mining the agent later rebuilds its rows from them.
+    """
+    from sio.core.db.agents import drop_agent, format_drop_report
+
+    if db_path is None:
+        db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
+    if not os.path.exists(db_path):
+        click.echo(f"No database found at {db_path}.")
+        raise SystemExit(1)
+    try:
+        report = drop_agent(
+            db_path, agent, execute=yes, allow_claude=including_claude
+        )
+    except ValueError as exc:
+        click.echo(f"ERROR: {exc}", err=True)
+        raise SystemExit(2) from exc
+    click.echo(format_drop_report(report))
 
 
 @db.command("repair")

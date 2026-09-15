@@ -117,16 +117,19 @@ def _is_cross_format_duplicate(
     conn: sqlite3.Connection,
     user_message: str | None,
     error_text: str | None,
+    agent: str = "claude",
 ) -> bool:
     """Return True if an error record with the same (user_message, error_text)
-    already exists in the database — indicating a cross-format duplicate from
-    a sidechain or re-exported session file.
+    already exists in the database FOR THIS AGENT — indicating a cross-format
+    duplicate from a sidechain or re-exported session file. Scoped by agent so
+    one agent's identical error text never suppresses another's.
     """
     if not user_message or not error_text:
         return False
     row = conn.execute(
-        "SELECT 1 FROM error_records WHERE user_message = ? AND error_text = ? LIMIT 1",
-        (user_message, error_text),
+        "SELECT 1 FROM error_records "
+        "WHERE user_message = ? AND error_text = ? AND agent = ? LIMIT 1",
+        (user_message, error_text, agent),
     ).fetchone()
     return row is not None
 
@@ -258,14 +261,15 @@ def _mark_skipped(
     file_hash: str,
     message_count: int,
     tool_call_count: int,
+    agent: str = "claude",
 ) -> None:
     """Record a skipped file in processed_sessions (skipped=1)."""
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         "INSERT OR IGNORE INTO processed_sessions "
-        "(file_path, file_hash, message_count, tool_call_count, skipped, mined_at) "
-        "VALUES (?, ?, ?, ?, 1, ?)",
-        (str(file_path), file_hash, message_count, tool_call_count, now),
+        "(file_path, file_hash, message_count, tool_call_count, skipped, mined_at, agent) "
+        "VALUES (?, ?, ?, ?, 1, ?, ?)",
+        (str(file_path), file_hash, message_count, tool_call_count, now, agent),
     )
     conn.commit()
 
@@ -291,14 +295,15 @@ def _mark_processed(
     tool_call_count: int,
     is_subagent: int = 0,
     parent_session_id: str | None = None,
+    agent: str = "claude",
 ) -> None:
     """Insert a row into processed_sessions after successful mining."""
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         "INSERT OR IGNORE INTO processed_sessions "
         "(file_path, file_hash, message_count, tool_call_count, skipped, mined_at, "
-        "is_subagent, parent_session_id) "
-        "VALUES (?, ?, ?, ?, 0, ?, ?, ?)",
+        "is_subagent, parent_session_id, agent) "
+        "VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)",
         (
             str(file_path),
             file_hash,
@@ -307,6 +312,7 @@ def _mark_processed(
             now,
             is_subagent,
             parent_session_id,
+            agent,
         ),
     )
     conn.commit()
@@ -368,6 +374,7 @@ def _update_session_state(
     path: str,
     new_offset: int,
     mtime: float,
+    agent: str = "claude",
 ) -> None:
     """Upsert byte-offset state for a file in processed_sessions.
 
@@ -381,6 +388,8 @@ def _update_session_state(
         New byte offset (= current file size after successful mine).
     mtime:
         Current file mtime from ``os.path.getmtime``.
+    agent:
+        Owning coding agent (the byte-offset path is Claude-only today).
     """
     now = datetime.now(timezone.utc).isoformat()
     # message_count and tool_call_count explicit-0 for pre-Audit-R2 DBs
@@ -389,14 +398,14 @@ def _update_session_state(
         """
         INSERT INTO processed_sessions
             (file_path, file_hash, message_count, tool_call_count,
-             last_offset, last_mtime, mined_at)
-        VALUES (?, '', 0, 0, ?, ?, ?)
+             last_offset, last_mtime, mined_at, agent)
+        VALUES (?, '', 0, 0, ?, ?, ?, ?)
         ON CONFLICT(file_path, file_hash) DO UPDATE SET
             last_offset = excluded.last_offset,
             last_mtime  = excluded.last_mtime,
             mined_at    = excluded.mined_at
         """,
-        (path, new_offset, mtime, now),
+        (path, new_offset, mtime, now, agent),
     )
     conn.commit()
 
@@ -821,6 +830,8 @@ def run_mine(
         ``total_files_scanned`` (int)  — number of files processed after all filters.
         ``errors_found`` (int)         — total error records inserted.
         ``error_records`` (list[int])  — auto-assigned row IDs of inserted records.
+        ``already_present`` (int)      — records skipped because an identical
+                                         one (UNIQUE fingerprint) was in the DB.
         ``skipped_files`` (int)        — files skipped because already processed.
     """
     # --- 1. Collect candidate files ----------------------------------------
@@ -859,6 +870,7 @@ def run_mine(
 
     # --- 4. Process each file ----------------------------------------------
     inserted_ids: list[int] = []
+    already_present: int = 0  # identical record already in the DB (UNIQUE fingerprint)
     skipped_files: int = 0
     error_files: int = 0
     total_cost_tracked: float = 0.0
@@ -973,6 +985,7 @@ def run_mine(
                 db_conn,
                 record.get("user_message"),
                 record.get("error_text"),
+                agent="claude",
             ):
                 logger.debug(
                     "Skipping cross-format duplicate: user_message=%r, "
@@ -985,7 +998,10 @@ def run_mine(
 
             try:
                 row_id = insert_error_record(db_conn, record)
-                inserted_ids.append(row_id)
+                if row_id is None:
+                    already_present += 1
+                else:
+                    inserted_ids.append(row_id)
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "Failed to insert error record from %s: %s: %s",
@@ -1013,6 +1029,7 @@ def run_mine(
                     "sentiment_score": None,
                     "source_file": str(file_path),
                     "mined_at": now_ts,
+                    "agent": "claude",
                 }
                 insert_positive_record(db_conn, pr_record)
         except Exception as exc:  # noqa: BLE001
@@ -1083,6 +1100,7 @@ def run_mine(
             # Patch in signals computed by T026 extractors
             metrics["positive_signal_count"] = positive_signal_count
             metrics["correction_count"] = correction_count
+            metrics["agent"] = "claude"
             insert_session_metrics(db_conn, metrics)
             total_cost_tracked += metrics.get("total_cost_usd") or 0.0
         except Exception as exc:  # noqa: BLE001
@@ -1118,6 +1136,7 @@ def run_mine(
         "total_files_scanned": total_files_scanned,
         "errors_found": len(inserted_ids),
         "error_records": inserted_ids,
+        "already_present": already_present,
         "skipped_files": skipped_files,
         "newly_mined": newly_mined,
         "total_cost_tracked": total_cost_tracked,
