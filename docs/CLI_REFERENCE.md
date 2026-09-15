@@ -716,11 +716,12 @@ Usage: sio init [OPTIONS]
       sio init --status           # what's installed where
       sio init --uninstall        # remove SIO-managed files
       sio init --harness claude-code --force
+      sio init --harness pi       # skills only (pi has no rules dir / hooks)
 
 Options:
-  --harness TEXT  Target harness (claude-code, cursor, windsurf, opencode). If
-                  omitted, auto-detects every harness installed on this
-                  system.
+  --harness TEXT  Target harness (claude-code, pi, cursor, windsurf,
+                  opencode). If omitted, auto-detects every harness installed
+                  on this system.
   --dry-run       Preview the file changes without writing anything.
   --force         Overwrite user-modified files (default: skip + report
                   drift).

@@ -30,9 +30,47 @@ GitHub release pages (with full asset downloads) live at
   results and non-zero `!cmd` exits, and both mine paths pass it through, so
   those land as `tool_failure` records instead of being invisible. Other
   adapters are unchanged (`None`).
-- Not in this change: `sio init --harness pi` (installing SIO's skills/rules
-  into pi) and `sio suggest --harness pi` (routing suggestions to pi's
-  instruction file) — follow-ups.
+- Not in this change: `sio suggest --harness pi` (routing suggestions to pi's
+  instruction file) — follow-up. `sio init --harness pi` landed separately
+  (next section).
+
+### Added — pi as an INSTALL target (`sio init --harness pi`)
+
+- **`PiAdapter`** (`sio/harnesses/pi.py`) stages SIO's bundled skills into
+  `~/.pi/agent/skills/<name>/SKILL.md` (+ sibling files), honouring pi's
+  `PI_CODING_AGENT_DIR` override. Auto-detected when `~/.pi/agent/` exists.
+  Manifest-tracked (`.sio-managed.json`): `--dry-run` writes nothing, re-runs
+  are idempotent, user-modified files are skipped without `--force`, `--force`
+  backs up to `~/.sio/backups/<ts>/` first, `--uninstall` removes only
+  manifest-tracked files and prunes the skill dirs it emptied, `--status`
+  reports installed / missing / drifted.
+- **Foreign skills are never touched.** A skill SIO did not install — a real
+  file or a symlink, even one sharing an SIO skill's name — is skipped and
+  reported as "not SIO-managed"; only `--force` overrides (with a backup).
+  This is stricter than claude-code, which adopts untracked files so a lost
+  manifest can self-heal.
+- **Skills only, and says so.** Bundled tool rules (no rules dir on pi — the
+  user's `AGENTS.md` is theirs, SIO does not write to it) and hook telemetry
+  (pi has extensions, not hooks) are reported in the new `InstallReport.notes`
+  as "not supported on pi" instead of being dropped silently. `skills/README.md`
+  is not staged because pi loads root-level `.md` files as skills.
+- **Spec conformance against pi's own validator** (`dist/core/skills.js`:
+  `name` = `[a-z0-9-]`, ≤ 64, no `--` or edge hyphens; `description` required,
+  ≤ 1024 chars). `conform_skill_for_pi()` rewrites only `name` / `description`
+  and only when pi would warn, emitting JSON-string scalars so the YAML stays
+  parseable; every transform is listed in the report. All 33 bundled skills
+  currently pass untouched — a unit test guards that, and a node-backed test
+  loads synthetic non-conforming skills through pi's `loadSkills` and asserts
+  zero diagnostics (skips where pi is not installed).
+- Shared staging logic extracted to `sio/harnesses/managed.py`
+  (`stage_files` / `remove_files` / `status_files`); `ClaudeCodeAdapter` now
+  delegates to it with unchanged behaviour.
+- Wired everywhere the harness list is advertised: `ALL_ADAPTERS`,
+  `get_adapter("pi")`, `sio init --harness` help + examples, the
+  "no harnesses detected" hint, `sio doctor`'s fix hint, README,
+  getting-started, CLI reference, troubleshooting.
+- `scripts/install-skills.sh` also copies into `~/.pi/agent/skills/` when
+  that dir exists, skipping any symlinked entry it does not own.
 
 ### Session Intelligence — absorb session-search + cross-agent, session-scoped analysis
 
