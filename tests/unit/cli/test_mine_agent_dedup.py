@@ -32,6 +32,20 @@ from tests.unit.adapters.test_pi_adapter import (
 CANONICAL = f"pi:{STEM}"
 
 
+@pytest.fixture(autouse=True)
+def _runs_dir_in_tmp(tmp_path, monkeypatch):
+    """Keep `runlogged` run-logs out of the real ~/.sio/runs.
+
+    The writer resolves its directory from Path.home() at import time, so a
+    HOME monkeypatch alone does not redirect it.
+    """
+    from sio.core.runlog import writer as _w
+
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    monkeypatch.setattr(_w, "_RUNS_DIR", runs)
+
+
 @pytest.fixture
 def pi_env(tmp_path: Path, monkeypatch):
     """A fake HOME with one pi session and an isolated SIO db."""

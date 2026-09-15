@@ -22,6 +22,20 @@ from sio.core.db.schema import init_db
 PI_FULL = "pi:2026-09-15T10-20-49-318Z_01a0a495-6525-707f-b8c9-daaaf128d19b"
 PI_PARTIAL = "pi:01a0a495"
 
+
+@pytest.fixture(autouse=True)
+def _runs_dir_in_tmp(tmp_path, monkeypatch):
+    """Keep `runlogged` run-logs out of the real ~/.sio/runs.
+
+    The writer resolves its directory from Path.home() at import time, so a
+    HOME monkeypatch alone does not redirect it.
+    """
+    from sio.core.runlog import writer as _w
+
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    monkeypatch.setattr(_w, "_RUNS_DIR", runs)
+
 # A pre-006 schema: what a real sio.db looked like before this change (no
 # `agent` column, no UNIQUE fingerprint, no views / triggers).
 _LEGACY_DDL = """
