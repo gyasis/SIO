@@ -3,13 +3,13 @@
 session-search — unified cross-harness coding-agent session search.
 
 Searches the on-disk session history of every coding-agent harness installed
-on this box (claude, codex, goose, opencode, gemini, aider, promptchain, kimi)
+on this box (claude, codex, goose, opencode, gemini, aider, promptchain, kimi, pi)
 using ONE pattern and ONE output schema. Defaults to Claude-native fast mode
 (ripgrep short-circuit, ~189ms) to preserve hardwired callers.
 
 Output schema (JSONL — one object per match):
     {
-      "agent":        "claude|codex|goose|opencode|gemini|aider|promptchain|kimi",
+      "agent":        "claude|codex|goose|opencode|gemini|aider|promptchain|kimi|pi",
       "session_id":   "<agent-native id>",
       "ts":           "<ISO-8601 UTC, best-effort>",
       "role":         "user|assistant|tool|system|info|unknown",
@@ -681,6 +681,63 @@ def search_kimi(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Record
             continue
 
 
+def search_pi(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Record]:
+    """Search pi coding-agent transcripts.
+
+    Layout: ``~/.pi/agent/sessions/<cwd-encoded-dir>/<iso-ts>_<uuid>.jsonl``
+    — one JSON object per line, one file per session. The session id is the
+    file stem (``<iso-ts>_<uuid>``, the same convention codex uses), so a
+    ``--files`` path round-trips through ``from_path`` / ``manifest_from_handle``
+    without special-casing. Normalisation is shared with the EXTRACT adapter
+    (:mod:`sio.adapters.pi.adapter`) so search and mine agree on every event:
+    user/assistant text, tool calls (``metadata["tool"]``), tool results, and
+    ``isError`` results (``metadata["error"]`` carries the failure text).
+    """
+    from sio.adapters.pi.adapter import events_from_entry
+
+    root = HOME / ".pi" / "agent" / "sessions"
+    if not root.exists():
+        return
+    for fp in root.rglob("*.jsonl"):
+        if not _file_within(fp, cutoff):
+            continue
+        session_id = fp.stem
+        call_names: dict[str, str] = {}
+        try:
+            with fp.open(encoding="utf-8", errors="replace") as fh:
+                for lineno, raw in enumerate(fh, start=1):
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    try:
+                        obj = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(obj, dict):
+                        continue
+                    for ev in events_from_entry(obj, call_names):
+                        if not _matches(ev.content, pattern, cs):
+                            continue
+                        meta: dict = {"source_kind": "pi", "entry_type": obj.get("type")}
+                        if ev.tool:
+                            meta["tool"] = ev.tool
+                        if ev.error is not None:
+                            meta["error"] = ev.error[:2000]
+                        yield Record(
+                            agent="pi",
+                            session_id=session_id,
+                            ts=ev.ts,
+                            role=ev.role,
+                            content=ev.content[:2000],
+                            source_path=str(fp),
+                            metadata=meta,
+                            line=lineno,
+                            match_text=ev.content,
+                        )
+        except OSError:
+            continue
+
+
 PARSERS = {
     "claude": search_claude,
     "codex": search_codex,
@@ -690,6 +747,7 @@ PARSERS = {
     "aider": search_aider,
     "promptchain": search_promptchain,
     "kimi": search_kimi,
+    "pi": search_pi,
 }
 
 
@@ -1021,6 +1079,7 @@ def inventory() -> list[tuple[str, str, bool]]:
         ("aider", str(DEV_ROOT) + " (per-repo .aider.chat.history.md)"),
         ("promptchain", str(HOME / ".promptchain/sessions")),
         ("kimi", str(HOME / ".kimi-code" / "sessions")),
+        ("pi", str(HOME / ".pi" / "agent" / "sessions")),
     ]
     rows = []
     for agent, path in checks:
