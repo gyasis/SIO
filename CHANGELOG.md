@@ -9,6 +9,53 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
+### Changed — agent isolation: one DB, a real `agent` column, no duplicate mining (#44)
+
+- **`agent` column** on every table that stores per-session mined data —
+  `error_records`, `flow_events`, `positive_records`, `session_metrics`,
+  `processed_sessions` — `NOT NULL`, indexed, and enforced: a self-healing
+  `AFTER INSERT` trigger derives it from the session id (or path) for any
+  writer that left it empty, so the invariant *every row has an agent
+  consistent with its session id* holds for the Python write seam, raw SQL,
+  scripts, and hook code from an older checkout alike. Replaces the
+  `session_id LIKE 'pi:%'` / hard-coded `_NON_CLAUDE` tuple convention, under
+  which an agent added to `KNOWN_AGENTS` but not to that tuple silently counted
+  as claude. New module: `sio.core.db.agents`.
+- **Per-agent views** `errors_<agent>` and `flows_<agent>` for every
+  `KNOWN_AGENT` (`errors_pi`, `errors_claude`, `flows_codex`, ...) — SQL views
+  over the main tables, zero copies, always in sync, re-created idempotently on
+  every DB open so a newly added agent gets its view without a migration.
+- **No more duplicate mining of non-claude sessions.** `sio mine --session
+  pi:<partial>` used to stamp rows with the partial handle the user typed while
+  `sio mine --agent pi` stamped the full file stem — one session under two ids
+  — and nothing was recorded in `processed_sessions` for non-claude agents, so
+  every re-mine re-inserted everything (observed: 16 `pi:` rows, 10 distinct).
+  Now: `--session` stamps the FULL canonical id the adapter resolved
+  (`<agent>:<manifest.native_id>`); `insert_error_record` is `INSERT OR IGNORE`
+  against a UNIQUE fingerprint (`session_id, timestamp, error_type, tool_name,
+  error_text`, NULL-safe) and returns `None` when the row was already there;
+  non-claude sessions are tracked in `processed_sessions` (keyed by canonical
+  id, signature = event count + last timestamp) so an unchanged session is
+  skipped and a grown one is re-read with only its new errors landing. Mining
+  output now says `N new, M already present`.
+- **Migration 006 (`migrate_006_agent_isolation`)** — runs from `sio init`
+  and `sio db migrate`, one `BEGIN IMMEDIATE` transaction, idempotent and
+  race-safe: sqlite backup-API copy to `<db dir>/backups/sio.db.<utc>.pre-agent-migration.bak`
+  first, then backfill `agent` (known prefix → agent, bare / `claude:` → claude,
+  unknown `xyz:` prefixes → claude by the legacy rule but COUNTED and reported),
+  merge partial non-claude ids into the one full id they are an unambiguous
+  substring of (ambiguous ones left and listed), dedupe exact duplicates
+  (lowest id survives; `pattern_errors` / `experiment_runs` remapped), add the
+  UNIQUE fingerprint, triggers, views, stamp `schema_version` 6.
+- **`sio db drop-agent <name>`** — delete one agent's mined rows everywhere
+  (dry run by default, `--yes` to execute after a backup; `claude` needs
+  `--including-claude`; unknown names refused). Never touches the agent's own
+  session files on disk.
+- `sio errors --agent <name>` scopes the browser to one agent;
+  `get_error_records(agent=...)` now filters on the column.
+- `_is_cross_format_duplicate` (claude pipeline) is scoped by agent, so one
+  agent's identical error text never suppresses another's.
+
 ### Added — pi harness adapter
 
 - **`pi` coding agent** (`@earendil-works/pi-coding-agent`) joins the readable

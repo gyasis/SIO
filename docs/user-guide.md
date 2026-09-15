@@ -656,6 +656,98 @@ transparently until all rows are canonical.
 
 ---
 
+## Multi-agent storage — one database, an `agent` column
+
+SIO mines several coding agents (claude, pi, codex, kimi, goose, opencode, gemini, aider,
+promptchain — `KNOWN_AGENTS` in `sio.core.session_handle`) into **one** database,
+`~/.sio/sio.db`. Which agent a mined row belongs to is a real, indexed column, not a naming
+convention:
+
+| Table | `agent` derived from | What it holds |
+|-------|----------------------|---------------|
+| `error_records` | `session_id` | mined errors — the main table |
+| `flow_events` | `session_id` | tool-flow n-grams (claude only today) |
+| `positive_records` | `session_id` | positive signals (claude pipeline) |
+| `session_metrics` | `session_id` | per-session aggregates (claude pipeline + hooks) |
+| `processed_sessions` | `file_path` | what has been mined already (file path for claude, canonical `agent:native_id` for the others) |
+
+`pattern_errors` and `experiment_runs` reference rows in those tables by id and follow them
+(remapped on dedupe, deleted on drop-agent). `patterns`, `suggestions`, `datasets`,
+`velocity_snapshots`, `recall_examples`, `behavior_invocations` (which has its own
+`platform` column) are cross-agent aggregates and are left as they are.
+
+**Enforcement.** The column is `NOT NULL`; the Python write seam (`insert_error_record`
+and friends) derives it from the canonical session id, and an `AFTER INSERT` trigger on each
+table derives it for any writer that left it empty (raw SQL, old hook code). A row can
+therefore never sit in the DB without an agent that matches its session id. The rule is the
+one `parse_handle` uses: a known-agent prefix wins, anything else is the legacy Claude id.
+
+**Per-agent views.** For every known agent there is `errors_<agent>` and `flows_<agent>`
+(`errors_pi`, `errors_claude`, `flows_codex`, ...). They are plain SQL views — zero copies,
+always in sync — re-created on every DB open, so an agent added to `KNOWN_AGENTS` gets its
+views the next time any `sio` command runs:
+
+```bash
+sqlite3 ~/.sio/sio.db 'SELECT error_type, tool_name, substr(error_text,1,60) FROM errors_pi ORDER BY timestamp DESC LIMIT 10'
+sio errors --agent pi          # the same rows through the CLI
+```
+
+**No duplicate mining.** `error_records` carries a UNIQUE fingerprint
+(`session_id, timestamp, error_type, tool_name, error_text`, NULL-safe), inserts are
+`INSERT OR IGNORE`, and non-claude sessions are recorded in `processed_sessions` under their
+canonical id with a signature (event count + last timestamp). Re-mining an unchanged session
+is a skip; a session that grew is re-read and only its new errors land. `sio mine` prints
+`N new, M already present` so a run that captured nothing new is never mistaken for a window
+with nothing in it. `mine --session pi:<partial>` and `mine --agent pi` file the same session
+under the same full id (`pi:<file stem>`).
+
+### Migration 006 (`agent` column) — what `sio init` / `sio db migrate` do
+
+Runs once, automatically, from `sio init` and `sio db migrate`; a second run is a no-op.
+In one transaction (`BEGIN IMMEDIATE`; live hook writers wait on the 30 s busy timeout; a
+crash rolls everything back; two concurrent callers apply it exactly once):
+
+1. **Backup first** — a sqlite backup-API copy to
+   `<db dir>/backups/sio.db.<utc-ts>.pre-agent-migration.bak` (WAL-safe; never `cp`).
+2. Add `agent` (+ index) to the five tables above.
+3. Backfill: `pi:…` → `pi`, bare id or `claude:…` → `claude`. A prefix that is NOT a known
+   agent (e.g. `wuphf:…`) is filed under claude by the legacy rule **and counted in the
+   report** — review those rows; nothing is silently dropped.
+4. Merge partial non-claude ids into the full canonical id when the partial is an
+   unambiguous substring of exactly one full id in the same table (ambiguous ones are left
+   and listed).
+5. Dedupe exact duplicates (lowest id survives; `pattern_errors` and `experiment_runs`
+   are remapped to the survivor), then add the UNIQUE fingerprint index.
+6. Create triggers + per-agent views, stamp `schema_version` 6.
+
+The report prints per-table, per-agent counts before and after, partial ids merged,
+duplicates removed, and ambiguous / unknown-prefix counts.
+
+### `sio db drop-agent <agent>`
+
+Remove one agent's mined data — "if we decide to not use an agent we can just get rid of it".
+
+```bash
+sio db drop-agent pi                 # DRY RUN: per-table counts, nothing written
+sio db drop-agent pi --yes           # backup to <db dir>/backups/, then delete in one transaction
+sio db drop-agent claude --yes --including-claude   # claude is the bulk of the data: explicit flag
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `AGENT` | — | one of `KNOWN_AGENTS`; anything else is refused (exit 2) |
+| `--db-path` | `$SIO_DB_PATH` or `~/.sio/sio.db` | database to operate on |
+| `--yes` / `-y` | off | execute; without it the command is a dry run |
+| `--including-claude` | off | required when `AGENT` is `claude` |
+
+Deletes the agent's rows from `error_records`, `flow_events`, `positive_records`,
+`session_metrics`, `processed_sessions` plus the `pattern_errors` / `experiment_runs` rows
+that reference them. It touches **only SIO's mined data**: the agent's own session files on
+disk (`~/.pi`, `~/.codex`, `~/.claude/projects`, ...) are never read or modified, so a later
+`sio mine --agent <name>` rebuilds the rows from them.
+
+---
+
 ## v1 Commands — Telemetry & Optimization
 
 ### `sio install`
