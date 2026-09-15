@@ -1087,10 +1087,57 @@ def mine(since, project, agent, source, exclude_sidechains, session_handle, expe
         "Total cost tracked",
         f"${total_cost:.2f}" if total_cost else "$0.00",
     )
-    table.add_row("Errors captured", str(errors_found))
+    table.add_row("Errors captured (new this run)", str(errors_found))
+
+    # A run that captures nothing new is NOT a window with no errors, and the
+    # old label could not tell those apart. Observed 2026-09-02:
+    # `sio mine --since "6 hours"` printed "Errors captured: 0" while seven
+    # errors sat in that window -- all of them mined minutes earlier by a
+    # wider run, so the sessions were skipped as already-processed. The number
+    # was true and the reader's question ("how much friction just now?") got
+    # the wrong answer. Absence of NEW must never render as absence.
+    window_total = _errors_in_window(db_path, since)
+    if window_total is not None:
+        label = "Errors in window (total)"
+        if errors_found == 0 and window_total > 0:
+            # Say why the two disagree, in the table, where the reader is.
+            label += " — already mined"
+        table.add_row(label, str(window_total))
 
     console.print()
     console.print(table)
+
+
+def _errors_in_window(db_path: str, since: str | None) -> int | None:
+    """Errors ALREADY IN THE DB for the mined window, regardless of which run
+    captured them.
+
+    Returns None when the count cannot be taken (no DB, unreadable schema) so
+    the caller omits the row entirely rather than printing a zero it did not
+    measure -- the exact failure this row exists to prevent.
+    """
+    import sqlite3 as _sqlite3
+
+    from sio.analyze import _parse_since
+
+    try:
+        conn = _sqlite3.connect(db_path)
+    except _sqlite3.Error:
+        return None
+    try:
+        if since:
+            cutoff = _parse_since(since)
+            row = conn.execute(
+                "SELECT COUNT(*) FROM error_records WHERE timestamp >= ?",
+                (cutoff,),
+            ).fetchone()
+        else:
+            row = conn.execute("SELECT COUNT(*) FROM error_records").fetchone()
+        return int(row[0]) if row else None
+    except _sqlite3.Error:
+        return None
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
