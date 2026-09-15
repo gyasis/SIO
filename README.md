@@ -339,6 +339,9 @@ canonical **`agent:native_id`** "Session URIs" (e.g. `claude:<uuid>`,
 | Command | Description |
 |---------|-------------|
 | `sio db backfill-sessions [--dry-run]` | Migrate legacy bare session ids to canonical `agent:<id>` (idempotent, auto-backup) |
+| `sio db migrate` | Apply pending schema migrations, incl. 006 agent isolation (`agent` column, dedupe, per-agent `errors_<agent>` / `flows_<agent>` views; auto-backup) |
+| `sio db drop-agent <agent> [--yes]` | Delete one agent's mined rows everywhere (dry run by default; `claude` needs `--including-claude`); never touches the agent's session files |
+| `sio errors --agent <agent>` | Browse one agent's errors (the `agent` column — same rows as the `errors_<agent>` view) |
 
 ### Dataset Management
 

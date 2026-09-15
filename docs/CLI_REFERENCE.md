@@ -396,9 +396,43 @@ Options:
 
 Commands:
   backfill-sessions  Backfill legacy bare session ids to canonical...
+  drop-agent         Delete ONE coding agent's mined rows from SIO's...
   migrate            Apply any pending schema migrations to the SIO...
   repair             Mark stuck 'applying' migration rows as 'failed'.
 ```
+
+### `sio db drop-agent`
+
+```
+Usage: sio db drop-agent [OPTIONS] AGENT
+
+  Delete ONE coding agent's mined rows from SIO's database.
+
+  Removes that agent's rows from every mined-data table (error_records,
+  flow_events, positive_records, session_metrics, processed_sessions) and the
+  rows that reference them (pattern_errors, experiment_runs), in one
+  transaction, after a backup-API copy into <db dir>/backups/.
+
+  DRY RUN by default: prints per-table counts and writes nothing. Pass --yes
+  to execute. Unknown agent names are refused; 'claude' additionally needs
+  --including-claude.
+
+  This touches ONLY SIO's mined data. The agent's own session files on disk
+  (~/.pi, ~/.codex, ~/.claude/projects, ...) are never read or modified — re-
+  mining the agent later rebuilds its rows from them.
+
+Options:
+  --db-path TEXT      Path to the SIO database (default: $SIO_DB_PATH or
+                      ~/.sio/sio.db).
+  -y, --yes           Execute the deletion. Without it this is a DRY RUN that
+                      prints counts only.
+  --including-claude  Required to drop 'claude' — it is the bulk of the data.
+  --help              Show this message and exit.
+```
+
+`sio db migrate` also applies migration 006 (agent isolation: `agent` column, backfill,
+partial-id merge, dedupe, UNIQUE fingerprint, per-agent views) after the `scripts/`
+migrations, backing the DB up first. See the user guide, "Multi-agent storage".
 
 ### `sio dedupe`
 
