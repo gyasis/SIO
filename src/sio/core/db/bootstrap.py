@@ -30,6 +30,9 @@ def ensure_canonical_db_ready(db_path: str | Path | None = None) -> Path:
       3. ``migrate_004()`` — applies the 004 schema delta if not yet
          marked applied. Imported lazily because ``scripts/`` may not
          be on the path in all install layouts.
+      3b. ``migrate_005_experiments()`` — cohort tables.
+      3c. ``migrate_006_agent_isolation()`` — the ``agent`` column,
+         backfilled + deduped, per-agent views (backs the DB up first).
       4. ``migrate_split_brain.main()`` — one-time mirror of per-platform
          ``behavior_invocations`` rows into the canonical DB. Idempotent
          across runs.
@@ -84,6 +87,16 @@ def ensure_canonical_db_ready(db_path: str | Path | None = None) -> Path:
         migrate_005_experiments(str(db_path))
     except Exception as exc:
         logger.debug("migrate_005_experiments skipped on %s: %s", db_path, exc)
+
+    # 3c. 006 migration — agent isolation (sio.core.db.agents): backup,
+    # backfill `agent`, merge partial ids, dedupe, UNIQUE fingerprint,
+    # per-agent views. Idempotent; no-op once stamped.
+    try:
+        from sio.core.db.agents import migrate_006_agent_isolation  # noqa: PLC0415
+
+        migrate_006_agent_isolation(str(db_path))
+    except Exception as exc:
+        logger.warning("migrate_006_agent_isolation failed on %s: %s", db_path, exc)
 
     # 4. Split-brain backfill (one-time, idempotent across runs)
     try:

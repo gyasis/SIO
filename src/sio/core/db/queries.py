@@ -48,17 +48,41 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
 
 def _canonicalize_session_fields(record: dict) -> dict:
     """Return a copy of ``record`` with session id fields namespaced to
-    canonical ``claude:<id>`` form (idempotent).
+    canonical ``agent:<id>`` form (idempotent).
 
     Applied at every write so new rows stay consistent with the backfilled DB
-    (see PRD sio_absorb_session_search). All current writers are Claude.
+    (see PRD sio_absorb_session_search). A bare id is namespaced under
+    ``record["agent"]`` when the writer supplied one, else ``claude``.
     """
-    from sio.core.session_handle import ensure_canonical
+    from sio.core.session_handle import LEGACY_AGENT, ensure_canonical
 
     out = dict(record)
+    agent = out.get("agent") or LEGACY_AGENT
     for key in ("session_id", "parent_session_id"):
         if out.get(key):
-            out[key] = ensure_canonical(out[key])
+            out[key] = ensure_canonical(out[key], agent)
+    return out
+
+
+def _stamp_agent(record: dict) -> dict:
+    """Set ``record["agent"]`` from its (canonical) session id — the ONE seam.
+
+    The agent is a pure function of the session id
+    (:func:`sio.core.session_handle.parse_handle`); a writer may pass it
+    explicitly, but it must agree with the id or the write is refused, so a
+    ``pi`` record can never be filed under ``claude`` by accident.
+    """
+    from sio.core.session_handle import LEGACY_AGENT, parse_handle
+
+    out = dict(record)
+    sid = out.get("session_id")
+    derived = parse_handle(sid)[0] if sid else LEGACY_AGENT
+    given = out.get("agent")
+    if given and given != derived:
+        raise ValueError(
+            f"agent {given!r} does not match session_id {sid!r} (which is {derived!r})"
+        )
+    out["agent"] = given or derived
     return out
 
 
@@ -252,6 +276,7 @@ _ERROR_RECORD_COLS = [
     "project_tag",  # added 2026-06-13 — Stage-1 structural tag (sio.mining.tagging)
     "command_category",  # added 2026-06-13 — Stage-1 structural tag
     "time_bucket",  # added 2026-06-13 — Stage-1 day bucket
+    "agent",  # added 2026-09-15 — owning coding agent (sio.core.db.agents)
 ]
 
 # Default values for cols that have NOT NULL constraints and may be absent in
@@ -267,20 +292,29 @@ def insert_error_record(
     record: dict,
     *,
     _batch: bool = False,
-) -> int:
-    """Insert an error record. Returns the new row ID."""
-    record = _canonicalize_session_fields(record)
+) -> int | None:
+    """Insert an error record. Returns the new row ID, or ``None`` if an
+    identical record was already present.
+
+    The session id is canonicalised and ``agent`` derived from it here — the
+    one write seam. ``INSERT OR IGNORE`` against the UNIQUE fingerprint
+    (session_id, timestamp, error_type, tool_name, error_text) makes a
+    re-mine of the same session a no-op instead of a duplicate; callers count
+    ``None`` returns as "already present".
+    """
+    record = _stamp_agent(_canonicalize_session_fields(record))
     cols = _ERROR_RECORD_COLS
     placeholders = ", ".join(["?"] * len(cols))
     col_names = ", ".join(cols)
     values = [record.get(c, _ERROR_RECORD_DEFAULTS.get(c)) for c in cols]
     cur = conn.execute(
-        f"INSERT INTO error_records ({col_names}) VALUES ({placeholders})",
+        f"INSERT OR IGNORE INTO error_records ({col_names}) VALUES ({placeholders})",
         values,
     )
     if not _batch:
         conn.commit()
-    return cur.lastrowid
+    # lastrowid is stale after an ignored insert; rowcount is the truth.
+    return cur.lastrowid if cur.rowcount == 1 else None
 
 
 def get_error_records(
@@ -296,23 +330,15 @@ def get_error_records(
     """Get error records with optional filters.
 
     ``agent`` scopes results to one coding agent's records (multi-agent
-    isolation). Non-claude agents store canonical ``<agent>:<id>`` session ids;
-    ``agent="claude"`` returns everything that is NOT prefixed by a known
-    non-claude agent (claude rows are bare uuids or ``claude:`` canonical).
+    isolation) via the ``agent`` column — every row carries one, so
+    ``agent="claude"`` never includes another agent's rows, including an
+    agent added to KNOWN_AGENTS after this code was written.
     """
     query = "SELECT * FROM error_records WHERE 1=1"
     params: list = []
     if agent:
-        _NON_CLAUDE = (
-            "codex", "gemini", "goose", "aider", "opencode", "promptchain", "kimi", "pi",
-        )
-        if agent == "claude":
-            query += "".join(
-                f" AND session_id NOT LIKE '{a}:%'" for a in _NON_CLAUDE
-            )
-        else:
-            query += " AND session_id LIKE ?"
-            params.append(f"{agent}:%")
+        query += " AND agent = ?"
+        params.append(agent)
     if session_id:
         # Transition-safe: match bare legacy id OR canonical agent:native_id.
         from sio.core.session_handle import session_match_clause
@@ -910,6 +936,7 @@ _SESSION_METRICS_COLS = [
     "stop_reason_distribution",
     "model_used",
     "mined_at",
+    "agent",
 ]
 
 
@@ -923,7 +950,7 @@ def insert_session_metrics(
 
     Uses INSERT OR REPLACE keyed on session_id (UNIQUE constraint).
     """
-    record = _canonicalize_session_fields(record)
+    record = _stamp_agent(_canonicalize_session_fields(record))
     cols = _SESSION_METRICS_COLS
     placeholders = ", ".join(["?"] * len(cols))
     col_names = ", ".join(cols)
@@ -950,6 +977,7 @@ def insert_session_metrics_if_new(
 
     Returns the row ID on insert, or 0 if the row already existed.
     """
+    record = _stamp_agent(record)
     cols = _SESSION_METRICS_COLS
     placeholders = ", ".join(["?"] * len(cols))
     col_names = ", ".join(cols)
@@ -977,6 +1005,7 @@ _POSITIVE_RECORD_COLS = [
     "sentiment_score",
     "source_file",
     "mined_at",
+    "agent",
 ]
 
 
@@ -987,6 +1016,7 @@ def insert_positive_record(
     _batch: bool = False,
 ) -> int:
     """Insert a positive signal record. Returns the new row ID."""
+    record = _stamp_agent(record)
     cols = _POSITIVE_RECORD_COLS
     placeholders = ", ".join(["?"] * len(cols))
     col_names = ", ".join(cols)
