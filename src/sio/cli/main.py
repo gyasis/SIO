@@ -64,7 +64,7 @@ def cli():
 @click.option(
     "--harness",
     default=None,
-    help="Target harness (claude-code, cursor, windsurf, opencode). "
+    help="Target harness (claude-code, pi, cursor, windsurf, opencode). "
     "If omitted, auto-detects every harness installed on this system.",
 )
 @click.option(
@@ -120,6 +120,7 @@ def init(
         sio init --status           # what's installed where
         sio init --uninstall        # remove SIO-managed files
         sio init --harness claude-code --force
+        sio init --harness pi       # skills only (pi has no rules dir / hooks)
     """
     from rich.console import Console
     from rich.table import Table
@@ -230,7 +231,7 @@ def init(
                 f"[yellow]No supported harnesses detected.[/yellow] Known: {known}\n"
                 f"To force-install for a specific harness even if its config "
                 f"dir doesn't exist yet:\n"
-                f"  sio init --harness claude-code"
+                f"  sio init --harness claude-code   # or: --harness pi"
             )
             raise SystemExit(1)
 
@@ -271,6 +272,7 @@ def init(
             # Merge lifecycle reports into the main one for unified rendering
             ir.changes = [*pre_ir.changes, *ir.changes, *post_ir.changes]
             ir.errors = [*pre_ir.errors, *ir.errors, *post_ir.errors]
+            ir.notes = [*pre_ir.notes, *ir.notes, *post_ir.notes]
 
         for ch in ir.changes:
             tag = "[dim](dry-run)[/dim] " if dry_run else ""
@@ -280,6 +282,9 @@ def init(
             if ch.action in ("create", "update", "would-create", "would-update"):
                 any_creates = True
             console.print(f"  {tag}[{color}]{ch.action:<14}[/{color}] {ch.path}  {ch.reason}")
+
+        for note in ir.notes:
+            console.print(f"  [dim]· {note}[/dim]")
 
         for err in ir.errors:
             console.print(f"  [red]error:[/red] {err}")
@@ -325,8 +330,8 @@ def init(
     if not status and not dry_run and not uninstall and any_creates:
         console.print(
             "\n[bold yellow]→ Restart your AI coding agent[/bold yellow] "
-            "for newly-staged skills to appear (Claude Code only reads the "
-            "skills dir at startup)."
+            "for newly-staged skills to appear (Claude Code and pi only read "
+            "the skills dir at startup)."
         )
         console.print(
             "  [dim]Also: open ~/.sio/config.toml and uncomment one [llm] "

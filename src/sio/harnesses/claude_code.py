@@ -14,7 +14,6 @@ so we can tell SIO-managed files from user-modified ones at uninstall time.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shutil
@@ -25,8 +24,7 @@ from typing import ClassVar
 
 from sio.harnesses.base import HarnessAdapter, InstallReport, StatusReport
 from sio.harnesses.bootstrap import iter_bootstrap_files
-
-_MANIFEST_NAME = ".sio-managed.json"
+from sio.harnesses.managed import remove_files, stage_files, status_files
 
 # Hook events SIO registers in ~/.claude/settings.json. Each entry is
 # (event_name, module_path); the command is dispatched via
@@ -39,24 +37,6 @@ _SIO_HOOK_DEFS: list[tuple[str, str]] = [
     ("UserPromptSubmit", "sio.adapters.claude_code.hooks.user_prompt_submit"),
     ("SessionStart", "sio.adapters.claude_code.hooks.session_start"),
 ]
-
-
-def _hash_text(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
-
-
-def _load_manifest(path: Path) -> dict:
-    if not path.exists():
-        return {"version": 1, "files": {}}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {"version": 1, "files": {}}
-
-
-def _save_manifest(path: Path, manifest: dict) -> None:
-    manifest["updated_at"] = datetime.now(timezone.utc).isoformat()
-    path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
 
 
 class ClaudeCodeAdapter(HarnessAdapter):
@@ -76,55 +56,19 @@ class ClaudeCodeAdapter(HarnessAdapter):
     # ------------------------------------------------------------------ install
     def install(self, *, dry_run: bool = False, force: bool = False) -> InstallReport:
         report = InstallReport(harness=self.name, dry_run=dry_run)
-        manifest_path = self.config_dir / _MANIFEST_NAME
-        manifest = _load_manifest(manifest_path) if not dry_run else {"files": {}}
-
-        if not dry_run:
-            self.config_dir.mkdir(parents=True, exist_ok=True)
-
-        for src_path, rel_path, source_text in iter_bootstrap_files():
-            target = self._resolve_target(rel_path)
-            new_hash = _hash_text(source_text)
-            tracked = manifest.get("files", {}).get(str(rel_path))
-
-            if not target.exists():
-                action = "would-create" if dry_run else "create"
-                report.add(target, action, "new")
-                if not dry_run:
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    target.write_text(source_text, encoding="utf-8")
-                    manifest.setdefault("files", {})[str(rel_path)] = {
-                        "hash": new_hash,
-                        "installed_at": datetime.now(timezone.utc).isoformat(),
-                    }
-                continue
-
-            existing_text = target.read_text(encoding="utf-8", errors="replace")
-            existing_hash = _hash_text(existing_text)
-            if existing_hash == new_hash:
-                report.add(target, "skip", "already up-to-date")
-                continue
-
-            user_modified = (
-                tracked is not None
-                and tracked.get("hash") != existing_hash
-            )
-            if user_modified and not force:
-                report.add(target, "skip", "user-modified (use --force to overwrite)")
-                continue
-
-            action = "would-update" if dry_run else "update"
-            report.add(target, action, "content drift")
-            if not dry_run:
-                self._backup(target, report)
-                target.write_text(source_text, encoding="utf-8")
-                manifest.setdefault("files", {})[str(rel_path)] = {
-                    "hash": new_hash,
-                    "installed_at": datetime.now(timezone.utc).isoformat(),
-                }
-
-        if not dry_run:
-            _save_manifest(manifest_path, manifest)
+        # Bootstrap files are materialised up front so a BootstrapMissingError
+        # surfaces before any directory is created.
+        files = [
+            (str(rel_path), self._resolve_target(rel_path), text)
+            for _src, rel_path, text in iter_bootstrap_files()
+        ]
+        stage_files(
+            config_dir=self.config_dir,
+            files=files,
+            report=report,
+            dry_run=dry_run,
+            force=force,
+        )
         return report
 
     # ----------------------------------------------------------------- pre_install
@@ -344,29 +288,12 @@ class ClaudeCodeAdapter(HarnessAdapter):
     # ---------------------------------------------------------------- uninstall
     def uninstall(self, *, dry_run: bool = False) -> InstallReport:
         report = InstallReport(harness=self.name, dry_run=dry_run)
-        manifest_path = self.config_dir / _MANIFEST_NAME
-        if not manifest_path.exists():
-            report.errors.append(
-                "no SIO manifest found — nothing to uninstall (was sio init ever run?)"
-            )
-            return report
-        manifest = _load_manifest(manifest_path)
-
-        for rel_path_str, meta in manifest.get("files", {}).items():
-            target = self._resolve_target(Path(rel_path_str))
-            if not target.exists():
-                continue
-            existing_hash = _hash_text(target.read_text(encoding="utf-8", errors="replace"))
-            if existing_hash != meta.get("hash"):
-                report.add(target, "skip", "user-modified — leaving in place")
-                continue
-            action = "would-remove" if dry_run else "remove"
-            report.add(target, action)
-            if not dry_run:
-                target.unlink()
-
-        if not dry_run:
-            manifest_path.unlink()
+        remove_files(
+            config_dir=self.config_dir,
+            resolve_target=lambda key: self._resolve_target(Path(key)),
+            report=report,
+            dry_run=dry_run,
+        )
         return report
 
     # -------------------------------------------------------------------- status
@@ -376,27 +303,14 @@ class ClaudeCodeAdapter(HarnessAdapter):
             detected=self.detect(),
             config_dir=self.config_dir,
         )
-        manifest_path = self.config_dir / _MANIFEST_NAME
-        manifest = _load_manifest(manifest_path)
-        tracked = manifest.get("files", {})
-
-        for _src, rel_path, source_text in iter_bootstrap_files():
-            target = self._resolve_target(rel_path)
-            new_hash = _hash_text(source_text)
-            if not target.exists():
-                report.missing_files.append(target)
-                continue
-            existing_hash = _hash_text(target.read_text(encoding="utf-8", errors="replace"))
-            if existing_hash == new_hash:
-                report.installed_files.append(target)
-            else:
-                if str(rel_path) in tracked:
-                    report.drifted_files.append(target)
-                else:
-                    report.notes.append(
-                        f"{target} exists but is not SIO-managed (created by user or another tool)"
-                    )
-
+        status_files(
+            config_dir=self.config_dir,
+            files=(
+                (str(rel_path), self._resolve_target(rel_path), text)
+                for _src, rel_path, text in iter_bootstrap_files()
+            ),
+            report=report,
+        )
         return report
 
     # --------------------------------------------------------------- internals
@@ -406,11 +320,3 @@ class ClaudeCodeAdapter(HarnessAdapter):
         #   _bootstrap/skills/sio-recall/SKILL.md   →  ~/.claude/skills/sio-recall/SKILL.md
         #   _bootstrap/rules/tools/sio.md           →  ~/.claude/rules/tools/sio.md
         return self.config_dir / rel_path
-
-    def _backup(self, target: Path, report: InstallReport) -> None:
-        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        backup_root = Path.home() / ".sio" / "backups" / ts
-        backup_path = backup_root / target.relative_to(self.config_dir)
-        backup_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(target, backup_path)
-        report.add(backup_path, "backup", f"backup of {target}")

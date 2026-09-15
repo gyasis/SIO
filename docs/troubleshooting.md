@@ -219,7 +219,8 @@ Harness install   WARN   claude-code: 0 installed, 5 missing, 0 drifted
 
 **Cause — `~/.claude/` does not exist**
 
-The Claude Code adapter checks for `~/.claude/` before auto-detecting the harness.
+The Claude Code adapter checks for `~/.claude/` before auto-detecting the harness
+(the pi adapter likewise checks for `~/.pi/agent/`, or `$PI_CODING_AGENT_DIR`).
 On a fresh machine where Claude Code has never been launched, the directory is
 absent and the adapter silently skips.
 

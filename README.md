@@ -171,8 +171,11 @@ See [`docs/getting-started.md`](docs/getting-started.md) for the full isolated-i
    overwritten — even on subsequent runs.
 2. **Stages SIO's bundled skills and tool rules** into your AI agent's
    config directory. For Claude Code that's `~/.claude/skills/sio-*/` and
-   `~/.claude/rules/tools/sio.md`. Idempotent, manifest-tracked, preserves
-   anything you've edited.
+   `~/.claude/rules/tools/sio.md`. For **pi** it's `~/.pi/agent/skills/sio-*/`
+   (skills only — pi has no rules dir and no hooks system, so those are
+   reported as unsupported rather than written). Idempotent,
+   manifest-tracked, preserves anything you've edited, and never touches a
+   skill it did not install.
 
 ```bash
 # Auto-detect harness, install (creates ~/.sio/ + ~/.claude/skills/sio-*/)
@@ -193,7 +196,11 @@ sio init --uninstall
 
 # Force a specific harness even if the auto-detect missed it
 sio init --harness claude-code
+sio init --harness pi           # pi coding agent → ~/.pi/agent/skills/sio-*/
 ```
+
+Supported install targets: `claude-code` (skills + rules + hook telemetry)
+and `pi` (skills only). `cursor` / `windsurf` / `opencode` are stubs.
 
 After `sio init`, your tree should look like:
 
@@ -209,6 +216,9 @@ After `sio init`, your tree should look like:
   skills/sio-*/        ← 19 SIO skill folders
   rules/tools/sio.md   ← canonical SIO usage rule
   .sio-managed.json    ← manifest tracking what SIO installed
+~/.pi/agent/           (only with `--harness pi`, or when pi is auto-detected)
+  skills/sio-*/        ← the same skill folders, validated against pi's loader
+  .sio-managed.json    ← separate manifest; pi skills you added yourself stay untouched
 ```
 
 ### Upgrade
@@ -598,7 +608,7 @@ SIO is the **data and intelligence layer** — it does not enforce behavior at r
 
 **SIO teaches; the agent harness learns.** SIO never blocks or intercepts the agent at runtime. It writes better instructions, and the agent follows them next session. Velocity tracking closes the loop by measuring whether the rules actually reduced errors.
 
-This separation means SIO works with any agent harness that reads configuration files — Claude Code today, Cursor/Gemini CLI/others tomorrow.
+This separation means SIO works with any agent harness that reads configuration files — Claude Code and pi today, Cursor/Gemini CLI/others tomorrow.
 
 ---
 
