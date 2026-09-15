@@ -9,6 +9,31 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
+### Added — pi harness adapter
+
+- **`pi` coding agent** (`@earendil-works/pi-coding-agent`) joins the readable
+  harnesses. `sio/adapters/pi/` is a direct file adapter over
+  `~/.pi/agent/sessions/<cwd-dir>/<iso-ts>_<uuid>.jsonl` (shapes taken from pi's
+  own `session-manager.d.ts` / `messages.d.ts`): the line-1 `session` header,
+  user / assistant text, `thinking` blocks (filed as `system`), `toolCall`
+  blocks (tool name + JSON arguments), `toolResult`s, pi's `bashExecution`
+  (`!cmd`) turns, `model_change` / `thinking_level_change` / `compaction` /
+  `branch_summary` bookkeeping; `custom` + `label` entries are dropped.
+- Wired at all three touch points: `adapter_for("pi")` +
+  `manifest_from_handle("pi:<stem|uuid|partial>")` (LOCATE), `search_pi` in
+  `PARSERS` so `sio search --agent pi`, `--agent all` and `--list-agents` see it
+  (SEARCH), and `sio mine --agent pi` (bulk) / `--session pi:<id>` (EXTRACT).
+  `sio live ls` discovers pi sessions (cwd from the header); `sio live show /
+  attach` and `sio watch` tail them.
+- **`SessionEvent.error`** (new optional field, default `None`): an adapter can
+  now carry a harness-flagged failure. pi sets it on `isError: true` tool
+  results and non-zero `!cmd` exits, and both mine paths pass it through, so
+  those land as `tool_failure` records instead of being invisible. Other
+  adapters are unchanged (`None`).
+- Not in this change: `sio init --harness pi` (installing SIO's skills/rules
+  into pi) and `sio suggest --harness pi` (routing suggestions to pi's
+  instruction file) — follow-ups.
+
 ### Session Intelligence — absorb session-search + cross-agent, session-scoped analysis
 
 Slated for the next minor (0.4.0). SIO absorbs the standalone `session-search`

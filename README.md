@@ -105,7 +105,7 @@ The v004 remediation hardened every stage of the pipeline:
 - An AI coding tool that produces session transcripts. Coverage differs by
   direction — the two are easy to conflate because both are called "adapters":
   - **Reading** sessions (`sio search`, `sio mine`): claude, codex, goose,
-    opencode, gemini, aider, promptchain, kimi. `sio search --list-agents`
+    opencode, gemini, aider, promptchain, kimi, pi. `sio search --list-agents`
     shows which have data on this machine.
   - **Installing into** a harness (`sio init` — skills, rules, hook telemetry):
     Claude Code only. Cursor and OpenCode error out (PRs welcome).
@@ -306,7 +306,7 @@ fresh install should never silently dispatch to the wrong provider.
 
 SIO absorbed the standalone `session-search` tool: **`sio search`** finds sessions
 across **all coding-agent harnesses** (Claude, Codex, Goose, OpenCode, Gemini,
-Aider, PromptChain) — pick one with `--agent <harness>` (default `claude`) or `--agent all`.
+Aider, PromptChain, Kimi, pi) — pick one with `--agent <harness>` (default `claude`) or `--agent all`.
 Every analysis command can be **scoped to one session** via `--session`,
 turning SIO into a targeted debugger for a single session/process. Session ids are
 canonical **`agent:native_id`** "Session URIs" (e.g. `claude:<uuid>`,
@@ -315,7 +315,7 @@ canonical **`agent:native_id`** "Session URIs" (e.g. `claude:<uuid>`,
 | Command | Description |
 |---------|-------------|
 | `sio search "pattern" --agent all` | Search session history across all harnesses (absorbed `session-search`) |
-| `sio search "pattern" --agent <harness>` | Target ONE coding agent: `claude` (default), `codex`, `gemini`, `goose`, `opencode`, `aider`, `promptchain` |
+| `sio search "pattern" --agent <harness>` | Target ONE coding agent: `claude` (default), `codex`, `gemini`, `goose`, `opencode`, `aider`, `promptchain`, `kimi`, `pi` |
 | `sio search "pattern" --agent claude --files` | Emit matching session file paths (pipe into `--session`) |
 | `sio errors --session <handle>` | Scope error browsing to ONE session (`agent:id`, a path, a bare id, or `-` for stdin) |
 | `sio errors --session c6428f4f` | Fuzzy partial-id resolve (lists candidates if ambiguous) |
