@@ -107,7 +107,13 @@ class TestClaudeCodeAdapterInstall:
         # Content must not have been overwritten.
         assert target.read_text().startswith("USER EDITED CONTENT")
 
-    def test_force_overwrites_user_modified_with_backup(self, tmp_path: Path) -> None:
+    def test_force_overwrites_user_modified_with_backup(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # _backup() writes to Path.home()/.sio/backups/<ts>/ -- without this the test
+        # left a real backup of its fixture in the user's ~/.sio on every run.
+        fake_home = tmp_path / "home"
+        monkeypatch.setenv("HOME", str(fake_home))
         adapter = self._adapter(tmp_path)
         adapter.install()
         target = next(
@@ -119,8 +125,12 @@ class TestClaudeCodeAdapterInstall:
             ch for ch in report.changes if ch.path == target and ch.action == "update"
         ]
         assert update_for_target, f"expected --force to update {target}"
-        # A backup change must have been recorded.
-        assert any(ch.action == "backup" for ch in report.changes)
+        # A backup change must have been recorded, holding the user's edit, and it
+        # must live under the (fake) home -- never the real ~/.sio.
+        backups = [ch.path for ch in report.changes if ch.action == "backup"]
+        assert backups, "expected --force to record a backup"
+        assert all(fake_home / ".sio" / "backups" in b.parents for b in backups), backups
+        assert any(b.read_text().startswith("USER EDITED") for b in backups)
 
     def test_status_reports_after_install(self, tmp_path: Path) -> None:
         adapter = self._adapter(tmp_path)

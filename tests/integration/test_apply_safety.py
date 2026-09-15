@@ -246,34 +246,34 @@ class TestBackupRetention:
     """After 12 atomic_write calls on the same target, exactly 10 .bak files remain."""
 
     def test_exactly_10_backups_retained_after_12_writes(self, tmp_path, monkeypatch):
-        """Backup retention prunes to 10 most recent .bak files."""
+        """Backup retention prunes to the 10 most recent .bak files for a target."""
+        import itertools  # noqa: PLC0415
+        import time  # noqa: PLC0415
+
+        from sio.core.applier import writer  # noqa: PLC0415
         from sio.core.applier.writer import atomic_write  # noqa: PLC0415
 
         target = _setup_target(tmp_path, monkeypatch)
         target.write_text("v0", encoding="utf-8")
 
-        import time
+        # _ts() has one-second resolution, so 12 fast writes would share ONE backup
+        # filename and overwrite each other -- the old `count <= 10` then passed with
+        # a single .bak and never exercised pruning. Give every write its own stamp.
+        seq = itertools.count()
+        monkeypatch.setattr(writer, "_ts", lambda: f"20260101T000000Z{next(seq):02d}")
 
+        backup_path = None
         for i in range(12):
-            time.sleep(0.02)  # ensure distinct mtime-based ordering
-            atomic_write(target, f"v{i + 1}")
+            time.sleep(0.02)  # distinct mtimes: _prune_backups orders by st_mtime
+            backup_path = atomic_write(target, f"v{i + 1}")
 
-        # Collect all .bak files across the full backup tree under ~/.sio/backups
-        # Prune checks backup_dir (which is per-target), not tmp_path directly.
-        # The backup dir mirrors the file's relative path under home.
-        # We need to find the backup dir used by atomic_write.
-        backup_root = Path.home() / ".sio" / "backups"
-        # Find bak files matching our target's name pattern anywhere under backup_root
-        all_bak = list(backup_root.rglob(f"{target.name}.*.bak"))
+        # Count in the exact folder atomic_write used, not the first match in a tree.
+        bak_files = sorted(backup_path.parent.glob(f"{target.name}.*.bak"))
+        assert len(bak_files) == 10, f"expected exactly 10 .bak files, found {len(bak_files)}"
 
-        # Filter to only those in the same directory (one dir per target)
-        if all_bak:
-            backup_dir = all_bak[0].parent
-            bak_files_for_target = list(backup_dir.glob(f"{target.name}.*.bak"))
-        else:
-            # Backup may be elsewhere; check tmp_path subtree
-            bak_files_for_target = list(tmp_path.rglob("*.bak"))
+        # Write N backs up the content before it (v0..v11); the two oldest are pruned.
+        kept = {f.read_text(encoding="utf-8") for f in bak_files}
+        assert kept == {f"v{n}" for n in range(2, 12)}, f"wrong backups retained: {sorted(kept)}"
 
-        count = len(bak_files_for_target)
-        assert count <= 10, f"Backup retention must keep at most 10 .bak files, found {count}"
-        assert count > 0, "At least some backups must exist after 12 writes"
+        # And none of it touched the real ~/.sio (conftest _isolate_backup_root).
+        assert writer.BACKUP_ROOT in backup_path.parents
