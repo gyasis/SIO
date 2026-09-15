@@ -110,7 +110,7 @@ class TestDiscover:
         monkeypatch.setattr(live, "CLAUDE_PROJECTS", projects)
         monkeypatch.setattr(live, "GOOSE_DB", tmp_path / "nope" / "sessions.db")
         monkeypatch.setattr(live, "OPENCODE_DB", tmp_path / "nope" / "opencode.db")
-        for attr in ("CODEX_SESSIONS", "GEMINI_TMP", "KIMI_SESSIONS"):
+        for attr in ("CODEX_SESSIONS", "GEMINI_TMP", "KIMI_SESSIONS", "PI_SESSIONS"):
             monkeypatch.setattr(live, attr, tmp_path / "nope" / attr)
         monkeypatch.setattr(live, "KIMI_SESSION_INDEX", tmp_path / "nope" / "index.jsonl")
 
@@ -167,6 +167,7 @@ class TestCodexDiscovery:
         monkeypatch.setattr(live, "GEMINI_TMP", tmp_path / "nope" / "gemini")
         monkeypatch.setattr(live, "KIMI_SESSIONS", tmp_path / "nope" / "kimi")
         monkeypatch.setattr(live, "KIMI_SESSION_INDEX", tmp_path / "nope" / "index.jsonl")
+        monkeypatch.setattr(live, "PI_SESSIONS", tmp_path / "nope" / "pi")
 
     def test_discovers_nested_jsonl_rollout_and_reads_cwd(self, tmp_path, monkeypatch):
         codex_sessions = tmp_path / ".codex" / "sessions"
@@ -364,3 +365,57 @@ class TestResolveSince:
         monkeypatch.setenv("SIO_HOME", str(tmp_path))
         live._save_cursor("claude:aaa", "2026-07-28T08:00:00Z")
         assert live._resolve_since("claude:aaa", None, False) is None
+
+
+class TestPiDiscovery:
+    """pi sessions live at ~/.pi/agent/sessions/<cwd-dir>/<iso-ts>_<uuid>.jsonl;
+    discovery reads cwd from the line-1 header and uses the file stem as the
+    native id (the same convention codex uses).
+    """
+
+    def _wire(self, monkeypatch, tmp_path, pi_sessions):
+        monkeypatch.setattr(live, "CLAUDE_PROJECTS", tmp_path / "nope" / "projects")
+        monkeypatch.setattr(live, "GOOSE_DB", tmp_path / "nope" / "sessions.db")
+        monkeypatch.setattr(live, "OPENCODE_DB", tmp_path / "nope" / "opencode.db")
+        for attr in ("CODEX_SESSIONS", "GEMINI_TMP", "KIMI_SESSIONS"):
+            monkeypatch.setattr(live, attr, tmp_path / "nope" / attr)
+        monkeypatch.setattr(live, "KIMI_SESSION_INDEX", tmp_path / "nope" / "index.jsonl")
+        monkeypatch.setattr(live, "PI_SESSIONS", pi_sessions)
+        monkeypatch.setattr(
+            live, "_repo_info",
+            lambda cwd: {"toplevel": None, "common_dir": None, "branch": None},
+        )
+
+    def test_discovers_session_and_reads_cwd_from_header(self, tmp_path, monkeypatch):
+        pi_sessions = tmp_path / ".pi" / "agent" / "sessions"
+        cwd_dir = pi_sessions / "--home-x-code--"
+        cwd_dir.mkdir(parents=True)
+        stem = "2026-09-15T08-00-00-000Z_0199a0b1-c2d3-7e4f-8a5b-6c7d8e9f0a1b"
+        (cwd_dir / f"{stem}.jsonl").write_text(
+            json.dumps({
+                "type": "session", "version": 3,
+                "id": "0199a0b1-c2d3-7e4f-8a5b-6c7d8e9f0a1b",
+                "timestamp": "2026-09-15T08:00:00.000Z", "cwd": "/home/x/code",
+            })
+            + "\n"
+            + json.dumps({
+                "type": "message", "id": "e1", "parentId": None,
+                "timestamp": "2026-09-15T08:01:00.000Z",
+                "message": {"role": "user", "content": [{"type": "text", "text": "hi"}]},
+            })
+            + "\n",
+            encoding="utf-8",
+        )
+        self._wire(monkeypatch, tmp_path, pi_sessions)
+
+        rows = live.discover_sessions(minutes=600)
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["agent"] == "pi"
+        assert row["native_id"] == stem
+        assert row["cwd"] == "/home/x/code"
+        assert row["msgs"] == 2
+
+    def test_missing_pi_tree_is_safe(self, tmp_path, monkeypatch):
+        self._wire(monkeypatch, tmp_path, tmp_path / "nope" / "pi")
+        assert live.discover_sessions(minutes=600) == []

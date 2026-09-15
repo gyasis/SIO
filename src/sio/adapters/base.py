@@ -26,7 +26,7 @@ from typing import Any, Protocol, runtime_checkable
 class SessionManifest:
     """Where a single session lives and how to read it."""
 
-    agent: str  # claude | codex | goose | opencode | gemini | aider
+    agent: str  # claude | codex | goose | opencode | gemini | aider | promptchain | kimi | pi
     native_id: str  # agent-native session id
     kind: str  # "file" | "db"
     path: str  # filesystem path (file) or db path (db)
@@ -47,6 +47,10 @@ class SessionEvent:
     content: str
     tool: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
+    # Set when the harness itself flagged this event as a failure (a tool
+    # result with is_error / isError, a non-zero exit). The mining layer files
+    # it as a tool_failure; None means "not flagged", not "succeeded".
+    error: str | None = None
 
 
 @runtime_checkable

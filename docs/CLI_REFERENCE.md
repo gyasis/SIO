@@ -788,13 +788,15 @@ Options:
                                   targets a single session, or --experiment is
                                   given.
   --project TEXT                  Filter by project name.
-  --agent [claude|codex|gemini|goose]
+  --agent [claude|codex|gemini|goose|pi]
                                   Which coding agent's sessions to mine in
                                   bulk. 'claude' uses the native
-                                  JSONL/SpecStory scan; codex/gemini/goose
+                                  JSONL/SpecStory scan; codex/gemini/goose/pi
                                   enumerate that agent's store via the
-                                  session-search parsers (content-level errors
-                                  only). Ignored when --session is given.
+                                  session-search parsers (content-level
+                                  errors, plus harness-flagged tool failures
+                                  where the parser carries them -- pi does).
+                                  Ignored when --session is given.
   --source [specstory|jsonl|both]
                                   Source type.
   --exclude-sidechains / --include-sidechains
@@ -1418,7 +1420,7 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
-  --agent {claude,codex,goose,opencode,gemini,aider,promptchain,all}
+  --agent {claude,codex,goose,opencode,gemini,aider,promptchain,kimi,pi,all}
                         Which agent's history to search (default: claude).
                         'all' fans out to every harness.
   --specstory           Search SpecStory MD only.

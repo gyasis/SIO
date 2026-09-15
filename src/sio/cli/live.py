@@ -52,6 +52,7 @@ CODEX_SESSIONS = HOME / ".codex" / "sessions"
 GEMINI_TMP = HOME / ".gemini" / "tmp"
 KIMI_SESSIONS = HOME / ".kimi-code" / "sessions"
 KIMI_SESSION_INDEX = HOME / ".kimi-code" / "session_index.jsonl"
+PI_SESSIONS = HOME / ".pi" / "agent" / "sessions"
 
 # Env vars a harness might expose so a session can identify ITSELF as "you".
 _SELF_ID_ENVS = ("SIO_SESSION_ID", "CLAUDE_SESSION_ID", "CLAUDE_SESSION")
@@ -265,6 +266,10 @@ class Digest:
             self.tools[ev.tool] += 1
         if _event_kind(ev) == "user":
             self.last_user = body[:120]
+        # Adapters that flag failures on the event itself (pi's isError) --
+        # Claude's is_error lives in its raw tool blocks, counted below.
+        if getattr(ev, "error", None):
+            self.errors += 1
         for block in _tool_blocks(ev.raw):
             path = (block.get("input") or {}).get("file_path")
             if path:
@@ -577,6 +582,37 @@ def _codex_session(path: Path) -> dict[str, Any]:
     }
 
 
+def _pi_session(path: Path) -> dict[str, Any]:
+    """Probe of one pi ``<iso-ts>_<uuid>.jsonl`` session (cwd from its header).
+
+    The ``{type:"session", cwd, ...}`` header is always line 1, so this is a
+    single cheap line read, exactly like ``_codex_session``. The native_id is
+    the file stem (the codex convention), which is what ``sio search --files``
+    and ``manifest_from_handle`` agree on.
+    """
+    cwd = None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            first = fh.readline()
+        if first.strip():
+            entry = json.loads(first)
+            if entry.get("type") == "session":
+                cwd = entry.get("cwd")
+    except (OSError, json.JSONDecodeError):
+        pass
+    st = path.stat()
+    return {
+        "agent": "pi",
+        "native_id": path.stem,
+        "path": str(path),
+        "cwd": cwd,
+        "jsonl_branch": None,
+        "mtime": st.st_mtime,
+        "msgs": _count_lines(path),
+        "last": "—",
+    }
+
+
 def _load_kimi_index() -> dict[str, str]:
     """Map sessionDir -> workDir from ~/.kimi-code/session_index.jsonl.
 
@@ -663,6 +699,8 @@ def discover_sessions(minutes: int) -> list[dict[str, Any]]:
     kimi_index = _load_kimi_index()
     for fp in _recent(KIMI_SESSIONS, "wire.jsonl", cutoff):
         rows.append(_kimi_session(fp, kimi_index))
+    for fp in _recent(PI_SESSIONS, "*.jsonl", cutoff):
+        rows.append(_pi_session(fp))
 
     # Collapse resume/compact continuations that share a session id (newest wins),
     # so one logical session is one row and never collides with itself.

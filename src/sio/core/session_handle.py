@@ -23,6 +23,7 @@ KNOWN_AGENTS: tuple[str, ...] = (
     "aider",
     "promptchain",
     "kimi",
+    "pi",
 )
 
 # Legacy default: a colon-less handle (or one whose prefix is not a known agent)
@@ -112,6 +113,9 @@ def from_path(path_str: str) -> str:
         # instead so the handle round-trips through manifest_from_handle().
         if p.name == "wire.jsonl" and len(p.parents) >= 3:
             native = p.parents[2].name
+    elif "/.pi/" in s:
+        # <iso-ts>_<uuid>.jsonl -- the stem is the native id (codex convention).
+        agent = "pi"
     else:
         agent = LEGACY_AGENT
     return f"{agent}:{native}"

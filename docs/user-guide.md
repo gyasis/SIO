@@ -454,7 +454,7 @@ sio search "<pattern>" [--agent <harness>] [--recent <days>] [--files] [--count]
 | Option | Default | Description |
 |--------|---------|-------------|
 | `<pattern>` | (required) | Search pattern (plain text) |
-| `--agent` | `claude` | Which harness to search: `claude`, `codex`, `goose`, `opencode`, `gemini`, `aider`, `promptchain`, or `all` |
+| `--agent` | `claude` | Which harness to search: `claude`, `codex`, `goose`, `opencode`, `gemini`, `aider`, `promptchain`, `kimi`, `pi`, or `all` |
 | `--recent <N>` | `0` (all time) | Only files with mtime within N days |
 | `--limit <N>` | `0` (unlimited) | Cap matches per agent |
 | `--files` | off | Emit unique source file paths (one per line; pipe into `--session`) |
@@ -479,8 +479,8 @@ performs its own directory traversal, not when it is handed an explicit file lis
 
 **Cross-agent adapters:**
 
-Claude uses a direct file adapter against `~/.claude/projects/**/*.jsonl`.  All other agents
-(`codex`, `goose`, `opencode`, `gemini`, `aider`, `promptchain`) use a *search-backed adapter*
+Claude, Codex, Kimi and pi use direct file adapters (Goose and OpenCode read their SQLite
+stores); the remaining agents (`gemini`, `aider`, `promptchain`) use a *search-backed adapter*
 built on their respective on-disk stores:
 
 | Agent | Store location |
@@ -491,6 +491,8 @@ built on their respective on-disk stores:
 | `gemini` | `~/.gemini/tmp/` |
 | `aider` | per-repo `.aider.chat.history.md` files under `~/dev/` |
 | `promptchain` | `~/.promptchain/sessions/<uuid>/messages.jsonl` (the PromptChain TUI/CLI agent; uuid→name via `sessions.db`) |
+| `kimi` | `~/.kimi-code/sessions/<workspace>/session_<uuid>/agents/<agent>/wire.jsonl` |
+| `pi` | `~/.pi/agent/sessions/<cwd-dir>/<iso-ts>_<uuid>.jsonl` (the pi coding agent; session id = file stem; `isError` tool results are mined as `tool_failure`) |
 
 Pass `--agent all` to fan out across every harness in one call. Use `--list-agents` to see
 which harnesses have on-disk history on this machine.

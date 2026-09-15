@@ -304,7 +304,7 @@ def get_error_records(
     params: list = []
     if agent:
         _NON_CLAUDE = (
-            "codex", "gemini", "goose", "aider", "opencode", "promptchain", "kimi",
+            "codex", "gemini", "goose", "aider", "opencode", "promptchain", "kimi", "pi",
         )
         if agent == "claude":
             query += "".join(

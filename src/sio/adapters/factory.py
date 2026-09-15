@@ -19,12 +19,13 @@ _KIMI_SESSIONS = Path.home() / ".kimi-code" / "sessions"
 _GOOSE_DB = Path.home() / ".local" / "share" / "goose" / "sessions" / "sessions.db"
 _OPENCODE_DB = Path.home() / ".local" / "share" / "opencode" / "opencode.db"
 _CODEX_SESSIONS = Path.home() / ".codex" / "sessions"
+_PI_SESSIONS = Path.home() / ".pi" / "agent" / "sessions"
 
 
 def adapter_for(agent: str):
     """Return the :class:`SessionAdapter` for ``agent``.
 
-    Claude, Kimi, Goose, OpenCode and Codex use direct adapters (file- or
+    Claude, Kimi, Goose, OpenCode, Codex and pi use direct adapters (file- or
     SQLite-backed); every other agent that has a ``sio.search.cli`` parser
     uses the generic search-backed adapter. Unknown agents raise
     NotImplementedError.
@@ -54,6 +55,11 @@ def adapter_for(agent: str):
 
         return CodexAdapter()
 
+    if agent == "pi":
+        from sio.adapters.pi.adapter import PiAdapter
+
+        return PiAdapter()
+
     from sio.search.cli import PARSERS
 
     if agent in PARSERS:
@@ -69,9 +75,9 @@ def adapter_for(agent: str):
 def manifest_from_handle(handle: str) -> SessionManifest | None:
     """Resolve a session handle to a :class:`SessionManifest`.
 
-    Claude and Kimi resolve to a concrete file on disk; Goose and OpenCode
-    resolve to their SQLite store (confirming the session id actually exists
-    in it) — all four return ``None`` if not found. Other known agents return
+    Claude, Kimi, Codex and pi resolve to a concrete file on disk; Goose and
+    OpenCode resolve to their SQLite store (confirming the session id actually
+    exists in it) — all six return ``None`` if not found. Other known agents return
     a generic store-backed manifest; the search-backed adapter locates the
     session by native id within the agent's store.
     """
@@ -120,6 +126,26 @@ def manifest_from_handle(handle: str) -> SessionManifest | None:
         path = matches[-1]
         return SessionManifest(
             agent="codex",
+            native_id=path.stem,
+            kind="file",
+            path=str(path),
+            encoding="jsonl",
+        )
+
+    if agent == "pi":
+        # Same convention as codex: native may be the full "<iso-ts>_<uuid>"
+        # file stem (what discovery / sio search --files hand back) or the
+        # bare/partial uuid from the session header -- exact stem first, then
+        # a substring match. Newest-last on multiple hits (ISO-timestamp file
+        # names sort lexicographically = chronologically within a cwd dir).
+        matches = sorted(_PI_SESSIONS.rglob(f"{native}.jsonl"))
+        if not matches:
+            matches = sorted(_PI_SESSIONS.rglob(f"*{native}*.jsonl"))
+        if not matches:
+            return None
+        path = matches[-1]
+        return SessionManifest(
+            agent="pi",
             native_id=path.stem,
             kind="file",
             path=str(path),
