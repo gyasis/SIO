@@ -598,7 +598,10 @@ def _check_harness_install() -> CheckResult:
             name="Harness install",
             status="warn",
             detail="No supported harnesses detected on this system",
-            fix_hint="sio init --harness claude-code  # if Claude Code is installed",
+            fix_hint=(
+                "sio init --harness claude-code  # if Claude Code is installed; "
+                "or --harness pi"
+            ),
         )
 
     summaries: list[str] = []
