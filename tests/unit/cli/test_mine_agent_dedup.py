@@ -107,7 +107,7 @@ def test_partial_session_then_bulk_yields_one_canonical_id_no_duplicates(pi_env)
     # ... and via the bulk path: skipped as unchanged, still one id, no dups
     r3 = runner.invoke(cli, ["mine", "--agent", "pi", "--since", "30 days"])
     assert r3.exit_code == 0, r3.output
-    assert "1 unchanged, skipped" in r3.output
+    assert "Bulk-mined pi: 1 session (0 mined, 1 unchanged) -> 0 errors" in r3.output
     assert _errors(pi_env["db"]) == first
 
 
@@ -175,3 +175,46 @@ def test_grown_session_adds_only_the_new_errors(pi_env):
     assert f"{len(new)} new, {len(first)} already present" in r.output
     # a second signature row for the grown session, same key
     assert [p[0] for p in _processed(pi_env["db"])] == [CANONICAL, CANONICAL]
+
+
+# ---------------------------------------------------------------------------
+# the bulk summary line
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        (
+            ("pi", 0, 0, 0, 0, 0),
+            "Bulk-mined pi: 0 sessions (0 mined, 0 unchanged) -> 0 errors "
+            "(0 new, 0 already present).",
+        ),
+        (
+            ("pi", 1, 0, 1, 1, 0),
+            "Bulk-mined pi: 1 session (1 mined, 0 unchanged) -> 1 error "
+            "(1 new, 0 already present).",
+        ),
+        (
+            ("pi", 0, 1, 0, 0, 0),
+            "Bulk-mined pi: 1 session (0 mined, 1 unchanged) -> 0 errors "
+            "(0 new, 0 already present).",
+        ),
+        (
+            ("pi", 1, 1, 3, 3, 0),
+            "Bulk-mined pi: 2 sessions (1 mined, 1 unchanged) -> 3 errors "
+            "(3 new, 0 already present).",
+        ),
+        (
+            ("codex", 4, 2, 7, 5, 2),
+            "Bulk-mined codex: 6 sessions (4 mined, 2 unchanged) -> 7 errors "
+            "(5 new, 2 already present).",
+        ),
+    ],
+)
+def test_bulk_summary_counts_every_session_seen(args, expected):
+    """The sessions figure is what was SEEN, split into mined vs unchanged —
+    never `1 sessions (1 unchanged, skipped)`, which read as a contradiction."""
+    from sio.cli.main import _bulk_summary
+
+    assert _bulk_summary(*args) == expected
