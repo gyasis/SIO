@@ -128,8 +128,11 @@ def _message_events(
         content = _text_from_content(message.get("content"))
         # isError is the friction signal: surface it on SessionEvent.error so
         # the mining layer files a tool_failure, exactly as a Claude
-        # tool_result with is_error does on the native path.
-        error = content if message.get("isError") else None
+        # tool_result with is_error does on the native path. A flagged result
+        # with NO output still gets a non-empty error (the extractor treats an
+        # empty string as "no failure"), the same way a silent non-zero
+        # bashExecution below is filed as its exit code.
+        error = (content or "isError (empty tool result)") if message.get("isError") else None
         yield SessionEvent(ts=ts, role="tool", content=content, tool=name, raw=obj, error=error)
         return
 

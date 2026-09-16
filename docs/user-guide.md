@@ -713,9 +713,13 @@ crash rolls everything back; two concurrent callers apply it exactly once):
 3. Backfill: `pi:…` → `pi`, bare id or `claude:…` → `claude`. A prefix that is NOT a known
    agent (e.g. `wuphf:…`) is filed under claude by the legacy rule **and counted in the
    report** — review those rows; nothing is silently dropped.
-4. Merge partial non-claude ids into the full canonical id when the partial is an
-   unambiguous substring of exactly one full id in the same table (ambiguous ones are left
-   and listed).
+4. Merge partial non-claude ids into the full canonical id when the partial is a
+   **token-bounded** fragment of exactly one full id in the same table: at least 8
+   characters, and sitting at a token boundary of the longer id (start of string or after
+   one of `-_.:/`, and end of string or before one). So `pi:01a0a495` folds into
+   `pi:2026-09-15T10-20-49-318Z_01a0a495-6525-…`, while a name-style id such as a goose
+   `main` is never folded into `domain-fix` — a bare substring match would weld two
+   sessions together. Ambiguous partials (two or more candidates) are left and listed.
 5. Dedupe exact duplicates (lowest id survives; `pattern_errors` and `experiment_runs`
    are remapped to the survivor), then add the UNIQUE fingerprint index.
 6. Create triggers + per-agent views, stamp `schema_version` 6.

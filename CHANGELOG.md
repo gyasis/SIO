@@ -9,6 +9,40 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
+### Fixed — follow-ups to the agent-isolation work (#44)
+
+- **Migration 006 no longer merges session ids on a bare substring.** The
+  partial-id fold (`agent:P` → `agent:F`) used `P in F`, which is right for a
+  truncated uuid stem but welds unrelated name-style sessions together — a
+  goose `main` would have been merged into `domain-fix`. The rule is now
+  token-bounded and floored (`sio.core.db.agents.is_partial_of`): the partial
+  must be at least 8 characters and appear in the longer id at a token
+  boundary (start of string or after one of `-_.:/`, and end of string or
+  before one). `pi:01a0a495` still folds into
+  `pi:2026-09-15T10-20-49-318Z_01a0a495-6525-…`; `main`, `sess`, a 7-char
+  prefix, or a fragment inside a word never do. Still exactly-one-candidate,
+  still lists ambiguous ids, still never touches the filesystem. No schema
+  bump: the rule runs only inside 006, which is a no-op on a migrated DB.
+- **The bulk-mine summary counts every session seen.** It printed
+  `1 sessions (1 unchanged, skipped)` for two sessions of which one was
+  skipped, which read as a contradiction. Now
+  `Bulk-mined pi: 2 sessions (1 mined, 1 unchanged) -> 3 errors (3 new, 0 already present).`
+  — sessions seen, split mined / unchanged; errors found in the window, split
+  new / already present exactly as the `--session` line does; correct
+  singular / plural.
+- **Bulk mining files the harness-flagged failures `--session` files.** The
+  search parser behind `mine --agent pi` dropped every empty-content event, so
+  a `!cmd` that exited non-zero with no output, or an `isError` tool result
+  with no text, was caught by `--session` and missed by `--agent`. `search_pi`
+  now keeps an event the harness flagged as a failure even when its content is
+  empty (matching on the error text too, so `sio search "exit code"` finds
+  silent failures); an event that is neither flagged nor has content is still
+  dropped. The pi adapter also gives an empty `isError` result a non-empty
+  error text (`isError (empty tool result)`) — previously it was `""`, which
+  the extractor reads as "no failure", so NEITHER path filed it. Both paths
+  now produce identical error rows for the same session (tested by
+  fingerprint).
+
 ### Changed — agent isolation: one DB, a real `agent` column, no duplicate mining (#44)
 
 - **`agent` column** on every table that stores per-session mined data —

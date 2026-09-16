@@ -791,9 +791,10 @@ def _session_signature(messages: list[dict]) -> str:
     file-backed (pi, codex, kimi) and store-backed (goose, opencode) agents.
 
     Counts only events WITH content: the search parsers behind the bulk path
-    drop empty-content events, the adapters behind ``--session`` keep them, and
-    the two paths must produce the same signature for the same session or a
-    session mined one way is never "unchanged" the other way.
+    drop empty-content events unless the harness flagged them as failures,
+    the adapters behind ``--session`` keep them all, and the two paths must
+    produce the same signature for the same session or a session mined one
+    way is never "unchanged" the other way.
     """
     with_content = [m for m in messages if (m.get("content") or "").strip()]
     last_ts = max((m.get("timestamp") or "" for m in with_content), default="")
@@ -955,14 +956,16 @@ def _mine_agent_bulk(db_path: str, agent: str, since: str | None) -> None:
         cutoff_epoch = parse_since(since).timestamp()
 
     # One store scan; group events by native session id. Empty pattern matches
-    # every non-empty event (same convention as SearchBackedAdapter).
+    # every non-empty event (same convention as SearchBackedAdapter) plus every
+    # harness-flagged failure, content or not, so a silent `!cmd` exit or an
+    # isError result with no output is filed here as it is via --session.
     by_session: dict[str, list] = defaultdict(list)
     for rec in parser("", False, cutoff_epoch):
         if rec.session_id:
             by_session[rec.session_id].append(rec)
 
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    total_sessions = skipped_sessions = 0
+    mined_sessions = skipped_sessions = 0
     total_errors = total_inserted = total_present = 0
     with _db_conn(db_path) as conn:
         _warn_if_agent_migration_pending(conn)
@@ -994,15 +997,38 @@ def _mine_agent_bulk(db_path: str, agent: str, since: str | None) -> None:
             _mark_non_claude_session_processed(
                 conn, canonical, signature, agent, len(messages), recs[0].source_path
             )
-            total_sessions += 1
+            mined_sessions += 1
             total_errors += len(errors)
             total_inserted += inserted
             total_present += present
         conn.commit()
     click.echo(
-        f"Bulk-mined {agent}: {total_sessions} sessions "
-        f"({skipped_sessions} unchanged, skipped) -> {total_errors} errors "
-        f"({total_inserted} new, {total_present} already present)."
+        _bulk_summary(
+            agent, mined_sessions, skipped_sessions, total_errors, total_inserted, total_present
+        )
+    )
+
+
+def _plural(n: int, noun: str) -> str:
+    return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
+
+
+def _bulk_summary(
+    agent: str, mined: int, unchanged: int, errors: int, inserted: int, present: int
+) -> str:
+    """The one-line result of a bulk mine.
+
+    ``sessions`` is every session SEEN in the window, split into the ones read
+    this run (``mined``) and the ones skipped as unchanged since their last
+    mine. ``errors`` is what the extractor found in the mined sessions this
+    run — the errors in the WINDOW — split the same way the ``--session`` path
+    reports them: ``N new`` landed now, ``M already present`` were in the DB
+    before (the UNIQUE fingerprint dropped them).
+    """
+    return (
+        f"Bulk-mined {agent}: {_plural(mined + unchanged, 'session')} "
+        f"({mined} mined, {unchanged} unchanged) -> {_plural(errors, 'error')} "
+        f"({inserted} new, {present} already present)."
     )
 
 

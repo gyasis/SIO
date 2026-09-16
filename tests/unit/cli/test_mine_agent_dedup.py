@@ -107,7 +107,7 @@ def test_partial_session_then_bulk_yields_one_canonical_id_no_duplicates(pi_env)
     # ... and via the bulk path: skipped as unchanged, still one id, no dups
     r3 = runner.invoke(cli, ["mine", "--agent", "pi", "--since", "30 days"])
     assert r3.exit_code == 0, r3.output
-    assert "1 unchanged, skipped" in r3.output
+    assert "Bulk-mined pi: 1 session (0 mined, 1 unchanged) -> 0 errors" in r3.output
     assert _errors(pi_env["db"]) == first
 
 
@@ -126,13 +126,136 @@ def test_bulk_then_partial_session_dedupes_via_constraint(pi_env):
     r = runner.invoke(cli, ["mine", "--session", f"pi:{SESSION_UUID[:8]}"])
     assert r.exit_code == 0, r.output
     # Every error the bulk path found is "already present" for the adapter
-    # path. (The adapter path may find MORE: the search parsers behind bulk
-    # drop empty-content events, so pi's `!cmd` exit-code failure is only seen
-    # via --session -- a pre-existing gap, noted in the PR, not a duplicate.)
-    assert f"{len(first)} already present" in r.output
-    after = _errors(pi_env["db"])
-    assert after[: len(first)] == first
-    assert all(row[0] == CANONICAL for row in after)
+    # path, and the adapter path finds nothing more: the bulk parser now keeps
+    # harness-flagged failures with empty content (pi's silent `!cmd` exit).
+    assert f"0 new, {len(first)} already present" in r.output
+    assert _errors(pi_env["db"]) == first
+    assert all(row[0] == CANONICAL for row in first)
+
+
+# ---------------------------------------------------------------------------
+# the bulk summary line
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        (
+            ("pi", 0, 0, 0, 0, 0),
+            "Bulk-mined pi: 0 sessions (0 mined, 0 unchanged) -> 0 errors "
+            "(0 new, 0 already present).",
+        ),
+        (
+            ("pi", 1, 0, 1, 1, 0),
+            "Bulk-mined pi: 1 session (1 mined, 0 unchanged) -> 1 error "
+            "(1 new, 0 already present).",
+        ),
+        (
+            ("pi", 0, 1, 0, 0, 0),
+            "Bulk-mined pi: 1 session (0 mined, 1 unchanged) -> 0 errors "
+            "(0 new, 0 already present).",
+        ),
+        (
+            ("pi", 1, 1, 3, 3, 0),
+            "Bulk-mined pi: 2 sessions (1 mined, 1 unchanged) -> 3 errors "
+            "(3 new, 0 already present).",
+        ),
+        (
+            ("codex", 4, 2, 7, 5, 2),
+            "Bulk-mined codex: 6 sessions (4 mined, 2 unchanged) -> 7 errors "
+            "(5 new, 2 already present).",
+        ),
+    ],
+)
+def test_bulk_summary_counts_every_session_seen(args, expected):
+    """The sessions figure is what was SEEN, split into mined vs unchanged —
+    never `1 sessions (1 unchanged, skipped)`, which read as a contradiction."""
+    from sio.cli.main import _bulk_summary
+
+    assert _bulk_summary(*args) == expected
+
+
+# ---------------------------------------------------------------------------
+# bulk / --session parity on harness-flagged failures with empty content
+# ---------------------------------------------------------------------------
+
+EMPTY_ISERROR = _entry(
+    "message", "e6", "e5", "2026-09-15T08:01:06.100Z",
+    message={
+        "role": "toolResult",
+        "toolCallId": "call_bad",
+        "toolName": "read",
+        "content": [],  # the harness flagged it, but said nothing
+        "isError": True,
+    },
+)
+
+
+def _fingerprints(db: Path) -> set[tuple]:
+    conn = sqlite3.connect(str(db))
+    try:
+        return set(
+            conn.execute(
+                "SELECT session_id, timestamp, error_type, tool_name, error_text FROM error_records"
+            ).fetchall()
+        )
+    finally:
+        conn.close()
+
+
+def test_bulk_and_session_paths_file_the_same_flagged_failures(pi_env, tmp_path, monkeypatch):
+    """One session: (a) an isError toolResult with EMPTY content, (b) a `!cmd`
+    with exit code 1 and no output, (c) a successful call. Mined through BOTH
+    paths into two fresh DBs, the error rows (fingerprints) are identical."""
+    from sio.cli.main import cli
+    from tests.unit.adapters.test_pi_adapter import (
+        ASSISTANT_CALL,
+        ASSISTANT_TEXT,
+        BASH_EXEC,
+        HEADER,
+        TOOL_OK,
+        USER_MSG,
+    )
+
+    assert BASH_EXEC["message"]["output"] == "" and BASH_EXEC["message"]["exitCode"] == 1
+    _write_session(
+        pi_env["session"],
+        [HEADER, USER_MSG, ASSISTANT_CALL, TOOL_OK, EMPTY_ISERROR, ASSISTANT_TEXT, BASH_EXEC],
+    )
+    runner = CliRunner()
+
+    db_session = pi_env["db"]
+    r1 = runner.invoke(cli, ["mine", "--session", f"pi:{SESSION_UUID[:8]}"])
+    assert r1.exit_code == 0, r1.output
+
+    db_bulk = tmp_path / "sio-bulk" / "sio.db"
+    db_bulk.parent.mkdir()
+    monkeypatch.setenv("SIO_DB_PATH", str(db_bulk))
+    r2 = runner.invoke(cli, ["mine", "--agent", "pi", "--since", "30 days"])
+    assert r2.exit_code == 0, r2.output
+    assert "Bulk-mined pi: 1 session (1 mined, 0 unchanged) -> 2 errors" in r2.output
+
+    expected = {
+        (CANONICAL, "2026-09-15T08:01:06.100Z", "tool_failure", "read",
+         "isError (empty tool result)"),
+        (CANONICAL, "2026-09-15T08:02:00.000Z", "tool_failure", "bash", "exit code 1"),
+    }
+    assert _fingerprints(db_session) == expected
+    assert _fingerprints(db_bulk) == expected
+
+
+def test_bulk_path_still_drops_unflagged_empty_events(pi_env):
+    """Parity must not come from flooding: an empty, un-flagged event is noise."""
+    from sio.search.cli import search_pi
+    from tests.unit.adapters.test_pi_adapter import HEADER, TOOL_OK
+
+    empty_ok = dict(TOOL_OK, message=dict(TOOL_OK["message"], content=[], isError=False))
+    _write_session(pi_env["session"], [HEADER, empty_ok, EMPTY_ISERROR])
+    recs = list(search_pi("", False, None))
+    tool_recs = [(r.content, (r.metadata or {}).get("error")) for r in recs if r.role == "tool"]
+    # the empty successful result is gone; the empty FLAGGED one survives
+    assert tool_recs == [("", "isError (empty tool result)")]
 
 
 def test_grown_session_adds_only_the_new_errors(pi_env):

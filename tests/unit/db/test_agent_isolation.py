@@ -169,6 +169,20 @@ def _q(db: Path, sql: str, params=()) -> list:
         conn.close()
 
 
+def _seed_ids(tmp_path: Path, session_ids: list[str]) -> Path:
+    """A pre-006 DB holding one distinct error row per given session id."""
+    db = tmp_path / "sio.db"
+    conn = sqlite3.connect(str(db))
+    conn.executescript(_LEGACY_DDL)
+    conn.executemany(
+        _ER_INSERT,
+        [(sid, f"t{i}", "x", "e", "tool_failure") for i, sid in enumerate(session_ids)],
+    )
+    conn.commit()
+    conn.close()
+    return db
+
+
 # ---------------------------------------------------------------------------
 # migration 006
 # ---------------------------------------------------------------------------
@@ -222,22 +236,117 @@ class TestMigration006:
         assert len(list((legacy_db.parent / "backups").iterdir())) == n_backups
 
     def test_ambiguous_partial_is_left_and_reported(self, tmp_path: Path):
-        db = tmp_path / "sio.db"
-        conn = sqlite3.connect(str(db))
-        conn.executescript(_LEGACY_DDL)
-        conn.executemany(
-            _ER_INSERT,
+        db = _seed_ids(
+            tmp_path,
             [
-                ("pi:ab", "t1", "x", "e", "tool_failure"),
-                ("pi:2026-01-01T00-00-00-000Z_ab11", "t2", "x", "e", "tool_failure"),
-                ("pi:2026-01-02T00-00-00-000Z_ab22", "t3", "x", "e", "tool_failure"),
+                "pi:01a0a495",
+                "pi:2026-01-01T00-00-00-000Z_01a0a495-1111-7000-8000-000000000001",
+                "pi:2026-01-02T00-00-00-000Z_01a0a495-2222-7000-8000-000000000002",
             ],
+        )
+        report = ag.migrate_006_agent_isolation(db)
+        assert report["ambiguous_ids"]["error_records"]["pi"] == ["pi:01a0a495"]
+        assert _q(db, "SELECT COUNT(*) FROM error_records WHERE session_id='pi:01a0a495'")[0][0] == 1
+        assert "merged_ids" in report and report["merged_ids"] == {}
+
+    def test_short_partial_is_neither_merged_nor_ambiguous(self, tmp_path: Path):
+        """Below the 8-char floor a stored id is a session in its own right."""
+        db = _seed_ids(
+            tmp_path,
+            [
+                "pi:ab",
+                "pi:01a0a49",  # 7 chars: one short of the floor
+                "pi:2026-01-01T00-00-00-000Z_01a0a495-1111-7000-8000-000000000001",
+                "pi:2026-01-02T00-00-00-000Z_ab22",
+            ],
+        )
+        report = ag.migrate_006_agent_isolation(db)
+        assert report["merged_ids"] == {} and report["ambiguous_ids"] == {}
+        ids = {r[0] for r in _q(db, "SELECT DISTINCT session_id FROM error_records")}
+        assert {"pi:ab", "pi:01a0a49"} <= ids
+
+    def test_name_style_ids_are_never_merged_on_a_bare_substring(self, tmp_path: Path):
+        """The data-corruption case: a goose session ``main`` is NOT ``domain-fix``,
+        and ``sessionone`` (8+ chars, inside a word) is not ``my-sessionone-v2``."""
+        db = _seed_ids(
+            tmp_path,
+            [
+                "goose:main",
+                "goose:domain-fix",
+                "goose:sessionone",
+                "goose:mysessionone-v2",
+            ],
+        )
+        report = ag.migrate_006_agent_isolation(db)
+        assert report["merged_ids"] == {} and report["ambiguous_ids"] == {}
+        ids = {r[0] for r in _q(db, "SELECT DISTINCT session_id FROM error_records")}
+        assert ids == {"goose:main", "goose:domain-fix", "goose:sessionone", "goose:mysessionone-v2"}
+
+    def test_codex_style_stem_partial_merges(self, tmp_path: Path):
+        """codex names files ``<ts>_<uuid>`` too: the uuid's first group merges."""
+        full = "codex:2026-03-04T05-06-07-890Z_deadbeef-0000-4000-8000-000000000000"
+        db = _seed_ids(tmp_path, ["codex:deadbeef", full])
+        report = ag.migrate_006_agent_isolation(db)
+        assert report["merged_ids"]["error_records"]["codex"] == 1
+        assert {r[0] for r in _q(db, "SELECT DISTINCT session_id FROM error_records")} == {full}
+
+    def test_rule_only_runs_inside_006_migrated_db_is_untouched(self, tmp_path: Path):
+        """On an already-migrated DB the merge never runs again, even when rows
+        that WOULD merge under the rule are inserted afterwards."""
+        db = _seed_ids(tmp_path, ["pi:2026-01-01T00-00-00-000Z_11111111-0000-0000-0000-000000000000"])
+        assert ag.migrate_006_agent_isolation(db)["status"] == "applied"
+        full = "pi:2026-09-15T10-20-49-318Z_01a0a495-6525-707f-b8c9-daaaf128d19b"
+        conn = sqlite3.connect(str(db))
+        conn.executemany(
+            "INSERT INTO error_records (session_id, agent, timestamp, source_type, source_file, "
+            "tool_name, error_text, error_type, mined_at) "
+            "VALUES (?, 'pi', ?, 'jsonl', 'f', 'x', 'e', 'tool_failure', 'm')",
+            [("pi:01a0a495", "t8"), (full, "t9")],
         )
         conn.commit()
         conn.close()
-        report = ag.migrate_006_agent_isolation(db)
-        assert report["ambiguous_ids"]["error_records"]["pi"] == ["pi:ab"]
-        assert _q(db, "SELECT COUNT(*) FROM error_records WHERE session_id='pi:ab'")[0][0] == 1
+        assert ag.migrate_006_agent_isolation(db)["status"] == "already_applied"
+        ids = {r[0] for r in _q(db, "SELECT DISTINCT session_id FROM error_records")}
+        assert "pi:01a0a495" in ids and full in ids
+
+
+class TestIsPartialOf:
+    """The predicate behind the 006 id merge, in isolation."""
+
+    FULL = "2026-09-15T10-20-49-318Z_01a0a495-6525-707f-b8c9-daaaf128d19b"
+
+    def test_real_shape_first_uuid_group_after_underscore(self):
+        assert ag.is_partial_of("01a0a495", self.FULL)
+
+    def test_inner_uuid_group_bounded_by_hyphens(self):
+        assert ag.is_partial_of("daaaf128d19b", self.FULL)
+
+    def test_whole_uuid_bounded_by_underscore_and_end(self):
+        assert ag.is_partial_of("01a0a495-6525-707f-b8c9-daaaf128d19b", self.FULL)
+
+    @pytest.mark.parametrize(
+        ("partial", "full"),
+        [
+            ("main", "domain-fix"),  # inside a word, and short
+            ("01a0a49", FULL),  # 7 chars: under the floor
+            ("1a0a4956", FULL),  # 8 chars but straddles a boundary
+            ("0a495-65", FULL),  # 8 chars, starts mid-token
+            ("sessionone", "mysessionone-v2"),  # long enough, no boundary before
+            ("abcdefgh", "abcdefgh"),  # equal length is not a partial
+            (FULL, FULL),
+            ("", FULL),
+        ],
+    )
+    def test_rejected(self, partial: str, full: str):
+        assert not ag.is_partial_of(partial, full)
+
+    def test_boundary_characters(self):
+        for sep in ag.PARTIAL_ID_TOKEN_SEPARATORS:
+            assert ag.is_partial_of("abcdefgh", f"xx{sep}abcdefgh{sep}yy")
+        assert not ag.is_partial_of("abcdefgh", "xx abcdefgh yy")  # space is not a separator
+
+    def test_second_occurrence_can_satisfy_the_boundary(self):
+        assert ag.is_partial_of("abcdefgh", "xabcdefghx_abcdefgh")
 
     def test_two_concurrent_migrations_apply_exactly_once(self, legacy_db: Path):
         results: list[dict] = []
