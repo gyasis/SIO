@@ -716,7 +716,14 @@ def search_pi(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Record]:
                     if not isinstance(obj, dict):
                         continue
                     for ev in events_from_entry(obj, call_names):
-                        if not _matches(ev.content, pattern, cs):
+                        # A harness-flagged failure (isError toolResult, a
+                        # non-zero `!cmd` exit) survives even with empty
+                        # content: the bulk miner reads through this parser,
+                        # and the flag is the signal. An event that is neither
+                        # flagged nor has content is still dropped.
+                        if not _matches(ev.content, pattern, cs) and not (
+                            ev.error and _matches(ev.error, pattern, cs)
+                        ):
                             continue
                         meta: dict = {"source_kind": "pi", "entry_type": obj.get("type")}
                         if ev.tool:
@@ -732,7 +739,7 @@ def search_pi(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Record]:
                             source_path=str(fp),
                             metadata=meta,
                             line=lineno,
-                            match_text=ev.content,
+                            match_text=ev.content or ev.error or "",
                         )
         except OSError:
             continue

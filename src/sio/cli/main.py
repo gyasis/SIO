@@ -791,9 +791,10 @@ def _session_signature(messages: list[dict]) -> str:
     file-backed (pi, codex, kimi) and store-backed (goose, opencode) agents.
 
     Counts only events WITH content: the search parsers behind the bulk path
-    drop empty-content events, the adapters behind ``--session`` keep them, and
-    the two paths must produce the same signature for the same session or a
-    session mined one way is never "unchanged" the other way.
+    drop empty-content events unless the harness flagged them as failures,
+    the adapters behind ``--session`` keep them all, and the two paths must
+    produce the same signature for the same session or a session mined one
+    way is never "unchanged" the other way.
     """
     with_content = [m for m in messages if (m.get("content") or "").strip()]
     last_ts = max((m.get("timestamp") or "" for m in with_content), default="")
@@ -955,7 +956,9 @@ def _mine_agent_bulk(db_path: str, agent: str, since: str | None) -> None:
         cutoff_epoch = parse_since(since).timestamp()
 
     # One store scan; group events by native session id. Empty pattern matches
-    # every non-empty event (same convention as SearchBackedAdapter).
+    # every non-empty event (same convention as SearchBackedAdapter) plus every
+    # harness-flagged failure, content or not, so a silent `!cmd` exit or an
+    # isError result with no output is filed here as it is via --session.
     by_session: dict[str, list] = defaultdict(list)
     for rec in parser("", False, cutoff_epoch):
         if rec.session_id:
