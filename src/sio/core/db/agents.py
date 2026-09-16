@@ -358,15 +358,51 @@ def _counts_by_agent(conn: sqlite3.Connection, table: str, expr: str) -> dict[st
     return {str(r[0]): int(r[1]) for r in rows}
 
 
+#: Shortest native id fragment migration 006 will treat as a partial of a longer
+#: id. A short word (``main``, ``dev``, ``sess``) is a plausible name-style id in
+#: its own right, never a truncated handle; 8 is the shortest prefix a human
+#: types of a uuid-stem id (the first uuid group: ``01a0a495``).
+PARTIAL_ID_MIN_LEN = 8
+#: Characters that separate tokens inside a native session id (``<ts>_<uuid>``,
+#: uuid groups, path-like store ids). A partial must sit between two of these
+#: (or a string edge) to count — ``main`` inside ``domain-fix`` does not.
+PARTIAL_ID_TOKEN_SEPARATORS = "-_.:/"
+
+
+def is_partial_of(partial: str, full: str) -> bool:
+    """True when ``partial`` is a token-bounded fragment of the longer id ``full``.
+
+    The rule behind migration 006's id merge: ``partial`` has at least
+    :data:`PARTIAL_ID_MIN_LEN` characters, is strictly shorter than ``full``,
+    and occurs in ``full`` at a token boundary — start of string or preceded by
+    one of :data:`PARTIAL_ID_TOKEN_SEPARATORS`, AND end of string or followed
+    by one. A bare substring match is NOT enough: name-style ids (goose /
+    opencode) make ``main`` a substring of ``domain-fix``, and merging on that
+    welds two unrelated sessions' rows together.
+    """
+    if len(partial) < PARTIAL_ID_MIN_LEN or len(partial) >= len(full):
+        return False
+    start = 0
+    while (i := full.find(partial, start)) >= 0:
+        j = i + len(partial)
+        before_ok = i == 0 or full[i - 1] in PARTIAL_ID_TOKEN_SEPARATORS
+        after_ok = j == len(full) or full[j] in PARTIAL_ID_TOKEN_SEPARATORS
+        if before_ok and after_ok:
+            return True
+        start = i + 1
+    return False
+
+
 def _merge_partial_ids(
     conn: sqlite3.Connection, table: str, agent: str
 ) -> tuple[int, int, list[str]]:
     """Fold partial non-claude session ids into the one full id they belong to.
 
-    A stored id ``agent:P`` is merged into ``agent:F`` when P is a strict
-    substring of exactly one other native id F present in the SAME table for
-    that agent. Filesystem is never consulted. Returns
-    ``(ids_merged, rows_rewritten, ambiguous_ids)``.
+    A stored id ``agent:P`` is merged into ``agent:F`` when P is a
+    token-bounded partial (:func:`is_partial_of`) of exactly one other native
+    id F present in the SAME table for that agent. Filesystem is never
+    consulted. Returns ``(ids_merged, rows_rewritten, ambiguous_ids)``; an id
+    with two or more candidates is left alone and listed as ambiguous.
     """
     ids = [
         r[0]
@@ -382,9 +418,7 @@ def _merge_partial_ids(
         if not nat:
             continue
         cands = [
-            other
-            for other, onat in natives.items()
-            if other != sid and len(onat) > len(nat) and nat in onat
+            other for other, onat in natives.items() if other != sid and is_partial_of(nat, onat)
         ]
         if len(cands) == 1:
             cur = conn.execute(
