@@ -24,6 +24,14 @@ KNOWN_AGENTS: tuple[str, ...] = (
     "promptchain",
     "kimi",
     "pi",
+    # wuphf carries NO local transcript store: an external bridge writes its
+    # rows directly into the DB (behavior_invocations / error_records / ...).
+    # Anything that enumerates KNOWN_AGENTS to probe an agent's on-disk
+    # store (session search --agent all, sio live discovery, sio mine bulk,
+    # adapters/factory.py) must NOT assume every KNOWN_AGENT has a directory
+    # to walk — those enumerate PARSERS / hardcoded per-agent paths instead,
+    # so wuphf is skipped there by construction rather than special-cased.
+    "wuphf",
 )
 
 # Legacy default: a colon-less handle (or one whose prefix is not a known agent)

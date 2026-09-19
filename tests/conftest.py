@@ -1023,12 +1023,12 @@ def fake_error_db(tmp_path: Path) -> sqlite3.Connection:
 def tmp_previews_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Temp directory standing in for ``~/.sio/previews/``.
 
-    ``sio suggest --use-cache`` hard-codes the preview CSV path as
-    ``os.path.expanduser("~/.sio/previews/errors_preview.csv")``
-    (``src/sio/cli/main.py:2079,2381``).  This fixture monkeypatches
-    ``os.path.expanduser`` inside ``sio.cli.main`` so that the ``~/.sio``
-    prefix resolves to ``tmp_path / "dot-sio"`` instead, keeping tests
-    hermetic and preventing writes to the real ``~/.sio/`` directory.
+    ``sio suggest --use-cache`` resolves the preview CSV path via
+    ``sio.core.paths.sio_home()`` (``src/sio/cli/main.py`` -- the Hop-1 cache
+    read + the preview-dir write both go through it). That resolver reads
+    ``$SIO_HOME`` at call time, so pointing it at a temp dir is a plain env
+    var -- no monkeypatching of ``os.path.expanduser`` needed, and it stays
+    correct however many call sites read the SIO home.
 
     Returns the ``Path`` to the synthetic previews dir (already created).
     """
@@ -1036,18 +1036,6 @@ def tmp_previews_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     fake_previews = fake_sio_home / "previews"
     fake_previews.mkdir(parents=True, exist_ok=True)
 
-    real_expanduser = os.path.expanduser
-
-    def _patched_expanduser(path: str) -> str:
-        if isinstance(path, str) and path.startswith("~/.sio"):
-            return path.replace("~/.sio", str(fake_sio_home), 1)
-        return real_expanduser(path)
-
-    try:
-        import sio.cli.main as _main_mod
-
-        monkeypatch.setattr(_main_mod.os.path, "expanduser", _patched_expanduser)
-    except (ImportError, AttributeError):
-        pass  # Module not yet available; fixture is a no-op.
+    monkeypatch.setenv("SIO_HOME", str(fake_sio_home))
 
     return fake_previews

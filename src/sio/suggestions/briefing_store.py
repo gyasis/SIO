@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import os
 import time
+from sio.core.paths import db_path as _default_db_path, sio_home as _default_sio_home
 
 _DEFAULT_TTL = 6 * 3600
 # Off-session ceiling: this runs off-hours / on idle, so the cap only guards
@@ -36,7 +37,7 @@ _DEFAULT_TTL = 6 * 3600
 # rollup deltas make the real compute milliseconds, so this becomes moot.
 _DEFAULT_BUILD_TIMEOUT = 15 * 60
 
-_CACHE_DIR = os.path.expanduser("~/.sio/cache")
+_CACHE_DIR = str(_default_sio_home() / "cache")
 _DEFAULT_STORE = os.path.join(_CACHE_DIR, "session_briefing.txt")
 _LOCK_FILE = os.path.join(_CACHE_DIR, "session_briefing.lock")
 
@@ -152,7 +153,7 @@ def refresh_store(
     import signal
 
     if db_path is None:
-        db_path = os.environ.get("SIO_DB_PATH", os.path.expanduser("~/.sio/sio.db"))
+        db_path = str(_default_db_path())
     if not os.path.exists(db_path):
         return ""
 
@@ -218,7 +219,7 @@ def refresh_store(
 
 def _log_error(msg: str) -> None:
     try:
-        log = os.path.expanduser("~/.sio/hook_errors.log")
+        log = str(_default_sio_home() / "hook_errors.log")
         os.makedirs(os.path.dirname(log), exist_ok=True)
         from datetime import datetime, timezone
 

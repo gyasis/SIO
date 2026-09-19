@@ -18,6 +18,7 @@ import sysconfig
 from dataclasses import dataclass, field
 from importlib.metadata import distributions
 from pathlib import Path
+from sio.core.paths import db_path as _default_db_path, sio_home as _default_sio_home
 
 # pylint: disable=cyclic-import — only at call time
 _PKG_NAME_NEW = "self-improving-organism"
@@ -69,7 +70,7 @@ def _check_ladder_discipline() -> CheckResult:
     """
     import sqlite3
     from pathlib import Path
-    db = str(Path.home() / ".sio" / "sio.db")
+    db = str(_default_db_path())
     try:
         conn = sqlite3.connect(db)
         conn.row_factory = sqlite3.Row
@@ -125,7 +126,7 @@ def _check_reproducibility_gaps() -> CheckResult:
     """
     import sqlite3
     from pathlib import Path
-    db = str(Path.home() / ".sio" / "sio.db")
+    db = str(_default_db_path())
     try:
         conn = sqlite3.connect(db)
         conn.row_factory = sqlite3.Row
@@ -214,12 +215,12 @@ def _check_runlog_health() -> CheckResult:
     from datetime import datetime, timedelta, timezone
     from pathlib import Path
 
-    runs_dir = Path.home() / ".sio" / "runs"
+    runs_dir = _default_sio_home() / "runs"
     if not runs_dir.exists():
         return CheckResult(
             name="Run-log health (XIII)",
             status="warn",
-            detail="~/.sio/runs/ does not exist yet — no runs to summarize",
+            detail=f"{runs_dir} does not exist yet — no runs to summarize",
         )
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=7)
@@ -301,12 +302,12 @@ def _check_dspy_alive() -> CheckResult:
     """
     import sqlite3  # noqa: PLC0415
 
-    db_path = Path.home() / ".sio" / "sio.db"
+    db_path = _default_db_path()
     if not db_path.exists():
         return CheckResult(
             name="DSPy pipeline (suggestion_generator)",
             status="warn",
-            detail="~/.sio/sio.db not found — no optimization history yet",
+            detail=f"{db_path} not found — no optimization history yet",
             fix_hint="Run `sio mine` then `sio optimize --module suggestion_generator`",
         )
 
@@ -325,7 +326,7 @@ def _check_dspy_alive() -> CheckResult:
             name="DSPy pipeline (suggestion_generator)",
             status="error",
             detail=f"DB query failed: {exc}",
-            fix_hint="Check ~/.sio/sio.db schema with `sio db check`",
+            fix_hint=f"Check {db_path} schema with `sio db check`",
         )
 
     if row is None:
@@ -487,10 +488,10 @@ def _check_sio_on_path() -> CheckResult:
 
 def _check_sio_home() -> CheckResult:
     """Verify ~/.sio/ + canonical subdirs exist."""
-    sio_home = Path(os.environ.get("SIO_HOME", str(Path.home() / ".sio")))
+    sio_home = _default_sio_home()
     if not sio_home.exists():
         return CheckResult(
-            name="~/.sio/ data dir",
+            name="SIO home data dir",
             status="error",
             detail=f"{sio_home} does not exist",
             fix_hint="sio init",
@@ -499,13 +500,13 @@ def _check_sio_home() -> CheckResult:
     missing = [s for s in expected_subs if not (sio_home / s).is_dir()]
     if missing:
         return CheckResult(
-            name="~/.sio/ data dir",
+            name="SIO home data dir",
             status="warn",
             detail=f"{sio_home} exists but subdirs missing: {missing}",
             fix_hint="sio init  # idempotent; recreates missing subdirs",
         )
     return CheckResult(
-        name="~/.sio/ data dir",
+        name="SIO home data dir",
         status="ok",
         detail=str(sio_home),
     )
@@ -513,7 +514,7 @@ def _check_sio_home() -> CheckResult:
 
 def _check_config_toml() -> CheckResult:
     """Verify ~/.sio/config.toml exists and at least one [llm] block is uncommented."""
-    sio_home = Path(os.environ.get("SIO_HOME", str(Path.home() / ".sio")))
+    sio_home = _default_sio_home()
     cfg = sio_home / "config.toml"
     if not cfg.exists():
         return CheckResult(
@@ -653,14 +654,13 @@ def _check_stuck_reflection_runs() -> CheckResult:
     """
     import json as _json
     from datetime import datetime, timedelta, timezone
-    from pathlib import Path as _P
 
-    runs_dir = _P.home() / ".sio" / "runs"
+    runs_dir = _default_sio_home() / "runs"
     if not runs_dir.exists():
         return CheckResult(
             name="Stuck-in-reflection audit (XIII)",
             status="ok",
-            detail="~/.sio/runs/ does not exist yet — nothing to audit",
+            detail=f"{runs_dir} does not exist yet — nothing to audit",
         )
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=14)
@@ -777,9 +777,8 @@ def _check_ladder_state() -> CheckResult:
     """
     import json as _json
     from datetime import datetime, timezone
-    from pathlib import Path as _P
 
-    state_file = _P.home() / ".sio" / "state" / "ladder_status.json"
+    state_file = _default_sio_home() / "state" / "ladder_status.json"
     if not state_file.exists():
         return CheckResult(
             name="Ladder state (background-persistence Tier 2)",

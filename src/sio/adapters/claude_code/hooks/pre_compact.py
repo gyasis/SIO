@@ -7,13 +7,14 @@ import logging
 import os
 import sys
 from datetime import datetime, timezone
+from sio.core.paths import sio_home as _default_sio_home
 
 logger = logging.getLogger(__name__)
 
 from sio.core.constants import DEFAULT_PLATFORM as _DEFAULT_PLATFORM  # noqa: E402
 
-_DEFAULT_DB_DIR = os.path.expanduser(f"~/.sio/{_DEFAULT_PLATFORM}")
-_ERROR_LOG = os.path.expanduser("~/.sio/hook_errors.log")
+_DEFAULT_DB_DIR = str(_default_sio_home() / _DEFAULT_PLATFORM)
+_ERROR_LOG = str(_default_sio_home() / "hook_errors.log")
 
 _ALLOW = json.dumps({"action": "allow"})
 

@@ -7,11 +7,11 @@ Public API
 
 from __future__ import annotations
 
-import os
 from datetime import datetime, timezone
 from pathlib import Path
+from sio.core.paths import sio_home as _default_sio_home
 
-_DEFAULT_CHANGELOG = os.path.expanduser("~/.sio/changelog.md")
+_DEFAULT_CHANGELOG = str(_default_sio_home() / "changelog.md")
 
 
 def log_change(change: dict, path: str | None = None) -> None:

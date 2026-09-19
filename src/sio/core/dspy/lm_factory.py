@@ -32,6 +32,7 @@ import dspy
 import litellm
 
 from sio.core.config import SIOConfig
+from sio.core.paths import sio_home as _default_sio_home
 
 logger = logging.getLogger(__name__)
 
@@ -283,7 +284,7 @@ def _read_config_role(role_key: str | None) -> dict | None:
         import tomllib  # type: ignore[import-not-found]  # py311+
     except ImportError:
         return None
-    cfg_path = os.path.expanduser("~/.sio/config.toml")
+    cfg_path = str(_default_sio_home() / "config.toml")
     if not os.path.exists(cfg_path):
         return None
     try:
@@ -355,7 +356,7 @@ def _banned_models_cached(cfg_mtime: float) -> tuple[str, ...]:
     many)."""
     try:
         import tomllib  # type: ignore[import-not-found]
-        cfg_path = os.path.expanduser("~/.sio/config.toml")
+        cfg_path = str(_default_sio_home() / "config.toml")
         if not os.path.exists(cfg_path):
             return ()
         with open(cfg_path, "rb") as f:
@@ -397,7 +398,7 @@ def _check_banned(lm: dspy.LM) -> dspy.LM:
 
     # Layer 2 — config-based exact-match ban.
     try:
-        cfg_path = os.path.expanduser("~/.sio/config.toml")
+        cfg_path = str(_default_sio_home() / "config.toml")
         mtime = os.path.getmtime(cfg_path) if os.path.exists(cfg_path) else 0.0
         banned = _banned_models_cached(mtime)
         if lm.model in banned:

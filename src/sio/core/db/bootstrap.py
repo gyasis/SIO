@@ -11,8 +11,8 @@ Idempotent on every step — safe to call repeatedly.
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
+from sio.core.paths import db_path as _default_db_path
 
 logger = logging.getLogger(__name__)
 
@@ -51,10 +51,7 @@ def ensure_canonical_db_ready(db_path: str | Path | None = None) -> Path:
         base ``init_db()`` call already creates a usable schema.
     """
     if db_path is None:
-        db_path = os.environ.get(
-            "SIO_DB_PATH",
-            os.path.expanduser("~/.sio/sio.db"),
-        )
+        db_path = str(_default_db_path())
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
 

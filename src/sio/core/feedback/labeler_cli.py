@@ -7,8 +7,9 @@ import os
 import sys
 
 from sio.core.constants import DEFAULT_PLATFORM as _DEFAULT_PLATFORM
+from sio.core.paths import sio_home as _default_sio_home
 
-_DEFAULT_DB_DIR = os.path.expanduser(f"~/.sio/{_DEFAULT_PLATFORM}")
+_DEFAULT_DB_DIR = str(_default_sio_home() / _DEFAULT_PLATFORM)
 
 
 def main():

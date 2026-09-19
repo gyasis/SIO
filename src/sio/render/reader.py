@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 from pathlib import Path
+from sio.core.paths import db_path as _default_db_path
 
 
 def load_artifact(artifact_path: Path) -> dict:
@@ -41,7 +41,7 @@ def load_artifact(artifact_path: Path) -> dict:
 def load_module_metadata(module_id: int, db_path: str | None = None) -> dict:
     """Read optimized_modules row + return as dict."""
     if db_path is None:
-        db_path = os.path.expanduser("~/.sio/sio.db")
+        db_path = str(_default_db_path())
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
@@ -59,7 +59,7 @@ def find_active_module(module_type: str = "suggestion_generator",
                        db_path: str | None = None) -> int:
     """Return the id of the currently-active module of the given type."""
     if db_path is None:
-        db_path = os.path.expanduser("~/.sio/sio.db")
+        db_path = str(_default_db_path())
     conn = sqlite3.connect(db_path)
     try:
         row = conn.execute(

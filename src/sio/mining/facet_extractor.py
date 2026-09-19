@@ -17,11 +17,11 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import os
 from pathlib import Path
 from typing import Any
+from sio.core.paths import sio_home as _default_sio_home
 
-_FACETS_DIR = os.path.expanduser("~/.sio/facets")
+_FACETS_DIR = str(_default_sio_home() / "facets")
 
 
 def _hash_content(content: str) -> str:

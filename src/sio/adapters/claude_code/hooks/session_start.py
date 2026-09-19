@@ -22,9 +22,10 @@ from __future__ import annotations
 import os
 import sys
 from datetime import datetime, timezone
+from sio.core.paths import db_path as _default_db_path, sio_home as _default_sio_home
 
-_ERROR_LOG = os.path.expanduser("~/.sio/hook_errors.log")
-_DB_PATH = os.path.expanduser("~/.sio/sio.db")
+_ERROR_LOG = str(_default_sio_home() / "hook_errors.log")
+_DB_PATH = str(_default_db_path())
 
 
 def _log_error(msg: str) -> None:
