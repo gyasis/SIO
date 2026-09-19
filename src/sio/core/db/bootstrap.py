@@ -27,9 +27,12 @@ def ensure_canonical_db_ready(db_path: str | Path | None = None) -> Path:
       2. ``ensure_schema_version()`` — seeds the ``schema_version`` table
          with the version=1 baseline row if absent. Without this,
          ``sio status`` reports ``schema_version: n/a (n/a)``.
-      3. ``migrate_004()`` — applies the 004 schema delta if not yet
-         marked applied. Imported lazily because ``scripts/`` may not
-         be on the path in all install layouts.
+      3. ``migrate_004()`` (``sio.core.db.migrate_004``) — applies the 004
+         schema delta (``pattern_errors.active``, ``patterns.active``,
+         ``datasets.active``, ``suggestions.active``, etc. — see that
+         module for the full list) if not yet marked applied. Imported
+         lazily to match the style of the other migration steps here; it
+         is an ordinary in-package import, always available.
       3b. ``migrate_005_experiments()`` — cohort tables.
       3c. ``migrate_006_agent_isolation()`` — the ``agent`` column,
          backfilled + deduped, per-agent views (backs the DB up first).
@@ -45,10 +48,23 @@ def ensure_canonical_db_ready(db_path: str | Path | None = None) -> Path:
         The resolved canonical DB path that was bootstrapped.
 
     Notes:
-        Migration failures are logged at debug level and swallowed.
-        A migration script that doesn't exist (because the install
-        layout doesn't ship ``scripts/``) is also non-fatal — the
-        base ``init_db()`` call already creates a usable schema.
+        A migration step failing here does not raise out of
+        ``ensure_canonical_db_ready()`` — several callers (e.g. `sio
+        experiment start/status`) invoke it directly with no try/except
+        of their own, and step 1 (``init_db()``) already leaves a usable,
+        if not fully up-to-date, schema. But "non-fatal" no longer means
+        "silent": every step below logs its failure at WARNING (not
+        DEBUG), so a genuinely broken migration (a locked DB, a disk
+        error, a real code bug) is visible instead of vanishing into a
+        log level nobody reads. Historically step 3 (``migrate_004``)
+        logged at DEBUG *because* it was expected to fail on most real
+        installs — ``scripts.migrate_004`` isn't shipped in the wheel
+        (see ``[tool.hatch.build.targets.wheel]`` in ``pyproject.toml``)
+        — which is exactly what let the missing 004 columns go unnoticed
+        for so long. Now that the migration lives in the package
+        (``sio.core.db.migrate_004``), that import can't fail for that
+        reason anymore, so any exception here is unexpected and gets the
+        same WARNING treatment as ``migrate_006_agent_isolation``.
     """
     if db_path is None:
         db_path = str(_default_db_path())
@@ -68,13 +84,20 @@ def ensure_canonical_db_ready(db_path: str | Path | None = None) -> Path:
 
     conn.close()
 
-    # 3. 004 migration (idempotent — checks schema_version internally)
+    # 3. 004 migration (idempotent — checks schema_version internally).
+    # Lives in the package (sio.core.db.migrate_004), not scripts/, so this
+    # import can no longer fail because of install layout (see the module
+    # docstring). Any exception here is therefore a real, unexpected
+    # failure — log it loudly rather than swallowing it at DEBUG, but
+    # don't raise: callers that invoke ensure_canonical_db_ready() without
+    # their own try/except (several CLI commands do) should still end up
+    # with the base schema from init_db() rather than a hard crash.
     try:
-        from scripts.migrate_004 import migrate as migrate_004  # noqa: PLC0415
+        from sio.core.db.migrate_004 import migrate_004  # noqa: PLC0415
 
         migrate_004(str(db_path))
     except Exception as exc:
-        logger.debug("migrate_004 skipped on %s: %s", db_path, exc)
+        logger.warning("migrate_004 failed on %s: %s", db_path, exc)
 
     # 3b. 005 migration — experiments cohort tables (PRD
     # sio_autotag_experiments_2026-05-23). Idempotent.
