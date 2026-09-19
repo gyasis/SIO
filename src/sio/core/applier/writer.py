@@ -19,6 +19,7 @@ import sqlite3
 from pathlib import Path
 
 from sio.core.util.time import utc_now_iso
+from sio.core.paths import db_path as _default_db_path, sio_home as _default_sio_home
 
 # ---------------------------------------------------------------------------
 # Allowlist roots (FR-019, R-14)
@@ -52,7 +53,7 @@ def _build_allowlist_roots() -> list[Path]:
 ALLOWLIST_ROOTS: list[Path] = _build_allowlist_roots()
 
 # Backup storage root
-BACKUP_ROOT: Path = Path.home() / ".sio" / "backups"
+BACKUP_ROOT: Path = _default_sio_home() / "backups"
 
 
 # ---------------------------------------------------------------------------
@@ -330,10 +331,7 @@ def _open_rollback_db(db_path) -> tuple[sqlite3.Connection, bool]:
         return db_path, False
 
     if db_path is None:
-        canonical = os.environ.get(
-            "SIO_DB_PATH",
-            str(Path.home() / ".sio" / "sio.db"),
-        )
+        canonical = str(_default_db_path())
         conn = sqlite3.connect(canonical)
     else:
         conn = sqlite3.connect(str(db_path))

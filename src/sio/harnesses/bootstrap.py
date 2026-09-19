@@ -17,11 +17,11 @@ re-encoding the conventions.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
+from sio.core.paths import sio_home as _default_sio_home
 
 _BOOTSTRAP_PKG = "sio._bootstrap"
 
@@ -120,7 +120,7 @@ def seed_sio_home(
     can redirect without monkeypatching `Path.home()`.
     """
     if sio_home is None:
-        sio_home = Path(os.environ.get("SIO_HOME", str(Path.home() / ".sio")))
+        sio_home = _default_sio_home()
 
     report = HomeSeedReport(sio_home=sio_home, dry_run=dry_run)
 

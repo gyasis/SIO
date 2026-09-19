@@ -9,11 +9,11 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 from .usage_writer import USAGE_LOG
+from sio.core.paths import sio_home as _default_sio_home
 
-_CONFIG = Path.home() / ".sio" / "config.toml"
+_CONFIG = _default_sio_home() / "config.toml"
 _DEFAULT_24H_CAP_USD = 5.0
 
 

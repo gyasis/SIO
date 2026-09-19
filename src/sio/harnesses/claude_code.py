@@ -15,7 +15,6 @@ so we can tell SIO-managed files from user-modified ones at uninstall time.
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -25,6 +24,7 @@ from typing import ClassVar
 from sio.harnesses.base import HarnessAdapter, InstallReport, StatusReport
 from sio.harnesses.bootstrap import iter_bootstrap_files
 from sio.harnesses.managed import remove_files, stage_files, status_files
+from sio.core.paths import sio_home as _default_sio_home
 
 # Hook events SIO registers in ~/.claude/settings.json. Each entry is
 # (event_name, module_path); the command is dispatched via
@@ -86,9 +86,7 @@ class ClaudeCodeAdapter(HarnessAdapter):
         """
         report = InstallReport(harness=self.name, dry_run=dry_run)
 
-        sio_home = Path(
-            os.environ.get("SIO_HOME", str(Path.home() / ".sio"))
-        )
+        sio_home = _default_sio_home()
         platform_db_dir = sio_home / self.name  # e.g. ~/.sio/claude-code
         platform_db_path = platform_db_dir / "behavior_invocations.db"
         existed_before = platform_db_path.exists()
@@ -239,9 +237,7 @@ class ClaudeCodeAdapter(HarnessAdapter):
         # read to know "claude-code is installed, hooks=1, skills=1, etc."
         # INSERT OR REPLACE so re-running is idempotent and updates the
         # installed_at timestamp on every successful install.
-        sio_home = Path(
-            os.environ.get("SIO_HOME", str(Path.home() / ".sio"))
-        )
+        sio_home = _default_sio_home()
         platform_db_path = sio_home / self.name / "behavior_invocations.db"
 
         if dry_run:

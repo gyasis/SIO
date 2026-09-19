@@ -8,11 +8,12 @@ import os
 import sqlite3
 import sys
 from datetime import datetime, timedelta, timezone
+from sio.core.paths import sio_home as _default_sio_home
 
 logger = logging.getLogger(__name__)
 
-_ERROR_LOG = os.path.expanduser("~/.sio/hook_errors.log")
-_SESSION_STATE_PATH = os.path.expanduser("~/.sio/session_state.json")
+_ERROR_LOG = str(_default_sio_home() / "hook_errors.log")
+_SESSION_STATE_PATH = str(_default_sio_home() / "session_state.json")
 
 # Search-feedback capture ("you must" narrowing loop) --------------------------
 # When the user's prompt is an immediate correction of a just-run `sio search`
@@ -141,7 +142,7 @@ def _invocations_db_path() -> str:
         return override
     from sio.core.constants import DEFAULT_PLATFORM  # noqa: PLC0415
 
-    return os.path.expanduser(f"~/.sio/{DEFAULT_PLATFORM}/behavior_invocations.db")
+    return str(_default_sio_home() / DEFAULT_PLATFORM / "behavior_invocations.db")
 
 
 def _is_search_command(command: str) -> bool:

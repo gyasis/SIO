@@ -5,8 +5,9 @@ from __future__ import annotations
 import os
 import sqlite3
 from datetime import datetime, timezone
+from sio.core.paths import sio_home as _default_sio_home
 
-_DEFAULT_STORE_DIR = os.path.expanduser("~/.sio/optimized")
+_DEFAULT_STORE_DIR = str(_default_sio_home() / "optimized")
 
 
 def save_module(

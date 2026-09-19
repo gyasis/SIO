@@ -29,6 +29,7 @@ from pathlib import Path
 import dspy
 
 from sio.core.dspy.signatures import RuleRecallScore
+from sio.core.paths import sio_home as _default_sio_home
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +120,7 @@ def load_training_data(
     Returns dict with keys: routing, recovery, flow, recall
     """
     if dataset_dir is None:
-        dataset_dir = Path(os.path.expanduser("~/.sio/datasets"))
+        dataset_dir = Path(str(_default_sio_home() / "datasets"))
     else:
         dataset_dir = Path(dataset_dir)
 
@@ -410,7 +411,7 @@ def train_recall_module(
         }
 
     # Save module
-    output_dir = Path(os.path.expanduser("~/.sio/models"))
+    output_dir = Path(str(_default_sio_home() / "models"))
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = str(output_dir / f"{task}_optimized.json")
 

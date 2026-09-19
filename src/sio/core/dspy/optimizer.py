@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from sio.core.constants import DEFAULT_PLATFORM
+from sio.core.paths import db_path as _default_db_path, sio_home as _default_sio_home
 
 logger = logging.getLogger(__name__)
 
@@ -901,13 +902,10 @@ def run_optimize(
 
     # Resolve DB path
     if db_path is None:
-        db_path = os.environ.get(
-            "SIO_DB_PATH",
-            str(Path.home() / ".sio" / "sio.db"),
-        )
+        db_path = str(_default_db_path())
 
     # Resolve artifact output root
-    sio_home = os.environ.get("SIO_HOME", str(Path.home() / ".sio"))
+    sio_home = str(_default_sio_home())
     optimized_root = Path(sio_home) / "optimized"
     optimized_root.mkdir(parents=True, exist_ok=True)
 

@@ -118,7 +118,8 @@ def _seed_legacy(db_path: Path) -> None:
         (PI_PARTIAL, "t3", "read", "ENOENT", "tool_failure"),
         (PI_PARTIAL, "t4", "bash", "exit 1", "tool_failure"),
         # a prefix nobody knows -> legacy-claude rule, but REPORTED
-        ("wuphf:zz", "t5", "Bash", "odd", "tool_failure"),
+        # (NOT "wuphf" -- that became a KNOWN_AGENT; this must stay unknown)
+        ("notaknownagent:zz", "t5", "Bash", "odd", "tool_failure"),
         # a pi session that is genuinely different
         ("pi:2026-09-01T00-00-00-000Z_ffffffff-0000-0000-0000-000000000000", "t6", "bash", "x", "tool_failure"),
     ]
@@ -197,7 +198,7 @@ class TestMigration006:
         for table in ag.AGENT_TABLES:
             assert _q(legacy_db, f"SELECT COUNT(*) FROM {table} WHERE agent = ''")[0][0] == 0
         agents = dict(_q(legacy_db, "SELECT agent, COUNT(*) FROM error_records GROUP BY agent"))
-        # claude: abc-legacy (1 after dedupe) + claude:def (1) + wuphf (1) = 3
+        # claude: abc-legacy (1 after dedupe) + claude:def (1) + notaknownagent (1) = 3
         assert agents == {"claude": 3, "pi": 3}
         assert report["unknown_prefix"]["error_records"] == 1
         assert report["before"]["error_records"] == {"claude": 5, "pi": 5}
@@ -550,3 +551,22 @@ class TestCli:
         monkeypatch.setenv("HOME", str(tmp_path))
         out = CliRunner().invoke(cli, ["errors", "--agent", "pi"]).output
         assert "pi-only-error" in out and "claude-only-error" not in out
+
+    def test_errors_agent_option_accepts_wuphf(self, tmp_path: Path, monkeypatch):
+        """wuphf has no local transcript store -- its rows are written into
+        the DB by an external bridge -- but it IS a KNOWN_AGENT, so
+        `sio errors --agent wuphf` must be an accepted CLI choice and must
+        scope to the wuphf-tagged rows the same way any other agent does."""
+        from sio.cli.main import cli
+
+        db = tmp_path / "sio.db"
+        conn = init_db(str(db))
+        insert_error_record(conn, _rec("wuphf:office-1", error_text="wuphf-only-error"))
+        insert_error_record(conn, _rec("claude:c", error_text="claude-only-error"))
+        conn.close()
+        monkeypatch.setenv("SIO_DB_PATH", str(db))
+        monkeypatch.setenv("HOME", str(tmp_path))
+        result = CliRunner().invoke(cli, ["errors", "--agent", "wuphf"])
+        assert result.exit_code == 0, result.output
+        assert "wuphf-only-error" in result.output
+        assert "claude-only-error" not in result.output

@@ -9,6 +9,30 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
+### Added — one real SIO-home pointer (`sio.core.paths`), `wuphf` as a KNOWN_AGENT
+
+- **`sio.core.paths.sio_home()` / `db_path()`** are now the single source of
+  truth for where SIO's on-disk home and database live. Both honor
+  `$SIO_HOME` / `$SIO_DB_PATH` (read at call time, not cached), and every
+  other place in `src/sio` that used to hardcode `~/.sio` or
+  `Path.home() / ".sio"` now routes through them — so a second, independent
+  SIO installation (e.g. a per-product or per-office home) can be selected
+  purely by env vars, with nothing silently falling back to the default
+  `~/.sio`. A guard test (`tests/unit/core/test_paths.py`) fails the build if
+  a hardcoded `.sio` / `.sio/sio.db` literal ever reappears outside
+  `sio/core/paths.py`.
+- **`wuphf` added to `KNOWN_AGENTS`.** wuphf (the twicedata office platform)
+  writes its mined rows into SIO's database directly, via an external
+  bridge — it has no local transcript store the way claude/codex/goose/...
+  do. `sio errors --agent wuphf` and the `errors_wuphf` view now work; the
+  agent-enumeration surfaces that read transcripts off disk (session search
+  `--agent all`, `sio live` discovery, `sio mine` bulk, `adapters/factory.py`)
+  already enumerate `PARSERS` / hardcoded per-agent paths rather than
+  `KNOWN_AGENTS`, so wuphf is skipped there by construction — covered by
+  `tests/unit/core/test_wuphf_agent.py`. `wuphf` is deliberately kept OUT of
+  `sio mine`'s bulk `--agent` choice list (that path assumes a session-search
+  parser exists for the agent).
+
 ### Fixed — follow-ups to the agent-isolation work (#44)
 
 - **Migration 006 no longer merges session ids on a bare substring.** The

@@ -15,10 +15,11 @@ from pathlib import Path
 from sio.core.arena.assertions import run_assertions
 from sio.core.arena.txlog import TxLog
 from sio.core.config import SIOConfig
+from sio.core.paths import sio_home as _default_sio_home
 
 logger = logging.getLogger(__name__)
 
-_SENTINEL_PATH = os.path.expanduser("~/.sio/autoresearch.stop")
+_SENTINEL_PATH = str(_default_sio_home() / "autoresearch.stop")
 
 
 class AutoResearchLoop:

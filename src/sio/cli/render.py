@@ -16,6 +16,7 @@ import click
 
 from sio.core.runlog import current as _runlog_current
 from sio.core.runlog import runlogged
+from sio.core.paths import db_path as _default_db_path
 
 
 @click.command("render")
@@ -46,7 +47,7 @@ def render_cmd(module_id, use_active, all_active, fmt, output_path, skill_name, 
     if all_active:
         import os as _os  # noqa: PLC0415
         import sqlite3
-        db = _os.path.expanduser("~/.sio/sio.db")
+        db = str(_default_db_path())
         conn = sqlite3.connect(db)
         conn.row_factory = sqlite3.Row
         rows = conn.execute(

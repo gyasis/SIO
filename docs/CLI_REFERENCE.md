@@ -423,7 +423,7 @@ Usage: sio db drop-agent [OPTIONS] AGENT
 
 Options:
   --db-path TEXT      Path to the SIO database (default: $SIO_DB_PATH or
-                      ~/.sio/sio.db).
+                      $SIO_HOME/sio.db, $SIO_HOME default ~/.sio).
   -y, --yes           Execute the deletion. Without it this is a DRY RUN that
                       prints counts only.
   --including-claude  Required to drop 'claude' — it is the bulk of the data.
@@ -584,6 +584,10 @@ Options:
                                   id is assumed claude). Matches legacy and
                                   canonical forms. Pipe from search: `sio
                                   search ... --files`.
+  --agent [claude|codex|goose|opencode|gemini|aider|promptchain|kimi|pi|wuphf]
+                                  Scope to ONE coding agent's errors (the
+                                  `agent` column — the same rows the
+                                  `errors_<agent>` view returns).
   --help                          Show this message and exit.
 ```
 

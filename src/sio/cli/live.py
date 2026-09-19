@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import Any
 
 import click
+from sio.core.paths import sio_home as _default_sio_home
 
 HOME = Path.home()
 CLAUDE_PROJECTS = HOME / ".claude" / "projects"
@@ -303,7 +304,7 @@ _CURSOR_KEEP = 200  # bound the file — oldest entries are evicted (economy)
 def _sio_home() -> Path:
     """SIO state dir — ``$SIO_HOME`` when set, else ``~/.sio`` (house default)."""
     env = os.environ.get("SIO_HOME")
-    return Path(env).expanduser() if env else Path.home() / ".sio"
+    return Path(env).expanduser() if env else _default_sio_home()
 
 
 def _cursor_path() -> Path:

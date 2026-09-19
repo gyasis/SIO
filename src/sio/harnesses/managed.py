@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from sio.harnesses.base import InstallReport, StatusReport
+from sio.core.paths import sio_home as _default_sio_home
 
 MANIFEST_NAME = ".sio-managed.json"
 
@@ -50,7 +51,7 @@ def save_manifest(path: Path, manifest: dict) -> None:
 def backup_file(target: Path, config_dir: Path, report: InstallReport) -> None:
     """Copy ``target`` to ``~/.sio/backups/<utc-ts>/<path relative to config_dir>``."""
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    backup_root = Path.home() / ".sio" / "backups" / ts
+    backup_root = _default_sio_home() / "backups" / ts
     backup_path = backup_root / target.relative_to(config_dir)
     backup_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(target, backup_path)

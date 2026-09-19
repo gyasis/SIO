@@ -6,11 +6,10 @@ Mode-aware: maps task_lm / reflection_lm model strings back to
 """
 from __future__ import annotations
 
-import os
 import sqlite3
-from pathlib import Path
 
 import click
+from sio.core.paths import db_path as _default_db_path
 
 _MODEL_TO_MODE = {
     "gemini/gemini-pro-latest":   "work",
@@ -31,8 +30,7 @@ def reproduce_cmd(module_id, copy):
     task-mode + reflection-mode (when LMs match known tiers), seed (if recorded),
     and --baseline-against pointing at the previous active module of the same type.
     """
-    db = os.path.expanduser(os.environ.get("SIO_DB_PATH",
-                                            str(Path.home() / ".sio" / "sio.db")))
+    db = str(_default_db_path())
     conn = sqlite3.connect(db)
     conn.row_factory = sqlite3.Row
     row = conn.execute(

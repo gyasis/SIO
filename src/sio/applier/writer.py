@@ -17,9 +17,10 @@ import numpy as np
 from sio.applier.budget import BudgetResult, check_budget, trigger_consolidation
 from sio.clustering.pattern_clusterer import _get_backend
 from sio.core.config import SIOConfig, load_config
+from sio.core.paths import sio_home as _default_sio_home
 
 _ALLOWED_ROOTS: list[Path] = [
-    Path.home() / ".sio",
+    _default_sio_home(),
     Path.home() / ".claude",
     # Multi-agent (Tier-3) instruction-file homes — see PRD.md §3.
     Path.home() / ".codex",  # codex AGENTS.md

@@ -14,8 +14,9 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from sio.core.paths import sio_home as _default_sio_home
 
-HEALTH_FILE: Path = Path.home() / ".sio" / "hook_health.json"
+HEALTH_FILE: Path = _default_sio_home() / "hook_health.json"
 
 WARN_STALE: timedelta = timedelta(hours=1)
 ERROR_STALE: timedelta = timedelta(hours=6)
