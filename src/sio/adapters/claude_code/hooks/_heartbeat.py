@@ -19,8 +19,9 @@ import sys
 from pathlib import Path
 
 from sio.core.util.time import utc_now_iso
+from sio.core.paths import sio_home as _default_sio_home
 
-HEALTH_FILE: Path = Path.home() / ".sio" / "hook_health.json"
+HEALTH_FILE: Path = _default_sio_home() / "hook_health.json"
 
 
 def record_success(hook_name: str, session_id: str | None = None) -> None:

@@ -1,6 +1,6 @@
 ---
 name: sio-search
-description: Search session history across all coding-agent harnesses (Claude, Codex, Gemini, Goose, OpenCode, Aider, PromptChain, Kimi) via --agent, or scope any SIO analysis command to a single session. Ask naturally like "find where I fixed that dbt error", "search my sessions for X", "search Codex/PromptChain for Y", "scope to one session", or "/sio-search".
+description: Search session history across all coding-agent harnesses (Claude, Codex, Gemini, Goose, OpenCode, Aider, PromptChain, Kimi, pi) via --agent, or scope any SIO analysis command to a single session. Ask naturally like "find where I fixed that dbt error", "search my sessions for X", "search Codex/PromptChain for Y", "scope to one session", or "/sio-search".
 user-invocable: true
 requires:
   cli: "sio>=0.3.0"
@@ -17,7 +17,7 @@ requires:
 - **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 
 Search session history across all coding-agent harnesses (Claude, Codex, Goose,
-OpenCode, Gemini, Aider, PromptChain, Kimi), or narrow every SIO analysis command to one
+OpenCode, Gemini, Aider, PromptChain, Kimi, pi), or narrow every SIO analysis command to one
 specific session using the `--session` flag. **Use `--agent <harness>` to target a
 specific coding agent** — it defaults to `claude`, so searching any other agent's
 history requires passing it explicitly (e.g. `--agent codex`, `--agent promptchain`,
@@ -110,6 +110,7 @@ sio search "pattern" --agent goose
 sio search "pattern" --agent codex
 sio search "pattern" --agent promptchain   # the PromptChain TUI/CLI agent
 sio search "pattern" --agent kimi          # the Kimi Code CLI
+sio search "pattern" --agent pi            # the pi coding agent (~/.pi/agent/sessions)
 
 # Narrow to the last N days
 sio search "pattern" --agent all --recent 7
@@ -152,7 +153,8 @@ sio search --help
 | `aider` | Aider |
 | `promptchain` | PromptChain TUI/CLI agent |
 | `kimi` | Kimi Code CLI (searchable + live-attachable) |
-| `all` | All eight harnesses |
+| `pi` | pi coding agent (searchable + live-attachable; `isError` tool results mined as `tool_failure`) |
+| `all` | All nine harnesses |
 
 ## Part 2 — Session Handle Syntax
 

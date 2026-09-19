@@ -41,6 +41,8 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from sio.core.paths import sio_home as _default_sio_home
+
 # ---------------------------------------------------------------------------
 # Targets (single source of truth — avoids magic numbers in three files)
 # ---------------------------------------------------------------------------
@@ -192,7 +194,7 @@ def _default_invocations_db_path() -> str:
     override = os.environ.get("SIO_INVOCATIONS_DB_PATH")
     if override:
         return override
-    return os.path.expanduser(f"~/.sio/{DEFAULT_PLATFORM}/behavior_invocations.db")
+    return str(_default_sio_home() / DEFAULT_PLATFORM / "behavior_invocations.db")
 
 
 def open_invocations_db(db_path: str | None = None) -> sqlite3.Connection | None:

@@ -16,7 +16,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-_DEFAULT_DATASET_DIR = Path("~/.sio/datasets").expanduser()
+from sio.core.paths import sio_home as _default_sio_home
+
+_DEFAULT_DATASET_DIR = _default_sio_home() / "datasets"
 
 
 def _resolve_dataset_dir(dataset_dir: str | Path | None) -> Path:

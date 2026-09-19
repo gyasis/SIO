@@ -6,6 +6,7 @@ import logging
 import os
 import tomllib
 from dataclasses import dataclass
+from sio.core.paths import sio_home as _default_sio_home
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +70,7 @@ def load_config(path: str | None = None) -> SIOConfig:
         ValueError: If TOML is invalid.
     """
     if path is None:
-        path = os.path.expanduser("~/.sio/config.toml")
+        path = str(_default_sio_home() / "config.toml")
 
     if not os.path.exists(path):
         return SIOConfig()

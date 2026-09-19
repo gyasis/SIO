@@ -15,12 +15,12 @@ import json
 import sys
 import time
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Optional
 
 import click
+from sio.core.paths import sio_home as _default_sio_home
 
-_RUNS_DIR = Path.home() / ".sio" / "runs"
+_RUNS_DIR = _default_sio_home() / "runs"
 
 
 def _parse_since(s: str) -> Optional[datetime]:

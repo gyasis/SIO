@@ -110,7 +110,7 @@ class TestDiscover:
         monkeypatch.setattr(live, "CLAUDE_PROJECTS", projects)
         monkeypatch.setattr(live, "GOOSE_DB", tmp_path / "nope" / "sessions.db")
         monkeypatch.setattr(live, "OPENCODE_DB", tmp_path / "nope" / "opencode.db")
-        for attr in ("CODEX_SESSIONS", "GEMINI_TMP", "KIMI_SESSIONS"):
+        for attr in ("CODEX_SESSIONS", "GEMINI_TMP", "KIMI_SESSIONS", "PI_SESSIONS"):
             monkeypatch.setattr(live, attr, tmp_path / "nope" / attr)
         monkeypatch.setattr(live, "KIMI_SESSION_INDEX", tmp_path / "nope" / "index.jsonl")
 
@@ -149,6 +149,75 @@ class TestDiscover:
         assert rows["aaaa1111"]["collision"] is True
         assert rows["bbbb2222"]["collision"] is True
         assert rows["cccc3333"]["collision"] is False
+
+
+class TestCodexDiscovery:
+    """Regression: the codex glob was "rollout-*.json" (real files are
+    .jsonl) matched non-recursively against a flat dir, while real files
+    live nested under sessions/YYYY/MM/DD/ -- so codex sessions were NEVER
+    discovered at any window (see live._recent, which IS recursive; only the
+    extension was wrong).
+    """
+
+    def _wire(self, monkeypatch, tmp_path, codex_sessions):
+        monkeypatch.setattr(live, "CLAUDE_PROJECTS", tmp_path / "nope" / "projects")
+        monkeypatch.setattr(live, "GOOSE_DB", tmp_path / "nope" / "sessions.db")
+        monkeypatch.setattr(live, "OPENCODE_DB", tmp_path / "nope" / "opencode.db")
+        monkeypatch.setattr(live, "CODEX_SESSIONS", codex_sessions)
+        monkeypatch.setattr(live, "GEMINI_TMP", tmp_path / "nope" / "gemini")
+        monkeypatch.setattr(live, "KIMI_SESSIONS", tmp_path / "nope" / "kimi")
+        monkeypatch.setattr(live, "KIMI_SESSION_INDEX", tmp_path / "nope" / "index.jsonl")
+        monkeypatch.setattr(live, "PI_SESSIONS", tmp_path / "nope" / "pi")
+
+    def test_discovers_nested_jsonl_rollout_and_reads_cwd(self, tmp_path, monkeypatch):
+        codex_sessions = tmp_path / ".codex" / "sessions"
+        day_dir = codex_sessions / "2026" / "09" / "13"
+        day_dir.mkdir(parents=True)
+        rollout = day_dir / "rollout-2026-09-13T11-53-49-01a09b79-8bf8-77c2-80be-56ff9aec6e56.jsonl"
+        rollout.write_text(
+            json.dumps(
+                {
+                    "timestamp": "2026-09-13T15:54:21.118Z",
+                    "type": "session_meta",
+                    "payload": {"cwd": "/home/x/code", "originator": "codex-tui"},
+                }
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "timestamp": "2026-09-13T15:54:22.451Z",
+                    "type": "response_item",
+                    "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hi"}]},
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        self._wire(monkeypatch, tmp_path, codex_sessions)
+        monkeypatch.setattr(
+            live, "_repo_info",
+            lambda cwd: {"toplevel": None, "common_dir": None, "branch": None},
+        )
+
+        rows = live.discover_sessions(minutes=600)
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["agent"] == "codex"
+        assert row["native_id"] == "rollout-2026-09-13T11-53-49-01a09b79-8bf8-77c2-80be-56ff9aec6e56"
+        assert row["cwd"] == "/home/x/code"
+        assert row["msgs"] == 2
+
+    def test_a_wrong_extension_file_is_never_matched(self, tmp_path, monkeypatch):
+        codex_sessions = tmp_path / ".codex" / "sessions"
+        day_dir = codex_sessions / "2026" / "09" / "13"
+        day_dir.mkdir(parents=True)
+        (day_dir / "rollout-2026-09-13T00-00-00-deadbeef.json").write_text("{}", encoding="utf-8")
+        self._wire(monkeypatch, tmp_path, codex_sessions)
+        monkeypatch.setattr(
+            live, "_repo_info",
+            lambda cwd: {"toplevel": None, "common_dir": None, "branch": None},
+        )
+        assert live.discover_sessions(minutes=600) == []
 
 
 class _Ev:
@@ -296,3 +365,57 @@ class TestResolveSince:
         monkeypatch.setenv("SIO_HOME", str(tmp_path))
         live._save_cursor("claude:aaa", "2026-07-28T08:00:00Z")
         assert live._resolve_since("claude:aaa", None, False) is None
+
+
+class TestPiDiscovery:
+    """pi sessions live at ~/.pi/agent/sessions/<cwd-dir>/<iso-ts>_<uuid>.jsonl;
+    discovery reads cwd from the line-1 header and uses the file stem as the
+    native id (the same convention codex uses).
+    """
+
+    def _wire(self, monkeypatch, tmp_path, pi_sessions):
+        monkeypatch.setattr(live, "CLAUDE_PROJECTS", tmp_path / "nope" / "projects")
+        monkeypatch.setattr(live, "GOOSE_DB", tmp_path / "nope" / "sessions.db")
+        monkeypatch.setattr(live, "OPENCODE_DB", tmp_path / "nope" / "opencode.db")
+        for attr in ("CODEX_SESSIONS", "GEMINI_TMP", "KIMI_SESSIONS"):
+            monkeypatch.setattr(live, attr, tmp_path / "nope" / attr)
+        monkeypatch.setattr(live, "KIMI_SESSION_INDEX", tmp_path / "nope" / "index.jsonl")
+        monkeypatch.setattr(live, "PI_SESSIONS", pi_sessions)
+        monkeypatch.setattr(
+            live, "_repo_info",
+            lambda cwd: {"toplevel": None, "common_dir": None, "branch": None},
+        )
+
+    def test_discovers_session_and_reads_cwd_from_header(self, tmp_path, monkeypatch):
+        pi_sessions = tmp_path / ".pi" / "agent" / "sessions"
+        cwd_dir = pi_sessions / "--home-x-code--"
+        cwd_dir.mkdir(parents=True)
+        stem = "2026-09-15T08-00-00-000Z_0199a0b1-c2d3-7e4f-8a5b-6c7d8e9f0a1b"
+        (cwd_dir / f"{stem}.jsonl").write_text(
+            json.dumps({
+                "type": "session", "version": 3,
+                "id": "0199a0b1-c2d3-7e4f-8a5b-6c7d8e9f0a1b",
+                "timestamp": "2026-09-15T08:00:00.000Z", "cwd": "/home/x/code",
+            })
+            + "\n"
+            + json.dumps({
+                "type": "message", "id": "e1", "parentId": None,
+                "timestamp": "2026-09-15T08:01:00.000Z",
+                "message": {"role": "user", "content": [{"type": "text", "text": "hi"}]},
+            })
+            + "\n",
+            encoding="utf-8",
+        )
+        self._wire(monkeypatch, tmp_path, pi_sessions)
+
+        rows = live.discover_sessions(minutes=600)
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["agent"] == "pi"
+        assert row["native_id"] == stem
+        assert row["cwd"] == "/home/x/code"
+        assert row["msgs"] == 2
+
+    def test_missing_pi_tree_is_safe(self, tmp_path, monkeypatch):
+        self._wire(monkeypatch, tmp_path, tmp_path / "nope" / "pi")
+        assert live.discover_sessions(minutes=600) == []

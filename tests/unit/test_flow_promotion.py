@@ -73,6 +73,39 @@ def _insert_flow_event(
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture()
+def learned_dir(tmp_path, monkeypatch):
+    """Redirect flow-promotion skill writes into a temp dir.
+
+    promote_flow_to_skill() calls ``write_skill_file(content, slug)`` with no
+    target_dir, so it lands in the default ``~/.claude/skills/learned/``. That
+    default is bound when skill_generator is imported, so the old approach of
+    patching ``os.path.expanduser`` at test time changed nothing: every run wrote
+    real ``sio-flow-*.md`` files into the user's Claude skills folder (264 after
+    88 runs). grader imports write_skill_file at call time, so replacing the
+    module attribute is what actually intercepts the write.
+    """
+    import functools
+
+    import sio.suggestions.skill_generator as sg_mod
+
+    target = tmp_path / "skills" / "learned"
+    target.mkdir(parents=True)
+    monkeypatch.setattr(
+        sg_mod,
+        "write_skill_file",
+        functools.partial(sg_mod.write_skill_file, target_dir=str(target)),
+    )
+    return target
+
+
+def _assert_written_under(result: str, learned_dir) -> None:
+    assert os.path.exists(result)
+    assert os.path.commonpath([str(learned_dir), result]) == str(learned_dir), (
+        f"skill written outside the temp dir: {result}"
+    )
+
+
 class TestPromoteFlowToSkill:
     def test_missing_flow_returns_none(self, db) -> None:
         """A nonexistent flow_hash should return None."""
@@ -85,7 +118,7 @@ class TestPromoteFlowToSkill:
         result = promote_flow_to_skill(db, "single")
         assert result is None
 
-    def test_successful_promotion(self, db, tmp_path) -> None:
+    def test_successful_promotion(self, db, learned_dir) -> None:
         """A flow with multiple events should produce a skill file."""
         # Insert multiple flow events
         for i in range(5):
@@ -98,28 +131,12 @@ class TestPromoteFlowToSkill:
                 days_ago=i * 0.5,
             )
 
-        skills_dir = str(tmp_path / "skills" / "learned")
-        os.makedirs(skills_dir, exist_ok=True)
-
-        import sio.suggestions.skill_generator as sg_mod
-
-        original_expanduser = sg_mod.os.path.expanduser
-
-        def _mock_expanduser(path):
-            if "~/.claude/skills/learned" in path:
-                return skills_dir
-            return original_expanduser(path)
-
-        sg_mod.os.path.expanduser = _mock_expanduser
-        try:
-            result = promote_flow_to_skill(db, "promote001")
-        finally:
-            sg_mod.os.path.expanduser = original_expanduser
+        result = promote_flow_to_skill(db, "promote001")
 
         assert result is not None
-        assert os.path.exists(result)
+        _assert_written_under(result, learned_dir)
 
-    def test_promotion_writes_valid_markdown(self, db, tmp_path) -> None:
+    def test_promotion_writes_valid_markdown(self, db, learned_dir) -> None:
         """The generated skill file should contain valid Markdown content."""
         for i in range(3):
             _insert_flow_event(
@@ -130,28 +147,10 @@ class TestPromoteFlowToSkill:
                 was_successful=1,
             )
 
-        # Override the skill output directory
-        skills_dir = str(tmp_path / "skills" / "learned")
-        os.makedirs(skills_dir, exist_ok=True)
-
-        # Monkey-patch os.path.expanduser within skill_generator module
-        import sio.suggestions.skill_generator as sg_mod
-
-        original_expanduser = sg_mod.os.path.expanduser
-
-        def _mock_expanduser(path):
-            if "~/.claude/skills/learned" in path:
-                return skills_dir
-            return original_expanduser(path)
-
-        sg_mod.os.path.expanduser = _mock_expanduser
-        try:
-            result = promote_flow_to_skill(db, "md001")
-        finally:
-            sg_mod.os.path.expanduser = original_expanduser
+        result = promote_flow_to_skill(db, "md001")
 
         assert result is not None
-        assert os.path.exists(result)
+        _assert_written_under(result, learned_dir)
 
         content = open(result, encoding="utf-8").read()
         assert "# Skill:" in content
@@ -160,7 +159,7 @@ class TestPromoteFlowToSkill:
         assert "Grep" in content
         assert "Read" in content
 
-    def test_promotion_aggregates_sessions(self, db, tmp_path) -> None:
+    def test_promotion_aggregates_sessions(self, db, learned_dir) -> None:
         """Promotion should count distinct sessions in the skill metadata."""
         for i in range(6):
             _insert_flow_event(
@@ -171,25 +170,10 @@ class TestPromoteFlowToSkill:
                 was_successful=1 if i < 5 else 0,  # 5/6 successful
             )
 
-        skills_dir = str(tmp_path / "skills" / "learned")
-        os.makedirs(skills_dir, exist_ok=True)
-
-        import sio.suggestions.skill_generator as sg_mod
-
-        original_expanduser = sg_mod.os.path.expanduser
-
-        def _mock_expanduser(path):
-            if "~/.claude/skills/learned" in path:
-                return skills_dir
-            return original_expanduser(path)
-
-        sg_mod.os.path.expanduser = _mock_expanduser
-        try:
-            result = promote_flow_to_skill(db, "agg001")
-        finally:
-            sg_mod.os.path.expanduser = original_expanduser
+        result = promote_flow_to_skill(db, "agg001")
 
         assert result is not None
+        _assert_written_under(result, learned_dir)
         content = open(result, encoding="utf-8").read()
         # Should reference the number of sessions
         assert "6" in content or "sessions" in content.lower()

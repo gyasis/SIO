@@ -44,12 +44,16 @@ class InstallReport:
 
     `dry_run` records preview vs applied. `errors` captures non-fatal issues
     so partial installs can still complete and surface what was skipped.
+    `notes` carries informational lines that are neither a file change nor
+    an error — e.g. "bundled rules not supported on this harness" — so a
+    deliberate omission is visible in the CLI output instead of silent.
     """
 
     harness: str
     dry_run: bool = False
     changes: list[FileChange] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
     def add(self, path: Path, action: str, reason: str = "") -> None:
         self.changes.append(FileChange(path=path, action=action, reason=reason))  # type: ignore[arg-type]

@@ -15,7 +15,6 @@ delete SIO from their environment and the promoted hook still runs.
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import sqlite3
@@ -25,6 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from sio.promote_rule.extractor import DetectionPattern
+from sio.core.paths import db_path as _default_db_path
 
 # ---------------------------------------------------------------------------
 # Hook script template — string formatted with the rule + detection details.
@@ -207,7 +207,7 @@ def generate_and_register(
     canonical_db_path = (
         Path(canonical_db_path)
         if canonical_db_path
-        else Path(os.environ.get("SIO_DB_PATH", str(Path.home() / ".sio" / "sio.db")))
+        else _default_db_path()
     )
 
     slug = _slugify(rule_text)

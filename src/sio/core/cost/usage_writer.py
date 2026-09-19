@@ -8,9 +8,9 @@ from __future__ import annotations
 import json
 import threading
 from datetime import datetime, timezone
-from pathlib import Path
+from sio.core.paths import sio_home as _default_sio_home
 
-USAGE_LOG = Path.home() / ".sio" / "usage.log"
+USAGE_LOG = _default_sio_home() / "usage.log"
 _LOCK = threading.Lock()
 
 

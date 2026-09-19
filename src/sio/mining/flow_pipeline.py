@@ -147,12 +147,14 @@ def run_flow_mine(
 
                 # T087 [US5] FR-008: INSERT OR IGNORE — dedup via
                 # UNIQUE(file_path, session_id, flow_hash)
+                # Flow mining reads ~/.claude/projects only, so every row is
+                # claude's (sio.core.db.agents — the agent column).
                 db_conn.execute(
                     """INSERT OR IGNORE INTO flow_events
                        (session_id, flow_hash, sequence, ngram_size,
                         was_successful, duration_seconds, source_file,
-                        file_path, timestamp, mined_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        file_path, timestamp, mined_at, agent)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         session_id,
                         flow_hash,
@@ -164,6 +166,7 @@ def run_flow_mine(
                         str(file_path),  # file_path column for dedup constraint
                         ts,
                         mined_at,
+                        "claude",
                     ),
                 )
                 total_flow_events += 1

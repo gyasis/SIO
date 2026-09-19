@@ -30,10 +30,11 @@ from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
+from sio.core.paths import sio_home as _default_sio_home
 
 logger = logging.getLogger(__name__)
 
-_LOG_DIR = Path.home() / ".sio" / "logs"
+_LOG_DIR = _default_sio_home() / "logs"
 _MAX_BYTES = 5 * 1024 * 1024
 _BACKUP_COUNT = 3
 _handlers: dict[str, RotatingFileHandler] = {}

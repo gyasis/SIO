@@ -240,12 +240,13 @@ genuine real-time need, and detach as soon as it lands.
 **Claude Code** is covered richly — its JSONL carries `cwd` + `gitBranch` on
 every line, so repo/branch/worktree/collision resolution is exact.
 
-Other harnesses (`goose`, `codex`, `gemini`, `aider`) are **listed best-effort**
-when active: shown with whatever working-dir signal is trivially available
-(e.g. goose's `working_dir`) and without git collision resolution. Live
-**follow** (`show --follow`, `attach`) currently supports the Claude harness; the
-handle parser accepts other agents but their live adapters raise
-`NotImplementedError` until implemented.
+Other harnesses (`goose`, `codex`, `gemini`, `aider`, `kimi`, `pi`) are **listed
+best-effort** when active: shown with whatever working-dir signal is trivially
+available (e.g. goose's `working_dir`, codex's and pi's line-1 header `cwd`) and
+without git collision resolution. Live **follow** (`show --follow`, `attach`,
+`sio watch`) is implemented for the file-backed harnesses — Claude, Codex, Kimi
+and pi (each tails its session file by size) — while the search-backed agents'
+live adapters raise `NotImplementedError` until implemented.
 
 ---
 

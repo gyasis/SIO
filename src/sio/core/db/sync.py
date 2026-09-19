@@ -16,6 +16,7 @@ from pathlib import Path
 
 from sio.core.constants import DEFAULT_PLATFORM
 from sio.core.db.connect import open_db
+from sio.core.paths import db_path as _default_db_path, sio_home as _default_sio_home
 
 # ---------------------------------------------------------------------------
 # Path resolution (honours env overrides for testing)
@@ -24,14 +25,14 @@ from sio.core.db.connect import open_db
 
 def _sio_db_path() -> Path:
     env = os.environ.get("SIO_DB_PATH")
-    return Path(env) if env else Path.home() / ".sio" / "sio.db"
+    return Path(env) if env else _default_db_path()
 
 
 def _platform_db_path(platform: str) -> Path:
     env = os.environ.get("SIO_PLATFORM_DB_PATH")
     if env:
         return Path(env)
-    return Path.home() / ".sio" / platform / "behavior_invocations.db"
+    return _default_sio_home() / platform / "behavior_invocations.db"
 
 
 # Public constants (tests + scripts import these directly)

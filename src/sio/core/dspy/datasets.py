@@ -13,12 +13,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import sqlite3
 from pathlib import Path
 from typing import Any
 
 import dspy
+from sio.core.paths import db_path as _default_db_path
 
 logger = logging.getLogger(__name__)
 
@@ -48,10 +48,7 @@ _MODULE_BUILDERS: dict[str, Any] = {}  # populated after function defs
 
 
 def _default_db_path() -> str:
-    return os.environ.get(
-        "SIO_DB_PATH",
-        str(Path.home() / ".sio" / "sio.db"),
-    )
+    return str(_default_db_path())
 
 
 def load_gold_standards(

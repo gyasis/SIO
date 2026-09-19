@@ -35,6 +35,7 @@ from sio.core.dspy.assertions import (
     validate_rule_format,
 )
 from sio.core.dspy.signatures import PatternToRule
+from sio.core.paths import db_path as _default_db_path
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ def _load_optimized_or_default(config: Any) -> Any:
         A DSPy SuggestionGenerator — either optimized or freshly created.
     """
     try:
-        db_path = os.path.expanduser("~/.sio/sio.db")
+        db_path = str(_default_db_path())
         if not os.path.exists(db_path):
             logger.info(
                 "SuggestionGenerator: no SIO DB at %s — using uncompiled "

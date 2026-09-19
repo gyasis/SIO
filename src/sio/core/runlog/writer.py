@@ -21,10 +21,10 @@ import time
 import traceback
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Optional
+from sio.core.paths import sio_home as _default_sio_home
 
-_RUNS_DIR = Path.home() / ".sio" / "runs"
+_RUNS_DIR = _default_sio_home() / "runs"
 _RUNS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Coverage threshold below which a COVERAGE_DROP warning fires

@@ -102,8 +102,13 @@ The v004 remediation hardened every stage of the pipeline:
 ### Prerequisites
 
 - Python 3.11+
-- An AI coding tool that produces session transcripts. Claude Code is supported
-  out of the box; Cursor / Windsurf / OpenCode adapters are stubs (PRs welcome).
+- An AI coding tool that produces session transcripts. Coverage differs by
+  direction — the two are easy to conflate because both are called "adapters":
+  - **Reading** sessions (`sio search`, `sio mine`): claude, codex, goose,
+    opencode, gemini, aider, promptchain, kimi, pi. `sio search --list-agents`
+    shows which have data on this machine.
+  - **Installing into** a harness (`sio init` — skills, rules, hook telemetry):
+    Claude Code only. Cursor and OpenCode error out (PRs welcome).
 
 ### Install
 
@@ -111,25 +116,32 @@ The package name on pypi is `self-improving-organism`; the CLI binary stays
 `sio` for ergonomics. (Pypi publish hasn't happened yet — install from GitHub
 for now.)
 
+> **Install from `@main`, not from a tag.** The newest tag (`v0.3.1`, 2026-05-19)
+> predates `sio search` and every non-Claude harness adapter — a tag install
+> silently gives you a CLI with no cross-agent session search. Once a release is
+> cut past those, pin to it here.
+
 **Recommended: an isolated install** so SIO's dependencies (DSPy, fastembed,
 onnxruntime, …) never touch your global or project Python:
 
 ```bash
 # ⭐ uv tool — isolated env, `sio` on PATH (uv 0.4+)
-uv tool install "self-improving-organism[all] @ git+https://github.com/gyasis/SIO.git@v0.3.1"
+uv tool install "self-improving-organism[all] @ git+https://github.com/gyasis/SIO.git@main"
 
 # or pipx — same isolation, pipx-managed venv
-pipx install "self-improving-organism[all] @ git+https://github.com/gyasis/SIO.git@v0.3.1"
+pipx install "self-improving-organism[all] @ git+https://github.com/gyasis/SIO.git@main"
 
-# Verify
-sio --version          # → 0.3.1
+# Verify — `sio --version` reports the pyproject version, which does not move
+# between releases; `sio search` is the real check that you got a current build.
+sio --version          # → 0.4.0
+sio search --list-agents
 ```
 
 Plain pip also works (use a venv so it stays isolated):
 
 ```bash
 python -m venv .venv && . .venv/bin/activate
-pip install "git+https://github.com/gyasis/SIO.git@v0.3.1#egg=self-improving-organism[all]"
+pip install "git+https://github.com/gyasis/SIO.git@main#egg=self-improving-organism[all]"
 
 # Or from source (editable, for tinkering)
 git clone https://github.com/gyasis/SIO.git && cd SIO && pip install -e ".[all,dev]"
@@ -159,8 +171,11 @@ See [`docs/getting-started.md`](docs/getting-started.md) for the full isolated-i
    overwritten — even on subsequent runs.
 2. **Stages SIO's bundled skills and tool rules** into your AI agent's
    config directory. For Claude Code that's `~/.claude/skills/sio-*/` and
-   `~/.claude/rules/tools/sio.md`. Idempotent, manifest-tracked, preserves
-   anything you've edited.
+   `~/.claude/rules/tools/sio.md`. For **pi** it's `~/.pi/agent/skills/sio-*/`
+   (skills only — pi has no rules dir and no hooks system, so those are
+   reported as unsupported rather than written). Idempotent,
+   manifest-tracked, preserves anything you've edited, and never touches a
+   skill it did not install.
 
 ```bash
 # Auto-detect harness, install (creates ~/.sio/ + ~/.claude/skills/sio-*/)
@@ -181,7 +196,11 @@ sio init --uninstall
 
 # Force a specific harness even if the auto-detect missed it
 sio init --harness claude-code
+sio init --harness pi           # pi coding agent → ~/.pi/agent/skills/sio-*/
 ```
+
+Supported install targets: `claude-code` (skills + rules + hook telemetry)
+and `pi` (skills only). `cursor` / `windsurf` / `opencode` are stubs.
 
 After `sio init`, your tree should look like:
 
@@ -197,12 +216,15 @@ After `sio init`, your tree should look like:
   skills/sio-*/        ← 19 SIO skill folders
   rules/tools/sio.md   ← canonical SIO usage rule
   .sio-managed.json    ← manifest tracking what SIO installed
+~/.pi/agent/           (only with `--harness pi`, or when pi is auto-detected)
+  skills/sio-*/        ← the same skill folders, validated against pi's loader
+  .sio-managed.json    ← separate manifest; pi skills you added yourself stay untouched
 ```
 
 ### Upgrade
 
 ```bash
-pip install --upgrade git+https://github.com/gyasis/SIO.git@v0.3.1
+pip install --upgrade git+https://github.com/gyasis/SIO.git@main
 sio init                    # safe — never clobbers user-edited files; re-pins hooks after the upgrade
 sio init --status           # confirm what shipped vs what's drifted
 ```
@@ -294,7 +316,7 @@ fresh install should never silently dispatch to the wrong provider.
 
 SIO absorbed the standalone `session-search` tool: **`sio search`** finds sessions
 across **all coding-agent harnesses** (Claude, Codex, Goose, OpenCode, Gemini,
-Aider, PromptChain) — pick one with `--agent <harness>` (default `claude`) or `--agent all`.
+Aider, PromptChain, Kimi, pi) — pick one with `--agent <harness>` (default `claude`) or `--agent all`.
 Every analysis command can be **scoped to one session** via `--session`,
 turning SIO into a targeted debugger for a single session/process. Session ids are
 canonical **`agent:native_id`** "Session URIs" (e.g. `claude:<uuid>`,
@@ -303,7 +325,7 @@ canonical **`agent:native_id`** "Session URIs" (e.g. `claude:<uuid>`,
 | Command | Description |
 |---------|-------------|
 | `sio search "pattern" --agent all` | Search session history across all harnesses (absorbed `session-search`) |
-| `sio search "pattern" --agent <harness>` | Target ONE coding agent: `claude` (default), `codex`, `gemini`, `goose`, `opencode`, `aider`, `promptchain` |
+| `sio search "pattern" --agent <harness>` | Target ONE coding agent: `claude` (default), `codex`, `gemini`, `goose`, `opencode`, `aider`, `promptchain`, `kimi`, `pi` |
 | `sio search "pattern" --agent claude --files` | Emit matching session file paths (pipe into `--session`) |
 | `sio errors --session <handle>` | Scope error browsing to ONE session (`agent:id`, a path, a bare id, or `-` for stdin) |
 | `sio errors --session c6428f4f` | Fuzzy partial-id resolve (lists candidates if ambiguous) |
@@ -317,6 +339,9 @@ canonical **`agent:native_id`** "Session URIs" (e.g. `claude:<uuid>`,
 | Command | Description |
 |---------|-------------|
 | `sio db backfill-sessions [--dry-run]` | Migrate legacy bare session ids to canonical `agent:<id>` (idempotent, auto-backup) |
+| `sio db migrate` | Apply pending schema migrations, incl. 006 agent isolation (`agent` column, dedupe, per-agent `errors_<agent>` / `flows_<agent>` views; auto-backup) |
+| `sio db drop-agent <agent> [--yes]` | Delete one agent's mined rows everywhere (dry run by default; `claude` needs `--including-claude`); never touches the agent's session files |
+| `sio errors --agent <agent>` | Browse one agent's errors (the `agent` column — same rows as the `errors_<agent>` view) |
 
 ### Dataset Management
 
@@ -586,7 +611,7 @@ SIO is the **data and intelligence layer** — it does not enforce behavior at r
 
 **SIO teaches; the agent harness learns.** SIO never blocks or intercepts the agent at runtime. It writes better instructions, and the agent follows them next session. Velocity tracking closes the loop by measuring whether the rules actually reduced errors.
 
-This separation means SIO works with any agent harness that reads configuration files — Claude Code today, Cursor/Gemini CLI/others tomorrow.
+This separation means SIO works with any agent harness that reads configuration files — Claude Code and pi today, Cursor/Gemini CLI/others tomorrow.
 
 ---
 

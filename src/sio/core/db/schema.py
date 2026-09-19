@@ -110,7 +110,11 @@ CREATE TABLE IF NOT EXISTS error_records (
     mined_at TEXT NOT NULL,
     is_subagent INTEGER NOT NULL DEFAULT 0,
     parent_session_id TEXT,
-    pattern_id TEXT
+    pattern_id TEXT,
+    -- Which coding agent mined this row (sio.core.db.agents). '' is the
+    -- "writer did not say" marker: the AFTER INSERT trigger derives it from
+    -- session_id, so a stored row never keeps ''.
+    agent TEXT NOT NULL DEFAULT ''
 )
 """
 
@@ -268,6 +272,7 @@ CREATE TABLE IF NOT EXISTS processed_sessions (
     parent_session_id TEXT,
     last_offset INTEGER NOT NULL DEFAULT 0,
     last_mtime REAL,
+    agent TEXT NOT NULL DEFAULT '',
     UNIQUE(file_path, file_hash)
 )
 """
@@ -292,7 +297,8 @@ CREATE TABLE IF NOT EXISTS session_metrics (
     sidechain_count INTEGER NOT NULL DEFAULT 0,
     stop_reason_distribution TEXT,
     model_used TEXT,
-    mined_at TEXT NOT NULL
+    mined_at TEXT NOT NULL,
+    agent TEXT NOT NULL DEFAULT ''
 )
 """
 
@@ -311,7 +317,8 @@ CREATE TABLE IF NOT EXISTS positive_records (
     tool_name TEXT,
     sentiment_score REAL,
     source_file TEXT NOT NULL,
-    mined_at TEXT NOT NULL
+    mined_at TEXT NOT NULL,
+    agent TEXT NOT NULL DEFAULT ''
 )
 """
 
@@ -364,7 +371,8 @@ CREATE TABLE IF NOT EXISTS flow_events (
     source_file TEXT,
     file_path TEXT,
     timestamp TEXT NOT NULL,
-    mined_at TEXT NOT NULL
+    mined_at TEXT NOT NULL,
+    agent TEXT NOT NULL DEFAULT ''
 )
 """
 
@@ -702,9 +710,31 @@ def init_db(db_path: str) -> sqlite3.Connection:
         # lazy path in register_dataset() will create it on first write.
         pass
 
+    # Migration 006 (agent isolation, sio.core.db.agents): the `agent` column
+    # on every mined-data table. The column + index + self-healing trigger +
+    # per-agent views are idempotent and applied on every open, so a legacy
+    # DB gets the column before any writer needs it and a newly added
+    # KNOWN_AGENT gets its view without a migration. The DATA steps
+    # (backfill, partial-id merge, dedupe, UNIQUE fingerprint) stay in
+    # migrate_006_agent_isolation — run from `sio init` / `sio db migrate`.
+    from sio.core.db.agents import (  # noqa: PLC0415
+        ensure_agent_columns,
+        ensure_agent_triggers,
+        ensure_agent_views,
+        ensure_error_fingerprint_index,
+    )
+
+    ensure_agent_columns(conn)
+
     # Create indexes
     for idx_sql in _INDEXES:
         conn.execute(idx_sql)
+
+    ensure_agent_triggers(conn)
+    ensure_agent_views(conn)
+    # Fresh DBs get the UNIQUE fingerprint immediately; a legacy DB that still
+    # holds duplicates gets it from the 006 migration (which dedupes first).
+    ensure_error_fingerprint_index(conn)
 
     conn.commit()
     return conn

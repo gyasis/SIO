@@ -9,9 +9,10 @@ The adapter layer abstracts those differences so `sio init` can stage SIO's
 bundled assets (skills, rules, hook scripts) into whichever harness the user
 runs, without forking the bootstrap logic per harness.
 
-For now only the Claude Code adapter is implemented; others are stubs that
-report "not yet implemented" so the architecture is visible and the work
-to add a new harness is bounded to writing one adapter module.
+Implemented: Claude Code (skills + rules + hooks) and pi (skills only — pi
+has no rules dir or hooks system). Cursor / Windsurf / OpenCode are stubs
+that report "not yet implemented" so the architecture is visible and the
+work to add a new harness is bounded to writing one adapter module.
 """
 
 from __future__ import annotations
@@ -25,11 +26,13 @@ from sio.harnesses.base import (
 from sio.harnesses.claude_code import ClaudeCodeAdapter
 from sio.harnesses.cursor import CursorAdapter
 from sio.harnesses.opencode import OpenCodeAdapter
+from sio.harnesses.pi import PiAdapter
 from sio.harnesses.windsurf import WindsurfAdapter
 
 #: Ordered registry — first entry is the default when auto-detecting.
 ALL_ADAPTERS: list[type[HarnessAdapter]] = [
     ClaudeCodeAdapter,
+    PiAdapter,
     CursorAdapter,
     WindsurfAdapter,
     OpenCodeAdapter,
@@ -58,6 +61,7 @@ __all__ = [
     "HarnessNotInstalledError",
     "InstallReport",
     "OpenCodeAdapter",
+    "PiAdapter",
     "StatusReport",
     "WindsurfAdapter",
     "detect_adapters",

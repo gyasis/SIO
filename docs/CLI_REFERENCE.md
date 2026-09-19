@@ -396,9 +396,43 @@ Options:
 
 Commands:
   backfill-sessions  Backfill legacy bare session ids to canonical...
+  drop-agent         Delete ONE coding agent's mined rows from SIO's...
   migrate            Apply any pending schema migrations to the SIO...
   repair             Mark stuck 'applying' migration rows as 'failed'.
 ```
+
+### `sio db drop-agent`
+
+```
+Usage: sio db drop-agent [OPTIONS] AGENT
+
+  Delete ONE coding agent's mined rows from SIO's database.
+
+  Removes that agent's rows from every mined-data table (error_records,
+  flow_events, positive_records, session_metrics, processed_sessions) and the
+  rows that reference them (pattern_errors, experiment_runs), in one
+  transaction, after a backup-API copy into <db dir>/backups/.
+
+  DRY RUN by default: prints per-table counts and writes nothing. Pass --yes
+  to execute. Unknown agent names are refused; 'claude' additionally needs
+  --including-claude.
+
+  This touches ONLY SIO's mined data. The agent's own session files on disk
+  (~/.pi, ~/.codex, ~/.claude/projects, ...) are never read or modified — re-
+  mining the agent later rebuilds its rows from them.
+
+Options:
+  --db-path TEXT      Path to the SIO database (default: $SIO_DB_PATH or
+                      $SIO_HOME/sio.db, $SIO_HOME default ~/.sio).
+  -y, --yes           Execute the deletion. Without it this is a DRY RUN that
+                      prints counts only.
+  --including-claude  Required to drop 'claude' — it is the bulk of the data.
+  --help              Show this message and exit.
+```
+
+`sio db migrate` also applies migration 006 (agent isolation: `agent` column, backfill,
+partial-id merge, dedupe, UNIQUE fingerprint, per-agent views) after the `scripts/`
+migrations, backing the DB up first. See the user guide, "Multi-agent storage".
 
 ### `sio dedupe`
 
@@ -550,6 +584,10 @@ Options:
                                   id is assumed claude). Matches legacy and
                                   canonical forms. Pipe from search: `sio
                                   search ... --files`.
+  --agent [claude|codex|goose|opencode|gemini|aider|promptchain|kimi|pi|wuphf]
+                                  Scope to ONE coding agent's errors (the
+                                  `agent` column — the same rows the
+                                  `errors_<agent>` view returns).
   --help                          Show this message and exit.
 ```
 
@@ -716,11 +754,12 @@ Usage: sio init [OPTIONS]
       sio init --status           # what's installed where
       sio init --uninstall        # remove SIO-managed files
       sio init --harness claude-code --force
+      sio init --harness pi       # skills only (pi has no rules dir / hooks)
 
 Options:
-  --harness TEXT  Target harness (claude-code, cursor, windsurf, opencode). If
-                  omitted, auto-detects every harness installed on this
-                  system.
+  --harness TEXT  Target harness (claude-code, pi, cursor, windsurf,
+                  opencode). If omitted, auto-detects every harness installed
+                  on this system.
   --dry-run       Preview the file changes without writing anything.
   --force         Overwrite user-modified files (default: skip + report
                   drift).
@@ -788,13 +827,15 @@ Options:
                                   targets a single session, or --experiment is
                                   given.
   --project TEXT                  Filter by project name.
-  --agent [claude|codex|gemini|goose]
+  --agent [claude|codex|gemini|goose|pi]
                                   Which coding agent's sessions to mine in
                                   bulk. 'claude' uses the native
-                                  JSONL/SpecStory scan; codex/gemini/goose
+                                  JSONL/SpecStory scan; codex/gemini/goose/pi
                                   enumerate that agent's store via the
-                                  session-search parsers (content-level errors
-                                  only). Ignored when --session is given.
+                                  session-search parsers (content-level
+                                  errors, plus harness-flagged tool failures
+                                  where the parser carries them -- pi does).
+                                  Ignored when --session is given.
   --source [specstory|jsonl|both]
                                   Source type.
   --exclude-sidechains / --include-sidechains
@@ -1418,7 +1459,7 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
-  --agent {claude,codex,goose,opencode,gemini,aider,promptchain,all}
+  --agent {claude,codex,goose,opencode,gemini,aider,promptchain,kimi,pi,all}
                         Which agent's history to search (default: claude).
                         'all' fans out to every harness.
   --specstory           Search SpecStory MD only.

@@ -59,6 +59,31 @@ sio --version
 > `~/.claude/projects/` and reads/writes `~/.sio/*.db` — those are HOME paths,
 > independent of which Python environment `sio` runs in.
 
+### pi (`@earendil-works/pi-coding-agent`)
+
+`sio init` auto-detects pi when `~/.pi/agent/` exists (or the directory named
+by `PI_CODING_AGENT_DIR`); force it with `--harness pi`:
+
+```bash
+sio init --harness pi              # → ~/.pi/agent/skills/sio-*/SKILL.md
+sio init --harness pi --dry-run    # preview; lists any pi skill SIO will NOT touch
+sio init --harness pi --status
+sio init --harness pi --uninstall  # removes only what the manifest tracks
+```
+
+What pi gets, and what it deliberately does not:
+
+| Bundled asset | On pi |
+|---|---|
+| Skills (`skills/<name>/SKILL.md` + siblings) | Installed. Each `SKILL.md` is checked against pi's own loader rules (`name` = `[a-z0-9-]{1,64}`, `description` required and ≤ 1024 chars) and transformed only if it would fail — the transform is listed in the install output. |
+| Tool rules (`rules/tools/*.md`) | **Not installed** — pi has no rules dir; standing context is your own `AGENTS.md`, which SIO never edits. Reported as unsupported. |
+| Hook telemetry | **Not registered** — pi has extensions, not a hooks system. Ingest pi sessions with `sio mine --agent pi` / `sio search --agent pi` instead. |
+
+Skills SIO did not install — including symlinked ones from other tools — are
+never modified or removed, even if they share a name with an SIO skill
+(`--force` is the only override, and it backs the file up first). Restart pi
+after installing; it reads the skills dir at startup.
+
 ## First Run
 
 ### 1. Mine your recent sessions

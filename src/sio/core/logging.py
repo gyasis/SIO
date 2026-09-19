@@ -6,6 +6,7 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
+from sio.core.paths import sio_home as _default_sio_home
 
 
 class JSONFormatter(logging.Formatter):
@@ -45,7 +46,7 @@ def setup_error_logging(
     if platform is None:
         platform = DEFAULT_PLATFORM
     if log_dir is None:
-        log_dir = os.path.expanduser(f"~/.sio/{platform}")
+        log_dir = str(_default_sio_home() / platform)
     os.makedirs(log_dir, exist_ok=True)
 
     log_path = os.path.join(log_dir, "error.log")

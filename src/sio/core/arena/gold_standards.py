@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 from datetime import datetime, timezone
-from pathlib import Path
+from sio.core.paths import db_path as _default_db_path
 
 
 def _get_conn(db_path) -> tuple[sqlite3.Connection, bool]:
@@ -15,10 +14,7 @@ def _get_conn(db_path) -> tuple[sqlite3.Connection, bool]:
         return db_path, False
 
     if db_path is None:
-        canonical = os.environ.get(
-            "SIO_DB_PATH",
-            str(Path.home() / ".sio" / "sio.db"),
-        )
+        canonical = str(_default_db_path())
         conn = sqlite3.connect(canonical)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")

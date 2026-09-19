@@ -23,6 +23,7 @@ from pathlib import Path
 import click
 
 from sio.core.cost.estimator import estimate_optimize_run
+from sio.core.paths import sio_home as _default_sio_home
 
 SURFACES = [
     "claude_md_rule",
@@ -193,7 +194,7 @@ def multi_train_cmd(surfaces, parallelism, optimizer, budget, lm_mix,
     click.echo(f"\n  {ok} ok / {failed} failed of {len(completed)} runs")
 
     # Persist plan + outcomes
-    out_dir = Path.home() / ".sio" / "multi_train"
+    out_dir = _default_sio_home() / "multi_train"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"plan_{int(time.time())}.json"
     out_path.write_text(json.dumps({"plan": plan, "completed": completed}, indent=2))

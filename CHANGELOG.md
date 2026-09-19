@@ -9,6 +9,174 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
+### Added — one real SIO-home pointer (`sio.core.paths`), `wuphf` as a KNOWN_AGENT
+
+- **`sio.core.paths.sio_home()` / `db_path()`** are now the single source of
+  truth for where SIO's on-disk home and database live. Both honor
+  `$SIO_HOME` / `$SIO_DB_PATH` (read at call time, not cached), and every
+  other place in `src/sio` that used to hardcode `~/.sio` or
+  `Path.home() / ".sio"` now routes through them — so a second, independent
+  SIO installation (e.g. a per-product or per-office home) can be selected
+  purely by env vars, with nothing silently falling back to the default
+  `~/.sio`. A guard test (`tests/unit/core/test_paths.py`) fails the build if
+  a hardcoded `.sio` / `.sio/sio.db` literal ever reappears outside
+  `sio/core/paths.py`.
+- **`wuphf` added to `KNOWN_AGENTS`.** wuphf (the twicedata office platform)
+  writes its mined rows into SIO's database directly, via an external
+  bridge — it has no local transcript store the way claude/codex/goose/...
+  do. `sio errors --agent wuphf` and the `errors_wuphf` view now work; the
+  agent-enumeration surfaces that read transcripts off disk (session search
+  `--agent all`, `sio live` discovery, `sio mine` bulk, `adapters/factory.py`)
+  already enumerate `PARSERS` / hardcoded per-agent paths rather than
+  `KNOWN_AGENTS`, so wuphf is skipped there by construction — covered by
+  `tests/unit/core/test_wuphf_agent.py`. `wuphf` is deliberately kept OUT of
+  `sio mine`'s bulk `--agent` choice list (that path assumes a session-search
+  parser exists for the agent).
+
+### Fixed — follow-ups to the agent-isolation work (#44)
+
+- **Migration 006 no longer merges session ids on a bare substring.** The
+  partial-id fold (`agent:P` → `agent:F`) used `P in F`, which is right for a
+  truncated uuid stem but welds unrelated name-style sessions together — a
+  goose `main` would have been merged into `domain-fix`. The rule is now
+  token-bounded and floored (`sio.core.db.agents.is_partial_of`): the partial
+  must be at least 8 characters and appear in the longer id at a token
+  boundary (start of string or after one of `-_.:/`, and end of string or
+  before one). `pi:01a0a495` still folds into
+  `pi:2026-09-15T10-20-49-318Z_01a0a495-6525-…`; `main`, `sess`, a 7-char
+  prefix, or a fragment inside a word never do. Still exactly-one-candidate,
+  still lists ambiguous ids, still never touches the filesystem. No schema
+  bump: the rule runs only inside 006, which is a no-op on a migrated DB.
+- **The bulk-mine summary counts every session seen.** It printed
+  `1 sessions (1 unchanged, skipped)` for two sessions of which one was
+  skipped, which read as a contradiction. Now
+  `Bulk-mined pi: 2 sessions (1 mined, 1 unchanged) -> 3 errors (3 new, 0 already present).`
+  — sessions seen, split mined / unchanged; errors found in the window, split
+  new / already present exactly as the `--session` line does; correct
+  singular / plural.
+- **Bulk mining files the harness-flagged failures `--session` files.** The
+  search parser behind `mine --agent pi` dropped every empty-content event, so
+  a `!cmd` that exited non-zero with no output, or an `isError` tool result
+  with no text, was caught by `--session` and missed by `--agent`. `search_pi`
+  now keeps an event the harness flagged as a failure even when its content is
+  empty (matching on the error text too, so `sio search "exit code"` finds
+  silent failures); an event that is neither flagged nor has content is still
+  dropped. The pi adapter also gives an empty `isError` result a non-empty
+  error text (`isError (empty tool result)`) — previously it was `""`, which
+  the extractor reads as "no failure", so NEITHER path filed it. Both paths
+  now produce identical error rows for the same session (tested by
+  fingerprint).
+
+### Changed — agent isolation: one DB, a real `agent` column, no duplicate mining (#44)
+
+- **`agent` column** on every table that stores per-session mined data —
+  `error_records`, `flow_events`, `positive_records`, `session_metrics`,
+  `processed_sessions` — `NOT NULL`, indexed, and enforced: a self-healing
+  `AFTER INSERT` trigger derives it from the session id (or path) for any
+  writer that left it empty, so the invariant *every row has an agent
+  consistent with its session id* holds for the Python write seam, raw SQL,
+  scripts, and hook code from an older checkout alike. Replaces the
+  `session_id LIKE 'pi:%'` / hard-coded `_NON_CLAUDE` tuple convention, under
+  which an agent added to `KNOWN_AGENTS` but not to that tuple silently counted
+  as claude. New module: `sio.core.db.agents`.
+- **Per-agent views** `errors_<agent>` and `flows_<agent>` for every
+  `KNOWN_AGENT` (`errors_pi`, `errors_claude`, `flows_codex`, ...) — SQL views
+  over the main tables, zero copies, always in sync, re-created idempotently on
+  every DB open so a newly added agent gets its view without a migration.
+- **No more duplicate mining of non-claude sessions.** `sio mine --session
+  pi:<partial>` used to stamp rows with the partial handle the user typed while
+  `sio mine --agent pi` stamped the full file stem — one session under two ids
+  — and nothing was recorded in `processed_sessions` for non-claude agents, so
+  every re-mine re-inserted everything (observed: 16 `pi:` rows, 10 distinct).
+  Now: `--session` stamps the FULL canonical id the adapter resolved
+  (`<agent>:<manifest.native_id>`); `insert_error_record` is `INSERT OR IGNORE`
+  against a UNIQUE fingerprint (`session_id, timestamp, error_type, tool_name,
+  error_text`, NULL-safe) and returns `None` when the row was already there;
+  non-claude sessions are tracked in `processed_sessions` (keyed by canonical
+  id, signature = event count + last timestamp) so an unchanged session is
+  skipped and a grown one is re-read with only its new errors landing. Mining
+  output now says `N new, M already present`.
+- **Migration 006 (`migrate_006_agent_isolation`)** — runs from `sio init`
+  and `sio db migrate`, one `BEGIN IMMEDIATE` transaction, idempotent and
+  race-safe: sqlite backup-API copy to `<db dir>/backups/sio.db.<utc>.pre-agent-migration.bak`
+  first, then backfill `agent` (known prefix → agent, bare / `claude:` → claude,
+  unknown `xyz:` prefixes → claude by the legacy rule but COUNTED and reported),
+  merge partial non-claude ids into the one full id they are an unambiguous
+  substring of (ambiguous ones left and listed), dedupe exact duplicates
+  (lowest id survives; `pattern_errors` / `experiment_runs` remapped), add the
+  UNIQUE fingerprint, triggers, views, stamp `schema_version` 6.
+- **`sio db drop-agent <name>`** — delete one agent's mined rows everywhere
+  (dry run by default, `--yes` to execute after a backup; `claude` needs
+  `--including-claude`; unknown names refused). Never touches the agent's own
+  session files on disk.
+- `sio errors --agent <name>` scopes the browser to one agent;
+  `get_error_records(agent=...)` now filters on the column.
+- `_is_cross_format_duplicate` (claude pipeline) is scoped by agent, so one
+  agent's identical error text never suppresses another's.
+
+### Added — pi harness adapter
+
+- **`pi` coding agent** (`@earendil-works/pi-coding-agent`) joins the readable
+  harnesses. `sio/adapters/pi/` is a direct file adapter over
+  `~/.pi/agent/sessions/<cwd-dir>/<iso-ts>_<uuid>.jsonl` (shapes taken from pi's
+  own `session-manager.d.ts` / `messages.d.ts`): the line-1 `session` header,
+  user / assistant text, `thinking` blocks (filed as `system`), `toolCall`
+  blocks (tool name + JSON arguments), `toolResult`s, pi's `bashExecution`
+  (`!cmd`) turns, `model_change` / `thinking_level_change` / `compaction` /
+  `branch_summary` bookkeeping; `custom` + `label` entries are dropped.
+- Wired at all three touch points: `adapter_for("pi")` +
+  `manifest_from_handle("pi:<stem|uuid|partial>")` (LOCATE), `search_pi` in
+  `PARSERS` so `sio search --agent pi`, `--agent all` and `--list-agents` see it
+  (SEARCH), and `sio mine --agent pi` (bulk) / `--session pi:<id>` (EXTRACT).
+  `sio live ls` discovers pi sessions (cwd from the header); `sio live show /
+  attach` and `sio watch` tail them.
+- **`SessionEvent.error`** (new optional field, default `None`): an adapter can
+  now carry a harness-flagged failure. pi sets it on `isError: true` tool
+  results and non-zero `!cmd` exits, and both mine paths pass it through, so
+  those land as `tool_failure` records instead of being invisible. Other
+  adapters are unchanged (`None`).
+- Not in this change: `sio suggest --harness pi` (routing suggestions to pi's
+  instruction file) — follow-up. `sio init --harness pi` landed separately
+  (next section).
+
+### Added — pi as an INSTALL target (`sio init --harness pi`)
+
+- **`PiAdapter`** (`sio/harnesses/pi.py`) stages SIO's bundled skills into
+  `~/.pi/agent/skills/<name>/SKILL.md` (+ sibling files), honouring pi's
+  `PI_CODING_AGENT_DIR` override. Auto-detected when `~/.pi/agent/` exists.
+  Manifest-tracked (`.sio-managed.json`): `--dry-run` writes nothing, re-runs
+  are idempotent, user-modified files are skipped without `--force`, `--force`
+  backs up to `~/.sio/backups/<ts>/` first, `--uninstall` removes only
+  manifest-tracked files and prunes the skill dirs it emptied, `--status`
+  reports installed / missing / drifted.
+- **Foreign skills are never touched.** A skill SIO did not install — a real
+  file or a symlink, even one sharing an SIO skill's name — is skipped and
+  reported as "not SIO-managed"; only `--force` overrides (with a backup).
+  This is stricter than claude-code, which adopts untracked files so a lost
+  manifest can self-heal.
+- **Skills only, and says so.** Bundled tool rules (no rules dir on pi — the
+  user's `AGENTS.md` is theirs, SIO does not write to it) and hook telemetry
+  (pi has extensions, not hooks) are reported in the new `InstallReport.notes`
+  as "not supported on pi" instead of being dropped silently. `skills/README.md`
+  is not staged because pi loads root-level `.md` files as skills.
+- **Spec conformance against pi's own validator** (`dist/core/skills.js`:
+  `name` = `[a-z0-9-]`, ≤ 64, no `--` or edge hyphens; `description` required,
+  ≤ 1024 chars). `conform_skill_for_pi()` rewrites only `name` / `description`
+  and only when pi would warn, emitting JSON-string scalars so the YAML stays
+  parseable; every transform is listed in the report. All 33 bundled skills
+  currently pass untouched — a unit test guards that, and a node-backed test
+  loads synthetic non-conforming skills through pi's `loadSkills` and asserts
+  zero diagnostics (skips where pi is not installed).
+- Shared staging logic extracted to `sio/harnesses/managed.py`
+  (`stage_files` / `remove_files` / `status_files`); `ClaudeCodeAdapter` now
+  delegates to it with unchanged behaviour.
+- Wired everywhere the harness list is advertised: `ALL_ADAPTERS`,
+  `get_adapter("pi")`, `sio init --harness` help + examples, the
+  "no harnesses detected" hint, `sio doctor`'s fix hint, README,
+  getting-started, CLI reference, troubleshooting.
+- `scripts/install-skills.sh` also copies into `~/.pi/agent/skills/` when
+  that dir exists, skipping any symlinked entry it does not own.
+
 ### Session Intelligence — absorb session-search + cross-agent, session-scoped analysis
 
 Slated for the next minor (0.4.0). SIO absorbs the standalone `session-search`
