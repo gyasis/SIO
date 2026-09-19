@@ -33,6 +33,46 @@ GitHub release pages (with full asset downloads) live at
   `sio mine`'s bulk `--agent` choice list (that path assumes a session-search
   parser exists for the agent).
 
+### Fixed — migration 004 silently never ran on an installed `sio` (schema drift on every fresh DB)
+
+- **`sio.core.db.bootstrap.ensure_canonical_db_ready()` imported migration 004
+  from `scripts.migrate_004`.** `scripts/` is a dev-repo-only directory — it
+  is not bundled into the wheel (`[tool.hatch.build.targets.wheel]` only
+  force-includes `skills`/`rules`/`docs`) — so that import only ever
+  succeeded when the current working directory happened to be the repo root.
+  On every other install layout it raised `ModuleNotFoundError`, and the
+  surrounding `except Exception` logged it at **DEBUG** and moved on. Net
+  effect: a fresh `~/.sio/sio.db` (via `sio init`, or anything else that
+  calls `ensure_canonical_db_ready()`) never got the 004 schema delta —
+  `pattern_errors.active`, `patterns.active`, `datasets.active`,
+  `suggestions.active`, plus the rest of that migration's columns/indexes —
+  and any query assuming them crashed. `sio trend`'s
+  `JOIN pattern_errors pe ON pe.pattern_id = p.id AND pe.active = 1` was the
+  one that surfaced it: `sqlite3.OperationalError: no such column: pe.active`
+  on a completely fresh database.
+- **Fix: the migration now lives in the package**, as
+  `sio.core.db.migrate_004.migrate_004()` — always importable, regardless of
+  install layout or cwd. `scripts/migrate_004.py` is kept as a thin shim
+  (`from sio.core.db.migrate_004 import main, migrate, migrate_004`) so
+  `python -m scripts.migrate_004 <db_path>` still works as a repo-local CLI
+  entry point, and the existing `tests/unit/db/test_migration_004.py` (which
+  loads that file directly by path) is unaffected.
+- **The failure mode is no longer silent — for this step.** Step 3
+  (`migrate_004`) now matches step 3c (`migrate_006_agent_isolation`): it
+  logs at **WARNING**, not DEBUG, and still doesn't raise —
+  `ensure_canonical_db_ready()` has several unwrapped callers (e.g. `sio
+  experiment start`), and `init_db()` already leaves a usable base schema,
+  so a hard failure here would be worse than a loud warning. Steps 3b
+  (`migrate_005_experiments`) and 4 (`migrate_split_brain`, which has the
+  same `scripts.*` install-layout dependency this fix removes from step 3)
+  are unchanged by this PR and still log at DEBUG — out of scope here, left
+  as a known follow-up rather than folded into this fix.
+- Covered by `tests/unit/db/test_migration_004_packaging.py`: bootstrap no
+  longer references `scripts.migrate_004`; the package migration works even
+  when `scripts` is made unimportable (simulating a real installed wheel); a
+  genuine migration failure is logged at WARNING and does not raise; and
+  `sio trend` no longer crashes on a database bootstrapped from scratch.
+
 ### Fixed — follow-ups to the agent-isolation work (#44)
 
 - **Migration 006 no longer merges session ids on a bare substring.** The
