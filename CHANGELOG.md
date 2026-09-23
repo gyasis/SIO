@@ -28,6 +28,11 @@ GitHub release pages (with full asset downloads) live at
   rule on DBs it has not yet migrated. Rows already stored are not rewritten.
   Trade-off: two errors that genuinely differ only past character 2000 in the
   same session at the same timestamp collapse to one.
+- **`sio mine --session` summary pluralises like the bulk line.** It printed
+  `1 events -> 1 errors`; #45 added `_plural` for the bulk line only. Now
+  `Adapter-mined <id>: 1 event -> 1 error (1 new, 0 already present).` via
+  `_session_summary`, the same shape as `_bulk_summary` (the `Skipped … (N
+  events)` line too).
 
 ### Added — one real SIO-home pointer (`sio.core.paths`), `wuphf` as a KNOWN_AGENT
 

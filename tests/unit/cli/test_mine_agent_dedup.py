@@ -192,6 +192,49 @@ EMPTY_ISERROR = _entry(
 )
 
 
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        (
+            (CANONICAL, 0, 0, 0, 0),
+            f"Adapter-mined {CANONICAL}: 0 events -> 0 errors (0 new, 0 already present).",
+        ),
+        (
+            (CANONICAL, 1, 1, 1, 0),
+            f"Adapter-mined {CANONICAL}: 1 event -> 1 error (1 new, 0 already present).",
+        ),
+        (
+            (CANONICAL, 9, 1, 0, 1),
+            f"Adapter-mined {CANONICAL}: 9 events -> 1 error (0 new, 1 already present).",
+        ),
+        (
+            (CANONICAL, 12, 3, 1, 2),
+            f"Adapter-mined {CANONICAL}: 12 events -> 3 errors (1 new, 2 already present).",
+        ),
+    ],
+)
+def test_session_summary_matches_the_bulk_line_shape(args, expected):
+    """The --session line pluralises like the bulk line (#45 added `_plural`
+    for the bulk line only; the --session line printed `1 errors`)."""
+    from sio.cli.main import _session_summary
+
+    assert _session_summary(*args) == expected
+
+
+def test_session_mine_prints_the_singular_correctly(pi_env):
+    from sio.cli.main import cli
+    from tests.unit.adapters.test_pi_adapter import ASSISTANT_CALL, HEADER, TOOL_OK, USER_MSG
+
+    _write_session(
+        pi_env["session"], [HEADER, USER_MSG, ASSISTANT_CALL, TOOL_OK, EMPTY_ISERROR]
+    )
+    r = CliRunner().invoke(cli, ["mine", "--session", f"pi:{SESSION_UUID[:8]}"])
+    assert r.exit_code == 0, r.output
+    assert f"Adapter-mined {CANONICAL}: 8 events -> 1 error (1 new, 0 already present)." in r.output
+    again = CliRunner().invoke(cli, ["mine", "--session", f"pi:{SESSION_UUID[:8]}"])
+    assert f"Skipped {CANONICAL}: unchanged since last mine (8 events)" in again.output
+
+
 def _fingerprints(db: Path) -> set[tuple]:
     conn = sqlite3.connect(str(db))
     try:
@@ -355,7 +398,7 @@ def test_long_error_mined_both_ways_is_one_row_with_the_full_text(pi_env, first)
         fh.write(json.dumps(ASSISTANT_TEXT) + "\n")
     r2 = runner.invoke(cli, cmds[order[1]])
     assert r2.exit_code == 0, r2.output
-    assert "(0 new, 1 already present)" in r2.output
+    assert "-> 1 error (0 new, 1 already present)." in r2.output
     rows = _errors(pi_env["db"])
     assert len(rows) == 1, rows
     assert rows[0][5] == LONG_TEXT, "the full read wins whichever path ran first"
