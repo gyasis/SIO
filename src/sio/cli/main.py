@@ -66,7 +66,7 @@ def cli():
 @click.option(
     "--harness",
     default=None,
-    help="Target harness (claude-code, pi, cursor, windsurf, opencode). "
+    help="Target harness (claude-code, pi, codex, opencode, cursor, windsurf). "
     "If omitted, auto-detects every harness installed on this system.",
 )
 @click.option(
@@ -123,6 +123,8 @@ def init(
         sio init --uninstall        # remove SIO-managed files
         sio init --harness claude-code --force
         sio init --harness pi       # skills only (pi has no rules dir / hooks)
+        sio init --harness codex    # skills only → $CODEX_HOME/skills (~/.codex)
+        sio init --harness opencode # skills only → ~/.config/opencode/skills
     """
     from rich.console import Console
     from rich.table import Table
@@ -233,7 +235,7 @@ def init(
                 f"[yellow]No supported harnesses detected.[/yellow] Known: {known}\n"
                 f"To force-install for a specific harness even if its config "
                 f"dir doesn't exist yet:\n"
-                f"  sio init --harness claude-code   # or: --harness pi"
+                f"  sio init --harness claude-code   # or: --harness pi | codex | opencode"
             )
             raise SystemExit(1)
 
@@ -332,8 +334,8 @@ def init(
     if not status and not dry_run and not uninstall and any_creates:
         console.print(
             "\n[bold yellow]→ Restart your AI coding agent[/bold yellow] "
-            "for newly-staged skills to appear (Claude Code and pi only read "
-            "the skills dir at startup)."
+            "for newly-staged skills to appear (Claude Code, pi, codex and "
+            "opencode read the skills dir at startup)."
         )
         console.print(
             "  [dim]Also: open ~/.sio/config.toml and uncomment one [llm] "
