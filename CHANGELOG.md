@@ -33,6 +33,13 @@ GitHub release pages (with full asset downloads) live at
   `Adapter-mined <id>: 1 event -> 1 error (1 new, 0 already present).` via
   `_session_summary`, the same shape as `_bulk_summary` (the `Skipped … (N
   events)` line too).
+- **Documented, not built: the other search parsers drop empty-content
+  events.** codex / goose / opencode / gemini / kimi (and promptchain) gate on
+  `_matches`, which never matches an empty text; only `pi` carries a
+  harness-failure flag that justifies keeping an empty event (#45). No live gap
+  exists, so the pi machinery is not generalised — the `_matches` docstring
+  and a pointer comment at each drop site say it is deliberate and what has
+  to change when another parser starts flagging failures.
 
 ### Added — one real SIO-home pointer (`sio.core.paths`), `wuphf` as a KNOWN_AGENT
 

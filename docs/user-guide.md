@@ -497,6 +497,16 @@ built on their respective on-disk stores:
 Pass `--agent all` to fan out across every harness in one call. Use `--list-agents` to see
 which harnesses have on-disk history on this machine.
 
+**Empty-content events are dropped, on purpose.** Every parser gates on `_matches`, which
+never matches an empty text — so an event with no content is neither a search hit nor,
+through `sio mine --agent` (which reads through these same parsers), a mined event. The one
+exception is `pi`: its parser keeps an event the harness itself flagged as a failure
+(`isError`, a non-zero `!cmd` exit) even with empty content, because the flag is the signal
+and `mine --session` files it too. No other harness carries such a flag today, so nothing is
+lost there; when one does, its parser gets the same treatment (see the `_matches` docstring
+in `sio/search/cli.py` for the exact steps) rather than a general mechanism built ahead of
+a need.
+
 **Examples:**
 
 ```bash
