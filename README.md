@@ -108,7 +108,9 @@ The v004 remediation hardened every stage of the pipeline:
     opencode, gemini, aider, promptchain, kimi, pi. `sio search --list-agents`
     shows which have data on this machine.
   - **Installing into** a harness (`sio init` — skills, rules, hook telemetry):
-    Claude Code only. Cursor and OpenCode error out (PRs welcome).
+    Claude Code (all three), and pi / codex / opencode (skills only — each
+    reports the asset types it has no home for). Cursor and Windsurf error
+    out (PRs welcome).
 
 ### Install
 
@@ -197,10 +199,16 @@ sio init --uninstall
 # Force a specific harness even if the auto-detect missed it
 sio init --harness claude-code
 sio init --harness pi           # pi coding agent → ~/.pi/agent/skills/sio-*/
+sio init --harness codex        # Codex CLI → $CODEX_HOME/skills/sio-*/ (~/.codex)
+sio init --harness opencode     # opencode → ~/.config/opencode/skills/sio-*/
 ```
 
-Supported install targets: `claude-code` (skills + rules + hook telemetry)
-and `pi` (skills only). `cursor` / `windsurf` / `opencode` are stubs.
+Supported install targets: `claude-code` (skills + rules + hook telemetry),
+and `pi`, `codex`, `opencode` (skills only — none has a rules dir SIO may
+write to, and their hook/plugin systems do not take Claude Code's telemetry
+hooks; the install output names what was not installed and why).
+`cursor` / `windsurf` are stubs. The per-harness capability matrix is in
+[docs/getting-started.md](docs/getting-started.md#pi-earendil-workspi-coding-agent).
 
 After `sio init`, your tree should look like:
 
@@ -219,6 +227,12 @@ After `sio init`, your tree should look like:
 ~/.pi/agent/           (only with `--harness pi`, or when pi is auto-detected)
   skills/sio-*/        ← the same skill folders, validated against pi's loader
   .sio-managed.json    ← separate manifest; pi skills you added yourself stay untouched
+~/.codex/              (only with `--harness codex`, or when ~/.codex exists; $CODEX_HOME)
+  skills/sio-*/        ← the same skill folders; your other codex skills stay untouched
+  .sio-managed.json
+~/.config/opencode/    (only with `--harness opencode`, or when it exists; $XDG_CONFIG_HOME)
+  skills/sio-*/        ← the same skill folders; opencode.json is never touched
+  .sio-managed.json
 ```
 
 ### Upgrade
@@ -611,7 +625,7 @@ SIO is the **data and intelligence layer** — it does not enforce behavior at r
 
 **SIO teaches; the agent harness learns.** SIO never blocks or intercepts the agent at runtime. It writes better instructions, and the agent follows them next session. Velocity tracking closes the loop by measuring whether the rules actually reduced errors.
 
-This separation means SIO works with any agent harness that reads configuration files — Claude Code and pi today, Cursor/Gemini CLI/others tomorrow.
+This separation means SIO works with any agent harness that reads configuration files — Claude Code, pi, codex and opencode today, Cursor/Gemini CLI/others tomorrow.
 
 ---
 

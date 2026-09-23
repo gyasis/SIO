@@ -84,6 +84,71 @@ never modified or removed, even if they share a name with an SIO skill
 (`--force` is the only override, and it backs the file up first). Restart pi
 after installing; it reads the skills dir at startup.
 
+### codex (`@openai/codex`, Codex CLI)
+
+`sio init` auto-detects codex when `~/.codex/` exists (or the directory named
+by `CODEX_HOME`, which the codex binary itself resolves); force it with
+`--harness codex`:
+
+```bash
+sio init --harness codex              # → $CODEX_HOME/skills/sio-*/SKILL.md
+sio init --harness codex --dry-run    # preview; lists every codex skill SIO will NOT touch
+sio init --harness codex --status
+sio init --harness codex --uninstall  # removes only what the manifest tracks
+```
+
+What codex takes, and what it deliberately does not — established against
+codex-cli 0.154.0 by driving its own loader (`codex app-server` →
+`skills/list`) with a temporary `CODEX_HOME`:
+
+| Bundled asset | On codex |
+|---|---|
+| Skills (`skills/<name>/SKILL.md` + siblings) | Installed into `$CODEX_HOME/skills/`. codex requires YAML frontmatter and a non-empty `description` (its loader reports `missing field description` / `missing YAML frontmatter` and drops the skill); `name` is optional and unconstrained. A `SKILL.md` is transformed only if it would be dropped, and the transform is listed in the install output. |
+| Tool rules (`rules/tools/*.md`) | **Not installed** — codex's `rules/` dir holds execpolicy `.rules` command-approval files, not markdown; standing context is your own `AGENTS.md`, which SIO never edits. Reported as unsupported. |
+| Hook telemetry | **Not registered** — codex has a hooks system (`hooks/hooks.json`, feature `hooks`), but SIO's telemetry hooks parse Claude Code's payload. Ingest codex sessions with `sio mine --agent codex` / `sio search --agent codex` instead. |
+
+Other things in `~/.codex` that SIO never touches: `config.toml`, `auth.json`,
+`skills/.system/` (codex's own bundled skills), and every skill SIO did not
+install — the dry run names them, symlinked ones marked `(symlink)`.
+
+### opencode (`opencode-ai`)
+
+`sio init` auto-detects opencode when `~/.config/opencode/` exists (or
+`$XDG_CONFIG_HOME/opencode`); force it with `--harness opencode`:
+
+```bash
+sio init --harness opencode              # → ~/.config/opencode/skills/sio-*/SKILL.md
+sio init --harness opencode --dry-run
+sio init --harness opencode --status
+sio init --harness opencode --uninstall
+```
+
+What opencode takes, and what it deliberately does not — established against
+opencode 1.18.4 from the `customize-opencode` skill compiled into its binary
+and by running `opencode debug skill` against a temporary HOME:
+
+| Bundled asset | On opencode |
+|---|---|
+| Skills (`skills/<name>/SKILL.md` + siblings) | Installed into `~/.config/opencode/skills/` (opencode also reads `skill/`). Its loader enforces no name pattern or description length; a skill without a `description` is never surfaced to the model, so that is the one thing conformed (listed in the install output if it happens). |
+| Tool rules (`rules/tools/*.md`) | **Not installed** — opencode has no rules dir; standing context is your own `AGENTS.md` or the `instructions` key in `opencode.json`, neither of which SIO edits. Reported as unsupported. |
+| Hook telemetry | **Not registered** — opencode has plugins (`plugin/*.ts`), not a hooks system. Ingest with `sio mine --agent opencode` / `sio search --agent opencode`. |
+
+Two opencode-specific facts the adapter reflects:
+
+- **opencode already scans `~/.claude/skills/`** ("external skills"), so on a
+  machine with a Claude Code install of SIO the skills are visible to it before
+  `sio init --harness opencode` runs. The install output says so. The global
+  copy is still worth having: on a name clash the global dir wins, and it stays
+  available with `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1` or on a machine
+  without Claude Code.
+- **`OPENCODE_CONFIG_DIR` is not a relocation.** It adds a second config root
+  opencode also scans; `opencode debug paths` keeps `config` at the XDG dir. The
+  adapter therefore installs into the XDG dir and honours `XDG_CONFIG_HOME`
+  only.
+
+`opencode.json` is never touched. Restart opencode after installing; config
+and skills are loaded once at startup.
+
 ## First Run
 
 ### 1. Mine your recent sessions
