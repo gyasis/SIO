@@ -9,6 +9,26 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
+### Fixed — agent isolation follow-ups (open items from #44 / #45)
+
+- **One error, one row, however long its text.** The two mining paths carried
+  different text for the same error: the search parsers behind
+  `sio mine --agent` cap every event's content at 2000 characters, the
+  adapters behind `sio mine --session` do not, and the UNIQUE fingerprint
+  compared `error_text` exactly — so an error longer than 2000 characters
+  mined both ways yielded TWO rows (observed in the live DB: two pi
+  `tool_failure` pairs, 2000 vs 4517 / 2825 chars, same session, timestamp and
+  tool). The identity is now the fingerprint with `error_text` compared on its
+  first 2000 characters (`ERROR_TEXT_FINGERPRINT_CHARS`, pinned to the parsers'
+  cap by a test): `insert_error_record` looks it up before inserting, reports
+  "already present", and upgrades the stored text in place when the incoming
+  text is a longer read of it — the full text is kept and wins whichever path
+  ran first. The exact UNIQUE index is unchanged (no migration; the live DB
+  keeps working untouched), and migration 006's dedupe uses the same prefix
+  rule on DBs it has not yet migrated. Rows already stored are not rewritten.
+  Trade-off: two errors that genuinely differ only past character 2000 in the
+  same session at the same timestamp collapse to one.
+
 ### Added — one real SIO-home pointer (`sio.core.paths`), `wuphf` as a KNOWN_AGENT
 
 - **`sio.core.paths.sio_home()` / `db_path()`** are now the single source of

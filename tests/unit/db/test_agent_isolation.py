@@ -369,6 +369,40 @@ class TestIsPartialOf:
         assert _q(legacy_db, "SELECT COUNT(*) FROM schema_version WHERE version=6") == [(1,)]
         assert _q(legacy_db, "SELECT COUNT(*) FROM error_records") == [(6,)]
 
+    def test_dedupe_collapses_rows_that_differ_only_past_the_text_prefix(self, tmp_path: Path):
+        """The live-DB shape behind the parity fix: the same pi error stored
+        once at the parsers' 2000-char cap (bulk) and once in full (--session).
+        Migration 006 treats them as one; the lowest id survives and the
+        pattern link on the duplicate is remapped to it."""
+        n = ag.ERROR_TEXT_FINGERPRINT_CHARS
+        full = "e" * (n + 2517)
+        db = tmp_path / "sio.db"
+        conn = sqlite3.connect(str(db))
+        conn.executescript(_LEGACY_DDL)
+        conn.executemany(
+            _ER_INSERT,
+            [
+                (PI_FULL, "t1", "bash", full[:n], "tool_failure"),  # id 1, bulk-shaped
+                (PI_FULL, "t1", "bash", full, "tool_failure"),  # id 2, --session-shaped
+                (PI_FULL, "t1", "bash", "b" * n + "different tail", "tool_failure"),  # id 3
+            ],
+        )
+        conn.execute(
+            "INSERT INTO patterns (id, pattern_id, description, error_count, session_count, "
+            "first_seen, last_seen) VALUES (1, 'p', 'd', 1, 1, 't', 't')"
+        )
+        conn.execute("INSERT INTO pattern_errors VALUES (1, 2)")
+        conn.commit()
+        conn.close()
+
+        report = ag.migrate_006_agent_isolation(db)
+        assert report["duplicates_removed"] == {"pi": 1}
+        assert _q(db, "SELECT id, length(error_text) FROM error_records ORDER BY id") == [
+            (1, n),
+            (3, n + len("different tail")),
+        ]
+        assert _q(db, "SELECT error_id FROM pattern_errors") == [(1,)]
+
     def test_migration_on_memory_db_skips_backup(self):
         report = ag.migrate_006_agent_isolation(":memory:")
         assert report["status"] == "applied" and report["backup"] is None
@@ -431,6 +465,84 @@ class TestWriteSeam:
         )
         assert tmp_db.execute("SELECT agent FROM error_records").fetchone()[0] == "kimi"
         assert tmp_db.execute("SELECT agent FROM processed_sessions").fetchone()[0] == "claude"
+
+    # -- long error text: identity is the first ERROR_TEXT_FINGERPRINT_CHARS --
+
+    def test_long_text_truncated_then_full_is_one_row_upgraded(self, tmp_db):
+        """Bulk path first (text capped at the parsers' 2000), then --session
+        with the full read: ONE row, and it now holds the full text."""
+        n = ag.ERROR_TEXT_FINGERPRINT_CHARS
+        full = "x" * (n + 517)
+        assert insert_error_record(tmp_db, _rec("pi:abc", error_text=full[:n])) is not None
+        assert insert_error_record(tmp_db, _rec("pi:abc", error_text=full)) is None
+        rows = tmp_db.execute("SELECT error_text FROM error_records").fetchall()
+        assert [len(r[0]) for r in rows] == [n + 517]
+
+    def test_long_text_full_then_truncated_is_one_row_kept_full(self, tmp_db):
+        n = ag.ERROR_TEXT_FINGERPRINT_CHARS
+        full = "y" * (n + 1)
+        assert insert_error_record(tmp_db, _rec("pi:abc", error_text=full)) is not None
+        assert insert_error_record(tmp_db, _rec("pi:abc", error_text=full[:n])) is None
+        rows = tmp_db.execute("SELECT error_text FROM error_records").fetchall()
+        assert [len(r[0]) for r in rows] == [n + 1]
+
+    def test_short_text_stays_exact(self, tmp_db):
+        """Regression: below the prefix length nothing changes — a different
+        short text is a different error, an identical one is a duplicate."""
+        assert insert_error_record(tmp_db, _rec("pi:abc", error_text="exit 1")) is not None
+        assert insert_error_record(tmp_db, _rec("pi:abc", error_text="exit 1")) is None
+        assert insert_error_record(tmp_db, _rec("pi:abc", error_text="exit 12")) is not None
+        assert tmp_db.execute("SELECT COUNT(*) FROM error_records").fetchone()[0] == 2
+
+    def test_long_texts_differing_inside_the_prefix_are_two_rows(self, tmp_db):
+        n = ag.ERROR_TEXT_FINGERPRINT_CHARS
+        a = "a" * (n + 10)
+        b = "a" * (n - 1) + "B" + "a" * 10  # differs at char n (inside the prefix)
+        assert insert_error_record(tmp_db, _rec("pi:abc", error_text=a)) is not None
+        assert insert_error_record(tmp_db, _rec("pi:abc", error_text=b)) is not None
+        assert tmp_db.execute("SELECT COUNT(*) FROM error_records").fetchone()[0] == 2
+
+    def test_upgrade_never_raises_against_a_pre_rule_exact_twin(self, tmp_db):
+        """A DB that already holds BOTH the truncated and the full row (stored
+        before this rule) must keep working: the upgrade of the short one
+        would collide with the exact UNIQUE index, so it is ignored."""
+        n = ag.ERROR_TEXT_FINGERPRINT_CHARS
+        full = "z" * (n + 5)
+        tmp_db.executemany(
+            "INSERT INTO error_records (session_id, timestamp, source_type, source_file, "
+            "tool_name, error_text, error_type, mined_at) VALUES (?, ?, 'x', 'f', 'bash', ?, "
+            "'tool_failure', 'm')",
+            [("pi:abc", "t", full[:n]), ("pi:abc", "t", full)],
+        )
+        assert insert_error_record(tmp_db, _rec("pi:abc", timestamp="t", error_text=full)) is None
+        rows = tmp_db.execute("SELECT error_text FROM error_records ORDER BY id").fetchall()
+        assert [len(r[0]) for r in rows] == [n, n + 5]  # untouched, no IntegrityError
+
+    def test_fingerprint_prefix_matches_the_search_parsers_content_cap(self, tmp_path, monkeypatch):
+        """The parity holds only while the parsers cap content at the same
+        length the fingerprint compares — pin the two together."""
+        from sio.search import cli as search_cli
+        from tests.unit.adapters.test_pi_adapter import (
+            HEADER,
+            STEM,
+            _entry,
+            _session_dir,
+            _write_session,
+        )
+
+        monkeypatch.setattr(search_cli, "HOME", tmp_path)
+        long_err = _entry(
+            "message", "e1", None, "2026-09-15T08:01:06.000Z",
+            message={
+                "role": "toolResult", "toolCallId": "c", "toolName": "bash",
+                "content": [{"type": "text", "text": "q" * 9000}], "isError": True,
+            },
+        )
+        _write_session(_session_dir(tmp_path) / f"{STEM}.jsonl", [HEADER, long_err])
+        recs = [r for r in search_cli.search_pi("", False, None) if r.role == "tool"]
+        assert len(recs) == 1
+        assert len(recs[0].content) == ag.ERROR_TEXT_FINGERPRINT_CHARS
+        assert len(recs[0].metadata["error"]) == ag.ERROR_TEXT_FINGERPRINT_CHARS
 
 
 class TestViewsAndQueries:

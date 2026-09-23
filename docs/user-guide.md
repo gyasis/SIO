@@ -692,14 +692,26 @@ sqlite3 ~/.sio/sio.db 'SELECT error_type, tool_name, substr(error_text,1,60) FRO
 sio errors --agent pi          # the same rows through the CLI
 ```
 
-**No duplicate mining.** `error_records` carries a UNIQUE fingerprint
-(`session_id, timestamp, error_type, tool_name, error_text`, NULL-safe), inserts are
-`INSERT OR IGNORE`, and non-claude sessions are recorded in `processed_sessions` under their
-canonical id with a signature (event count + last timestamp). Re-mining an unchanged session
-is a skip; a session that grew is re-read and only its new errors land. `sio mine` prints
-`N new, M already present` so a run that captured nothing new is never mistaken for a window
-with nothing in it. `mine --session pi:<partial>` and `mine --agent pi` file the same session
-under the same full id (`pi:<file stem>`).
+**No duplicate mining.** An error's identity is the fingerprint
+`session_id, timestamp, error_type, tool_name, error_text` (NULL-safe), with `error_text`
+compared on its **first 2000 characters** (`ERROR_TEXT_FINGERPRINT_CHARS`). That prefix is
+the cap the search parsers behind `mine --agent` put on every event's content; the adapters
+behind `mine --session` read the whole text. So an error longer than 2000 characters read
+truncated one way and whole the other is still ONE row — the write seam
+(`insert_error_record`) looks the fingerprint up before inserting, returns "already present",
+and when the incoming text is a longer read of the stored one it upgrades the stored text in
+place, so the full text wins whichever path ran first. Two errors that genuinely differ only
+past character 2000 (same session, same timestamp, same tool) are treated as one; that is the
+trade-off for storing the full text without a schema change. Underneath, the exact UNIQUE
+index (`ux_error_records_fingerprint`) is unchanged and remains the hard guard
+(`INSERT OR IGNORE`). Rows stored before this rule are left as they are — a DB that already
+holds a truncated/full pair keeps both; migration 006's dedupe applies the prefix rule, but
+only on a DB it has not yet migrated. Non-claude sessions are recorded in
+`processed_sessions` under their canonical id with a signature (event count + last
+timestamp). Re-mining an unchanged session is a skip; a session that grew is re-read and only
+its new errors land. `sio mine` prints `N new, M already present` so a run that captured
+nothing new is never mistaken for a window with nothing in it. `mine --session pi:<partial>`
+and `mine --agent pi` file the same session under the same full id (`pi:<file stem>`).
 
 ### Migration 006 (`agent` column) — what `sio init` / `sio db migrate` do
 

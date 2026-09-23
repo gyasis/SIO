@@ -97,6 +97,28 @@ ERROR_FINGERPRINT_INDEX_SQL = (
     f"ON error_records({', '.join(ERROR_FINGERPRINT_COLS)})"
 )
 
+#: How many leading characters of ``error_text`` take part in the dedupe
+#: identity. The two mining paths disagree on the text they carry: the search
+#: parsers behind ``sio mine --agent`` cap every event's content at 2000
+#: characters (``sio.search.cli``, ``content=text[:2000]``), the adapters
+#: behind ``--session`` do not — so one error longer than that mined both ways
+#: produced two rows that differ only past character 2000 (observed live: pi
+#: rows of 2000 vs 4517 chars, same session / timestamp / tool). Fingerprinting
+#: on this prefix makes the two paths agree while the FULL text is still stored
+#: (``--session`` keeps what it read; a bulk row is upgraded in place when a
+#: longer read of the same error arrives — :func:`sio.core.db.queries.insert_error_record`).
+#: Must never exceed the parsers' cap or the parity is lost again.
+ERROR_TEXT_FINGERPRINT_CHARS = 2000
+
+#: The fingerprint as MATCHED: the UNIQUE index above stays exact (it is a
+#: hard guard, and rewriting it would force a migration on every existing DB);
+#: the logical identity — used by the write seam's pre-check and the migration's
+#: dedupe — compares only the first :data:`ERROR_TEXT_FINGERPRINT_CHARS` of
+#: ``error_text``. Two rows that differ only beyond that prefix are ONE error.
+ERROR_FINGERPRINT_MATCH_COLS = ERROR_FINGERPRINT_COLS[:-1] + (
+    f"substr(error_text, 1, {ERROR_TEXT_FINGERPRINT_CHARS})",
+)
+
 _IDENT_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
@@ -455,12 +477,14 @@ def _remap_dependents(conn: sqlite3.Connection, keep: int, dup: int) -> None:
 
 
 def _dedupe_error_records(conn: sqlite3.Connection) -> dict[str, int]:
-    """Delete exact duplicates (same fingerprint), keeping the lowest id.
+    """Delete duplicates (same :data:`ERROR_FINGERPRINT_MATCH_COLS` — i.e. the
+    same error text up to the first :data:`ERROR_TEXT_FINGERPRINT_CHARS`
+    characters), keeping the lowest id.
 
     Referencing rows are remapped to the survivor first. Returns rows removed
     per agent.
     """
-    fp = ", ".join(ERROR_FINGERPRINT_COLS)
+    fp = ", ".join(ERROR_FINGERPRINT_MATCH_COLS)
     groups = conn.execute(
         f"SELECT MIN(id), GROUP_CONCAT(id), agent FROM error_records "  # noqa: S608
         f"GROUP BY {fp} HAVING COUNT(*) > 1"
