@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
 # SIO Skills Installer
-# Copies SIO skills to ~/.claude/skills/ (Claude Code) and, when pi is set up,
-# to ~/.pi/agent/skills/ (pi coding agent) for slash command access.
+# Copies SIO skills to ~/.claude/skills/ (Claude Code) and, for each of pi,
+# codex and opencode that is set up on this machine, into that harness's own
+# user skills dir, for slash command access.
 # Run after `pip install -e .` or `pip install sio`
 #
-# This is the plain-copy fallback. `sio init` (or `sio init --harness pi`) is
-# the manifest-tracked path: drift detection, backups, clean uninstall.
+# This is the plain-copy fallback. `sio init` (or `sio init --harness <name>`)
+# is the manifest-tracked path: drift detection, backups, clean uninstall.
 # =============================================================================
 set -euo pipefail
 
@@ -60,6 +61,43 @@ if [[ -d "$PI_AGENT_DIR" ]]; then
         pi_installed=$((pi_installed + 1))
     done
     echo "Installed ${pi_installed} skills for pi (restart pi to pick them up)."
+fi
+
+# Same plain copy for a harness whose user skills live at <dir>/skills/<name>/
+# SKILL.md. Only SIO's own skill names are written; symlinked entries are
+# never followed. Usage: copy_skills_into <harness> <skills-dst>
+copy_skills_into() {
+    local harness="$1" dst="$2" n=0 skill_dir skill_name dest
+    echo ""
+    echo "${harness} detected — installing SIO skills to ${dst}..."
+    for skill_dir in "$SKILLS_SRC"/*/; do
+        skill_name=$(basename "$skill_dir")
+        dest="${dst}/${skill_name}"
+        if [[ -L "$dest" || -L "$dest/SKILL.md" ]]; then
+            echo "  - ${skill_name} (symlink not managed by SIO — left alone)"
+            continue
+        fi
+        mkdir -p "$dest"
+        cp -R "${skill_dir}." "$dest/"
+        echo "  ✓ ${skill_name}"
+        n=$((n + 1))
+    done
+    echo "Installed ${n} skills for ${harness} (restart ${harness} to pick them up)."
+}
+
+# codex reads user skills from $CODEX_HOME/skills/<name>/SKILL.md, where
+# CODEX_HOME defaults to ~/.codex (the binary resolves the env var itself).
+CODEX_DIR="${CODEX_HOME:-${HOME}/.codex}"
+if [[ -d "$CODEX_DIR" ]]; then
+    copy_skills_into codex "${CODEX_DIR}/skills"
+fi
+
+# opencode reads global skills from $XDG_CONFIG_HOME/opencode/skills/<name>/
+# SKILL.md (default ~/.config/opencode). OPENCODE_CONFIG_DIR is an extra
+# scanned root, not a relocation, so it is deliberately not consulted here.
+OPENCODE_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/opencode"
+if [[ -d "$OPENCODE_DIR" ]]; then
+    copy_skills_into opencode "${OPENCODE_DIR}/skills"
 fi
 echo ""
 echo "Available slash commands:"
