@@ -403,6 +403,116 @@ class TestIsPartialOf:
         ]
         assert _q(db, "SELECT error_id FROM pattern_errors") == [(1,)]
 
+    def test_migration_survives_a_concurrent_writer(self, legacy_db: Path, monkeypatch):
+        """A hook-style writer keeps inserting legacy-shaped rows (no ``agent``
+        column, plain INSERT, 30 s busy timeout — what a live Claude Code hook
+        from an older checkout does) into error_records AND flow_events while
+        migration 006 runs on the same file.
+
+        Must hold: the migration applies; not one writer row is lost; every
+        row ends with a non-empty ``agent`` that matches its session id (the
+        rows that landed before the lock are backfilled, the ones that landed
+        after it are stamped by the AFTER INSERT trigger); and the writer was
+        really made to WAIT on the lock — a hold is injected inside the
+        transaction and at least one insert is shown to have spanned it.
+        """
+        import time as _time
+
+        # enough rows that the transaction has real work in it
+        conn = sqlite3.connect(str(legacy_db))
+        conn.executemany(
+            _ER_INSERT,
+            [(f"claude:bulk-{i % 200}", f"2026-01-01T00:00:{i:05d}", "Bash", f"e{i}", "tool_failure")
+             for i in range(5000)],
+        )
+        conn.commit()
+        conn.close()
+
+        # inject a 0.4 s hold INSIDE the migration's BEGIN IMMEDIATE (step 4)
+        hold = {"start": None, "seconds": 0.4}
+        real_dedupe = ag._dedupe_error_records
+
+        def slow_dedupe(c):
+            hold["start"] = _time.monotonic()
+            _time.sleep(hold["seconds"])
+            return real_dedupe(c)
+
+        monkeypatch.setattr(ag, "_dedupe_error_records", slow_dedupe)
+
+        stop = threading.Event()
+        inserts: list[tuple[float, float, str]] = []  # (start, end, session_id)
+        writer_errors: list[BaseException] = []
+        er_sql = (
+            "INSERT INTO error_records (session_id, timestamp, source_type, source_file, "
+            "tool_name, error_text, error_type, mined_at) "
+            "VALUES (?, ?, 'jsonl', 'writer', 'Bash', ?, 'tool_failure', 'm')"
+        )
+        fe_sql = (
+            "INSERT INTO flow_events (session_id, flow_hash, sequence, ngram_size, timestamp, "
+            "mined_at, source_file) VALUES (?, 'h', 'a -> b', 2, ?, 'm', 'writer')"
+        )
+
+        def writer():
+            c = sqlite3.connect(str(legacy_db), timeout=30.0)
+            c.execute("PRAGMA busy_timeout=30000")
+            i = 0
+            try:
+                while not stop.is_set():
+                    sid = f"pi:2026-09-20T00-00-00-000Z_{i:08d}-0000-0000-0000-000000000000"
+                    if i % 2:
+                        sid = f"claude:writer-{i}"
+                    t0 = _time.monotonic()
+                    c.execute(er_sql, (sid, f"2026-09-20T00:00:{i:05d}", f"w{i}"))
+                    c.execute(fe_sql, (sid, f"2026-09-20T00:00:{i:05d}"))
+                    c.commit()
+                    inserts.append((t0, _time.monotonic(), sid))
+                    i += 1
+                    _time.sleep(0.002)
+            except BaseException as exc:  # noqa: BLE001
+                writer_errors.append(exc)
+            finally:
+                c.close()
+
+        t = threading.Thread(target=writer)
+        t.start()
+        try:
+            deadline = _time.monotonic() + 5
+            while len(inserts) < 20 and _time.monotonic() < deadline:
+                _time.sleep(0.01)
+            assert len(inserts) >= 20, "writer never got going"
+            report = ag.migrate_006_agent_isolation(legacy_db)
+            _time.sleep(0.2)  # let some inserts land AFTER the migration
+        finally:
+            stop.set()
+            t.join(timeout=60)
+
+        assert not writer_errors, writer_errors
+        assert report["status"] == "applied"
+        assert hold["start"] is not None
+        hold_end = hold["start"] + hold["seconds"]
+
+        # the busy_timeout path was really taken: an insert started before the
+        # hold ended and finished after it, i.e. it waited on the lock
+        waited = [(s, e) for s, e, _ in inserts if s < hold_end <= e]
+        assert waited, "no insert spanned the held transaction — the race was trivial"
+        assert max(e - s for s, e in waited) >= 0.1
+        assert any(s > hold_end for s, _, _ in inserts), "nothing landed after the migration"
+
+        # no row lost, every row stamped correctly, whichever side of the lock it landed on
+        n_er = _q(legacy_db, "SELECT COUNT(*) FROM error_records WHERE source_file='writer'")[0][0]
+        n_fe = _q(legacy_db, "SELECT COUNT(*) FROM flow_events WHERE source_file='writer'")[0][0]
+        assert n_er == n_fe == len(inserts), (n_er, n_fe, len(inserts))
+        for table in ("error_records", "flow_events"):
+            bad = _q(
+                legacy_db,
+                f"SELECT COUNT(*) FROM {table} WHERE agent IS NULL OR agent = '' "  # noqa: S608
+                f"OR agent != {ag.agent_case_sql('session_id')}",
+            )[0][0]
+            assert bad == 0, f"{table}: {bad} rows with a missing/wrong agent"
+        assert _q(legacy_db, "SELECT COUNT(*) FROM schema_version WHERE version=6 AND status='applied'") == [(1,)]
+        # the seeded legacy content still migrated as usual (dedupe, merge, unknown prefix)
+        assert report["duplicates_removed"] == {"claude": 2, "pi": 2}
+
     def test_migration_on_memory_db_skips_backup(self):
         report = ag.migrate_006_agent_isolation(":memory:")
         assert report["status"] == "applied" and report["backup"] is None

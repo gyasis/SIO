@@ -57,6 +57,15 @@ GitHub release pages (with full asset downloads) live at
   drop report (and its dry run, which previews the same numbers and writes
   nothing) lists each affected pattern `errors N -> M  sessions N -> M` and
   flags the ones left empty.
+- **Migration 006 is now tested against a concurrent WRITER, not just a
+  concurrent migrator.** A hook-style thread inserts legacy-shaped rows (no
+  `agent` column, plain INSERT, 30 s busy timeout) into `error_records` and
+  `flow_events` while the migration runs on the same file, with a hold
+  injected inside the transaction so the writer is provably made to wait
+  (one insert measured spanning the held lock). The migration applies, no
+  writer row is lost, and every row — landed before the lock (backfilled) or
+  after it (stamped by the `AFTER INSERT` trigger) — ends with the correct
+  non-empty `agent`. No defect was found; the existing implementation holds.
 
 ### Added — one real SIO-home pointer (`sio.core.paths`), `wuphf` as a KNOWN_AGENT
 
