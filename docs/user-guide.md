@@ -766,6 +766,26 @@ sio db drop-agent claude --yes --including-claude   # claude is the bulk of the 
 | `--yes` / `-y` | off | execute; without it the command is a dry run |
 | `--including-claude` | off | required when `AGENT` is `claude` |
 
+**Patterns follow the drop.** A pattern is a cluster of `error_records` rows (the
+`pattern_errors` links), and its `error_count`, `session_count`, `first_seen` and `last_seen`
+are aggregates of that membership. Deleting an agent's errors removes their links, so every
+pattern that lost a member has those four recomputed from its surviving links in the same
+transaction (only `active` links where the 004 column exists — the membership `sio trend`
+reads). A pattern left with **no** members is kept, with `error_count = 0` and
+`session_count = 0` and its `first_seen` / `last_seen` left as they were: the command was
+asked to delete the agent's rows, not the cross-agent aggregates — nor the suggestions and
+datasets that reference a pattern by id. A zero-member pattern is visible in the report and
+in the table, drops out of any `min_count` filter, and can be deleted deliberately. The report
+lists each affected pattern:
+
+```
+  patterns recomputed: 2 lost members of this agent; 1 left with no errors (kept, error_count = 0)
+    tool_failure_5dcabb7fb2  errors 6 -> 5   sessions 4 -> 3
+    tool_failure_9c4f90b2bb  errors 3 -> 0   sessions 2 -> 0   <- no errors left; kept, delete it deliberately if unwanted
+```
+
+The dry run previews the same numbers (`patterns would recompute: …`) and writes nothing.
+
 Deletes the agent's rows from `error_records`, `flow_events`, `positive_records`,
 `session_metrics`, `processed_sessions` plus the `pattern_errors` / `experiment_runs` rows
 that reference them. It touches **only SIO's mined data**: the agent's own session files on

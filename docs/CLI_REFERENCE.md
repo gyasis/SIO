@@ -434,6 +434,11 @@ Options:
 partial-id merge, dedupe, UNIQUE fingerprint, per-agent views) after the `scripts/`
 migrations, backing the DB up first. See the user guide, "Multi-agent storage".
 
+`drop-agent` also recomputes `patterns.error_count` / `session_count` / `first_seen` /
+`last_seen` for every pattern that lost members, in the same transaction, and lists them in
+the report; a pattern left with no members is kept with `error_count = 0` (never deleted).
+The dry run previews the same numbers. See the user guide, "Patterns follow the drop".
+
 ### `sio dedupe`
 
 ```

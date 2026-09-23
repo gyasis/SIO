@@ -40,6 +40,23 @@ GitHub release pages (with full asset downloads) live at
   exists, so the pi machinery is not generalised — the `_matches` docstring
   and a pointer comment at each drop site say it is deliberate and what has
   to change when another parser starts flagging failures.
+- **`sio db drop-agent` no longer leaves `patterns.error_count` /
+  `session_count` counting deleted errors.** It deleted the agent's
+  `error_records` and their `pattern_errors` links but the pattern's
+  membership aggregates (`error_count`, `session_count`, `first_seen`,
+  `last_seen`) kept their old values, so a pattern could outlive every error
+  that formed it and still rank as if they were there. Now, in the same
+  transaction, every pattern that lost a member has those four recomputed
+  from its surviving links (active links only where the 004 `active` column
+  exists — the membership `sio trend` reads). A pattern left with no members
+  is **kept** with `error_count = 0` / `session_count = 0` and its
+  `first_seen` / `last_seen` untouched — drop-agent was asked to delete the
+  agent's rows, not the cross-agent aggregates (and the suggestions / datasets
+  that reference them by id) built on top; a zero-member pattern is visible,
+  hidden by `min_count` filters, and deleted deliberately if unwanted. The
+  drop report (and its dry run, which previews the same numbers and writes
+  nothing) lists each affected pattern `errors N -> M  sessions N -> M` and
+  flags the ones left empty.
 
 ### Added — one real SIO-home pointer (`sio.core.paths`), `wuphf` as a KNOWN_AGENT
 

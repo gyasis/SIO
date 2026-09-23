@@ -616,6 +616,114 @@ class TestDropAgent:
         with pytest.raises(ValueError, match="unknown agent"):
             ag.drop_agent(legacy_db, "nosuch")
 
+    # -- patterns.error_count / session_count follow the drop -----------------
+
+    @staticmethod
+    def _patterns_db(tmp_path: Path, *, active_column: bool) -> Path:
+        """Three patterns over pi + claude errors:
+        A: 2 pi errors only            -> loses everything
+        B: 1 pi + 2 claude (2 sessions) -> keeps the claude survivors
+        C: claude only                  -> not affected at all
+        """
+        db = tmp_path / "sio.db"
+        conn = sqlite3.connect(str(db))
+        conn.executescript(_LEGACY_DDL)
+        pi2 = "pi:2026-09-02T00-00-00-000Z_22222222-0000-0000-0000-000000000000"
+        conn.executemany(
+            _ER_INSERT,
+            [
+                (PI_FULL, "2026-09-15T10:00:00Z", "bash", "pi e1", "tool_failure"),  # 1
+                (pi2, "2026-09-16T10:00:00Z", "bash", "pi e2", "tool_failure"),  # 2
+                (PI_FULL, "2026-09-17T10:00:00Z", "read", "pi e3", "tool_failure"),  # 3
+                ("claude:s1", "2026-09-10T10:00:00Z", "Bash", "c e4", "tool_failure"),  # 4
+                ("claude:s2", "2026-09-12T10:00:00Z", "Bash", "c e5", "tool_failure"),  # 5
+                ("claude:s3", "2026-09-13T10:00:00Z", "Read", "c e6", "tool_failure"),  # 6
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO patterns (id, pattern_id, description, error_count, session_count, "
+            "first_seen, last_seen) VALUES (?, ?, 'd', ?, ?, ?, ?)",
+            [
+                (1, "A", 2, 2, "2026-09-15T10:00:00Z", "2026-09-16T10:00:00Z"),
+                (2, "B", 3, 3, "2026-09-10T10:00:00Z", "2026-09-17T10:00:00Z"),
+                (3, "C", 1, 1, "2026-09-13T10:00:00Z", "2026-09-13T10:00:00Z"),
+            ],
+        )
+        if active_column:
+            conn.execute("ALTER TABLE pattern_errors ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
+        conn.executemany(
+            "INSERT INTO pattern_errors (pattern_id, error_id) VALUES (?, ?)",
+            [(1, 1), (1, 2), (2, 3), (2, 4), (2, 5), (3, 6)],
+        )
+        conn.commit()
+        conn.close()
+        ag.migrate_006_agent_isolation(db)
+        return db
+
+    def test_dry_run_previews_the_recompute_and_writes_nothing(self, tmp_path: Path):
+        db = self._patterns_db(tmp_path, active_column=False)
+        before = _q(db, "SELECT id, error_count, session_count, first_seen, last_seen FROM patterns")
+        report = ag.drop_agent(db, "pi")
+        assert report["executed"] is False
+        assert [m["id"] for m in report["patterns"]["affected"]] == [1, 2]
+        assert report["patterns"]["zeroed"] == [1]
+        a, b = report["patterns"]["affected"]
+        assert (a["error_count"], a["session_count"]) == ((2, 0), (2, 0))
+        assert (b["error_count"], b["session_count"]) == ((3, 2), (3, 2))
+        assert _q(db, "SELECT id, error_count, session_count, first_seen, last_seen FROM patterns") == before
+        assert _q(db, "SELECT COUNT(*) FROM pattern_errors") == [(6,)]
+        text = ag.format_drop_report(report)
+        assert "patterns would recompute: 2 lost members" in text
+        assert "A                        errors 2 -> 0   sessions 2 -> 0   <- no errors left" in text
+        assert "B                        errors 3 -> 2   sessions 3 -> 2" in text
+        assert "C" not in text.split("patterns would recompute")[1]
+
+    def test_execute_recomputes_survivors_keeps_and_flags_the_orphan(self, tmp_path: Path):
+        db = self._patterns_db(tmp_path, active_column=False)
+        report = ag.drop_agent(db, "pi", execute=True)
+        assert report["executed"] is True
+        assert report["patterns"]["zeroed"] == [1]
+        rows = _q(db, "SELECT id, error_count, session_count, first_seen, last_seen FROM patterns ORDER BY id")
+        assert rows == [
+            # A: no members left -> KEPT, counts zeroed, first/last_seen untouched
+            (1, 0, 0, "2026-09-15T10:00:00Z", "2026-09-16T10:00:00Z"),
+            # B: the two claude survivors, first/last_seen now theirs
+            (2, 2, 2, "2026-09-10T10:00:00Z", "2026-09-12T10:00:00Z"),
+            # C: never touched
+            (3, 1, 1, "2026-09-13T10:00:00Z", "2026-09-13T10:00:00Z"),
+        ]
+        assert _q(db, "SELECT pattern_id, error_id FROM pattern_errors ORDER BY 1, 2") == [
+            (2, 4), (2, 5), (3, 6),
+        ]
+        text = ag.format_drop_report(report)
+        assert "patterns recomputed: 2 lost members of this agent; 1 left with no errors" in text
+        # the report's after-numbers are what the DB now holds
+        assert [m["error_count"][1] for m in report["patterns"]["affected"]] == [0, 2]
+
+    def test_recompute_counts_only_active_links_when_004_column_exists(self, tmp_path: Path):
+        db = self._patterns_db(tmp_path, active_column=True)
+        conn = sqlite3.connect(str(db))
+        # B's claude link to error 5 is from a superseded cycle
+        conn.execute("UPDATE pattern_errors SET active = 0 WHERE pattern_id = 2 AND error_id = 5")
+        conn.commit()
+        conn.close()
+        report = ag.drop_agent(db, "pi", execute=True)
+        b = next(m for m in report["patterns"]["affected"] if m["id"] == 2)
+        assert b["error_count"] == (3, 1) and b["session_count"] == (3, 1)
+        assert _q(db, "SELECT error_count, session_count, last_seen FROM patterns WHERE id = 2") == [
+            (1, 1, "2026-09-10T10:00:00Z")
+        ]
+
+    def test_no_patterns_table_is_fine(self, tmp_path: Path):
+        db = _seed_ids(tmp_path, [PI_FULL, "claude:x"])
+        conn = sqlite3.connect(str(db))
+        conn.executescript("DROP TABLE pattern_errors; DROP TABLE patterns;")
+        conn.close()
+        ag.migrate_006_agent_isolation(db)
+        report = ag.drop_agent(db, "pi", execute=True)
+        assert report["patterns"] == {"affected": [], "zeroed": []}
+        assert "patterns recomputed" not in ag.format_drop_report(report)
+
 
 class TestCli:
     def test_db_drop_agent_dry_run_then_yes(self, legacy_db: Path, monkeypatch, tmp_path):
