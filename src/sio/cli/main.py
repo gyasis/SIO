@@ -908,7 +908,7 @@ def _mine_session_via_adapter(db_path: str, handle: str, agent: str) -> None:
         if _non_claude_session_processed(conn, canonical, signature):
             click.echo(
                 f"Skipped {canonical}: unchanged since last mine "
-                f"({len(events)} events) — nothing new to extract."
+                f"({_plural(len(events), 'event')}) — nothing new to extract."
             )
             return
         errors = extract_errors(messages, source_file=manifest.handle, source_type="adapter")
@@ -917,10 +917,7 @@ def _mine_session_via_adapter(db_path: str, handle: str, agent: str) -> None:
             conn, canonical, signature, manifest.agent, len(events), manifest.path
         )
         conn.commit()
-    click.echo(
-        f"Adapter-mined {canonical}: {len(events)} events -> {len(errors)} errors "
-        f"({inserted} new, {present} already present)."
-    )
+    click.echo(_session_summary(canonical, len(events), len(errors), inserted, present))
 
 
 def _mine_agent_bulk(db_path: str, agent: str, since: str | None) -> None:
@@ -1009,6 +1006,19 @@ def _mine_agent_bulk(db_path: str, agent: str, since: str | None) -> None:
 
 def _plural(n: int, noun: str) -> str:
     return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
+
+
+def _session_summary(canonical: str, events: int, errors: int, inserted: int, present: int) -> str:
+    """The one-line result of a ``--session`` mine of ONE non-claude session.
+
+    Same shape as :func:`_bulk_summary`: what was read (``events``), what the
+    extractor found (``errors``), split into ``N new`` landed now and
+    ``M already present`` before (the fingerprint dropped them).
+    """
+    return (
+        f"Adapter-mined {canonical}: {_plural(events, 'event')} -> {_plural(errors, 'error')} "
+        f"({inserted} new, {present} already present)."
+    )
 
 
 def _bulk_summary(

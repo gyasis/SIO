@@ -192,6 +192,49 @@ EMPTY_ISERROR = _entry(
 )
 
 
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        (
+            (CANONICAL, 0, 0, 0, 0),
+            f"Adapter-mined {CANONICAL}: 0 events -> 0 errors (0 new, 0 already present).",
+        ),
+        (
+            (CANONICAL, 1, 1, 1, 0),
+            f"Adapter-mined {CANONICAL}: 1 event -> 1 error (1 new, 0 already present).",
+        ),
+        (
+            (CANONICAL, 9, 1, 0, 1),
+            f"Adapter-mined {CANONICAL}: 9 events -> 1 error (0 new, 1 already present).",
+        ),
+        (
+            (CANONICAL, 12, 3, 1, 2),
+            f"Adapter-mined {CANONICAL}: 12 events -> 3 errors (1 new, 2 already present).",
+        ),
+    ],
+)
+def test_session_summary_matches_the_bulk_line_shape(args, expected):
+    """The --session line pluralises like the bulk line (#45 added `_plural`
+    for the bulk line only; the --session line printed `1 errors`)."""
+    from sio.cli.main import _session_summary
+
+    assert _session_summary(*args) == expected
+
+
+def test_session_mine_prints_the_singular_correctly(pi_env):
+    from sio.cli.main import cli
+    from tests.unit.adapters.test_pi_adapter import ASSISTANT_CALL, HEADER, TOOL_OK, USER_MSG
+
+    _write_session(
+        pi_env["session"], [HEADER, USER_MSG, ASSISTANT_CALL, TOOL_OK, EMPTY_ISERROR]
+    )
+    r = CliRunner().invoke(cli, ["mine", "--session", f"pi:{SESSION_UUID[:8]}"])
+    assert r.exit_code == 0, r.output
+    assert f"Adapter-mined {CANONICAL}: 8 events -> 1 error (1 new, 0 already present)." in r.output
+    again = CliRunner().invoke(cli, ["mine", "--session", f"pi:{SESSION_UUID[:8]}"])
+    assert f"Skipped {CANONICAL}: unchanged since last mine (8 events)" in again.output
+
+
 def _fingerprints(db: Path) -> set[tuple]:
     conn = sqlite3.connect(str(db))
     try:
@@ -298,3 +341,80 @@ def test_grown_session_adds_only_the_new_errors(pi_env):
     assert f"{len(new)} new, {len(first)} already present" in r.output
     # a second signature row for the grown session, same key
     assert [p[0] for p in _processed(pi_env["db"])] == [CANONICAL, CANONICAL]
+
+
+# ---------------------------------------------------------------------------
+# long error text: the search parsers cap content at 2000 chars, the adapters
+# do not — one error mined both ways must still be ONE row
+# ---------------------------------------------------------------------------
+
+LONG_TEXT = "".join(f"line {i:05d}: command failed with a very long message\n" for i in range(120))
+assert len(LONG_TEXT) > 2000
+
+LONG_ISERROR = _entry(
+    "message", "e6", "e5", "2026-09-15T08:01:06.100Z",
+    message={
+        "role": "toolResult",
+        "toolCallId": "call_long",
+        "toolName": "bash",
+        "content": [{"type": "text", "text": LONG_TEXT}],
+        "isError": True,
+    },
+)
+
+
+def _long_session(pi_env) -> None:
+    from tests.unit.adapters.test_pi_adapter import ASSISTANT_CALL, HEADER, TOOL_OK, USER_MSG
+
+    _write_session(pi_env["session"], [HEADER, USER_MSG, ASSISTANT_CALL, TOOL_OK, LONG_ISERROR])
+
+
+@pytest.mark.parametrize("first", ["session", "agent"])
+def test_long_error_mined_both_ways_is_one_row_with_the_full_text(pi_env, first):
+    """One session with an error longer than the parsers' 2000-char cap, mined
+    via --session (full text) AND --agent (capped text) in either order into
+    ONE DB: exactly one row, holding the full text.
+
+    The session GROWS between the two runs (a new assistant turn lands), so
+    the second run re-reads it instead of skipping it as unchanged — that is
+    how the live duplicates arose, and the fingerprint is what must hold."""
+    from sio.cli.main import cli
+    from tests.unit.adapters.test_pi_adapter import ASSISTANT_TEXT
+
+    _long_session(pi_env)
+    runner = CliRunner()
+    cmds = {
+        "session": ["mine", "--session", f"pi:{SESSION_UUID[:8]}"],
+        "agent": ["mine", "--agent", "pi", "--since", "30 days"],
+    }
+    order = [first, "agent" if first == "session" else "session"]
+
+    r1 = runner.invoke(cli, cmds[order[0]])
+    assert r1.exit_code == 0, r1.output
+    rows = _errors(pi_env["db"])
+    assert [(r[0], r[3], r[4]) for r in rows] == [(CANONICAL, "tool_failure", "bash")]
+
+    with pi_env["session"].open("a") as fh:
+        fh.write(json.dumps(ASSISTANT_TEXT) + "\n")
+    r2 = runner.invoke(cli, cmds[order[1]])
+    assert r2.exit_code == 0, r2.output
+    assert "-> 1 error (0 new, 1 already present)." in r2.output
+    rows = _errors(pi_env["db"])
+    assert len(rows) == 1, rows
+    assert rows[0][5] == LONG_TEXT, "the full read wins whichever path ran first"
+
+
+def test_short_error_mined_both_ways_still_one_row(pi_env):
+    """Regression for text below the prefix length: nothing changed there."""
+    from sio.cli.main import cli
+    from tests.unit.adapters.test_pi_adapter import ASSISTANT_CALL, HEADER, TOOL_OK, USER_MSG
+
+    _write_session(
+        pi_env["session"], [HEADER, USER_MSG, ASSISTANT_CALL, TOOL_OK, EMPTY_ISERROR]
+    )
+    runner = CliRunner()
+    assert runner.invoke(cli, ["mine", "--agent", "pi", "--since", "30 days"]).exit_code == 0
+    r = runner.invoke(cli, ["mine", "--session", f"pi:{SESSION_UUID[:8]}"])
+    assert r.exit_code == 0, r.output
+    rows = _errors(pi_env["db"])
+    assert [(r[4], r[5]) for r in rows] == [("read", "isError (empty tool result)")]

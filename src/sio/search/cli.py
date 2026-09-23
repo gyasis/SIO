@@ -99,6 +99,25 @@ def _compile_pattern(pattern: str, case_sensitive: bool) -> re.Pattern[str]:
 
 
 def _matches(text: str, pattern: str, case_sensitive: bool) -> bool:
+    """True when ``text`` is non-empty and ``pattern`` matches it.
+
+    An EMPTY text never matches — not even the empty pattern — so every parser
+    that gates on ``_matches`` drops empty-content events. That is deliberate:
+    for search they are noise, and for bulk mining (``sio mine --agent``, which
+    reads through these parsers) an event with no text carries nothing the
+    error extractor can classify. The one exception is pi: its parser also
+    keeps an event the HARNESS flagged as a failure (``isError`` tool result,
+    non-zero ``!cmd`` exit) even with empty content, because the flag itself is
+    the signal and ``mine --session`` (adapter path) files it too (#45).
+
+    If another parser starts carrying a harness failure flag, do the same
+    there: gate on ``_matches(content) or (error and _matches(error))``, put the
+    flag in ``metadata["error"]`` (capped like content), and make the matching
+    adapter surface it on ``SessionEvent.error`` — then extend
+    ``test_bulk_and_session_paths_file_the_same_flagged_failures`` to that
+    agent. Until a parser has such a flag there is nothing to keep, so this is
+    not generalised.
+    """
     if not text:
         return False
     return _compile_pattern(pattern, case_sensitive).search(text) is not None
@@ -258,6 +277,7 @@ def search_codex(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Recor
                     except json.JSONDecodeError:
                         continue
                     text = entry.get("text", "")
+                    # drops empty content by design (see _matches); no harness flag here yet
                     if _matches(text, pattern, cs):
                         yield Record(
                             agent="codex",
@@ -286,6 +306,7 @@ def search_codex(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Recor
         ts = (data.get("session") or {}).get("timestamp", "")
         session_id = fp.stem
         text = json.dumps(data, ensure_ascii=False)
+        # drops empty content by design (see _matches); no harness flag here yet
         if _matches(text, pattern, cs):
             yield Record(
                 agent="codex",
@@ -343,6 +364,7 @@ def search_goose(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Recor
             if cutoff is not None and (ts or 0) < cutoff:
                 continue
             text = _goose_content_text(row["content_json"])
+            # drops empty content by design (see _matches); no harness flag here yet
             if not _matches(text, pattern, cs):
                 continue
             yield Record(
@@ -419,6 +441,7 @@ def search_opencode(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Re
             if cutoff is not None and ((ts_ms or 0) / 1000.0) < cutoff:
                 continue
             text = _opencode_part_text(row["part_data"])
+            # drops empty content by design (see _matches); no harness flag here yet
             if not text or not _matches(text, pattern, cs):
                 continue
             yield Record(
@@ -454,6 +477,7 @@ def search_gemini(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Reco
             text = msg.get("content", "")
             if not isinstance(text, str):
                 text = json.dumps(text)
+            # drops empty content by design (see _matches); no harness flag here yet
             if _matches(text, pattern, cs):
                 msg_type = msg.get("type", "unknown")
                 role = {"gemini": "assistant", "user": "user", "info": "info"}.get(
@@ -557,6 +581,7 @@ def search_promptchain(pattern: str, cs: bool, cutoff: float | None) -> Iterator
                     except json.JSONDecodeError:
                         continue
                     text = entry.get("content", "") or ""
+                    # drops empty content by design (see _matches); no harness flag here yet
                     if not _matches(text, pattern, cs):
                         continue
                     ts_raw = entry.get("timestamp")
@@ -664,6 +689,7 @@ def search_kimi(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Record
                     if extracted is None:
                         continue
                     text, role = extracted
+                    # drops empty content by design (see _matches); no harness flag here yet
                     if not _matches(text, pattern, cs):
                         continue
                     yield Record(
