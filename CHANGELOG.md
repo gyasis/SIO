@@ -9,6 +9,35 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
+### Added — codex and opencode as `sio init` install targets
+
+- **`sio init --harness codex`** and **`--harness opencode`** stage SIO's
+  bundled skills into each harness's own user skills dir, the way `--harness
+  pi` does (#42): manifest-tracked, idempotent, dry-run writes nothing,
+  `--uninstall` removes only what SIO installed and prunes emptied dirs, and a
+  same-named skill SIO did not install is never overwritten without `--force`
+  (`managed.stage_files(adopt_untracked=False)`). Both are auto-detected by a
+  bare `sio init` when their config dir exists. Shared plumbing lives in
+  `sio.harnesses.skills_dir`; `pi.py` is unchanged.
+- **Each adapter installs only what its harness has a home for, and reports
+  the rest** — the governing principle: a harness is not assumed to look like
+  Claude Code. Established from the installed binaries, not docs:
+
+  | Asset | codex (`codex-cli 0.154.0`) | opencode (`1.18.4`) |
+  |---|---|---|
+  | skills | `$CODEX_HOME/skills/<name>/SKILL.md` (env honoured; `initialize` echoes `codexHome`). Frontmatter + non-empty `description` required, `name` optional/unconstrained, symlinked dirs followed, bare `skills/*.md` ignored | `$XDG_CONFIG_HOME/opencode/skill(s)/<name>/SKILL.md`. No name/description-length rule; a skill without `description` is never surfaced. `OPENCODE_CONFIG_DIR` is an *extra* scanned root, not a relocation |
+  | rules / standing context | `rules/*.rules` = execpolicy command policy, not markdown; `AGENTS.md` is the user's — **reported unsupported** | none; `AGENTS.md` / `instructions` in `opencode.json` are the user's — **reported unsupported** |
+  | hooks | `hooks/hooks.json` exists (feature `hooks`, PreToolUse/PostToolUse/UserPromptSubmit) but SIO's hooks parse Claude Code's payload — **not registered** | plugins (`plugin/*.ts`), no hooks — **not registered** |
+  | proof the harness loaded the install | `codex app-server` JSON-RPC `skills/list` against a temp `CODEX_HOME` (test) | `opencode debug skill` against a temp HOME/XDG (test) |
+
+- opencode's install output notes when the SIO skills are already visible to
+  it through its external scan of `~/.claude/skills` (global dir wins on a
+  name clash; the copy survives `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1`).
+- `scripts/install-skills.sh` (plain-copy fallback) also copies into
+  `$CODEX_HOME/skills` and `$XDG_CONFIG_HOME/opencode/skills` when those dirs
+  exist, skipping symlinked entries. `sio doctor` and the `sio init` hints
+  name the new targets. `cursor` / `windsurf` stay stubs.
+
 ### Fixed — agent isolation follow-ups (open items from #44 / #45)
 
 - **One error, one row, however long its text.** The two mining paths carried

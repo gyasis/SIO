@@ -601,7 +601,7 @@ def _check_harness_install() -> CheckResult:
             detail="No supported harnesses detected on this system",
             fix_hint=(
                 "sio init --harness claude-code  # if Claude Code is installed; "
-                "or --harness pi"
+                "or --harness pi | codex | opencode"
             ),
         )
 
