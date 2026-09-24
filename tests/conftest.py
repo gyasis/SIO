@@ -89,6 +89,29 @@ def _isolate_backup_root(tmp_path_factory, monkeypatch, request):
     )
 
 
+@pytest.fixture(autouse=True)
+def _restore_sio_env():
+    """Undo any ``SIO_*`` env var a test (or the code it drove) left behind.
+
+    Some CLI paths set model selection process-wide and never restore it --
+    ``src/sio/cli/main.py`` does ``os.environ["SIO_TASK_LM"] = ...`` for the
+    ``--mode`` options, and ``recall_trainer`` does ``setdefault`` -- so a test
+    that invokes them leaks that choice into every later test in the same
+    pytest process. Whichever test then asserts on model/adapter resolution
+    fails depending only on collection order, which is the hardest kind of
+    failure to place. Snapshot and restore, so a leak cannot cross a test
+    boundary.
+    """
+    before = {k: v for k, v in os.environ.items() if k.startswith("SIO_")}
+    yield
+    for key in [k for k in os.environ if k.startswith("SIO_")]:
+        if key not in before:
+            del os.environ[key]
+    for key, value in before.items():
+        if os.environ.get(key) != value:
+            os.environ[key] = value
+
+
 @pytest.fixture
 def tmp_db():
     """In-memory SQLite database with SIO schema applied."""
