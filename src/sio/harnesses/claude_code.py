@@ -21,10 +21,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import ClassVar
 
+from sio.core.paths import sio_home as _default_sio_home
 from sio.harnesses.base import HarnessAdapter, InstallReport, StatusReport
 from sio.harnesses.bootstrap import iter_bootstrap_files
 from sio.harnesses.managed import remove_files, stage_files, status_files
-from sio.core.paths import sio_home as _default_sio_home
 
 # Hook events SIO registers in ~/.claude/settings.json. Each entry is
 # (event_name, module_path); the command is dispatched via
