@@ -56,6 +56,18 @@ from typing import Iterator
 HOME = Path.home()
 CLAUDE_PROJECTS = HOME / ".claude" / "projects"
 CLAUDE_BACKUPS = HOME / ".claude" / "backups"
+
+
+def claude_archive() -> Path:
+    """SIO's own copy of ~/.claude/projects (``sio archive sync``). Call time, not import."""
+    from sio.archive.sync import archive_root  # noqa: PLC0415
+
+    return archive_root() / "claude" / "projects"
+
+
+def archived_only(live_root: Path, rel: Path) -> bool:
+    """True when an archived file no longer exists live -- i.e. the harness deleted it."""
+    return not (live_root / rel).exists()
 DEV_ROOT = HOME / "dev"
 
 
@@ -163,12 +175,19 @@ def _iter_claude_jsonl(
     pattern: str,
     cs: bool,
     cutoff: float | None,
+    live_root: Path | None = None,
 ) -> Iterator[Record]:
-    """Shared parser for ~/.claude/projects and ~/.claude/backups JSONL files."""
+    """Shared parser for ~/.claude/projects, ~/.claude/backups and the SIO archive.
+
+    With ``live_root`` set (archive mode), files that still exist live are skipped
+    so a session is never reported twice.
+    """
     if not root.exists():
         return
     for jsonl in root.rglob("*.jsonl"):
         if not _file_within(jsonl, cutoff):
+            continue
+        if live_root is not None and not archived_only(live_root, jsonl.relative_to(root)):
             continue
         session_id = jsonl.stem
         try:
@@ -213,6 +232,10 @@ def _iter_claude_jsonl(
 def search_claude(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Record]:
     yield from _iter_claude_jsonl(
         CLAUDE_PROJECTS, "claude", "jsonl", pattern, cs, cutoff
+    )
+    # Sessions Claude Code has already deleted (cleanupPeriodDays) live on in the archive.
+    yield from _iter_claude_jsonl(
+        claude_archive(), "claude", "archive", pattern, cs, cutoff, CLAUDE_PROJECTS
     )
 
 
@@ -840,6 +863,11 @@ def fast_path(args: argparse.Namespace) -> int:
     else:
         if args.search_jsonl:
             files_raw += _find_recent(CLAUDE_PROJECTS, args.recent, "*.jsonl")
+            arch = claude_archive()
+            files_raw += [
+                f for f in _find_recent(arch, args.recent, "*.jsonl")
+                if archived_only(CLAUDE_PROJECTS, Path(f).relative_to(arch))
+            ]
         if args.backups or args.all:
             files_raw += _find_recent(CLAUDE_BACKUPS, args.recent, "*.jsonl")
         if args.all:

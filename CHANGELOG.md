@@ -9,6 +9,22 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
+### Added — `sio archive`: SIO keeps its own copy of every session
+
+- **`sio archive sync|status`** mirrors every coding agent's raw session store
+  (Claude projects + prompt history, Codex, Gemini, pi, Kimi, PromptChain, goose,
+  opencode) into `~/.sio/archive/`. Never deletes; a file deleted at the source
+  is kept and marked `source_gone_at` in the `_archive.db` manifest. Grown files
+  are re-copied only when the archived bytes are still their prefix; a shrunk or
+  rewritten file keeps its old copy as `<name>.~<UTC>`. SQLite stores are copied
+  with the backup API (never byte-copied mid-write) and switched out of WAL mode.
+- **`sio search --agent claude`** now also reads archived transcripts whose live
+  copy Claude Code has deleted, in both the ripgrep and Python paths, without
+  double-reporting sessions that still exist live.
+- Why: Claude Code deletes transcripts after 30 days by default. The SpecStory
+  job that used to keep long history stopped in April 2026 and five months of
+  transcripts were lost before anyone noticed. Docs: `docs/session-archive.md`.
+
 ### Added — codex and opencode as `sio init` install targets
 
 - **`sio init --harness codex`** and **`--harness opencode`** stage SIO's

@@ -90,6 +90,16 @@ def _isolate_backup_root(tmp_path_factory, monkeypatch, request):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_session_archive(tmp_path_factory, monkeypatch):
+    """Keep tests away from the real ~/.sio/archive.
+
+    ``sio search`` also reads archived transcripts; tests that only patch
+    ``CLAUDE_PROJECTS`` would otherwise pick up real archived sessions.
+    """
+    monkeypatch.setenv("SIO_ARCHIVE_DIR", str(tmp_path_factory.mktemp("sio-archive")))
+
+
+@pytest.fixture(autouse=True)
 def _restore_sio_env():
     """Undo any ``SIO_*`` env var a test (or the code it drove) left behind.
 
