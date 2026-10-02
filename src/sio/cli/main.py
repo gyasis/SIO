@@ -9675,6 +9675,11 @@ from sio.cli.runs import runs_cmd as _runs_cmd  # noqa: E402
 
 cli.add_command(_runs_cmd)
 
+# Register sio archive (SIO's own never-deleted copy of every agent's session files)
+from sio.cli.archive import archive_cmd as _archive_cmd  # noqa: E402
+
+cli.add_command(_archive_cmd)
+
 # Register sio render (turn optimized module into deployable skill)
 from sio.cli.render import render_cmd as _render_cmd  # noqa: E402
 
