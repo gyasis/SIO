@@ -20,7 +20,7 @@ needs no other service.
 sio archive sync           # one pass; exit 1 if any file failed
 sio archive sync --json    # same, machine-readable
 sio archive status         # last run + per-agent manifest totals
-sio archive install        # schedule the sync hourly (see Scheduling)
+sio archive install        # schedule the sync daily (see Scheduling)
 ```
 
 Each pass mirrors every known session store into `~/.sio/archive/<agent>/...`
@@ -82,8 +82,8 @@ kept as `<name>.~<UTC>` are not searched. `sio mine` still reads live stores onl
 ## Scheduling
 
 ```bash
-sio archive install                 # hourly
-sio archive install --interval 30   # every 30 minutes
+sio archive install                 # daily (1440 minutes)
+sio archive install --interval 60   # hourly
 sio archive install --dry-run       # show the files and commands, change nothing
 ```
 
