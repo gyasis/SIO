@@ -20,6 +20,7 @@ needs no other service.
 sio archive sync           # one pass; exit 1 if any file failed
 sio archive sync --json    # same, machine-readable
 sio archive status         # last run + per-agent manifest totals
+sio archive install        # schedule the sync hourly (see Scheduling)
 ```
 
 Each pass mirrors every known session store into `~/.sio/archive/<agent>/...`
@@ -66,17 +67,35 @@ sidecar files inside the archive.
 
 ## Search
 
-`sio search --agent claude` reads live transcripts **plus** archived ones whose
-live copy is gone, in both the ripgrep fast path and the Python path. A session
-that still exists live is read from the live copy only, so nothing is reported
-twice. Archived hits carry `source_kind: "archive"`.
+`sio search` reads each agent's live store **plus** SIO's archived copy, so a
+session the harness deleted is still found. Nothing is reported twice:
 
-Other agents are archived but not yet searched from the archive.
+- a session file that still exists live is read from the live copy only;
+- shared stores that exist in both places (Codex `history.jsonl`, the goose and
+  opencode SQLite databases) are read from both, and a message already seen live
+  is dropped. A row deleted from the live database is still found in the archive.
+
+Archived Claude hits carry `source_kind: "archive"` (ripgrep and Python paths);
+archived hits from other agents carry `metadata.archived = true`. Older copies
+kept as `<name>.~<UTC>` are not searched. `sio mine` still reads live stores only.
 
 ## Scheduling
 
-Run it on a timer; every pass is cheap (about one second for 1.4 GB when little
-has changed). A `systemd --user` example:
+```bash
+sio archive install                 # hourly
+sio archive install --interval 30   # every 30 minutes
+sio archive install --dry-run       # show the files and commands, change nothing
+```
+
+On Linux this writes `~/.config/systemd/user/sio-archive.{service,timer}` and
+enables the timer; on macOS it writes `~/Library/LaunchAgents/io.sio.archive.plist`
+(log: `~/.sio/archive-sync.log`) and loads it. Both use the absolute path of
+`sio`, because schedulers do not read your shell `PATH`. Re-running is safe: files
+that already match are left alone. Without systemd or launchd it stops with an
+error; schedule `sio archive sync` with cron instead.
+
+Every pass is cheap (about one second for 1.4 GB when little has changed). The
+units it writes look like this:
 
 ```ini
 # ~/.config/systemd/user/sio-archive.service

@@ -21,6 +21,14 @@ GitHub release pages (with full asset downloads) live at
 - **`sio search --agent claude`** now also reads archived transcripts whose live
   copy Claude Code has deleted, in both the ripgrep and Python paths, without
   double-reporting sessions that still exist live.
+- **Every archived agent is searchable from the archive.** `sio search --agent
+  codex|gemini|pi|kimi|promptchain|goose|opencode|all` reads the live store and
+  then SIO's copy: sessions the harness deleted (or rows removed from a goose /
+  opencode database) are found, tagged `metadata.archived = true`, and anything
+  still live is reported once. Mining (`sio mine`) still reads live stores only.
+- **`sio archive install [--interval N] [--dry-run]`** schedules the sync itself:
+  a `systemd --user` timer on Linux, a launchd agent on macOS, with the absolute
+  `sio` path. Re-running it is a no-op when nothing changed.
 - Why: Claude Code deletes transcripts after 30 days by default. The SpecStory
   job that used to keep long history stopped in April 2026 and five months of
   transcripts were lost before anyone noticed. Docs: `docs/session-archive.md`.

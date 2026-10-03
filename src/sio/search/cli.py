@@ -68,6 +68,28 @@ def claude_archive() -> Path:
 def archived_only(live_root: Path, rel: Path) -> bool:
     """True when an archived file no longer exists live -- i.e. the harness deleted it."""
     return not (live_root / rel).exists()
+
+
+def _store(live: Path, archive: bool) -> Path:
+    """``live`` itself, or SIO's archived copy of it when ``archive`` is set."""
+    if not archive:
+        return live
+    from sio.archive.sync import archive_path_for  # noqa: PLC0415
+
+    archived = archive_path_for(live, home=HOME)
+    if archived is None:
+        raise ValueError(f"{live} is not an archived store (see sio.archive.sync.SOURCES)")
+    return archived
+
+
+def _live_copy_exists(archived: Path) -> bool:
+    """True when an archived session file still exists live (so the live copy is read)."""
+    from sio.archive.sync import live_path_for  # noqa: PLC0415
+
+    live = live_path_for(archived, home=HOME)
+    return live is not None and live.exists()
+
+
 DEV_ROOT = HOME / "dev"
 
 
@@ -286,8 +308,10 @@ def search_claude_specstory(
 # --------------------- non-Claude parsers --------------------- #
 
 
-def search_codex(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Record]:
-    hist = HOME / ".codex" / "history.jsonl"
+def search_codex(
+    pattern: str, cs: bool, cutoff: float | None, archive: bool = False
+) -> Iterator[Record]:
+    hist = _store(HOME / ".codex" / "history.jsonl", archive)
     if hist.exists() and _file_within(hist, cutoff):
         try:
             with hist.open(encoding="utf-8", errors="replace") as fh:
@@ -316,11 +340,13 @@ def search_codex(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Recor
         except OSError:
             pass
 
-    sessions_dir = HOME / ".codex" / "sessions"
+    sessions_dir = _store(HOME / ".codex" / "sessions", archive)
     if not sessions_dir.exists():
         return
     for fp in sessions_dir.glob("rollout-*.json"):
         if not _file_within(fp, cutoff):
+            continue
+        if archive and _live_copy_exists(fp):
             continue
         try:
             data = json.loads(fp.read_text(encoding="utf-8", errors="replace"))
@@ -362,7 +388,9 @@ def _goose_content_text(content_json: str | None) -> str:
     return str(blocks)
 
 
-def search_goose(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Record]:
+def search_goose(
+    pattern: str, cs: bool, cutoff: float | None, archive: bool = False
+) -> Iterator[Record]:
     """Search Goose CLI session transcripts (SQLite, WAL mode).
 
     Storage: ``~/.local/share/goose/sessions/sessions.db`` — ``messages`` holds
@@ -370,10 +398,11 @@ def search_goose(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Recor
     SECONDS); content_json is a JSON array of blocks (join the ``text`` of
     ``{"type":"text",...}`` blocks).
     """
-    if not GOOSE_DB.exists():
+    db = _store(GOOSE_DB, archive)
+    if not db.exists():
         return
     try:
-        conn = sqlite3.connect(f"file:{GOOSE_DB}?mode=ro&immutable=0", uri=True)
+        conn = sqlite3.connect(f"file:{db}?mode=ro&immutable=0", uri=True)
     except (sqlite3.Error, OSError):
         return
     try:
@@ -396,7 +425,7 @@ def search_goose(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Recor
                 ts=_iso(ts),
                 role=row["role"] or "unknown",
                 content=text[:2000],
-                source_path=str(GOOSE_DB),
+                source_path=str(db),
                 metadata={"source_kind": "sqlite", "message_id": row["message_id"]},
                 match_text=text,
             )
@@ -436,7 +465,9 @@ def _opencode_role(data_json: str | None) -> str:
     return "unknown"
 
 
-def search_opencode(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Record]:
+def search_opencode(
+    pattern: str, cs: bool, cutoff: float | None, archive: bool = False
+) -> Iterator[Record]:
     """Search OpenCode session transcripts (SQLite).
 
     Storage: ``~/.local/share/opencode/opencode.db`` — ``message`` holds one
@@ -445,10 +476,11 @@ def search_opencode(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Re
     ``type=="text"`` parts are searchable — reasoning/step-start/step-finish/
     tool parts are skipped).
     """
-    if not OPENCODE_DB.exists():
+    db = _store(OPENCODE_DB, archive)
+    if not db.exists():
         return
     try:
-        conn = sqlite3.connect(f"file:{OPENCODE_DB}?mode=ro&immutable=0", uri=True)
+        conn = sqlite3.connect(f"file:{db}?mode=ro&immutable=0", uri=True)
     except (sqlite3.Error, OSError):
         return
     try:
@@ -473,7 +505,7 @@ def search_opencode(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Re
                 ts=_iso(ts_ms),
                 role=_opencode_role(row["message_data"]),
                 content=text[:2000],
-                source_path=str(OPENCODE_DB),
+                source_path=str(db),
                 metadata={"source_kind": "sqlite", "message_id": row["part_id"]},
                 match_text=text,
             )
@@ -483,12 +515,16 @@ def search_opencode(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Re
         conn.close()
 
 
-def search_gemini(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Record]:
-    root = HOME / ".gemini" / "tmp"
+def search_gemini(
+    pattern: str, cs: bool, cutoff: float | None, archive: bool = False
+) -> Iterator[Record]:
+    root = _store(HOME / ".gemini" / "tmp", archive)
     if not root.exists():
         return
     for fp in root.rglob("session-*.json"):
         if not _file_within(fp, cutoff):
+            continue
+        if archive and _live_copy_exists(fp):
             continue
         try:
             data = json.loads(fp.read_text(encoding="utf-8", errors="replace"))
@@ -552,14 +588,14 @@ def search_aider(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Recor
                 )
 
 
-def _promptchain_session_names() -> dict[str, str]:
+def _promptchain_session_names(root: Path | None = None) -> dict[str, str]:
     """Map session-uuid -> friendly name from the PromptChain sessions.db.
 
     Best-effort: the transcripts live under <uuid>/messages.jsonl but the DB
     holds the human name (default/dogfood/...). Returns {} if the DB is absent
     or unreadable so search still works off the dir names alone.
     """
-    db = HOME / ".promptchain" / "sessions" / "sessions.db"
+    db = (root or HOME / ".promptchain" / "sessions") / "sessions.db"
     if not db.exists():
         return {}
     try:
@@ -573,7 +609,9 @@ def _promptchain_session_names() -> dict[str, str]:
         return {}
 
 
-def search_promptchain(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Record]:
+def search_promptchain(
+    pattern: str, cs: bool, cutoff: float | None, archive: bool = False
+) -> Iterator[Record]:
     """Search the PromptChain TUI/CLI coding-agent transcripts.
 
     Layout: ~/.promptchain/sessions/<uuid>/messages.jsonl — one JSON object per
@@ -581,15 +619,17 @@ def search_promptchain(pattern: str, cs: bool, cutoff: float | None) -> Iterator
     epoch and ``metadata`` is a Python-repr string (single quotes), so both are
     parsed defensively.
     """
-    root = HOME / ".promptchain" / "sessions"
+    root = _store(HOME / ".promptchain" / "sessions", archive)
     if not root.exists():
         return
-    names = _promptchain_session_names()
+    names = _promptchain_session_names(root)
     for session_dir in sorted(root.iterdir()):
         if not session_dir.is_dir():
             continue
         fp = session_dir / "messages.jsonl"
         if not fp.exists() or not _file_within(fp, cutoff):
+            continue
+        if archive and _live_copy_exists(fp):
             continue
         uuid = session_dir.name
         session_id = names.get(uuid, uuid)
@@ -680,7 +720,9 @@ def _kimi_ts(obj: dict) -> str:
         return ""
 
 
-def search_kimi(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Record]:
+def search_kimi(
+    pattern: str, cs: bool, cutoff: float | None, archive: bool = False
+) -> Iterator[Record]:
     """Search Kimi Code CLI transcripts.
 
     Layout: ``~/.kimi-code/sessions/<workspace>/session_<uuid>/agents/<agent>/
@@ -689,11 +731,13 @@ def search_kimi(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Record
     lines are searchable content; the rest is skipped (see
     ``_kimi_text_and_role``).
     """
-    root = HOME / ".kimi-code" / "sessions"
+    root = _store(HOME / ".kimi-code" / "sessions", archive)
     if not root.exists():
         return
     for wire in root.rglob("wire.jsonl"):
         if not _file_within(wire, cutoff):
+            continue
+        if archive and _live_copy_exists(wire):
             continue
         # agents/<agent>/wire.jsonl -> parents[0]=<agent>, [1]=agents, [2]=session_<uuid>
         session_id = wire.parents[2].name if len(wire.parents) >= 3 else wire.parent.name
@@ -730,7 +774,9 @@ def search_kimi(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Record
             continue
 
 
-def search_pi(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Record]:
+def search_pi(
+    pattern: str, cs: bool, cutoff: float | None, archive: bool = False
+) -> Iterator[Record]:
     """Search pi coding-agent transcripts.
 
     Layout: ``~/.pi/agent/sessions/<cwd-encoded-dir>/<iso-ts>_<uuid>.jsonl``
@@ -744,11 +790,13 @@ def search_pi(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Record]:
     """
     from sio.adapters.pi.adapter import events_from_entry
 
-    root = HOME / ".pi" / "agent" / "sessions"
+    root = _store(HOME / ".pi" / "agent" / "sessions", archive)
     if not root.exists():
         return
     for fp in root.rglob("*.jsonl"):
         if not _file_within(fp, cutoff):
+            continue
+        if archive and _live_copy_exists(fp):
             continue
         session_id = fp.stem
         call_names: dict[str, str] = {}
@@ -805,6 +853,39 @@ PARSERS = {
     "kimi": search_kimi,
     "pi": search_pi,
 }
+
+#: Agents whose stores ``sio archive sync`` keeps (claude handles its own, see search_claude).
+ARCHIVED_AGENTS = {"codex", "goose", "opencode", "gemini", "promptchain", "kimi", "pi"}
+
+
+def with_archive(parse):
+    """Search ``parse``'s live store, then SIO's archived copy of it.
+
+    Archived per-session files are skipped while their live copy exists (inside the
+    parsers). Shared stores (codex history.jsonl, goose/opencode SQLite) exist in both
+    places, so a message already seen live is dropped here. Archive-only hits carry
+    ``metadata["archived"] = True``.
+    """
+
+    @functools.wraps(parse)
+    def run(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Record]:
+        seen: set[tuple[str, str, str, str]] = set()
+        for rec in parse(pattern, cs, cutoff):
+            seen.add((rec.session_id, rec.ts, rec.role, rec.content[:200]))
+            yield rec
+        for rec in parse(pattern, cs, cutoff, archive=True):
+            if (rec.session_id, rec.ts, rec.role, rec.content[:200]) in seen:
+                continue
+            rec.metadata = {**(rec.metadata or {}), "archived": True}
+            yield rec
+
+    return run
+
+
+def search_parser(agent: str):
+    """The parser ``sio search`` uses for ``agent``: live store plus SIO's archive."""
+    parse = PARSERS[agent]
+    return with_archive(parse) if agent in ARCHIVED_AGENTS else parse
 
 
 # --------------------- fast path (ripgrep short-circuit) --------------------- #
@@ -1687,7 +1768,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Build the parser list. For claude, may include multiple sources.
     if args.agent == "all":
-        parsers = [(name, PARSERS[name]) for name in PARSERS]
+        parsers = [(name, search_parser(name)) for name in PARSERS]
     elif args.agent == "claude":
         parsers = []
         if args.specstory and not args.all:
@@ -1700,7 +1781,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.all:
                 parsers.append(("claude-specstory", search_claude_specstory))
     else:
-        parsers = [(args.agent, PARSERS[args.agent])]
+        parsers = [(args.agent, search_parser(args.agent))]
 
     total = 0
     per_label_counts: dict[str, int] = defaultdict(int)
