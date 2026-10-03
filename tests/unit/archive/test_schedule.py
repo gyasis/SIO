@@ -62,3 +62,18 @@ def test_macos_writes_launchd_plist(linux, monkeypatch):
     assert "<string>/opt/bin/sio</string><string>archive</string><string>sync</string>" in plist
     assert "<integer>3600</integer>" in plist
     assert calls[-1][:2] == ["launchctl", "bootstrap"]
+
+
+
+def test_default_interval_is_daily(linux):
+    home, _ = linux
+    schedule.install(home=home)  # no interval given
+    timer = (home / ".config/systemd/user/sio-archive.timer").read_text()
+    assert "OnUnitActiveSec=1440min" in timer
+
+
+def test_cli_default_matches_schedule_default():
+    from sio.cli.archive import install_cmd
+
+    opt = next(p for p in install_cmd.params if p.name == "interval")
+    assert opt.default == schedule.DEFAULT_INTERVAL_MINUTES == 1440

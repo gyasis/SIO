@@ -1,4 +1,4 @@
-"""Install the hourly ``sio archive sync`` schedule (systemd --user on Linux, launchd on macOS).
+"""Install the daily ``sio archive sync`` schedule (systemd --user on Linux, launchd on macOS).
 
 The archive only protects history if it runs well inside the shortest harness
 retention window (Claude Code: 30 days), so SIO installs its own schedule rather
@@ -86,7 +86,10 @@ def _run(cmd: list[str], dry_run: bool, actions: list[str]) -> None:
         subprocess.run(cmd, check=True, capture_output=True, text=True)
 
 
-def install(interval_minutes: int = 60, dry_run: bool = False,
+DEFAULT_INTERVAL_MINUTES = 1440  # daily: well inside a 30-day retention window
+
+
+def install(interval_minutes: int = DEFAULT_INTERVAL_MINUTES, dry_run: bool = False,
             home: Path | None = None) -> list[str]:
     """Install (or refresh) the schedule. Returns the actions taken, for display."""
     home = home or Path.home()

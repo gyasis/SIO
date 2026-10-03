@@ -7,7 +7,7 @@ Examples:
     sio archive sync            # one pass; exit 1 if any file failed
     sio archive sync --json     # machine-readable status
     sio archive status          # last run + per-agent manifest totals
-    sio archive install         # run sync hourly (systemd --user / launchd)
+    sio archive install         # run sync daily (systemd --user / launchd)
 """
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ import subprocess
 import click
 
 from sio.archive import sync as archive_sync
+from sio.archive.schedule import DEFAULT_INTERVAL_MINUTES
 
 
 @click.group("archive")
@@ -44,8 +45,9 @@ def sync_cmd(as_json: bool) -> None:
 
 
 @archive_cmd.command("install")
-@click.option("--interval", default=60, show_default=True, type=click.IntRange(min=5),
-              help="Minutes between runs.")
+@click.option("--interval", default=DEFAULT_INTERVAL_MINUTES, show_default=True,
+              type=click.IntRange(min=5),
+              help="Minutes between runs (default: daily).")
 @click.option("--dry-run", is_flag=True, help="Show what would be written and run.")
 def install_cmd(interval: int, dry_run: bool) -> None:
     """Schedule `sio archive sync` (systemd --user on Linux, launchd on macOS)."""
