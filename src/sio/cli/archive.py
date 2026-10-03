@@ -45,7 +45,8 @@ def sync_cmd(as_json: bool) -> None:
 
 
 @archive_cmd.command("install")
-@click.option("--interval", default=DEFAULT_INTERVAL_MINUTES, show_default=True, type=click.IntRange(min=5),
+@click.option("--interval", default=DEFAULT_INTERVAL_MINUTES, show_default=True,
+              type=click.IntRange(min=5),
               help="Minutes between runs (default: daily).")
 @click.option("--dry-run", is_flag=True, help="Show what would be written and run.")
 def install_cmd(interval: int, dry_run: bool) -> None:
