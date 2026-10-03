@@ -308,7 +308,7 @@ def _build_lm(model: str, temperature: float, max_tokens: int, cache: bool) -> d
 def is_forbidden_model(model: str) -> bool:
     """Return True if *model* is in the globally-forbidden gpt-4o family.
 
-    Enforces the cost-control rule (``~/.claude/rules/domains/cost-control.md``):
+    Enforces the cost-control rule (``~/.claude/rulebook/domains/cost-control.md``):
     the full gpt-4o family is forbidden EXCEPT ``gpt-4o-mini`` which is cheap
     and explicitly allowed.
 
@@ -374,7 +374,7 @@ def _check_banned(lm: dspy.LM) -> dspy.LM:
     Layer 1 — family ban (ALWAYS enforced, even if config read fails):
         ``is_forbidden_model(lm.model)`` rejects the entire gpt-4o family
         except gpt-4o-mini.  Implements the global cost-control rule at
-        ``~/.claude/rules/domains/cost-control.md``.
+        ``~/.claude/rulebook/domains/cost-control.md``.
 
     Layer 2 — config exact-match ban (enforced when config is readable):
         Models listed in ``[llm.banned].models`` in ``~/.sio/config.toml`` are
@@ -393,7 +393,7 @@ def _check_banned(lm: dspy.LM) -> dspy.LM:
             f"Refusing to load forbidden model '{lm.model}': "
             "the gpt-4o family (except gpt-4o-mini) is banned by the global "
             "cost-control rule. Use 'openai/gpt-4o-mini', a Gemini model, or "
-            "an Ollama model. See ~/.claude/rules/domains/cost-control.md."
+            "an Ollama model. See ~/.claude/rulebook/domains/cost-control.md."
         )
 
     # Layer 2 — config-based exact-match ban.
@@ -405,7 +405,7 @@ def _check_banned(lm: dspy.LM) -> dspy.LM:
             raise ValueError(
                 f"Refusing to load banned model '{lm.model}'. "
                 f"See [llm.banned] in ~/.sio/config.toml and "
-                f"~/.claude/rules/domains/cost-control.md."
+                f"~/.claude/rulebook/domains/cost-control.md."
             )
     except ValueError:
         raise

@@ -7674,7 +7674,7 @@ def rule_audit_cmd(rule_id, samples, window, judge, yes, write_report, fmt):
 
     judge_result: dict | None = None
     if judge:
-        # Cost callout per ~/.claude/rules/domains/cost-control.md
+        # Cost callout per ~/.claude/rulebook/domains/cost-control.md
         from sio.core.cost import estimate_call  # noqa: PLC0415
 
         n = len(data["after"])

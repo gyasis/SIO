@@ -2,7 +2,7 @@
 
 Claude Code keeps user config under `~/.claude/`:
     skills/         per-skill directories (one folder per skill, with SKILL.md)
-    rules/tools/    tool-specific rule markdown files
+    rulebook/tools/    tool-specific rule markdown files
     hooks/          shell hook scripts (PreToolUse, PostToolUse, etc.)
     settings.json   the user's settings, including a hooks block
 
@@ -314,5 +314,11 @@ class ClaudeCodeAdapter(HarnessAdapter):
         """Map a bootstrap relative path to its location under ~/.claude/."""
         # Bootstrap layout (inside the package) mirrors the target layout:
         #   _bootstrap/skills/sio-recall/SKILL.md   →  ~/.claude/skills/sio-recall/SKILL.md
-        #   _bootstrap/rules/tools/sio.md           →  ~/.claude/rules/tools/sio.md
+        #   _bootstrap/rules/tools/sio.md           →  ~/.claude/rulebook/tools/sio.md
+        # Rules go to rulebook/, NOT rules/: Claude Code auto-loads every .md under
+        # ~/.claude/rules/ into every session, so on-demand rules live in rulebook/
+        # where the rules-injector hook reads them (2026-10-01).
+        parts = rel_path.parts
+        if parts and parts[0] == "rules":
+            rel_path = Path("rulebook", *parts[1:])
         return self.config_dir / rel_path

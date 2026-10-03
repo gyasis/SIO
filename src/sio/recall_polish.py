@@ -139,7 +139,7 @@ def polish_runbook(
         if "forbidden" in msg.lower() or "banned" in msg.lower():
             raise PolishError(
                 f"Model '{resolved_model}' is forbidden: {exc}. "
-                "See ~/.claude/rules/domains/cost-control.md."
+                "See ~/.claude/rulebook/domains/cost-control.md."
             ) from exc
         raise PolishError(
             f"Failed to initialise LM '{resolved_model}': {exc}. "
