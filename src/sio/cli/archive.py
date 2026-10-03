@@ -7,10 +7,12 @@ Examples:
     sio archive sync            # one pass; exit 1 if any file failed
     sio archive sync --json     # machine-readable status
     sio archive status          # last run + per-agent manifest totals
+    sio archive install         # run sync hourly (systemd --user / launchd)
 """
 from __future__ import annotations
 
 import json
+import subprocess
 
 import click
 
@@ -39,6 +41,26 @@ def sync_cmd(as_json: bool) -> None:
                 click.echo(f"         ERROR {err}", err=True)
     if not status["ok"]:
         raise SystemExit(1)
+
+
+@archive_cmd.command("install")
+@click.option("--interval", default=60, show_default=True, type=click.IntRange(min=5),
+              help="Minutes between runs.")
+@click.option("--dry-run", is_flag=True, help="Show what would be written and run.")
+def install_cmd(interval: int, dry_run: bool) -> None:
+    """Schedule `sio archive sync` (systemd --user on Linux, launchd on macOS)."""
+    from sio.archive import schedule  # noqa: PLC0415
+
+    try:
+        actions = schedule.install(interval_minutes=interval, dry_run=dry_run)
+    except (FileNotFoundError, RuntimeError) as exc:
+        raise click.ClickException(str(exc)) from None
+    except subprocess.CalledProcessError as exc:
+        raise click.ClickException(
+            f"{' '.join(exc.cmd)} failed: {(exc.stderr or '').strip()}"
+        ) from None
+    for line in actions:
+        click.echo(line)
 
 
 @archive_cmd.command("status")

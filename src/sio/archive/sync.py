@@ -61,6 +61,34 @@ def archive_root() -> Path:
     return Path(env).expanduser() if env else sio_home() / "archive"
 
 
+def archive_path_for(live: Path, home: Path | None = None) -> Path | None:
+    """Where ``live`` (a path under $HOME) is kept in the archive; None if not archived."""
+    home = home or Path.home()
+    try:
+        rel = live.relative_to(home)
+    except ValueError:
+        return None
+    for name, src in SOURCES:
+        src_path = Path(src)
+        if rel == src_path or src_path in rel.parents:
+            return archive_root() / name / rel.relative_to(src_path)
+    return None
+
+
+def live_path_for(archived: Path, home: Path | None = None) -> Path | None:
+    """Inverse of :func:`archive_path_for`; None if ``archived`` is not under the archive."""
+    home = home or Path.home()
+    try:
+        rel = archived.relative_to(archive_root())
+    except ValueError:
+        return None
+    for name, src in SOURCES:
+        name_path = Path(name)
+        if rel == name_path or name_path in rel.parents:
+            return home / src / rel.relative_to(name_path)
+    return None
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 

@@ -348,6 +348,7 @@ canonical **`agent:native_id`** "Session URIs" (e.g. `claude:<uuid>`,
 | `sio watch --session <handle>` | **Live**-tail a session's events in real time (Claude); `--tools-only` filters to tool calls |
 | `sio search ... --files \| sio errors --session -` | Pipe search results straight into scoped analysis |
 | `sio archive sync` | Copy every agent's raw session files into `~/.sio/archive` (never deletes; survives harness cleanup such as Claude Code's 30-day default). See [docs/session-archive.md](docs/session-archive.md) |
+| `sio archive install` | Run the sync on a schedule (hourly by default): `systemd --user` timer on Linux, launchd on macOS |
 | `sio archive status` | Last archive run + per-agent file counts, deletions at source, versions |
 
 #### Database maintenance
