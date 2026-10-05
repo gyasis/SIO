@@ -59,7 +59,25 @@ _CORRECTION_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\bi\s+meant\b", re.IGNORECASE),
     re.compile(r"\bi\s+said\b", re.IGNORECASE),
     re.compile(r"\bnot\s+correct\b", re.IGNORECASE),
+    # Frustration markers (2026-10-05): a phrase-only list missed every
+    # profane or "!!!!!!" message, so the angriest turns never reached suggest.
+    re.compile(r"\b(?:fuck\w*|shit\w*|wtf|goddamn\w*|bullshit|ffs)\b", re.IGNORECASE),
+    re.compile(r"!{3,}"),
+    re.compile(
+        r"\bwhy\s+(?:the\s+\w+\s+)?(?:do|are|did|is|does|can't|don't)\s+"
+        r"(?:we|you)\s+(?:not|never|still)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\bhow\s+many\s+times\b", re.IGNORECASE),
+    re.compile(r"\bi\s+(?:already\s+)?told\s+you\b", re.IGNORECASE),
 ]
+
+# "User" turns that a harness generated rather than a human typed.
+_NOT_HUMAN_PREFIXES: tuple[str, ...] = (
+    "This session is being continued from a previous conversation",
+    "Another Claude session sent a message",
+    "The coordinator sent a message",
+)
 
 # Phrases that indicate the user wants to revert / undo a change.
 # "git push" must NOT be caught — we match "git checkout" and "git revert"
@@ -380,7 +398,13 @@ def _last_human_message(messages: list[dict[str, Any]], before_idx: int) -> str 
 
 
 def _is_correction(content: str) -> bool:
-    """Return True when *content* matches any correction phrase."""
+    """Return True when *content* matches any correction phrase.
+
+    Machine-generated "user" turns (context-continuation summaries, messages
+    relayed from other agents) are never corrections, whatever they quote.
+    """
+    if content.lstrip()[:120].startswith(_NOT_HUMAN_PREFIXES):
+        return False
     return any(pat.search(content) for pat in _CORRECTION_PATTERNS)
 
 
