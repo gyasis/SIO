@@ -84,7 +84,10 @@ def stage_files(
     manifest.
     """
     manifest_path = config_dir / MANIFEST_NAME
-    manifest = load_manifest(manifest_path) if not dry_run else {"files": {}}
+    # Read the manifest even in dry-run: without it every file looks untracked,
+    # and a user-modified file previews as "would-update" while the real run
+    # skips it (#63). Dry-run still never *saves* the manifest.
+    manifest = load_manifest(manifest_path)
 
     if not dry_run:
         config_dir.mkdir(parents=True, exist_ok=True)
