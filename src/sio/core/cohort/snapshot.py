@@ -10,7 +10,7 @@ diff is a structural signal that something the agent reads changed.
 The four dimensions (Q2 decision — all four, not just CLAUDE.md):
   1. ``~/.claude/CLAUDE.md``                  (Tier 1 core rules)
   2. ``~/.claude/skills/`` (filenames + hash) (active skills)
-  3. ``~/.claude/rules/`` (filenames + hash)  (Tier 2/3 rules)
+  3. ``~/.claude/rules/`` + ``rulebook/`` (filenames + hash)  (Tier 2/3 rules)
   4. ``~/.claude/settings.json`` `hooks` key  (runtime hook wiring)
 
 Missing files are recorded as ``null`` content rather than skipped so a
@@ -54,6 +54,20 @@ def _hash_dir(path: Path, suffixes: tuple[str, ...] = (".md",)) -> dict[str, str
     return out
 
 
+def _hash_rule_dirs(base: Path) -> dict[str, str | None]:
+    """Hash ``rules/`` (auto-loaded) plus ``rulebook/`` (on-demand) together.
+
+    ``rules/`` entries keep their bare relative path; ``rulebook/`` entries are
+    prefixed ``rulebook/``. A home with no rulebook therefore hashes exactly as
+    it did before the rules/ -> rulebook/ split, so older cohort snapshots stay
+    comparable.
+    """
+    out = _hash_dir(base / "rules", suffixes=(".md",))
+    for rel, digest in _hash_dir(base / "rulebook", suffixes=(".md",)).items():
+        out[f"rulebook/{rel}"] = digest
+    return out
+
+
 def _settings_hooks_block(settings_path: Path) -> Any:
     """Extract the ``hooks`` key from settings.json, or None if absent."""
     try:
@@ -77,7 +91,7 @@ def build_manifest(claude_home: Path | None = None) -> dict[str, Any]:
     return {
         "claude_md": _hash_file(base / "CLAUDE.md"),
         "skills": _hash_dir(base / "skills", suffixes=(".md",)),
-        "rules": _hash_dir(base / "rules", suffixes=(".md",)),
+        "rules": _hash_rule_dirs(base),
         "settings_hooks": _settings_hooks_block(base / "settings.json"),
     }
 

@@ -870,11 +870,15 @@ def generate_auto_suggestion(
     config: Any,
     *,
     verbose: bool = False,
+    raise_errors: bool = False,
 ) -> dict[str, Any] | None:
     """Generate a suggestion in fully automated mode (no human interaction).
 
     Calls ``generate_dspy_suggestion`` and, if successful, marks the result
-    as ``auto_approved``. Returns ``None`` on any generation failure.
+    as ``auto_approved``. Returns ``None`` on any generation failure, unless
+    ``raise_errors`` is True — then the exception propagates so the caller
+    can record its class and message (the batch pipeline does this).
+    Either way the warning names the exception and its root cause.
 
     Parameters
     ----------
@@ -900,12 +904,21 @@ def generate_auto_suggestion(
             config,
             verbose=verbose,
         )
-    except Exception:
+    except Exception as exc:
+        # Name the failure IN THE MESSAGE: the run log keeps only the message
+        # text, so "failed" alone recorded nothing (silent-zero-yield).
+        root = exc.__cause__ or exc
         logger.warning(
-            "Auto mode: DSPy generation failed for pattern %s",
+            "Auto mode: DSPy generation failed for pattern %s: %s: %s (root: %s: %s)",
             pattern.get("pattern_id", pattern.get("id", "?")),
+            type(exc).__name__,
+            str(exc)[:300],
+            type(root).__name__,
+            str(root)[:300],
             exc_info=True,
         )
+        if raise_errors:
+            raise
         return None
 
     suggestion["_mode"] = "auto"

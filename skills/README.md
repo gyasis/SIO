@@ -56,7 +56,7 @@ are NOT shipped by SIO (see table below).
 | `/sio-report` | Generate a visual HTML report of SIO analysis | `sio-scan`, `sio-suggest`, `sio-velocity` |
 | `/sio-review` | Interactively review pending improvement suggestions | `sio-apply` |
 | `/sio-router` | SIO meta-router for prompt-engineering targets. Detects the target_surface from agent in… | `sio-rule-generator` |
-| `/sio-rule-audit` | Audit which rules in CLAUDE.md / rules/domains/ / rules/tools/ exist as TEXT only versus… | `sio`, `sio-status`, `sio-suggest`, `sio-violations` |
+| `/sio-rule-audit` | Audit which rules in CLAUDE.md / rules/ / rulebook/ exist as TEXT only versus… | `sio`, `sio-status`, `sio-suggest`, `sio-violations` |
 | `/sio-rule-generator` | SIO-distilled CLAUDE.md rule generator. Given a Claude Code error pattern (pattern_descr… | — |
 | `/sio-scan` | Mine and analyze recent Claude Code session errors | `sio-suggest` |
 | `/sio-search` | Search session history across all six coding-agent harnesses, or scope any SIO analysis … | `sio-scan`, `sio-suggest` |

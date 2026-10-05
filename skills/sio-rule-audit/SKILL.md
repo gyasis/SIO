@@ -1,6 +1,6 @@
 ---
 name: sio-rule-audit
-description: Audit which rules in CLAUDE.md / rules/domains/ / rules/tools/ exist as TEXT only versus which have actual ENFORCEMENT (hooks/skills/recipes/memory). Cross-references SIO violation counts to rank "rules most-violated AND least-enforced" as 6-channel-wiring candidates. Triggers on "audit rules", "which rules aren't enforced", "rule coverage", "what rules are unenforceable", "find rule gaps", "which rules need hooks", "rule-to-enforcement audit". Use to find the next AP-010-style cluster before it costs another long debugging session.
+description: Audit which rules in CLAUDE.md / rules/ / rulebook/ exist as TEXT only versus which have actual ENFORCEMENT (hooks/skills/recipes/memory). Cross-references SIO violation counts to rank "rules most-violated AND least-enforced" as 6-channel-wiring candidates. Triggers on "audit rules", "which rules aren't enforced", "rule coverage", "what rules are unenforceable", "find rule gaps", "which rules need hooks", "rule-to-enforcement audit". Use to find the next AP-010-style cluster before it costs another long debugging session.
 requires:
   cli: "sio>=0.3.0"
   skills: [sio, sio-status, sio-suggest, sio-violations]
@@ -50,8 +50,8 @@ python3 ~/.claude/skills/sio-rule-audit/scripts/sio-rule-audit.py --since 7     
 | Source | Pattern matched as a "rule" |
 |---|---|
 | `~/.claude/CLAUDE.md` | Lines containing **MUST**, **NEVER**, **ALWAYS**, **BLOCKING**, **MANDATORY**, **CRITICAL** |
-| `~/.claude/rules/domains/*.md` | Same |
-| `~/.claude/rules/tools/*.md` | Same |
+| `~/.claude/rules/**/*.md` | Same (auto-loaded core) |
+| `~/.claude/rulebook/**/*.md` | Same (on-demand domain/tool rules) |
 
 For each detected rule, it extracts:
 - The rule statement (one-line summary)
@@ -103,12 +103,12 @@ When wiring a rule, hit all 6 channels (per AP-010 case study, 2026-05-06):
 | 2. Skill | `~/.claude/skills/<name>/SKILL.md` | ✅ session-start listing |
 | 3. Recipe | `~/.claude/recipes/<name>.md` + INDEX.md | ✅ retry-guard / proactive lookup |
 | 4. Memory | project memory dir + MEMORY.md index | ✅ always-loaded |
-| 5. Domain rule | `~/.claude/rules/domains/<domain>.md` | ✅ rules-injector on path match |
+| 5. Domain rule | `~/.claude/rulebook/domains/<domain>.md` | ✅ rules-injector on path match |
 | 6. CLAUDE.md core | the 200-line constitution | ✅ always-loaded |
 
 ## Cross-references
 
 - The AP-010 case study: `~/.claude/recipes/hh-zombie-stack-diagnosis-and-cleanup.md` (R-HH07) — the wiring pattern this skill abstracts from
-- `~/.claude/rules/domains/hh-dev.md` § ZENO BOOT PREFLIGHT — example of a fully-wired rule
+- `~/.claude/rulebook/domains/hh-dev.md` § ZENO BOOT PREFLIGHT — example of a fully-wired rule
 - `/sio-violations` — sister skill: which CLAUDE.md rules are being violated (no enforcement-coverage analysis)
 - `/sio-suggest` — generates new CLAUDE.md rules; this skill audits existing ones

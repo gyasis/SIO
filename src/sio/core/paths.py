@@ -43,3 +43,39 @@ def db_path() -> Path:
     if env:
         return Path(env).expanduser()
     return sio_home() / "sio.db"
+
+
+def claude_rule_dirs(claude_home: Path | None = None) -> list[Path]:
+    """Return every directory that holds Claude Code rule markdown.
+
+    ``~/.claude/rules/`` is auto-loaded by Claude Code into EVERY session, so
+    on-demand (tier 2/3) rules live in ``~/.claude/rulebook/`` instead, where
+    the rules-injector hook reads them. A reader that scans only ``rules/``
+    sees the always-loaded core and silently misses the whole rulebook — which
+    is how violations / budget / dedupe / rule-audit / the suggest consultant
+    went blind to most rules after the 2026-10-01 split. Every rule reader MUST
+    resolve its directories here. Missing directories are skipped by callers;
+    this function only names them.
+    """
+    base = claude_home if claude_home is not None else Path.home() / ".claude"
+    return [base / "rules", base / "rulebook"]
+
+
+def iter_claude_rule_files(claude_home: Path | None = None) -> list[Path]:
+    """Every ``*.md`` rule file across :func:`claude_rule_dirs`, sorted,
+    de-duplicated by resolved path (alias symlinks count once)."""
+    seen: set[Path] = set()
+    out: list[Path] = []
+    for d in claude_rule_dirs(claude_home):
+        if not d.is_dir():
+            continue
+        for f in sorted(d.rglob("*.md")):
+            try:
+                real = f.resolve()
+            except OSError:
+                continue
+            if real in seen or not real.is_file():
+                continue
+            seen.add(real)
+            out.append(f)
+    return out

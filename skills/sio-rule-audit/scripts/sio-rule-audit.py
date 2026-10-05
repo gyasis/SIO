@@ -4,8 +4,8 @@ SIO Rule Audit — find rules that exist as text but aren't enforced.
 
 Scans:
   ~/.claude/CLAUDE.md
-  ~/.claude/rules/domains/*.md
-  ~/.claude/rules/tools/*.md
+  ~/.claude/rules/**/*.md      (auto-loaded core, incl. legacy rules/domains|tools)
+  ~/.claude/rulebook/**/*.md   (on-demand domain/tool rules)
 
 For each detected rule (lines containing MUST/NEVER/ALWAYS/BLOCKING/MANDATORY/CRITICAL),
 counts enforcement coverage across 4 channels:
@@ -31,8 +31,9 @@ from datetime import datetime, timedelta
 
 HOME = Path.home()
 CLAUDE_MD = HOME / ".claude/CLAUDE.md"
-RULES_DOMAINS = HOME / ".claude/rules/domains"
-RULES_TOOLS = HOME / ".claude/rules/tools"
+# Claude Code auto-loads everything under rules/, so on-demand rules live in
+# rulebook/. Scan both, recursively; alias symlinks count once.
+RULE_DIRS = [HOME / ".claude/rules", HOME / ".claude/rulebook"]
 HOOKS_DIR = HOME / ".claude/hooks"
 SKILLS_DIR = HOME / ".claude/skills"
 RECIPES_INDEX = HOME / ".claude/recipes/INDEX.md"
@@ -201,11 +202,15 @@ def audit():
     # 1. Extract rules from all source files
     rules = []
     rules.extend(extract_rules(CLAUDE_MD))
-    if RULES_DOMAINS.exists():
-        for f in sorted(RULES_DOMAINS.glob("*.md")):
-            rules.extend(extract_rules(f))
-    if RULES_TOOLS.exists():
-        for f in sorted(RULES_TOOLS.glob("*.md")):
+    seen_real = set()
+    for d in RULE_DIRS:
+        if not d.exists():
+            continue
+        for f in sorted(d.rglob("*.md")):
+            real = f.resolve()
+            if real in seen_real or not real.is_file():
+                continue
+            seen_real.add(real)
             rules.extend(extract_rules(f))
 
     # 2. For each rule, score enforcement and violations
