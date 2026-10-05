@@ -497,6 +497,16 @@ built on their respective on-disk stores:
 Pass `--agent all` to fan out across every harness in one call. Use `--list-agents` to see
 which harnesses have on-disk history on this machine.
 
+**Empty-content events are dropped, on purpose.** Every parser gates on `_matches`, which
+never matches an empty text — so an event with no content is neither a search hit nor,
+through `sio mine --agent` (which reads through these same parsers), a mined event. The one
+exception is `pi`: its parser keeps an event the harness itself flagged as a failure
+(`isError`, a non-zero `!cmd` exit) even with empty content, because the flag is the signal
+and `mine --session` files it too. No other harness carries such a flag today, so nothing is
+lost there; when one does, its parser gets the same treatment (see the `_matches` docstring
+in `sio/search/cli.py` for the exact steps) rather than a general mechanism built ahead of
+a need.
+
 **Examples:**
 
 ```bash
@@ -692,14 +702,26 @@ sqlite3 ~/.sio/sio.db 'SELECT error_type, tool_name, substr(error_text,1,60) FRO
 sio errors --agent pi          # the same rows through the CLI
 ```
 
-**No duplicate mining.** `error_records` carries a UNIQUE fingerprint
-(`session_id, timestamp, error_type, tool_name, error_text`, NULL-safe), inserts are
-`INSERT OR IGNORE`, and non-claude sessions are recorded in `processed_sessions` under their
-canonical id with a signature (event count + last timestamp). Re-mining an unchanged session
-is a skip; a session that grew is re-read and only its new errors land. `sio mine` prints
-`N new, M already present` so a run that captured nothing new is never mistaken for a window
-with nothing in it. `mine --session pi:<partial>` and `mine --agent pi` file the same session
-under the same full id (`pi:<file stem>`).
+**No duplicate mining.** An error's identity is the fingerprint
+`session_id, timestamp, error_type, tool_name, error_text` (NULL-safe), with `error_text`
+compared on its **first 2000 characters** (`ERROR_TEXT_FINGERPRINT_CHARS`). That prefix is
+the cap the search parsers behind `mine --agent` put on every event's content; the adapters
+behind `mine --session` read the whole text. So an error longer than 2000 characters read
+truncated one way and whole the other is still ONE row — the write seam
+(`insert_error_record`) looks the fingerprint up before inserting, returns "already present",
+and when the incoming text is a longer read of the stored one it upgrades the stored text in
+place, so the full text wins whichever path ran first. Two errors that genuinely differ only
+past character 2000 (same session, same timestamp, same tool) are treated as one; that is the
+trade-off for storing the full text without a schema change. Underneath, the exact UNIQUE
+index (`ux_error_records_fingerprint`) is unchanged and remains the hard guard
+(`INSERT OR IGNORE`). Rows stored before this rule are left as they are — a DB that already
+holds a truncated/full pair keeps both; migration 006's dedupe applies the prefix rule, but
+only on a DB it has not yet migrated. Non-claude sessions are recorded in
+`processed_sessions` under their canonical id with a signature (event count + last
+timestamp). Re-mining an unchanged session is a skip; a session that grew is re-read and only
+its new errors land. `sio mine` prints `N new, M already present` so a run that captured
+nothing new is never mistaken for a window with nothing in it. `mine --session pi:<partial>`
+and `mine --agent pi` file the same session under the same full id (`pi:<file stem>`).
 
 ### Migration 006 (`agent` column) — what `sio init` / `sio db migrate` do
 
@@ -743,6 +765,26 @@ sio db drop-agent claude --yes --including-claude   # claude is the bulk of the 
 | `--db-path` | `$SIO_DB_PATH` or `~/.sio/sio.db` | database to operate on |
 | `--yes` / `-y` | off | execute; without it the command is a dry run |
 | `--including-claude` | off | required when `AGENT` is `claude` |
+
+**Patterns follow the drop.** A pattern is a cluster of `error_records` rows (the
+`pattern_errors` links), and its `error_count`, `session_count`, `first_seen` and `last_seen`
+are aggregates of that membership. Deleting an agent's errors removes their links, so every
+pattern that lost a member has those four recomputed from its surviving links in the same
+transaction (only `active` links where the 004 column exists — the membership `sio trend`
+reads). A pattern left with **no** members is kept, with `error_count = 0` and
+`session_count = 0` and its `first_seen` / `last_seen` left as they were: the command was
+asked to delete the agent's rows, not the cross-agent aggregates — nor the suggestions and
+datasets that reference a pattern by id. A zero-member pattern is visible in the report and
+in the table, drops out of any `min_count` filter, and can be deleted deliberately. The report
+lists each affected pattern:
+
+```
+  patterns recomputed: 2 lost members of this agent; 1 left with no errors (kept, error_count = 0)
+    tool_failure_5dcabb7fb2  errors 6 -> 5   sessions 4 -> 3
+    tool_failure_9c4f90b2bb  errors 3 -> 0   sessions 2 -> 0   <- no errors left; kept, delete it deliberately if unwanted
+```
+
+The dry run previews the same numbers (`patterns would recompute: …`) and writes nothing.
 
 Deletes the agent's rows from `error_records`, `flow_events`, `positive_records`,
 `session_metrics`, `processed_sessions` plus the `pattern_errors` / `experiment_runs` rows

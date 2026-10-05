@@ -9,6 +9,119 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
+### Added — `sio archive`: SIO keeps its own copy of every session
+
+- **`sio archive sync|status`** mirrors every coding agent's raw session store
+  (Claude projects + prompt history, Codex, Gemini, pi, Kimi, PromptChain, goose,
+  opencode) into `~/.sio/archive/`. Never deletes; a file deleted at the source
+  is kept and marked `source_gone_at` in the `_archive.db` manifest. Grown files
+  are re-copied only when the archived bytes are still their prefix; a shrunk or
+  rewritten file keeps its old copy as `<name>.~<UTC>`. SQLite stores are copied
+  with the backup API (never byte-copied mid-write) and switched out of WAL mode.
+- **`sio search --agent claude`** now also reads archived transcripts whose live
+  copy Claude Code has deleted, in both the ripgrep and Python paths, without
+  double-reporting sessions that still exist live.
+- **Every archived agent is searchable from the archive.** `sio search --agent
+  codex|gemini|pi|kimi|promptchain|goose|opencode|all` reads the live store and
+  then SIO's copy: sessions the harness deleted (or rows removed from a goose /
+  opencode database) are found, tagged `metadata.archived = true`, and anything
+  still live is reported once. Mining (`sio mine`) still reads live stores only.
+- **`sio archive install [--interval N] [--dry-run]`** schedules the sync itself:
+  a `systemd --user` timer on Linux, a launchd agent on macOS, with the absolute
+  `sio` path. Runs daily by default (`--interval 1440`): each run is under a
+  second and copies only changed files, and daily is well inside a 30-day
+  retention window. Re-running it is a no-op when nothing changed.
+- Why: Claude Code deletes transcripts after 30 days by default. The SpecStory
+  job that used to keep long history stopped in April 2026 and five months of
+  transcripts were lost before anyone noticed. Docs: `docs/session-archive.md`.
+
+### Added — codex and opencode as `sio init` install targets
+
+- **`sio init --harness codex`** and **`--harness opencode`** stage SIO's
+  bundled skills into each harness's own user skills dir, the way `--harness
+  pi` does (#42): manifest-tracked, idempotent, dry-run writes nothing,
+  `--uninstall` removes only what SIO installed and prunes emptied dirs, and a
+  same-named skill SIO did not install is never overwritten without `--force`
+  (`managed.stage_files(adopt_untracked=False)`). Both are auto-detected by a
+  bare `sio init` when their config dir exists. Shared plumbing lives in
+  `sio.harnesses.skills_dir`; `pi.py` is unchanged.
+- **Each adapter installs only what its harness has a home for, and reports
+  the rest** — the governing principle: a harness is not assumed to look like
+  Claude Code. Established from the installed binaries, not docs:
+
+  | Asset | codex (`codex-cli 0.154.0`) | opencode (`1.18.4`) |
+  |---|---|---|
+  | skills | `$CODEX_HOME/skills/<name>/SKILL.md` (env honoured; `initialize` echoes `codexHome`). Frontmatter + non-empty `description` required, `name` optional/unconstrained, symlinked dirs followed, bare `skills/*.md` ignored | `$XDG_CONFIG_HOME/opencode/skill(s)/<name>/SKILL.md`. No name/description-length rule; a skill without `description` is never surfaced. `OPENCODE_CONFIG_DIR` is an *extra* scanned root, not a relocation |
+  | rules / standing context | `rules/*.rules` = execpolicy command policy, not markdown; `AGENTS.md` is the user's — **reported unsupported** | none; `AGENTS.md` / `instructions` in `opencode.json` are the user's — **reported unsupported** |
+  | hooks | `hooks/hooks.json` exists (feature `hooks`, PreToolUse/PostToolUse/UserPromptSubmit) but SIO's hooks parse Claude Code's payload — **not registered** | plugins (`plugin/*.ts`), no hooks — **not registered** |
+  | proof the harness loaded the install | `codex app-server` JSON-RPC `skills/list` against a temp `CODEX_HOME` (test) | `opencode debug skill` against a temp HOME/XDG (test) |
+
+- opencode's install output notes when the SIO skills are already visible to
+  it through its external scan of `~/.claude/skills` (global dir wins on a
+  name clash; the copy survives `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1`).
+- `scripts/install-skills.sh` (plain-copy fallback) also copies into
+  `$CODEX_HOME/skills` and `$XDG_CONFIG_HOME/opencode/skills` when those dirs
+  exist, skipping symlinked entries. `sio doctor` and the `sio init` hints
+  name the new targets. `cursor` / `windsurf` stay stubs.
+
+### Fixed — agent isolation follow-ups (open items from #44 / #45)
+
+- **One error, one row, however long its text.** The two mining paths carried
+  different text for the same error: the search parsers behind
+  `sio mine --agent` cap every event's content at 2000 characters, the
+  adapters behind `sio mine --session` do not, and the UNIQUE fingerprint
+  compared `error_text` exactly — so an error longer than 2000 characters
+  mined both ways yielded TWO rows (observed in the live DB: two pi
+  `tool_failure` pairs, 2000 vs 4517 / 2825 chars, same session, timestamp and
+  tool). The identity is now the fingerprint with `error_text` compared on its
+  first 2000 characters (`ERROR_TEXT_FINGERPRINT_CHARS`, pinned to the parsers'
+  cap by a test): `insert_error_record` looks it up before inserting, reports
+  "already present", and upgrades the stored text in place when the incoming
+  text is a longer read of it — the full text is kept and wins whichever path
+  ran first. The exact UNIQUE index is unchanged (no migration; the live DB
+  keeps working untouched), and migration 006's dedupe uses the same prefix
+  rule on DBs it has not yet migrated. Rows already stored are not rewritten.
+  Trade-off: two errors that genuinely differ only past character 2000 in the
+  same session at the same timestamp collapse to one.
+- **`sio mine --session` summary pluralises like the bulk line.** It printed
+  `1 events -> 1 errors`; #45 added `_plural` for the bulk line only. Now
+  `Adapter-mined <id>: 1 event -> 1 error (1 new, 0 already present).` via
+  `_session_summary`, the same shape as `_bulk_summary` (the `Skipped … (N
+  events)` line too).
+- **Documented, not built: the other search parsers drop empty-content
+  events.** codex / goose / opencode / gemini / kimi (and promptchain) gate on
+  `_matches`, which never matches an empty text; only `pi` carries a
+  harness-failure flag that justifies keeping an empty event (#45). No live gap
+  exists, so the pi machinery is not generalised — the `_matches` docstring
+  and a pointer comment at each drop site say it is deliberate and what has
+  to change when another parser starts flagging failures.
+- **`sio db drop-agent` no longer leaves `patterns.error_count` /
+  `session_count` counting deleted errors.** It deleted the agent's
+  `error_records` and their `pattern_errors` links but the pattern's
+  membership aggregates (`error_count`, `session_count`, `first_seen`,
+  `last_seen`) kept their old values, so a pattern could outlive every error
+  that formed it and still rank as if they were there. Now, in the same
+  transaction, every pattern that lost a member has those four recomputed
+  from its surviving links (active links only where the 004 `active` column
+  exists — the membership `sio trend` reads). A pattern left with no members
+  is **kept** with `error_count = 0` / `session_count = 0` and its
+  `first_seen` / `last_seen` untouched — drop-agent was asked to delete the
+  agent's rows, not the cross-agent aggregates (and the suggestions / datasets
+  that reference them by id) built on top; a zero-member pattern is visible,
+  hidden by `min_count` filters, and deleted deliberately if unwanted. The
+  drop report (and its dry run, which previews the same numbers and writes
+  nothing) lists each affected pattern `errors N -> M  sessions N -> M` and
+  flags the ones left empty.
+- **Migration 006 is now tested against a concurrent WRITER, not just a
+  concurrent migrator.** A hook-style thread inserts legacy-shaped rows (no
+  `agent` column, plain INSERT, 30 s busy timeout) into `error_records` and
+  `flow_events` while the migration runs on the same file, with a hold
+  injected inside the transaction so the writer is provably made to wait
+  (one insert measured spanning the held lock). The migration applies, no
+  writer row is lost, and every row — landed before the lock (backfilled) or
+  after it (stamped by the `AFTER INSERT` trigger) — ends with the correct
+  non-empty `agent`. No defect was found; the existing implementation holds.
+
 ### Added — one real SIO-home pointer (`sio.core.paths`), `wuphf` as a KNOWN_AGENT
 
 - **`sio.core.paths.sio_home()` / `db_path()`** are now the single source of

@@ -21,6 +21,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
+
 from sio.core.paths import sio_home as _default_sio_home
 
 _BOOTSTRAP_PKG = "sio._bootstrap"

@@ -26,11 +26,11 @@ def test_default_harness_is_claude_code():
 
 
 def test_claude_routing_unchanged_for_known_tool():
-    """A known tool still routes to the tiered rules/tools path for claude."""
+    """A known tool still routes to the tiered rulebook/tools path for claude."""
     pattern = {"tool_name": "graphiti"}
     ct = _infer_change_type(pattern)  # default harness
     assert ct == "tool_rule"
-    assert _infer_target_file(pattern, ct) == ".claude/rules/tools/graphiti.md"
+    assert _infer_target_file(pattern, ct) == ".claude/rulebook/tools/graphiti.md"
 
 
 def test_claude_general_pattern_routes_to_claude_md():
@@ -66,3 +66,14 @@ def test_registry_matches_inference():
         pattern = {"tool_name": "anything"}
         assert _infer_change_type(pattern, harness) == change_type
         assert _infer_target_file(pattern, "ignored", harness) == target
+
+
+def test_claude_bootstrap_rules_install_into_rulebook(tmp_path):
+    """Bootstrap rules/ land in ~/.claude/rulebook/, never the auto-loaded rules/."""
+    from pathlib import Path
+
+    from sio.harnesses.claude_code import ClaudeCodeAdapter
+
+    a = ClaudeCodeAdapter(config_dir=tmp_path / ".claude")
+    assert a._resolve_target(Path("rules/tools/sio.md")) == tmp_path / ".claude/rulebook/tools/sio.md"
+    assert a._resolve_target(Path("skills/x/SKILL.md")) == tmp_path / ".claude/skills/x/SKILL.md"

@@ -66,7 +66,7 @@ def cli():
 @click.option(
     "--harness",
     default=None,
-    help="Target harness (claude-code, pi, cursor, windsurf, opencode). "
+    help="Target harness (claude-code, pi, codex, opencode, cursor, windsurf). "
     "If omitted, auto-detects every harness installed on this system.",
 )
 @click.option(
@@ -123,6 +123,8 @@ def init(
         sio init --uninstall        # remove SIO-managed files
         sio init --harness claude-code --force
         sio init --harness pi       # skills only (pi has no rules dir / hooks)
+        sio init --harness codex    # skills only → $CODEX_HOME/skills (~/.codex)
+        sio init --harness opencode # skills only → ~/.config/opencode/skills
     """
     from rich.console import Console
     from rich.table import Table
@@ -233,7 +235,7 @@ def init(
                 f"[yellow]No supported harnesses detected.[/yellow] Known: {known}\n"
                 f"To force-install for a specific harness even if its config "
                 f"dir doesn't exist yet:\n"
-                f"  sio init --harness claude-code   # or: --harness pi"
+                f"  sio init --harness claude-code   # or: --harness pi | codex | opencode"
             )
             raise SystemExit(1)
 
@@ -332,8 +334,8 @@ def init(
     if not status and not dry_run and not uninstall and any_creates:
         console.print(
             "\n[bold yellow]→ Restart your AI coding agent[/bold yellow] "
-            "for newly-staged skills to appear (Claude Code and pi only read "
-            "the skills dir at startup)."
+            "for newly-staged skills to appear (Claude Code, pi, codex and "
+            "opencode read the skills dir at startup)."
         )
         console.print(
             "  [dim]Also: open ~/.sio/config.toml and uncomment one [llm] "
@@ -908,7 +910,7 @@ def _mine_session_via_adapter(db_path: str, handle: str, agent: str) -> None:
         if _non_claude_session_processed(conn, canonical, signature):
             click.echo(
                 f"Skipped {canonical}: unchanged since last mine "
-                f"({len(events)} events) — nothing new to extract."
+                f"({_plural(len(events), 'event')}) — nothing new to extract."
             )
             return
         errors = extract_errors(messages, source_file=manifest.handle, source_type="adapter")
@@ -917,10 +919,7 @@ def _mine_session_via_adapter(db_path: str, handle: str, agent: str) -> None:
             conn, canonical, signature, manifest.agent, len(events), manifest.path
         )
         conn.commit()
-    click.echo(
-        f"Adapter-mined {canonical}: {len(events)} events -> {len(errors)} errors "
-        f"({inserted} new, {present} already present)."
-    )
+    click.echo(_session_summary(canonical, len(events), len(errors), inserted, present))
 
 
 def _mine_agent_bulk(db_path: str, agent: str, since: str | None) -> None:
@@ -1009,6 +1008,19 @@ def _mine_agent_bulk(db_path: str, agent: str, since: str | None) -> None:
 
 def _plural(n: int, noun: str) -> str:
     return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
+
+
+def _session_summary(canonical: str, events: int, errors: int, inserted: int, present: int) -> str:
+    """The one-line result of a ``--session`` mine of ONE non-claude session.
+
+    Same shape as :func:`_bulk_summary`: what was read (``events``), what the
+    extractor found (``errors``), split into ``N new`` landed now and
+    ``M already present`` before (the fingerprint dropped them).
+    """
+    return (
+        f"Adapter-mined {canonical}: {_plural(events, 'event')} -> {_plural(errors, 'error')} "
+        f"({inserted} new, {present} already present)."
+    )
 
 
 def _bulk_summary(
@@ -7662,7 +7674,7 @@ def rule_audit_cmd(rule_id, samples, window, judge, yes, write_report, fmt):
 
     judge_result: dict | None = None
     if judge:
-        # Cost callout per ~/.claude/rules/domains/cost-control.md
+        # Cost callout per ~/.claude/rulebook/domains/cost-control.md
         from sio.core.cost import estimate_call  # noqa: PLC0415
 
         n = len(data["after"])
@@ -9662,6 +9674,11 @@ def trend(granularity, top_n, num_windows, pattern_filter, grep_term, experiment
 from sio.cli.runs import runs_cmd as _runs_cmd  # noqa: E402
 
 cli.add_command(_runs_cmd)
+
+# Register sio archive (SIO's own never-deleted copy of every agent's session files)
+from sio.cli.archive import archive_cmd as _archive_cmd  # noqa: E402
+
+cli.add_command(_archive_cmd)
 
 # Register sio render (turn optimized module into deployable skill)
 from sio.cli.render import render_cmd as _render_cmd  # noqa: E402

@@ -35,13 +35,13 @@ from sio.suggestions.confidence import score_confidence
 # ---------------------------------------------------------------------------
 
 _DEFAULT_CHANGE_TYPE = "tool_rule"
-_DEFAULT_TARGET_FILE = ".claude/rules/tools/"
+_DEFAULT_TARGET_FILE = ".claude/rulebook/tools/"
 
 # Map change_type -> canonical target file
 _TARGET_FILE_MAP: dict[str, str] = {
     "claude_md_rule": "CLAUDE.md",
-    "tool_rule": ".claude/rules/tools/",
-    "domain_rule": ".claude/rules/domains/",
+    "tool_rule": ".claude/rulebook/tools/",
+    "domain_rule": ".claude/rulebook/domains/",
     "skill_update": ".claude/skills/",
     "hook_config": ".claude/hooks/",
 }
@@ -65,14 +65,14 @@ _HARNESS_INSTRUCTION_FILES: dict[str, tuple[str, str]] = {
 
 # Known tool name -> rule file mapping for tiered routing
 _TOOL_RULE_FILES: dict[str, str] = {
-    "graphiti": ".claude/rules/tools/graphiti.md",
-    "atlassian": ".claude/rules/tools/atlassian.md",
-    "superset": ".claude/rules/tools/superset.md",
-    "playwright": ".claude/rules/tools/playwright.md",
-    "snowflake": ".claude/rules/tools/snowflake.md",
-    "read": ".claude/rules/tools/read.md",
-    "bash": ".claude/rules/tools/bash.md",
-    "clipboard": ".claude/rules/tools/clipboard.md",
+    "graphiti": ".claude/rulebook/tools/graphiti.md",
+    "atlassian": ".claude/rulebook/tools/atlassian.md",
+    "superset": ".claude/rulebook/tools/superset.md",
+    "playwright": ".claude/rulebook/tools/playwright.md",
+    "snowflake": ".claude/rulebook/tools/snowflake.md",
+    "read": ".claude/rulebook/tools/read.md",
+    "bash": ".claude/rulebook/tools/bash.md",
+    "clipboard": ".claude/rulebook/tools/clipboard.md",
 }
 
 
@@ -115,13 +115,13 @@ def _infer_change_type(pattern: dict, harness: str = DEFAULT_HARNESS) -> str:
     every suggestion gets that harness's instruction-rule change_type.
 
     CLAUDE.md Constitution: CLAUDE.md must stay under 200 lines.
-    Tool-specific rules go to ~/.claude/rules/tools/{tool}.md.
-    Domain rules go to ~/.claude/rules/domains/{domain}.md.
+    Tool-specific rules go to ~/.claude/rulebook/tools/{tool}.md.
+    Domain rules go to ~/.claude/rulebook/domains/{domain}.md.
     Only CORE behavioral rules go to CLAUDE.md.
 
     Rules
     -----
-    - Patterns about a specific tool -> "tool_rule" (routed to rules/tools/)
+    - Patterns about a specific tool -> "tool_rule" (routed to rulebook/tools/)
     - Patterns about hooks -> "hook_config"
     - Patterns about skills -> "skill_update"
     - Patterns about general behavior -> "claude_md_rule" (ONLY if no tool match)
@@ -176,9 +176,9 @@ def _infer_target_file(
     safe_name = tool_name.replace("mcp__", "").split("__")[0]
     safe_name = safe_name.replace(" ", "_").replace("/", "_")
     if safe_name:
-        return f".claude/rules/tools/{safe_name}.md"
+        return f".claude/rulebook/tools/{safe_name}.md"
 
-    return _TARGET_FILE_MAP.get(change_type, ".claude/rules/tools/")
+    return _TARGET_FILE_MAP.get(change_type, ".claude/rulebook/tools/")
 
 
 # ---------------------------------------------------------------------------

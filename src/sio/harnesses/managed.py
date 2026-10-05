@@ -21,8 +21,8 @@ from collections.abc import Callable, Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sio.harnesses.base import InstallReport, StatusReport
 from sio.core.paths import sio_home as _default_sio_home
+from sio.harnesses.base import InstallReport, StatusReport
 
 MANIFEST_NAME = ".sio-managed.json"
 

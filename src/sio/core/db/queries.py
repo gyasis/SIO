@@ -287,6 +287,36 @@ _ERROR_RECORD_DEFAULTS: dict[str, object] = {
 }
 
 
+def _find_error_by_fingerprint(
+    conn: sqlite3.Connection, record: dict
+) -> tuple[int, str] | None:
+    """``(id, error_text)`` of the stored row that IS this error, else None.
+
+    Matches :data:`~sio.core.db.agents.ERROR_FINGERPRINT_MATCH_COLS`: same
+    session, timestamp, error_type and tool_name (NULL-safe) and the same
+    first :data:`~sio.core.db.agents.ERROR_TEXT_FINGERPRINT_CHARS` characters
+    of ``error_text``. The lookup rides the fingerprint index's leading
+    ``(session_id, timestamp)`` columns, so it is one indexed probe per insert.
+    """
+    from sio.core.db.agents import ERROR_TEXT_FINGERPRINT_CHARS
+
+    text = record.get("error_text") or ""
+    row = conn.execute(
+        "SELECT id, error_text FROM error_records WHERE session_id = ? AND timestamp = ? "
+        "AND COALESCE(error_type, '') = ? AND COALESCE(tool_name, '') = ? "
+        f"AND substr(error_text, 1, {ERROR_TEXT_FINGERPRINT_CHARS}) = ? "
+        "ORDER BY id LIMIT 1",
+        (
+            record.get("session_id"),
+            record.get("timestamp"),
+            record.get("error_type") or "",
+            record.get("tool_name") or "",
+            text[:ERROR_TEXT_FINGERPRINT_CHARS],
+        ),
+    ).fetchone()
+    return (int(row[0]), row[1] or "") if row else None
+
+
 def insert_error_record(
     conn: sqlite3.Connection,
     record: dict,
@@ -297,12 +327,35 @@ def insert_error_record(
     identical record was already present.
 
     The session id is canonicalised and ``agent`` derived from it here — the
-    one write seam. ``INSERT OR IGNORE`` against the UNIQUE fingerprint
-    (session_id, timestamp, error_type, tool_name, error_text) makes a
-    re-mine of the same session a no-op instead of a duplicate; callers count
-    ``None`` returns as "already present".
+    one write seam. A re-mine of the same session is a no-op instead of a
+    duplicate; callers count ``None`` returns as "already present".
+
+    Identity is the fingerprint (session_id, timestamp, error_type, tool_name,
+    error_text) with ``error_text`` compared on its first
+    :data:`~sio.core.db.agents.ERROR_TEXT_FINGERPRINT_CHARS` characters — the
+    cap the bulk-mine search parsers apply to content, so an error read
+    truncated by ``mine --agent`` and read whole by ``mine --session`` is ONE
+    row. When the row is already present and the incoming text is a longer
+    read of the same error (it extends the stored text), the stored text is
+    upgraded in place so the full text wins whichever path ran first. The
+    UNIQUE index on the exact fingerprint stays as the hard guard underneath
+    (``INSERT OR IGNORE``).
     """
     record = _stamp_agent(_canonicalize_session_fields(record))
+    existing = _find_error_by_fingerprint(conn, record)
+    if existing is not None:
+        row_id, stored_text = existing
+        new_text = record.get("error_text") or ""
+        if len(new_text) > len(stored_text) and new_text.startswith(stored_text):
+            # OR IGNORE: a pre-existing exact twin of the longer text (rows
+            # stored before this rule) must not make the upgrade raise.
+            conn.execute(
+                "UPDATE OR IGNORE error_records SET error_text = ? WHERE id = ?",
+                (new_text, row_id),
+            )
+            if not _batch:
+                conn.commit()
+        return None
     cols = _ERROR_RECORD_COLS
     placeholders = ", ".join(["?"] * len(cols))
     col_names = ", ".join(cols)

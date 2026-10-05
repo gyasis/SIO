@@ -369,6 +369,150 @@ class TestIsPartialOf:
         assert _q(legacy_db, "SELECT COUNT(*) FROM schema_version WHERE version=6") == [(1,)]
         assert _q(legacy_db, "SELECT COUNT(*) FROM error_records") == [(6,)]
 
+    def test_dedupe_collapses_rows_that_differ_only_past_the_text_prefix(self, tmp_path: Path):
+        """The live-DB shape behind the parity fix: the same pi error stored
+        once at the parsers' 2000-char cap (bulk) and once in full (--session).
+        Migration 006 treats them as one; the lowest id survives and the
+        pattern link on the duplicate is remapped to it."""
+        n = ag.ERROR_TEXT_FINGERPRINT_CHARS
+        full = "e" * (n + 2517)
+        db = tmp_path / "sio.db"
+        conn = sqlite3.connect(str(db))
+        conn.executescript(_LEGACY_DDL)
+        conn.executemany(
+            _ER_INSERT,
+            [
+                (PI_FULL, "t1", "bash", full[:n], "tool_failure"),  # id 1, bulk-shaped
+                (PI_FULL, "t1", "bash", full, "tool_failure"),  # id 2, --session-shaped
+                (PI_FULL, "t1", "bash", "b" * n + "different tail", "tool_failure"),  # id 3
+            ],
+        )
+        conn.execute(
+            "INSERT INTO patterns (id, pattern_id, description, error_count, session_count, "
+            "first_seen, last_seen) VALUES (1, 'p', 'd', 1, 1, 't', 't')"
+        )
+        conn.execute("INSERT INTO pattern_errors VALUES (1, 2)")
+        conn.commit()
+        conn.close()
+
+        report = ag.migrate_006_agent_isolation(db)
+        assert report["duplicates_removed"] == {"pi": 1}
+        assert _q(db, "SELECT id, length(error_text) FROM error_records ORDER BY id") == [
+            (1, n),
+            (3, n + len("different tail")),
+        ]
+        assert _q(db, "SELECT error_id FROM pattern_errors") == [(1,)]
+
+    def test_migration_survives_a_concurrent_writer(self, legacy_db: Path, monkeypatch):
+        """A hook-style writer keeps inserting legacy-shaped rows (no ``agent``
+        column, plain INSERT, 30 s busy timeout — what a live Claude Code hook
+        from an older checkout does) into error_records AND flow_events while
+        migration 006 runs on the same file.
+
+        Must hold: the migration applies; not one writer row is lost; every
+        row ends with a non-empty ``agent`` that matches its session id (the
+        rows that landed before the lock are backfilled, the ones that landed
+        after it are stamped by the AFTER INSERT trigger); and the writer was
+        really made to WAIT on the lock — a hold is injected inside the
+        transaction and at least one insert is shown to have spanned it.
+        """
+        import time as _time
+
+        # enough rows that the transaction has real work in it
+        conn = sqlite3.connect(str(legacy_db))
+        conn.executemany(
+            _ER_INSERT,
+            [(f"claude:bulk-{i % 200}", f"2026-01-01T00:00:{i:05d}", "Bash", f"e{i}", "tool_failure")
+             for i in range(5000)],
+        )
+        conn.commit()
+        conn.close()
+
+        # inject a 0.4 s hold INSIDE the migration's BEGIN IMMEDIATE (step 4)
+        hold = {"start": None, "seconds": 0.4}
+        real_dedupe = ag._dedupe_error_records
+
+        def slow_dedupe(c):
+            hold["start"] = _time.monotonic()
+            _time.sleep(hold["seconds"])
+            return real_dedupe(c)
+
+        monkeypatch.setattr(ag, "_dedupe_error_records", slow_dedupe)
+
+        stop = threading.Event()
+        inserts: list[tuple[float, float, str]] = []  # (start, end, session_id)
+        writer_errors: list[BaseException] = []
+        er_sql = (
+            "INSERT INTO error_records (session_id, timestamp, source_type, source_file, "
+            "tool_name, error_text, error_type, mined_at) "
+            "VALUES (?, ?, 'jsonl', 'writer', 'Bash', ?, 'tool_failure', 'm')"
+        )
+        fe_sql = (
+            "INSERT INTO flow_events (session_id, flow_hash, sequence, ngram_size, timestamp, "
+            "mined_at, source_file) VALUES (?, 'h', 'a -> b', 2, ?, 'm', 'writer')"
+        )
+
+        def writer():
+            c = sqlite3.connect(str(legacy_db), timeout=30.0)
+            c.execute("PRAGMA busy_timeout=30000")
+            i = 0
+            try:
+                while not stop.is_set():
+                    sid = f"pi:2026-09-20T00-00-00-000Z_{i:08d}-0000-0000-0000-000000000000"
+                    if i % 2:
+                        sid = f"claude:writer-{i}"
+                    t0 = _time.monotonic()
+                    c.execute(er_sql, (sid, f"2026-09-20T00:00:{i:05d}", f"w{i}"))
+                    c.execute(fe_sql, (sid, f"2026-09-20T00:00:{i:05d}"))
+                    c.commit()
+                    inserts.append((t0, _time.monotonic(), sid))
+                    i += 1
+                    _time.sleep(0.002)
+            except BaseException as exc:  # noqa: BLE001
+                writer_errors.append(exc)
+            finally:
+                c.close()
+
+        t = threading.Thread(target=writer)
+        t.start()
+        try:
+            deadline = _time.monotonic() + 5
+            while len(inserts) < 20 and _time.monotonic() < deadline:
+                _time.sleep(0.01)
+            assert len(inserts) >= 20, "writer never got going"
+            report = ag.migrate_006_agent_isolation(legacy_db)
+            _time.sleep(0.2)  # let some inserts land AFTER the migration
+        finally:
+            stop.set()
+            t.join(timeout=60)
+
+        assert not writer_errors, writer_errors
+        assert report["status"] == "applied"
+        assert hold["start"] is not None
+        hold_end = hold["start"] + hold["seconds"]
+
+        # the busy_timeout path was really taken: an insert started before the
+        # hold ended and finished after it, i.e. it waited on the lock
+        waited = [(s, e) for s, e, _ in inserts if s < hold_end <= e]
+        assert waited, "no insert spanned the held transaction — the race was trivial"
+        assert max(e - s for s, e in waited) >= 0.1
+        assert any(s > hold_end for s, _, _ in inserts), "nothing landed after the migration"
+
+        # no row lost, every row stamped correctly, whichever side of the lock it landed on
+        n_er = _q(legacy_db, "SELECT COUNT(*) FROM error_records WHERE source_file='writer'")[0][0]
+        n_fe = _q(legacy_db, "SELECT COUNT(*) FROM flow_events WHERE source_file='writer'")[0][0]
+        assert n_er == n_fe == len(inserts), (n_er, n_fe, len(inserts))
+        for table in ("error_records", "flow_events"):
+            bad = _q(
+                legacy_db,
+                f"SELECT COUNT(*) FROM {table} WHERE agent IS NULL OR agent = '' "  # noqa: S608
+                f"OR agent != {ag.agent_case_sql('session_id')}",
+            )[0][0]
+            assert bad == 0, f"{table}: {bad} rows with a missing/wrong agent"
+        assert _q(legacy_db, "SELECT COUNT(*) FROM schema_version WHERE version=6 AND status='applied'") == [(1,)]
+        # the seeded legacy content still migrated as usual (dedupe, merge, unknown prefix)
+        assert report["duplicates_removed"] == {"claude": 2, "pi": 2}
+
     def test_migration_on_memory_db_skips_backup(self):
         report = ag.migrate_006_agent_isolation(":memory:")
         assert report["status"] == "applied" and report["backup"] is None
@@ -431,6 +575,84 @@ class TestWriteSeam:
         )
         assert tmp_db.execute("SELECT agent FROM error_records").fetchone()[0] == "kimi"
         assert tmp_db.execute("SELECT agent FROM processed_sessions").fetchone()[0] == "claude"
+
+    # -- long error text: identity is the first ERROR_TEXT_FINGERPRINT_CHARS --
+
+    def test_long_text_truncated_then_full_is_one_row_upgraded(self, tmp_db):
+        """Bulk path first (text capped at the parsers' 2000), then --session
+        with the full read: ONE row, and it now holds the full text."""
+        n = ag.ERROR_TEXT_FINGERPRINT_CHARS
+        full = "x" * (n + 517)
+        assert insert_error_record(tmp_db, _rec("pi:abc", error_text=full[:n])) is not None
+        assert insert_error_record(tmp_db, _rec("pi:abc", error_text=full)) is None
+        rows = tmp_db.execute("SELECT error_text FROM error_records").fetchall()
+        assert [len(r[0]) for r in rows] == [n + 517]
+
+    def test_long_text_full_then_truncated_is_one_row_kept_full(self, tmp_db):
+        n = ag.ERROR_TEXT_FINGERPRINT_CHARS
+        full = "y" * (n + 1)
+        assert insert_error_record(tmp_db, _rec("pi:abc", error_text=full)) is not None
+        assert insert_error_record(tmp_db, _rec("pi:abc", error_text=full[:n])) is None
+        rows = tmp_db.execute("SELECT error_text FROM error_records").fetchall()
+        assert [len(r[0]) for r in rows] == [n + 1]
+
+    def test_short_text_stays_exact(self, tmp_db):
+        """Regression: below the prefix length nothing changes — a different
+        short text is a different error, an identical one is a duplicate."""
+        assert insert_error_record(tmp_db, _rec("pi:abc", error_text="exit 1")) is not None
+        assert insert_error_record(tmp_db, _rec("pi:abc", error_text="exit 1")) is None
+        assert insert_error_record(tmp_db, _rec("pi:abc", error_text="exit 12")) is not None
+        assert tmp_db.execute("SELECT COUNT(*) FROM error_records").fetchone()[0] == 2
+
+    def test_long_texts_differing_inside_the_prefix_are_two_rows(self, tmp_db):
+        n = ag.ERROR_TEXT_FINGERPRINT_CHARS
+        a = "a" * (n + 10)
+        b = "a" * (n - 1) + "B" + "a" * 10  # differs at char n (inside the prefix)
+        assert insert_error_record(tmp_db, _rec("pi:abc", error_text=a)) is not None
+        assert insert_error_record(tmp_db, _rec("pi:abc", error_text=b)) is not None
+        assert tmp_db.execute("SELECT COUNT(*) FROM error_records").fetchone()[0] == 2
+
+    def test_upgrade_never_raises_against_a_pre_rule_exact_twin(self, tmp_db):
+        """A DB that already holds BOTH the truncated and the full row (stored
+        before this rule) must keep working: the upgrade of the short one
+        would collide with the exact UNIQUE index, so it is ignored."""
+        n = ag.ERROR_TEXT_FINGERPRINT_CHARS
+        full = "z" * (n + 5)
+        tmp_db.executemany(
+            "INSERT INTO error_records (session_id, timestamp, source_type, source_file, "
+            "tool_name, error_text, error_type, mined_at) VALUES (?, ?, 'x', 'f', 'bash', ?, "
+            "'tool_failure', 'm')",
+            [("pi:abc", "t", full[:n]), ("pi:abc", "t", full)],
+        )
+        assert insert_error_record(tmp_db, _rec("pi:abc", timestamp="t", error_text=full)) is None
+        rows = tmp_db.execute("SELECT error_text FROM error_records ORDER BY id").fetchall()
+        assert [len(r[0]) for r in rows] == [n, n + 5]  # untouched, no IntegrityError
+
+    def test_fingerprint_prefix_matches_the_search_parsers_content_cap(self, tmp_path, monkeypatch):
+        """The parity holds only while the parsers cap content at the same
+        length the fingerprint compares — pin the two together."""
+        from sio.search import cli as search_cli
+        from tests.unit.adapters.test_pi_adapter import (
+            HEADER,
+            STEM,
+            _entry,
+            _session_dir,
+            _write_session,
+        )
+
+        monkeypatch.setattr(search_cli, "HOME", tmp_path)
+        long_err = _entry(
+            "message", "e1", None, "2026-09-15T08:01:06.000Z",
+            message={
+                "role": "toolResult", "toolCallId": "c", "toolName": "bash",
+                "content": [{"type": "text", "text": "q" * 9000}], "isError": True,
+            },
+        )
+        _write_session(_session_dir(tmp_path) / f"{STEM}.jsonl", [HEADER, long_err])
+        recs = [r for r in search_cli.search_pi("", False, None) if r.role == "tool"]
+        assert len(recs) == 1
+        assert len(recs[0].content) == ag.ERROR_TEXT_FINGERPRINT_CHARS
+        assert len(recs[0].metadata["error"]) == ag.ERROR_TEXT_FINGERPRINT_CHARS
 
 
 class TestViewsAndQueries:
@@ -503,6 +725,114 @@ class TestDropAgent:
     def test_unknown_agent_refused(self, legacy_db: Path):
         with pytest.raises(ValueError, match="unknown agent"):
             ag.drop_agent(legacy_db, "nosuch")
+
+    # -- patterns.error_count / session_count follow the drop -----------------
+
+    @staticmethod
+    def _patterns_db(tmp_path: Path, *, active_column: bool) -> Path:
+        """Three patterns over pi + claude errors:
+        A: 2 pi errors only            -> loses everything
+        B: 1 pi + 2 claude (2 sessions) -> keeps the claude survivors
+        C: claude only                  -> not affected at all
+        """
+        db = tmp_path / "sio.db"
+        conn = sqlite3.connect(str(db))
+        conn.executescript(_LEGACY_DDL)
+        pi2 = "pi:2026-09-02T00-00-00-000Z_22222222-0000-0000-0000-000000000000"
+        conn.executemany(
+            _ER_INSERT,
+            [
+                (PI_FULL, "2026-09-15T10:00:00Z", "bash", "pi e1", "tool_failure"),  # 1
+                (pi2, "2026-09-16T10:00:00Z", "bash", "pi e2", "tool_failure"),  # 2
+                (PI_FULL, "2026-09-17T10:00:00Z", "read", "pi e3", "tool_failure"),  # 3
+                ("claude:s1", "2026-09-10T10:00:00Z", "Bash", "c e4", "tool_failure"),  # 4
+                ("claude:s2", "2026-09-12T10:00:00Z", "Bash", "c e5", "tool_failure"),  # 5
+                ("claude:s3", "2026-09-13T10:00:00Z", "Read", "c e6", "tool_failure"),  # 6
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO patterns (id, pattern_id, description, error_count, session_count, "
+            "first_seen, last_seen) VALUES (?, ?, 'd', ?, ?, ?, ?)",
+            [
+                (1, "A", 2, 2, "2026-09-15T10:00:00Z", "2026-09-16T10:00:00Z"),
+                (2, "B", 3, 3, "2026-09-10T10:00:00Z", "2026-09-17T10:00:00Z"),
+                (3, "C", 1, 1, "2026-09-13T10:00:00Z", "2026-09-13T10:00:00Z"),
+            ],
+        )
+        if active_column:
+            conn.execute("ALTER TABLE pattern_errors ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
+        conn.executemany(
+            "INSERT INTO pattern_errors (pattern_id, error_id) VALUES (?, ?)",
+            [(1, 1), (1, 2), (2, 3), (2, 4), (2, 5), (3, 6)],
+        )
+        conn.commit()
+        conn.close()
+        ag.migrate_006_agent_isolation(db)
+        return db
+
+    def test_dry_run_previews_the_recompute_and_writes_nothing(self, tmp_path: Path):
+        db = self._patterns_db(tmp_path, active_column=False)
+        before = _q(db, "SELECT id, error_count, session_count, first_seen, last_seen FROM patterns")
+        report = ag.drop_agent(db, "pi")
+        assert report["executed"] is False
+        assert [m["id"] for m in report["patterns"]["affected"]] == [1, 2]
+        assert report["patterns"]["zeroed"] == [1]
+        a, b = report["patterns"]["affected"]
+        assert (a["error_count"], a["session_count"]) == ((2, 0), (2, 0))
+        assert (b["error_count"], b["session_count"]) == ((3, 2), (3, 2))
+        assert _q(db, "SELECT id, error_count, session_count, first_seen, last_seen FROM patterns") == before
+        assert _q(db, "SELECT COUNT(*) FROM pattern_errors") == [(6,)]
+        text = ag.format_drop_report(report)
+        assert "patterns would recompute: 2 lost members" in text
+        assert "A                        errors 2 -> 0   sessions 2 -> 0   <- no errors left" in text
+        assert "B                        errors 3 -> 2   sessions 3 -> 2" in text
+        assert "C" not in text.split("patterns would recompute")[1]
+
+    def test_execute_recomputes_survivors_keeps_and_flags_the_orphan(self, tmp_path: Path):
+        db = self._patterns_db(tmp_path, active_column=False)
+        report = ag.drop_agent(db, "pi", execute=True)
+        assert report["executed"] is True
+        assert report["patterns"]["zeroed"] == [1]
+        rows = _q(db, "SELECT id, error_count, session_count, first_seen, last_seen FROM patterns ORDER BY id")
+        assert rows == [
+            # A: no members left -> KEPT, counts zeroed, first/last_seen untouched
+            (1, 0, 0, "2026-09-15T10:00:00Z", "2026-09-16T10:00:00Z"),
+            # B: the two claude survivors, first/last_seen now theirs
+            (2, 2, 2, "2026-09-10T10:00:00Z", "2026-09-12T10:00:00Z"),
+            # C: never touched
+            (3, 1, 1, "2026-09-13T10:00:00Z", "2026-09-13T10:00:00Z"),
+        ]
+        assert _q(db, "SELECT pattern_id, error_id FROM pattern_errors ORDER BY 1, 2") == [
+            (2, 4), (2, 5), (3, 6),
+        ]
+        text = ag.format_drop_report(report)
+        assert "patterns recomputed: 2 lost members of this agent; 1 left with no errors" in text
+        # the report's after-numbers are what the DB now holds
+        assert [m["error_count"][1] for m in report["patterns"]["affected"]] == [0, 2]
+
+    def test_recompute_counts_only_active_links_when_004_column_exists(self, tmp_path: Path):
+        db = self._patterns_db(tmp_path, active_column=True)
+        conn = sqlite3.connect(str(db))
+        # B's claude link to error 5 is from a superseded cycle
+        conn.execute("UPDATE pattern_errors SET active = 0 WHERE pattern_id = 2 AND error_id = 5")
+        conn.commit()
+        conn.close()
+        report = ag.drop_agent(db, "pi", execute=True)
+        b = next(m for m in report["patterns"]["affected"] if m["id"] == 2)
+        assert b["error_count"] == (3, 1) and b["session_count"] == (3, 1)
+        assert _q(db, "SELECT error_count, session_count, last_seen FROM patterns WHERE id = 2") == [
+            (1, 1, "2026-09-10T10:00:00Z")
+        ]
+
+    def test_no_patterns_table_is_fine(self, tmp_path: Path):
+        db = _seed_ids(tmp_path, [PI_FULL, "claude:x"])
+        conn = sqlite3.connect(str(db))
+        conn.executescript("DROP TABLE pattern_errors; DROP TABLE patterns;")
+        conn.close()
+        ag.migrate_006_agent_isolation(db)
+        report = ag.drop_agent(db, "pi", execute=True)
+        assert report["patterns"] == {"affected": [], "zeroed": []}
+        assert "patterns recomputed" not in ag.format_drop_report(report)
 
 
 class TestCli:

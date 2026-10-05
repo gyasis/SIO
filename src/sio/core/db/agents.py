@@ -97,6 +97,28 @@ ERROR_FINGERPRINT_INDEX_SQL = (
     f"ON error_records({', '.join(ERROR_FINGERPRINT_COLS)})"
 )
 
+#: How many leading characters of ``error_text`` take part in the dedupe
+#: identity. The two mining paths disagree on the text they carry: the search
+#: parsers behind ``sio mine --agent`` cap every event's content at 2000
+#: characters (``sio.search.cli``, ``content=text[:2000]``), the adapters
+#: behind ``--session`` do not — so one error longer than that mined both ways
+#: produced two rows that differ only past character 2000 (observed live: pi
+#: rows of 2000 vs 4517 chars, same session / timestamp / tool). Fingerprinting
+#: on this prefix makes the two paths agree while the FULL text is still stored
+#: (``--session`` keeps what it read; a bulk row is upgraded in place when a
+#: longer read of the same error arrives — :func:`sio.core.db.queries.insert_error_record`).
+#: Must never exceed the parsers' cap or the parity is lost again.
+ERROR_TEXT_FINGERPRINT_CHARS = 2000
+
+#: The fingerprint as MATCHED: the UNIQUE index above stays exact (it is a
+#: hard guard, and rewriting it would force a migration on every existing DB);
+#: the logical identity — used by the write seam's pre-check and the migration's
+#: dedupe — compares only the first :data:`ERROR_TEXT_FINGERPRINT_CHARS` of
+#: ``error_text``. Two rows that differ only beyond that prefix are ONE error.
+ERROR_FINGERPRINT_MATCH_COLS = ERROR_FINGERPRINT_COLS[:-1] + (
+    f"substr(error_text, 1, {ERROR_TEXT_FINGERPRINT_CHARS})",
+)
+
 _IDENT_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
@@ -455,12 +477,14 @@ def _remap_dependents(conn: sqlite3.Connection, keep: int, dup: int) -> None:
 
 
 def _dedupe_error_records(conn: sqlite3.Connection) -> dict[str, int]:
-    """Delete exact duplicates (same fingerprint), keeping the lowest id.
+    """Delete duplicates (same :data:`ERROR_FINGERPRINT_MATCH_COLS` — i.e. the
+    same error text up to the first :data:`ERROR_TEXT_FINGERPRINT_CHARS`
+    characters), keeping the lowest id.
 
     Referencing rows are remapped to the survivor first. Returns rows removed
     per agent.
     """
-    fp = ", ".join(ERROR_FINGERPRINT_COLS)
+    fp = ", ".join(ERROR_FINGERPRINT_MATCH_COLS)
     groups = conn.execute(
         f"SELECT MIN(id), GROUP_CONCAT(id), agent FROM error_records "  # noqa: S608
         f"GROUP BY {fp} HAVING COUNT(*) > 1"
@@ -686,6 +710,78 @@ def _drop_counts(conn: sqlite3.Connection, agent: str) -> dict[str, int]:
     return counts
 
 
+def _affected_pattern_ids(conn: sqlite3.Connection, agent: str) -> list[int]:
+    """Patterns linked (via ``pattern_errors``) to at least one of ``agent``'s errors."""
+    if not (_table_exists(conn, "patterns") and _table_exists(conn, "pattern_errors")):
+        return []
+    return [
+        int(r[0])
+        for r in conn.execute(
+            "SELECT DISTINCT pe.pattern_id FROM pattern_errors pe "
+            "JOIN error_records e ON e.id = pe.error_id WHERE e.agent = ? "
+            "ORDER BY pe.pattern_id",
+            (agent,),
+        ).fetchall()
+    ]
+
+
+def _pattern_membership_after_drop(
+    conn: sqlite3.Connection, pattern_ids: list[int], agent: str
+) -> list[dict]:
+    """What each pattern's membership aggregates look like WITHOUT ``agent``'s errors.
+
+    Membership is the ``pattern_errors`` links whose error row still exists
+    and does not belong to ``agent`` — only ``active`` links when the 004
+    column is present, since that is how ``sio trend`` and the clusterer's
+    upsert read membership. Same query before the delete (dry-run preview)
+    and after it (``agent``'s rows are gone, so the exclusion is a no-op),
+    which is what makes the preview equal to the result.
+    """
+    if not pattern_ids:
+        return []
+    active = "AND pe.active = 1 " if "active" in _columns(conn, "pattern_errors") else ""
+    placeholders = ", ".join("?" * len(pattern_ids))
+    rows = conn.execute(
+        "SELECT p.id, p.pattern_id, p.error_count, p.session_count, p.first_seen, p.last_seen, "
+        "COUNT(e.id), COUNT(DISTINCT e.session_id), MIN(e.timestamp), MAX(e.timestamp) "
+        "FROM patterns p "
+        "LEFT JOIN pattern_errors pe ON pe.pattern_id = p.id "
+        f"{active}"
+        "LEFT JOIN error_records e ON e.id = pe.error_id AND e.agent != ? "
+        f"WHERE p.id IN ({placeholders}) GROUP BY p.id ORDER BY p.id",  # noqa: S608
+        (agent, *pattern_ids),
+    ).fetchall()
+    out = []
+    for pid, slug, ec, sc, first, last, ec_after, sc_after, first_after, last_after in rows:
+        out.append(
+            {
+                "id": int(pid),
+                "pattern_id": slug,
+                "error_count": (int(ec), int(ec_after)),
+                "session_count": (int(sc), int(sc_after)),
+                # a pattern left with no members keeps its old first/last_seen
+                "first_seen": (first, first_after if ec_after else first),
+                "last_seen": (last, last_after if ec_after else last),
+            }
+        )
+    return out
+
+
+def _recompute_patterns(conn: sqlite3.Connection, membership: list[dict]) -> None:
+    for m in membership:
+        conn.execute(
+            "UPDATE patterns SET error_count = ?, session_count = ?, first_seen = ?, "
+            "last_seen = ? WHERE id = ?",
+            (
+                m["error_count"][1],
+                m["session_count"][1],
+                m["first_seen"][1],
+                m["last_seen"][1],
+                m["id"],
+            ),
+        )
+
+
 def drop_agent(
     db_path: str | Path,
     agent: str,
@@ -716,11 +812,13 @@ def drop_agent(
     conn = _open(db_path)
     try:
         counts = _drop_counts(conn, agent)
+        affected = _affected_pattern_ids(conn, agent)
         report = {
             "agent": agent,
             "db_path": str(db_path),
             "executed": False,
             "counts": counts,
+            "patterns": _pattern_report(_pattern_membership_after_drop(conn, affected, agent)),
             "backup": None,
         }
         if not execute:
@@ -730,6 +828,8 @@ def drop_agent(
         present = _present_agent_tables(conn)
         conn.execute("BEGIN IMMEDIATE")
         try:
+            # re-read under the write lock: the preview above was taken outside it
+            affected = _affected_pattern_ids(conn, agent)
             for child, fk, parent in DEPENDENT_TABLES:
                 if parent in present and _table_exists(conn, child):
                     conn.execute(
@@ -749,14 +849,32 @@ def drop_agent(
                 conn.execute(
                     f"DELETE FROM {table} WHERE agent = ?", (agent,)  # noqa: S608
                 )
+            # The patterns that lost members: recompute their membership
+            # aggregates from what remains, in this same transaction, so a
+            # pattern can never claim errors that no longer exist. A pattern
+            # left with none is KEPT with error_count = 0 (visible, queryable,
+            # listed in the report) — drop-agent was asked to delete the
+            # agent's rows, not the cross-agent aggregates built on them.
+            membership = _pattern_membership_after_drop(conn, affected, agent)
+            _recompute_patterns(conn, membership)
             conn.execute("COMMIT")
         except Exception:
             conn.execute("ROLLBACK")
             raise
         report["executed"] = True
+        report["patterns"] = _pattern_report(membership)
         return report
     finally:
         conn.close()
+
+
+def _pattern_report(membership: list[dict]) -> dict:
+    """The ``patterns`` block of a drop report: every affected pattern with its
+    aggregates before/after, and the ids of those left with no members."""
+    return {
+        "affected": [m for m in membership],
+        "zeroed": [m["id"] for m in membership if m["error_count"][1] == 0],
+    }
 
 
 def format_drop_report(report: dict) -> str:
@@ -766,6 +884,23 @@ def format_drop_report(report: dict) -> str:
     for table, n in report["counts"].items():
         lines.append(f"  {table:20s} {n:8d}")
     lines.append(f"  {'total':20s} {sum(report['counts'].values()):8d}")
+    patterns = report.get("patterns") or {"affected": [], "zeroed": []}
+    affected, zeroed = patterns["affected"], set(patterns["zeroed"])
+    if affected:
+        did = "recomputed" if report["executed"] else "would recompute"
+        lines.append(
+            f"  patterns {did}: {len(affected)} lost members of this agent; "
+            f"{len(zeroed)} left with no errors (kept, error_count = 0)"
+        )
+        for m in affected:
+            ec, sc = m["error_count"], m["session_count"]
+            tail = "   <- no errors left; kept, delete it deliberately if unwanted" if (
+                m["id"] in zeroed
+            ) else ""
+            lines.append(
+                f"    {m['pattern_id'] or m['id']:24s} errors {ec[0]} -> {ec[1]}   "
+                f"sessions {sc[0]} -> {sc[1]}{tail}"
+            )
     if report.get("backup"):
         lines.append(f"  backup: {report['backup']}")
     if not report["executed"]:
