@@ -240,9 +240,8 @@ def init(
             else:
                 _archive_schedule.install()
                 console.print(
-                    f"  [green]{'installed':<14}[/green] sio archive sync — daily "
-                    f"(wall-clock, catches up after shutdown/sleep) + 5 min after boot "
-                    f"(`sio archive status` to check)"
+                    f"  [green]{'installed':<14}[/green] sio archive sync — "
+                    f"{_archive_schedule.schedule_summary()} (`sio archive status` to check)"
                 )
         except Exception as exc:  # noqa: BLE001 — never fail init over a schedule
             console.print(
