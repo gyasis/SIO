@@ -1267,7 +1267,6 @@ Options:
 ### `sio render`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio render [OPTIONS] [MODULE_ID]
 
   Render an optimized DSPy module as a skill / prompt / rule file.
@@ -1279,8 +1278,14 @@ Options:
                                   skill per module_type).
   --format [skill|system-prompt|claude-md|json-prompt]
                                   [default: skill]
-  -o, --output TEXT               Output file. Defaults to
-                                  ~/.claude/skills/<name>.md for skill format.
+  -o, --output TEXT               Output file. Defaults: skill ->
+                                  ~/.claude/skills/<name>/SKILL.md; claude-md
+                                  -> ~/.claude/rulebook/domains/sio-<name>-<id
+                                  >.md.
+  --always-load                   claude-md only: write to
+                                  ~/.claude/rules/core/ so Claude Code loads
+                                  it into EVERY session (costs context on
+                                  every prompt).
   --name TEXT                     Skill name (used in frontmatter + default
                                   filename).  [default: sio-rule-generator]
   --dry-run                       Print to stdout instead of writing to disk.

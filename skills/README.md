@@ -118,7 +118,8 @@ Declared `requires.optional` — the skill works without them, or clearly flags 
 `/sio-recall-flow`, `/sio-recall-recovery`, `/sio-recall-router` are **DSPy-rendered
 stubs**: their learned prompt lives in your local `~/.sio/sio.db` (optimized-module
 rows), not in the SKILL.md. On a fresh machine they're inert until regenerated with
-`sio render --module-id <N>`. They ship as placeholders so the slash command exists.
+`sio render <MODULE_ID> --name <skill>` (writes `~/.claude/skills/<skill>/SKILL.md`,
+replacing the placeholder). They ship as placeholders so the slash command exists.
 
 ## Portability
 

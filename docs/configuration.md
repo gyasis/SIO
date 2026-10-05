@@ -154,7 +154,12 @@ prompt whether or not they apply. SIO therefore follows a two-directory conventi
 What SIO does with each:
 
 - **Writes** — `sio init` stages `rulebook/tools/sio.md`; `sio suggest` / `sio apply`
-  target `rulebook/tools/<tool>.md` and `rulebook/domains/<domain>.md`.
+  target `rulebook/tools/<tool>.md` and `rulebook/domains/<domain>.md`;
+  `sio render --format claude-md` writes `rulebook/domains/sio-<name>-<id>.md`
+  with a `<!-- triggers: sio suggest, sio apply, sio optimize, <name> -->` line
+  (top level of `domains/` — injectors do not scan subfolders). Only an explicit
+  `--always-load` writes to `rules/core/`, and `render` warns whenever an output
+  path lands under `rules/`.
 - **Reads** — `violations`, `budget`, `dedupe`, `rule-audit`, the suggest
   consultant, active-rule stamping during `mine` and cohort snapshots all scan
   **both** directories via `sio.core.paths.claude_rule_dirs()`. A rule's id is

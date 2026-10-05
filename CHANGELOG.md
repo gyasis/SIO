@@ -9,6 +9,29 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-10-05
+
+### Fixed — `sio render` no longer floods every Claude Code session
+
+- **`--format claude-md` defaulted to `~/.claude/rules/auto/`**, which Claude Code
+  auto-loads into every session — each render added always-on context. It now
+  writes `~/.claude/rulebook/domains/sio-<name>-<id>.md` with a
+  `<!-- triggers: sio suggest, sio apply, sio optimize, <name> -->` line, so a
+  rules-injector loads it only during SIO work (verified against the injector:
+  loaded on `sio suggest`, not on unrelated commands). Top level of `domains/`
+  on purpose — injectors do not scan subfolders, so `rulebook/auto/` would never load.
+- **`--always-load`** (claude-md only) writes to `~/.claude/rules/core/` for a
+  rule that must hold in every session; the cost is stated when it is written.
+- **Warning** whenever any render output (including an explicit `-o`) lands
+  under `~/.claude/rules/`, with the per-prompt character cost.
+- **`--format skill` now writes `~/.claude/skills/<name>/SKILL.md`** (also for
+  `--all-active`) — the folder layout `sio init` installs. It used to write a flat
+  `~/.claude/skills/<name>.md`, which never replaced the placeholder skill it was
+  meant to regenerate.
+- Rendered rule filenames no longer double the prefix (`sio-sio-rule-generator-15.md`).
+- Docs: CLI reference for `sio render`, regeneration command in `skills/README.md`
+  (`--module-id` never existed), "Where rules live" covers render output.
+
 ## [0.5.0] — 2026-10-05
 
 First release since 0.3.1. Everything below accumulated on `main` after 0.3.1;

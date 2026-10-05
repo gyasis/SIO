@@ -121,14 +121,24 @@ def render_system_prompt(artifact: dict, metadata: dict) -> str:
     return "\n".join(out)
 
 
-def render_claude_md(artifact: dict, metadata: dict) -> str:
-    """Rule-injection format: standalone Markdown section, no frontmatter."""
+def render_claude_md(
+    artifact: dict, metadata: dict, triggers: list[str] | None = None
+) -> str:
+    """Rule-injection format: standalone Markdown section, no frontmatter.
+
+    ``triggers`` become a ``<!-- triggers: a, b -->`` line — the declared-keyword
+    hook a rules-injector uses to load an on-demand rule from
+    ``~/.claude/rulebook/domains/`` only when ``tool_input`` mentions one.
+    """
     skill_body = render_skill(artifact, metadata)
     # Strip the leading YAML frontmatter
     if skill_body.startswith("---"):
         end = skill_body.find("---", 3)
         if end > 0:
             skill_body = skill_body[end+3:].lstrip("\n")
+    if triggers:
+        line = "<!-- triggers: " + ", ".join(t.strip() for t in triggers if t.strip()) + " -->"
+        skill_body = line + "\n\n" + skill_body
     return skill_body
 
 
