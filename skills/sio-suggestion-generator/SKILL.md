@@ -109,7 +109,7 @@ project_context: "Claude Code session resume / memory recall"
 rule_title: "Recency-first on resume — never default to `--all` for 'continue X' intents"
 rule_body: |
   When the user says "remember", "resume", or "continue" without a date,
-  MUST start with `session-search "<keywords>" --recent 7 --files`. Widen to
+  MUST start with `sio search "<keywords>" --recent 7 --files`. Widen to
   30 only on zero hits, and explicitly flag the age. Never auto-resume work
   >7 days old without confirming.
 rule_rationale: "Prevents resuming stale sessions as if they were current work."

@@ -28,7 +28,7 @@ The rest are domain-specific — read when the scenario hits.
 Every use case follows the same operational pattern:
 
 ```
-1. Mine prior sessions for ground truth (session-search, /sio-recall, /sio-flows)
+1. Mine prior sessions for ground truth (sio search, /sio-recall, /sio-flows)
 2. Take the action (apply, retry, codify, promote)
 3. Mine the next sessions for outcome (/sio-scan, /sio-velocity, sio trend)
 ```

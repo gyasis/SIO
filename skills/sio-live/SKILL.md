@@ -18,8 +18,8 @@ requires:
 
 ## Why this exists (the gap it closes)
 
-`sio search` and `session-search` only see **finished, indexed** transcripts — a
-session that is *still being written* is invisible to them. `sio live` finds
+`sio search` only sees **finished, indexed** transcripts — a
+session that is *still being written* is invisible to it. `sio live` finds
 sessions by a **real-time signal** instead (recent transcript mtime) and reads
 the fields SIO's indexers never touched: Claude Code writes `cwd`, `gitBranch`,
 and `sessionId` on **every JSONL line**. From those it resolves each live

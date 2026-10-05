@@ -20,7 +20,7 @@ needs no other service.
 sio archive sync           # one pass; exit 1 if any file failed
 sio archive sync --json    # same, machine-readable
 sio archive status         # last run + per-agent manifest totals
-sio archive install        # schedule the sync daily (see Scheduling)
+sio archive install        # schedule the sync daily (sio init does this for you)
 ```
 
 Each pass mirrors every known session store into `~/.sio/archive/<agent>/...`
@@ -80,6 +80,11 @@ archived hits from other agents carry `metadata.archived = true`. Older copies
 kept as `<name>.~<UTC>` are not searched. `sio mine` still reads live stores only.
 
 ## Scheduling
+
+**`sio init` installs the schedule automatically** (since 0.5.3; opt out with
+`--no-archive`, remove with `sio init --uninstall`, which keeps the archive). Before
+0.5.3 the schedule was only created by running `sio archive install` by hand, so on
+most machines nothing was archiving — run `sio init` once after upgrading.
 
 ```bash
 sio archive install                 # daily (1440 minutes)

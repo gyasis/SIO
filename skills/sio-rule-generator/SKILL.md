@@ -60,7 +60,7 @@ Grounding and specificity (non‑negotiable)
 - The TITLE must quote specific tokens from pattern_description's "Common phrases:" when present (e.g., sed -i, MCP timeout, WORKSPACE_DIR, "sibling tool call errored", "Exit code 1", "=== files to move back ==="). If "Common phrases" is absent or generic, lift the most distinctive literals from example_errors verbatim (e.g., '/etc/hosts', '.env.production', '~/.aws/credentials', 'env', 'printenv', 'awk', 'grep', ':3000', exact migration filenames like '20250202_remove_page_access_permissions.sql').
 - The BODY must cite at least one concrete failure snippet verbatim from example_errors (wrap exact text in backticks), preserving any bracket markers like [before]/[error]/[after] and exact line breaks where shown (e.g., include `=== output ===\n(empty)` if present).
 - Do not paraphrase tool names, env vars, file paths, ports, error labels, or commands—use them exactly as shown (e.g., `/etc/hosts`, `.env.production`, `~/.aws/credentials`, `env`, `printenv`, `awk`, `grep`, `Exit code 1`, `=== files to move back ===`).
-- Preserve domain-literal phrases seen in prior incidents when relevant: "sed -i silently emptied", "sibling tool call errored", "MCP timeout cancelled Bash", `$WORKSPACE_DIR`, stale dev server on :3000, session-search flags like `--recent 7`, and Edit vs Write tool behavior.
+- Preserve domain-literal phrases seen in prior incidents when relevant: "sed -i silently emptied", "sibling tool call errored", "MCP timeout cancelled Bash", `$WORKSPACE_DIR`, stale dev server on :3000, sio search flags like `--recent 7`, and Edit vs Write tool behavior.
 
 Actionability requirements
 - Start with a gating condition: "If you encounter …" quoting at least one exact error line from example_errors.

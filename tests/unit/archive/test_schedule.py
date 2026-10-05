@@ -77,3 +77,48 @@ def test_cli_default_matches_schedule_default():
 
     opt = next(p for p in install_cmd.params if p.name == "interval")
     assert opt.default == schedule.DEFAULT_INTERVAL_MINUTES == 1440
+
+
+def test_uninstall_removes_schedule_but_keeps_archive(linux):
+    home, calls = linux
+    schedule.install(home=home)
+    archive = home / ".sio" / "archive" / "claude"
+    archive.mkdir(parents=True)
+    (archive / "s.jsonl").write_text("{}")
+    calls.clear()
+    actions = schedule.uninstall(home=home)
+    unit_dir = home / ".config/systemd/user"
+    assert not (unit_dir / "sio-archive.timer").exists()
+    assert not (unit_dir / "sio-archive.service").exists()
+    assert ["systemctl", "--user", "disable", "--now", "sio-archive.timer"] in calls
+    assert len(actions) == 2
+    assert (archive / "s.jsonl").exists()  # the archive itself is never touched
+
+
+def _init(monkeypatch, tmp_path, *extra):
+    """Run `sio init --dry-run` in an isolated HOME, recording archive installs."""
+    from click.testing import CliRunner
+
+    from sio.cli.main import cli
+
+    seen: list[dict] = []
+    monkeypatch.setattr(schedule, "install",
+                        lambda **kw: seen.append(kw) or ["would write sio-archive.timer"])
+    env = {"HOME": str(tmp_path), "SIO_HOME": str(tmp_path / ".sio")}
+    result = CliRunner().invoke(cli, ["init", "--harness", "claude-code", "--dry-run", *extra],
+                                env=env)
+    return result, seen
+
+
+def test_init_schedules_archive_by_default(monkeypatch, tmp_path):
+    result, seen = _init(monkeypatch, tmp_path)
+    assert result.exit_code == 0, result.output
+    assert seen == [{"dry_run": True}]
+    assert "session archive schedule" in result.output
+
+
+def test_init_no_archive_opts_out(monkeypatch, tmp_path):
+    result, seen = _init(monkeypatch, tmp_path, "--no-archive")
+    assert result.exit_code == 0, result.output
+    assert seen == []
+    assert "session archive schedule" not in result.output

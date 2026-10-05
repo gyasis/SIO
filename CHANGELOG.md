@@ -9,6 +9,46 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
+## [0.5.3] — 2026-10-05
+
+### Fixed — SIO told agents and users to run the deprecated `session-search`
+
+`session-search` was absorbed into SIO as **`sio search`** and survives only as a
+deprecated alias (installed by pip/uv/pipx, absent on source checkouts that don't
+put `.venv/bin` on PATH). Instructions still named the old command:
+
+- **The rule-generation prompt** (`core/dspy/signatures.py`) and the bundled
+  `/sio-suggestion-generator` skill taught generated rules to "start with
+  `session-search … --recent 7 --files`", so every suggestion inherited it. Now
+  `sio search`.
+- **`sio search --help` printed `usage: session-search`** and the module's usage
+  examples used the old name. Now `usage: sio search`.
+- Use-case guides (`docs/use-cases/`, 37 commands and mentions), the user guide,
+  the `sio mine --agent` help, the "no parser for agent" error, and the
+  `/sio-live` and `/sio-rule-generator` skills now say `sio search`.
+- **Unchanged on purpose:** the `session-search` alias itself, and the code that
+  recognises legacy `session-search` calls in old transcripts (hooks,
+  search-discipline metrics) and their tests.
+
+### Fixed — the session archive shipped but never ran
+
+`sio archive` (0.5.0) copies every agent's session history into `~/.sio/archive/`
+so it outlives harness cleanup — but only if something runs `sio archive sync`.
+The schedule was created solely by a manual `sio archive install`, which nothing
+called, so no machine was archiving (measured: no archive run, no timer).
+
+- **`sio init` now installs the archive schedule** (systemd `--user` timer /
+  launchd agent: daily, 5 min after boot, `Persistent` catch-up), mirroring the
+  briefing-refresh timer. `--no-archive` opts out; `--dry-run` previews it.
+- **`sio init --uninstall` removes the schedule** (new `schedule.uninstall()`),
+  never the archive data.
+- A failed schedule install warns and never fails `init`.
+- Verified on a live machine: the timer fired on enable, the first sync copied
+  0.90 GB (Claude 787 sessions + prompt history, Codex, goose, opencode) in 5 s,
+  next run 24 h later.
+
+**Upgrade:** run `sio init` once — that is what turns archiving on.
+
 ## [0.5.2] — 2026-10-05
 
 ### Fixed — published CLI reference leaked a LAN address; stale version pins

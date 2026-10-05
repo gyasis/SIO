@@ -31,7 +31,7 @@ class SearchBackedAdapter:
         parser = PARSERS.get(self.agent)
         if parser is None:
             raise NotImplementedError(
-                f"no session-search parser for agent '{self.agent}'"
+                f"no sio search parser for agent '{self.agent}'"
             )
         # Empty pattern matches every non-empty event; filter to this session.
         for rec in parser("", False, None):
