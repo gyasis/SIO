@@ -227,31 +227,75 @@ def _iter_claude_jsonl(
                         continue
                     msg = entry.get("message") or {}
                     role = entry.get("type") or msg.get("role") or "unknown"
-                    content_blocks = msg.get("content")
-                    if isinstance(content_blocks, list):
-                        text = " ".join(
-                            b.get("text", "") if isinstance(b, dict) else str(b)
-                            for b in content_blocks
-                        )
-                    else:
-                        text = str(content_blocks or entry.get("text", ""))
-                    if _matches(text, pattern, cs):
+                    parts = _claude_entry_parts(entry)
+                    matched_in = sorted({k for k, t in parts if _matches(t, pattern, cs)})
+                    if matched_in:
+                        text = " ".join(t for _, t in parts if t)
                         yield Record(
                             agent=agent_label,
                             session_id=session_id,
                             ts=entry.get("timestamp", ""),
                             role=role,
-                            content=text[:2000],
+                            content=_snippet_around(text, pattern, cs),
                             source_path=str(jsonl),
                             metadata={
                                 "uuid": entry.get("uuid", ""),
                                 "source_kind": source_kind,
+                                "matched_in": matched_in,
                             },
                             line=lineno,
                             match_text=text,
                         )
         except OSError:
             continue
+
+
+def _claude_entry_parts(entry: dict) -> list[tuple[str, str]]:
+    """Every searchable piece of one Claude JSONL entry, tagged by where it came from.
+
+    Conversation text alone is not the history: the work lives in tool calls
+    (``tool_use`` name + input), their output (``tool_result``) and the top-level
+    ``toolUseResult``. Per-match search used to read only ``text`` blocks, so a
+    command or its output was unfindable — in live sessions and in the archive.
+    """
+    msg = entry.get("message") or {}
+    blocks = msg.get("content")
+    parts: list[tuple[str, str]] = []
+    if isinstance(blocks, list):
+        for b in blocks:
+            if not isinstance(b, dict):
+                parts.append(("text", str(b)))
+                continue
+            bt = b.get("type")
+            if bt == "text":
+                parts.append(("text", b.get("text", "")))
+            elif bt == "tool_use":
+                inp = json.dumps(b.get("input") or {}, ensure_ascii=False)
+                parts.append(("tool_use", f"[tool_use {b.get('name', '')}] {inp}"))
+            elif bt == "tool_result":
+                rc = b.get("content")
+                if isinstance(rc, list):
+                    rc = " ".join(
+                        x.get("text", "") if isinstance(x, dict) else str(x) for x in rc
+                    )
+                parts.append(("tool_result", f"[tool_result] {rc or ''}"))
+    else:
+        parts.append(("text", str(blocks or entry.get("text", ""))))
+    tur = entry.get("toolUseResult")  # stdout/stderr kept outside message.content
+    if tur is not None:
+        raw = tur if isinstance(tur, str) else json.dumps(tur, ensure_ascii=False)
+        parts.append(("tool_result", f"[tool_result] {raw}"))
+    return parts
+
+
+def _snippet_around(text: str, pattern: str, cs: bool, width: int = 2000) -> str:
+    """Up to ``width`` chars of ``text`` that contain the first match (tool output
+    can be long; a fixed head would cut the match off)."""
+    if len(text) <= width:
+        return text
+    m = _compile_pattern(pattern, cs).search(text)
+    start = 0 if m is None else max(0, m.start() - width // 4)
+    return text[start:start + width]
 
 
 def search_claude(pattern: str, cs: bool, cutoff: float | None) -> Iterator[Record]:
@@ -1516,6 +1560,9 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Only files whose mtime is within N days (default: 7). "
             "Use 0 to search full history (overrides the default window). "
+            "Sessions a harness already DELETED (kept by `sio archive`) are always "
+            "older than its retention window, so the default never reaches them: "
+            "use --all or --recent 0 to search the archive. "
             "With --all and no explicit --recent, defaults to full history; "
             "an explicit --recent N is still honored alongside --all. "
             "Aligns with the Cascade Memory Protocol recency-first gate."

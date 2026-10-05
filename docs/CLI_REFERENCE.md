@@ -1,7 +1,7 @@
 # SIO CLI Reference
 
 > Auto-generated from `sio --help` and each subcommand's `--help`.
-> Regenerate with `docs/gen_cli_reference.sh`. SIO version: sio, version 0.5.5
+> Regenerate with `docs/gen_cli_reference.sh`. SIO version: sio, version 0.5.6
 
 ## Top-level
 
@@ -1410,10 +1410,14 @@ options:
                         bash legacy --all.
   --recent RECENT       Only files whose mtime is within N days (default: 7).
                         Use 0 to search full history (overrides the default
-                        window). With --all and no explicit --recent, defaults
-                        to full history; an explicit --recent N is still
-                        honored alongside --all. Aligns with the Cascade
-                        Memory Protocol recency-first gate.
+                        window). Sessions a harness already DELETED (kept by
+                        `sio archive`) are always older than its retention
+                        window, so the default never reaches them: use --all
+                        or --recent 0 to search the archive. With --all and no
+                        explicit --recent, defaults to full history; an
+                        explicit --recent N is still honored alongside --all.
+                        Aligns with the Cascade Memory Protocol recency-first
+                        gate.
   --limit LIMIT         Cap matches per agent (0=unlimited).
   --files               Emit unique source paths.
   --count               Emit per-file match counts.

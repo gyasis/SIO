@@ -68,7 +68,19 @@ sidecar files inside the archive.
 ## Search
 
 `sio search` reads each agent's live store **plus** SIO's archived copy, so a
-session the harness deleted is still found. Nothing is reported twice:
+session the harness deleted is still found. **A deleted session is always older
+than the harness's retention window, so the default `--recent 7` never reaches
+it — search the archive with `--all` (or `--recent 0`):**
+
+```bash
+sio search "infra-broker" --agent claude --all          # every match, live + archived
+sio search "infra-broker" --agent claude --all --files  # which sessions
+```
+
+Claude matches cover the whole session record, not just the conversation: your
+prompts, the assistant's replies, every tool call (`tool_use`: tool name + input,
+such as a Bash command or a file path) and its output (`tool_result`). Each hit's
+`metadata.matched_in` says where it matched. Nothing is reported twice:
 
 - a session file that still exists live is read from the live copy only;
 - shared stores that exist in both places (Codex `history.jsonl`, the goose and
@@ -96,8 +108,9 @@ counts sessions the harness has already deleted that SIO still holds.
 ## Where each harness keeps sessions
 
 SIO uses the same `$HOME`-relative paths on Linux and macOS. Observed on both
-(2026-10-05): Claude Code, Codex and pi. The others were not installed on the macOS
-machine checked; they use the same dot-paths there by their own conventions:
+(2026-10-05, two Macs): Claude Code, Codex, pi, Kimi and opencode. The rest were
+not installed on the Macs checked; they use the same dot-paths by their own
+conventions:
 
 | Harness | Path | Linux | macOS |
 |---|---|---|---|
@@ -105,10 +118,10 @@ machine checked; they use the same dot-paths there by their own conventions:
 | Codex CLI | `~/.codex/sessions/`, `~/.codex/history.jsonl` | ✓ | ✓ |
 | pi | `~/.pi/agent/sessions/` | ✓ | ✓ |
 | Gemini CLI | `~/.gemini/tmp/` | ✓ | not yet observed |
-| Kimi | `~/.kimi-code/sessions/` | ✓ | not yet observed |
+| Kimi | `~/.kimi-code/sessions/` | ✓ | ✓ |
 | PromptChain | `~/.promptchain/sessions/` | ✓ | not yet observed |
 | goose | `~/.local/share/goose/sessions/` | ✓ | not yet observed |
-| opencode | `~/.local/share/opencode/` | ✓ | not yet observed |
+| opencode | `~/.local/share/opencode/` | ✓ | ✓ |
 
 Not archived: desktop GUI apps (`~/Library/Application Support/Claude`, `…/Codex`,
 `…/Cursor` on macOS) — their "Session Storage" folders are the app window's

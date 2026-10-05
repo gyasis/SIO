@@ -9,6 +9,32 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
+## [0.5.6] — 2026-10-05
+
+### Fixed — `sio search` could not find Claude tool calls or their output
+
+The archive keeps whole session files (prompts, replies, every tool call and
+result), but the per-match search read only `text` blocks. A Bash command, a file
+path the agent wrote, or a tool's output was unfindable — in live sessions and in
+the archive alike. Measured on a session Claude Code had already deleted
+(576 prompts, 525 tool calls): a term present 147 times returned 4 hits, all from
+conversation text. Only `--files` / `--count` (raw ripgrep) and `--sessions` saw
+tool calls, so the answer depended on the flag.
+
+- **Per-match Claude search covers the whole record**: text, `tool_use` (tool name
+  + input), `tool_result`, and the top-level `toolUseResult`. Each hit carries
+  `metadata.matched_in` (`text` / `tool_use` / `tool_result`); the snippet is taken
+  around the match so long tool output doesn't cut it off. Measured on real
+  sessions: a command run only via tools, 0 hits before → 7 after.
+- **Deleted history is reachable on purpose**: sessions a harness already deleted
+  are always older than its retention window, so the default `--recent 7` never
+  reaches them. `--help`, the `/sio-search` skill and the archive guide now say to
+  use `--all` (or `--recent 0`).
+- Docs: Kimi and opencode observed on macOS in the harness-paths table.
+- Tests: tool_use / tool_result / toolUseResult / long-output snippet / archived-only
+  session (all fail on the old parser). `sio mine` is unaffected (Claude mining
+  uses its native adapter, not this parser).
+
 ## [0.5.5] — 2026-10-05
 
 ### Fixed — archive works natively on macOS; the design decision is written down
