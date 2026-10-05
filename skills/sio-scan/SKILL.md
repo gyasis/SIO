@@ -2,7 +2,7 @@
 name: sio-scan
 description: Mine and analyze recent Claude Code session errors. Ask naturally like "what's my agent doing wrong?" or "scan my recent sessions for problems".
 requires:
-  cli: "sio>=0.3.0"
+  cli: "sio>=0.5.0"
   skills: [sio-suggest]
   hooks: []
   optional: []
@@ -11,7 +11,7 @@ requires:
 # SIO Scan — What's My Agent Doing Wrong?
 
 ## Dependencies
-- **CLI:** `sio >= 0.3.0`
+- **CLI:** `sio >= 0.5.0`
 - **Skills:** `/sio-suggest` — natural next step after scan to generate improvement rules from findings
 - **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 

@@ -9,6 +9,24 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
+## [0.5.2] — 2026-10-05
+
+### Fixed — published CLI reference leaked a LAN address; stale version pins
+
+- **`docs/CLI_REFERENCE.md` regenerated.** It had been generated through a local
+  wrapper that printed `[sio-wrapper] ✓ ollama @ http://<LAN-IP>:11434 …` at the
+  top of all 62 command sections, publishing a private network address. The new
+  file comes from the plain console script and covers all 63 subcommands.
+- **`docs/gen_cli_reference.sh` scrubs and gates its output**: drops
+  `[sio-wrapper]` banner lines, rewrites `$HOME` to `~`, normalises
+  `python -m sio` to `sio`, and **exits non-zero** if a private IPv4 address or the
+  local username survives — a future regeneration cannot re-publish them.
+  Run it as `SIO_BIN=.venv/bin/sio docs/gen_cli_reference.sh`.
+- **Skill `requires: cli` pins bumped `sio>=0.3.0` → `sio>=0.5.0`** (67 lines,
+  34 bundled skills). The skills depend on 0.5 behaviour (rulebook paths, agent
+  isolation); the pins are informational, shipped in the installed
+  `sio/_bootstrap/skills` bundle, so stale ones made installs look like 0.3.
+
 ## [0.5.1] — 2026-10-05
 
 ### Fixed — `sio render` no longer floods every Claude Code session

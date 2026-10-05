@@ -2,7 +2,7 @@
 name: sio-suggest
 description: Generate targeted CLAUDE.md rules from mined error patterns. Ask naturally like "how can I improve my agent?" or "generate suggestions from my errors".
 requires:
-  cli: "sio>=0.3.0"
+  cli: "sio>=0.5.0"
   skills: [sio-review]
   hooks: []
   optional: []
@@ -11,7 +11,7 @@ requires:
 # SIO Suggest — Turn Errors into Improvement Rules
 
 ## Dependencies
-- **CLI:** `sio >= 0.3.0`
+- **CLI:** `sio >= 0.5.0`
 - **Skills:** `/sio-review` — reviewed next after suggestions are generated to approve/reject rules
 - **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 

@@ -21,7 +21,7 @@ Every skill declares a `requires:` block in its frontmatter:
 
 ```yaml
 requires:
-  cli: "sio>=0.3.0"     # the sio CLI must be installed
+  cli: "sio>=0.5.0"     # the sio CLI must be installed
   skills: [sio-scan]    # other SIO skills this one references (ship together)
   hooks: []             # SIO's telemetry hooks (global; see below) — rarely per-skill
   optional: [prd]       # enhances if present, safe to skip if absent
