@@ -64,7 +64,12 @@ NL-phrase searches almost always return 0.
 4. **Walk context with `--around N`** — role-aware ±N turns around each hit. This is
    DISTINCT from `--context N` (raw rg lines) and `--session <uuid>` (full transcript).
 5. `--recent` is recency-first discipline (default 7d). `--files` to locate, then
-   `--session <handle>` to read.
+   `--session <handle>` to read. **Deleted history:** sessions a harness already
+   removed live only in SIO's archive and are always older than its retention
+   window (Claude: 30 days) — search them with `--all` (or `--recent 0`).
+6. **Tool calls are searchable.** Claude hits cover conversation text, every
+   `tool_use` (tool name + input, e.g. a Bash command or file path) and every
+   `tool_result`; `metadata.matched_in` says which (`text` / `tool_use` / `tool_result`).
 
 **When Hop-1 is noisy** the CLI emits a Hop-2 suggestion on stderr (`--noise-threshold N`,
 default 20). Take it — don't ignore it and re-broaden.
