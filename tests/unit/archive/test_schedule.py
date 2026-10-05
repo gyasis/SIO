@@ -25,7 +25,8 @@ def test_install_writes_units_with_absolute_exe(linux):
     schedule.install(interval_minutes=30, home=home)
     unit_dir = home / ".config/systemd/user"
     assert "ExecStart=/opt/bin/sio archive sync" in (unit_dir / "sio-archive.service").read_text()
-    assert "OnUnitActiveSec=30min" in (unit_dir / "sio-archive.timer").read_text()
+    timer = (unit_dir / "sio-archive.timer").read_text()
+    assert "OnCalendar=*:00/30" in timer and "Persistent=true" in timer
     assert calls == [["systemctl", "--user", "daemon-reload"],
                      ["systemctl", "--user", "enable", "--now", "sio-archive.timer"]]
 
@@ -69,7 +70,10 @@ def test_default_interval_is_daily(linux):
     home, _ = linux
     schedule.install(home=home)  # no interval given
     timer = (home / ".config/systemd/user/sio-archive.timer").read_text()
-    assert "OnUnitActiveSec=1440min" in timer
+    # wall-clock schedule, so Persistent= actually catches up missed runs
+    assert "OnCalendar=daily" in timer and "Persistent=true" in timer
+    assert "OnBootSec=5min" in timer
+    assert "OnUnitActiveSec" not in timer
 
 
 def test_cli_default_matches_schedule_default():
@@ -122,3 +126,21 @@ def test_init_no_archive_opts_out(monkeypatch, tmp_path):
     assert result.exit_code == 0, result.output
     assert seen == []
     assert "session archive schedule" not in result.output
+
+
+@pytest.mark.parametrize("minutes,expected", [
+    (1440, "daily"), (360, "*-*-* 00/6:00:00"), (60, "*-*-* 00/1:00:00"),
+    (15, "*:00/15"), (45, None), (2880, None),
+])
+def test_on_calendar_mapping(minutes, expected):
+    assert schedule.on_calendar(minutes) == expected
+
+
+def test_non_calendar_interval_omits_noop_persistent(linux):
+    """Persistent= only works with OnCalendar=; never write it where it is a no-op."""
+    home, _ = linux
+    schedule.install(interval_minutes=45, home=home)
+    timer = (home / ".config/systemd/user/sio-archive.timer").read_text()
+    assert "OnUnitActiveSec=45min" in timer
+    assert "Persistent" not in timer and "OnCalendar" not in timer
+    assert "OnBootSec=5min" in timer

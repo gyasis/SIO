@@ -92,6 +92,27 @@ sio archive install --interval 60   # hourly
 sio archive install --dry-run       # show the files and commands, change nothing
 ```
 
+### When it runs, and what happens if the machine is off
+
+| | Linux (systemd `--user`) | macOS (launchd) |
+|---|---|---|
+| Normal schedule | `OnCalendar=daily` (wall clock, midnight) | `StartInterval` (every N seconds) |
+| Machine **off** at that time | `Persistent=true`: the missed run fires once when the timer starts at the next boot | the job runs at load (`RunAtLoad`) |
+| Machine **asleep** | the missed calendar run fires once on wake | missed intervals coalesce into one run on wake |
+| Every boot / login | `OnBootSec=5min` — a run 5 minutes after boot | `RunAtLoad` — a run when the agent loads |
+
+`--interval` values that divide a day or an hour evenly (60, 120, 360, 30, 15, …)
+use the same wall-clock + `Persistent` schedule. Other values fall back to
+`OnUnitActiveSec=N` — that counts *awake* time since the last run and cannot catch
+up, so the run after each boot is its only catch-up. (`Persistent=` only has an
+effect with `OnCalendar=` — systemd.timer(5) — so it is not written there.)
+
+On WSL, each start of the Linux VM is a boot. On a headless Linux box, enable
+lingering (`loginctl enable-linger $USER`) so user timers run while you are logged out.
+
+Nothing is lost in practice: harnesses delete only while they run, after their own
+retention window (Claude Code: 30 days), and the archive runs every boot plus daily.
+
 On Linux this writes `~/.config/systemd/user/sio-archive.{service,timer}` and
 enables the timer; on macOS it writes `~/Library/LaunchAgents/io.sio.archive.plist`
 (log: `~/.sio/archive-sync.log`) and loads it. Both use the absolute path of
@@ -112,11 +133,11 @@ ExecStart=/absolute/path/to/sio archive sync
 # ~/.config/systemd/user/sio-archive.timer
 [Timer]
 OnBootSec=5min
-OnUnitActiveSec=1h
-Persistent=true
+OnCalendar=daily        # `--interval 60` writes: OnCalendar=*-*-* 00/1:00:00
+Persistent=true         # only effective together with OnCalendar=
 [Install]
 WantedBy=timers.target
 ```
 
-Hourly is far inside Claude Code's 30-day window, so the harness default can stay
+Daily (or hourly) is far inside Claude Code's 30-day window, so the harness default can stay
 as it is.
