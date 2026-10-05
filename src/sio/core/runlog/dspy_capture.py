@@ -43,14 +43,40 @@ def _ensure_capture_file() -> Optional[Path]:
     return _CAPTURE_FILE
 
 
+def _jsonable(obj: Any) -> Any:
+    """json.dumps fallback for provider objects (litellm Usage,
+    CompletionTokensDetailsWrapper, …) that are not JSON-native."""
+    for attr in ("model_dump", "dict", "to_dict"):
+        fn = getattr(obj, attr, None)
+        if callable(fn):
+            try:
+                return fn()
+            except Exception:  # noqa: BLE001
+                pass
+    if hasattr(obj, "__dict__"):
+        return {k: v for k, v in vars(obj).items() if not k.startswith("_")}
+    return str(obj)
+
+
 def _append_record(rec: dict) -> None:
+    """Append one capture line. NEVER raises: this wrapper sits inside every
+    LM call, and an exception here used to turn a successful completion into
+    a failed generation (json.dumps on litellm's CompletionTokensDetailsWrapper
+    raised TypeError, which only the OSError handler below did not catch)."""
     path = _ensure_capture_file()
     if path is None:
         return
     try:
+        line = json.dumps(rec, default=_jsonable)
+    except Exception as exc:  # noqa: BLE001 — still record that a call happened
+        line = json.dumps({k: rec.get(k) for k in ("ts", "run_id", "stage", "model",
+                                                   "latency_ms", "ok")}
+                          | {"capture_error": f"{type(exc).__name__}: {exc}"},
+                          default=str)
+    try:
         with open(path, "a") as f:
-            f.write(json.dumps(rec) + "\n")
-    except OSError:
+            f.write(line + "\n")
+    except Exception:  # noqa: BLE001
         pass  # don't break the pipeline over a log
 
 
@@ -96,56 +122,6 @@ def install() -> None:
             prompt = kwargs.get("prompt") or kwargs.get("messages")
         try:
             result = _ORIG_LM_CALL(self, *args, **kwargs)
-            latency_ms = int((time.time() - start) * 1000)
-            # Try to extract tokens + raw text from response metadata
-            usage = None
-            text_out: Any = result
-            try:
-                # P1 fix: snapshot history via list() to avoid
-                # IndexError on concurrent append from multi-threaded
-                # GEPA workers; use `is None` not `not` to avoid
-                # overwriting empty-list/dict completions (which are
-                # falsy but valid).
-                if hasattr(self, "history"):
-                    hist_snapshot = list(self.history)
-                    if hist_snapshot:
-                        last = hist_snapshot[-1]
-                        usage = last.get("usage") if isinstance(last, dict) else None
-                        if text_out is None and isinstance(last, dict):
-                            text_out = last.get("response") or last.get("output")
-            except Exception:
-                pass
-            _append_record({
-                "ts": _iso(),
-                "run_id": rl.run_id,
-                "stage": rl.stages[-1].name if rl.stages else None,
-                "model": getattr(self, "model", "?"),
-                "latency_ms": latency_ms,
-                "usage": usage,
-                "prompt": _truncate(prompt, 12000),
-                "completion": _truncate(text_out, 12000),
-                "ok": True,
-            })
-            # XII clause 2: append-only ~/.sio/usage.log with computed cost
-            try:
-                from sio.core.cost import estimate_call, record_call  # noqa: PLC0415
-                in_tok = int((usage or {}).get("prompt_tokens", 0) or 0)
-                out_tok = int((usage or {}).get("completion_tokens", 0) or 0)
-                model_name = getattr(self, "model", "?")
-                cost = estimate_call(model_name, in_tok, out_tok)
-                record_call(
-                    model=model_name, role="task_or_reflection",
-                    in_tokens=in_tok, out_tokens=out_tok, cost_usd=cost,
-                    run_id=rl.run_id, cmd=rl.cmd, latency_ms=latency_ms,
-                )
-                # Charge the active stage with an LM call AND actual cost
-                if rl.stages:
-                    rl.stages[-1].add_llm(calls=1, cost_usd=cost)
-            except Exception:
-                # Cost capture is observability; never crash the pipeline
-                if rl.stages:
-                    rl.stages[-1].add_llm(calls=1, cost_usd=0.0)
-            return result
         except Exception as exc:
             latency_ms = int((time.time() - start) * 1000)
             _append_record({
@@ -159,6 +135,58 @@ def install() -> None:
                 "error": _truncate(exc, 2000),
             })
             raise
+        # Everything below is observability on a SUCCESSFUL call. It must never
+        # turn that success into a failure, so it runs outside the try above.
+        latency_ms = int((time.time() - start) * 1000)
+        # Try to extract tokens + raw text from response metadata
+        usage = None
+        text_out: Any = result
+        try:
+            # P1 fix: snapshot history via list() to avoid
+            # IndexError on concurrent append from multi-threaded
+            # GEPA workers; use `is None` not `not` to avoid
+            # overwriting empty-list/dict completions (which are
+            # falsy but valid).
+            if hasattr(self, "history"):
+                hist_snapshot = list(self.history)
+                if hist_snapshot:
+                    last = hist_snapshot[-1]
+                    usage = last.get("usage") if isinstance(last, dict) else None
+                    if text_out is None and isinstance(last, dict):
+                        text_out = last.get("response") or last.get("output")
+        except Exception:
+            pass
+        _append_record({
+            "ts": _iso(),
+            "run_id": rl.run_id,
+            "stage": rl.stages[-1].name if rl.stages else None,
+            "model": getattr(self, "model", "?"),
+            "latency_ms": latency_ms,
+            "usage": usage,
+            "prompt": _truncate(prompt, 12000),
+            "completion": _truncate(text_out, 12000),
+            "ok": True,
+        })
+        # XII clause 2: append-only ~/.sio/usage.log with computed cost
+        try:
+            from sio.core.cost import estimate_call, record_call  # noqa: PLC0415
+            in_tok = int((usage or {}).get("prompt_tokens", 0) or 0)
+            out_tok = int((usage or {}).get("completion_tokens", 0) or 0)
+            model_name = getattr(self, "model", "?")
+            cost = estimate_call(model_name, in_tok, out_tok)
+            record_call(
+                model=model_name, role="task_or_reflection",
+                in_tokens=in_tok, out_tokens=out_tok, cost_usd=cost,
+                run_id=rl.run_id, cmd=rl.cmd, latency_ms=latency_ms,
+            )
+            # Charge the active stage with an LM call AND actual cost
+            if rl.stages:
+                rl.stages[-1].add_llm(calls=1, cost_usd=cost)
+        except Exception:
+            # Cost capture is observability; never crash the pipeline
+            if rl.stages:
+                rl.stages[-1].add_llm(calls=1, cost_usd=0.0)
+        return result
 
     dspy.LM.__call__ = _wrapped  # type: ignore[assignment]
     _INSTALLED = True
