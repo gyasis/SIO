@@ -25,7 +25,8 @@ def test_install_writes_units_with_absolute_exe(linux):
     schedule.install(interval_minutes=30, home=home)
     unit_dir = home / ".config/systemd/user"
     assert "ExecStart=/opt/bin/sio archive sync" in (unit_dir / "sio-archive.service").read_text()
-    assert "OnUnitActiveSec=30min" in (unit_dir / "sio-archive.timer").read_text()
+    timer = (unit_dir / "sio-archive.timer").read_text()
+    assert "OnCalendar=*:00/30" in timer and "Persistent=true" in timer
     assert calls == [["systemctl", "--user", "daemon-reload"],
                      ["systemctl", "--user", "enable", "--now", "sio-archive.timer"]]
 
@@ -69,7 +70,10 @@ def test_default_interval_is_daily(linux):
     home, _ = linux
     schedule.install(home=home)  # no interval given
     timer = (home / ".config/systemd/user/sio-archive.timer").read_text()
-    assert "OnUnitActiveSec=1440min" in timer
+    # wall-clock schedule, so Persistent= actually catches up missed runs
+    assert "OnCalendar=daily" in timer and "Persistent=true" in timer
+    assert "OnBootSec=5min" in timer
+    assert "OnUnitActiveSec" not in timer
 
 
 def test_cli_default_matches_schedule_default():
@@ -77,3 +81,74 @@ def test_cli_default_matches_schedule_default():
 
     opt = next(p for p in install_cmd.params if p.name == "interval")
     assert opt.default == schedule.DEFAULT_INTERVAL_MINUTES == 1440
+
+
+def test_uninstall_removes_schedule_but_keeps_archive(linux):
+    home, calls = linux
+    schedule.install(home=home)
+    archive = home / ".sio" / "archive" / "claude"
+    archive.mkdir(parents=True)
+    (archive / "s.jsonl").write_text("{}")
+    calls.clear()
+    actions = schedule.uninstall(home=home)
+    unit_dir = home / ".config/systemd/user"
+    assert not (unit_dir / "sio-archive.timer").exists()
+    assert not (unit_dir / "sio-archive.service").exists()
+    assert ["systemctl", "--user", "disable", "--now", "sio-archive.timer"] in calls
+    assert len(actions) == 2
+    assert (archive / "s.jsonl").exists()  # the archive itself is never touched
+
+
+def _init(monkeypatch, tmp_path, *extra):
+    """Run `sio init --dry-run` in an isolated HOME, recording archive installs."""
+    from click.testing import CliRunner
+
+    from sio.cli.main import cli
+
+    seen: list[dict] = []
+    monkeypatch.setattr(schedule, "install",
+                        lambda **kw: seen.append(kw) or ["would write sio-archive.timer"])
+    env = {"HOME": str(tmp_path), "SIO_HOME": str(tmp_path / ".sio")}
+    result = CliRunner().invoke(cli, ["init", "--harness", "claude-code", "--dry-run", *extra],
+                                env=env)
+    return result, seen
+
+
+def test_init_schedules_archive_by_default(monkeypatch, tmp_path):
+    result, seen = _init(monkeypatch, tmp_path)
+    assert result.exit_code == 0, result.output
+    assert seen == [{"dry_run": True}]
+    assert "session archive schedule" in result.output
+
+
+def test_init_no_archive_opts_out(monkeypatch, tmp_path):
+    result, seen = _init(monkeypatch, tmp_path, "--no-archive")
+    assert result.exit_code == 0, result.output
+    assert seen == []
+    assert "session archive schedule" not in result.output
+
+
+@pytest.mark.parametrize("minutes,expected", [
+    (1440, "daily"), (360, "*-*-* 00/6:00:00"), (60, "*-*-* 00/1:00:00"),
+    (15, "*:00/15"), (45, None), (2880, None),
+])
+def test_on_calendar_mapping(minutes, expected):
+    assert schedule.on_calendar(minutes) == expected
+
+
+def test_non_calendar_interval_omits_noop_persistent(linux):
+    """Persistent= only works with OnCalendar=; never write it where it is a no-op."""
+    home, _ = linux
+    schedule.install(interval_minutes=45, home=home)
+    timer = (home / ".config/systemd/user/sio-archive.timer").read_text()
+    assert "OnUnitActiveSec=45min" in timer
+    assert "Persistent" not in timer and "OnCalendar" not in timer
+    assert "OnBootSec=5min" in timer
+
+
+def test_schedule_summary_is_platform_accurate():
+    linux = schedule.schedule_summary(platform="linux")
+    mac = schedule.schedule_summary(platform="darwin")
+    assert linux.startswith("systemd:") and "wall clock" in linux and "boot or wake" in linux
+    assert mac.startswith("launchd:") and "wake" in mac and "wall clock" not in mac
+    assert "no catch-up" in schedule.schedule_summary(45, platform="linux")

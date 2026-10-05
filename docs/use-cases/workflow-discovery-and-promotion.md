@@ -60,7 +60,7 @@ A mined sequence is not automatically worth promoting. Three things make it real
 2. **Success rate.** Did the sequence converge on a useful answer, or did it terminate in a `user_correction` event ("no, that's not what I meant")? `/sio-flows` annotates this; if a "recurring" pattern is mostly the agent retrying because the user kept pushing back, you don't want to codify it.
 3. **Variance.** Is the sequence stable, or does the tool order shift every time? Low variance → promote. High variance → the workflow is still exploratory, give it another week.
 
-If you're unsure, look at the underlying sessions: `session-search "<keywords from the sequence>" --recent 14 --files` and read one or two transcripts end-to-end. Cheaper than promoting a brittle pattern.
+If you're unsure, look at the underlying sessions: `sio search "<keywords from the sequence>" --recent 14 --files` and read one or two transcripts end-to-end. Cheaper than promoting a brittle pattern.
 
 ---
 

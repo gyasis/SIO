@@ -76,7 +76,7 @@ What pi gets, and what it deliberately does not:
 | Bundled asset | On pi |
 |---|---|
 | Skills (`skills/<name>/SKILL.md` + siblings) | Installed. Each `SKILL.md` is checked against pi's own loader rules (`name` = `[a-z0-9-]{1,64}`, `description` required and ≤ 1024 chars) and transformed only if it would fail — the transform is listed in the install output. |
-| Tool rules (`rules/tools/*.md`) | **Not installed** — pi has no rules dir; standing context is your own `AGENTS.md`, which SIO never edits. Reported as unsupported. |
+| Tool rules (`rulebook/tools/*.md`) | **Not installed** — pi has no rules dir; standing context is your own `AGENTS.md`, which SIO never edits. Reported as unsupported. |
 | Hook telemetry | **Not registered** — pi has extensions, not a hooks system. Ingest pi sessions with `sio mine --agent pi` / `sio search --agent pi` instead. |
 
 Skills SIO did not install — including symlinked ones from other tools — are
@@ -104,7 +104,7 @@ codex-cli 0.154.0 by driving its own loader (`codex app-server` →
 | Bundled asset | On codex |
 |---|---|
 | Skills (`skills/<name>/SKILL.md` + siblings) | Installed into `$CODEX_HOME/skills/`. codex requires YAML frontmatter and a non-empty `description` (its loader reports `missing field description` / `missing YAML frontmatter` and drops the skill); `name` is optional and unconstrained. A `SKILL.md` is transformed only if it would be dropped, and the transform is listed in the install output. |
-| Tool rules (`rules/tools/*.md`) | **Not installed** — codex's `rules/` dir holds execpolicy `.rules` command-approval files, not markdown; standing context is your own `AGENTS.md`, which SIO never edits. Reported as unsupported. |
+| Tool rules (`rulebook/tools/*.md`) | **Not installed** — codex's `rules/` dir holds execpolicy `.rules` command-approval files, not markdown; standing context is your own `AGENTS.md`, which SIO never edits. Reported as unsupported. |
 | Hook telemetry | **Not registered** — codex has a hooks system (`hooks/hooks.json`, feature `hooks`), but SIO's telemetry hooks parse Claude Code's payload. Ingest codex sessions with `sio mine --agent codex` / `sio search --agent codex` instead. |
 
 Other things in `~/.codex` that SIO never touches: `config.toml`, `auth.json`,
@@ -130,7 +130,7 @@ and by running `opencode debug skill` against a temporary HOME:
 | Bundled asset | On opencode |
 |---|---|
 | Skills (`skills/<name>/SKILL.md` + siblings) | Installed into `~/.config/opencode/skills/` (opencode also reads `skill/`). Its loader enforces no name pattern or description length; a skill without a `description` is never surfaced to the model, so that is the one thing conformed (listed in the install output if it happens). |
-| Tool rules (`rules/tools/*.md`) | **Not installed** — opencode has no rules dir; standing context is your own `AGENTS.md` or the `instructions` key in `opencode.json`, neither of which SIO edits. Reported as unsupported. |
+| Tool rules (`rulebook/tools/*.md`) | **Not installed** — opencode has no rules dir; standing context is your own `AGENTS.md` or the `instructions` key in `opencode.json`, neither of which SIO edits. Reported as unsupported. |
 | Hook telemetry | **Not registered** — opencode has plugins (`plugin/*.ts`), not a hooks system. Ingest with `sio mine --agent opencode` / `sio search --agent opencode`. |
 
 Two opencode-specific facts the adapter reflects:

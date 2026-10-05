@@ -827,11 +827,16 @@ def generate_suggestions(
                 )
 
                 if mode == "auto":
+                    # raise_errors: let the exception reach the handler below,
+                    # which records error_class/error_message. Swallowing it
+                    # here left every auto failure as an unexplained
+                    # "dspy_returned_none".
                     suggestion = generate_auto_suggestion(
                         pattern,
                         dataset,
                         config,
                         verbose=verbose,
+                        raise_errors=True,
                     )
                     if suggestion is None:
                         _log.warning(
@@ -878,10 +883,15 @@ def generate_suggestions(
                     suggestions.append(suggestion)
                     continue
             except Exception as exc:  # noqa: BLE001
+                root = exc.__cause__ or exc
                 _log.warning(
-                    "DSPy generation failed for pattern %s, falling back to template: %s",
+                    "DSPy generation failed for pattern %s, falling back to template: "
+                    "%s: %s (root: %s: %s)",
                     pattern_str_id,
-                    exc,
+                    type(exc).__name__,
+                    str(exc)[:300],
+                    type(root).__name__,
+                    str(root)[:300],
                 )
                 # Observability gap #6 + #7: distinguish exception-based
                 # fallback from None-return fallback — both land here but
@@ -890,8 +900,8 @@ def generate_suggestions(
                     db_conn,
                     pattern,
                     reason="dspy_exception",
-                    error_class=type(exc).__name__,
-                    error_message=str(exc),
+                    error_class=type(exc.__cause__ or exc).__name__,
+                    error_message=f"{type(exc).__name__}: {exc}",
                 )
                 _fallback_source = "template_after_dspy_exception"
                 # Fall through to template path for this pattern

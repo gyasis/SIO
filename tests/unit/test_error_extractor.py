@@ -242,6 +242,47 @@ class TestIdentifyUserCorrections:
         correction_records = [r for r in results if r["error_type"] == "user_correction"]
         assert len(correction_records) >= 1, f"Expected user_correction for message: {content!r}"
 
+    @pytest.mark.parametrize(
+        "content",
+        [
+            "why the fuck do we not have a full pane rail?",
+            "the open gaps list !!!!!!! and the other table",
+            "Why are we still re-reading this file?",
+            "How many times do I have to say it",
+            "I already told you the path.",
+        ],
+    )
+    def test_frustration_markers_detected(self, content: str):
+        messages = [
+            _human("Do something.", offset=0),
+            _assistant("Doing it.", tool_name="Bash", offset=1),
+            _human(content, offset=2),
+        ]
+
+        results = extract_errors(messages, _SOURCE_FILE, _SOURCE_TYPE)
+
+        assert any(r["error_type"] == "user_correction" for r in results), content
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            "This session is being continued from a previous conversation that ran "
+            "out of context. No, actually the summary says !!! wrong file.",
+            "Another Claude session sent a message: no, that's wrong.",
+            "The coordinator sent a message while you were working: I said stop.",
+        ],
+    )
+    def test_harness_generated_turns_not_corrections(self, content: str):
+        messages = [
+            _human("Do something.", offset=0),
+            _assistant("Doing it.", tool_name="Bash", offset=1),
+            _human(content, offset=2),
+        ]
+
+        results = extract_errors(messages, _SOURCE_FILE, _SOURCE_TYPE)
+
+        assert not any(r["error_type"] == "user_correction" for r in results)
+
     def test_correction_user_message_field_set(self):
         """The user_message field must contain the correcting message text."""
         correction = "No, actually that's wrong."

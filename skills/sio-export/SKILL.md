@@ -2,7 +2,7 @@
 name: sio-export
 description: Export structured training datasets from mined sessions for DSPy/ML optimization. Generates routing, recovery, and flow prediction training pairs.
 requires:
-  cli: "sio>=0.3.0"
+  cli: "sio>=0.5.0"
   skills: []
   hooks: []
   optional: []
@@ -12,7 +12,7 @@ user-invocable: true
 # SIO Export — Training Data for DSPy/ML
 
 ## Dependencies
-- **CLI:** `sio >= 0.3.0`
+- **CLI:** `sio >= 0.5.0`
 - **Skills:** none
 - **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 

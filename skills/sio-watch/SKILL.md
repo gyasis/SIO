@@ -3,7 +3,7 @@ name: sio-watch
 description: Live-tail a coding-agent session's events in real time — see tool calls and responses as they happen. Ask naturally like "watch this session live", "monitor the current session", or "/sio-watch".
 user-invocable: true
 requires:
-  cli: "sio>=0.3.0"
+  cli: "sio>=0.5.0"
   skills: [sio-search]
   hooks: []
   optional: []
@@ -12,7 +12,7 @@ requires:
 # SIO Watch — Live Session Tail
 
 ## Dependencies
-- **CLI:** `sio >= 0.3.0`
+- **CLI:** `sio >= 0.5.0`
 - **Skills:** `/sio-search` — use `sio search ... --files` to find the session handle to pass here
 - **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 

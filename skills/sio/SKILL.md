@@ -3,7 +3,7 @@ name: sio
 description: "SIO Suite — Session Intelligence Observer. Master skill that routes to the right SIO sub-command. Say 'sio' with any question about sessions, errors, patterns, workflows, training data, or recall."
 user-invocable: true
 requires:
-  cli: "sio>=0.3.0"
+  cli: "sio>=0.5.0"
   skills: [sio-briefing, sio-scan, sio-discover, sio-suggest, sio-validate, sio-review, sio-apply, sio-violations, sio-promote-rule, sio-velocity, sio-budget, sio-feedback, sio-status, sio-flows, sio-distill, sio-promote-flow, sio-codify-workflow, sio-recall, sio-export, sio-search, sio-watch, sio-live]
   hooks: []
   optional: [prd]
@@ -12,7 +12,7 @@ requires:
 # SIO — Session Intelligence Observer
 
 ## Dependencies
-- **CLI:** `sio >= 0.3.0`
+- **CLI:** `sio >= 0.5.0`
 - **Skills:** this is the master **router** — it dispatches to the full SIO skill family (see the Quick Reference table below); install the whole `skills/` folder.
 - **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`).
 

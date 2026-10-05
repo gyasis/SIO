@@ -2,7 +2,7 @@
 name: sio-distill
 description: Distill a long exploratory session into a clean playbook of winning steps. Removes failures, retries, dead ends. Ask naturally like "distill that session" or "extract the workflow from yesterday".
 requires:
-  cli: "sio>=0.3.0"
+  cli: "sio>=0.5.0"
   skills: [sio-export]
   hooks: []
   optional: []
@@ -12,7 +12,7 @@ user-invocable: true
 # SIO Distill — Extract the Winning Path
 
 ## Dependencies
-- **CLI:** `sio >= 0.3.0`
+- **CLI:** `sio >= 0.5.0`
 - **Skills:** `/sio-export` — distilled flows can be fed to the export pipeline as DSPy training data
 - **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 

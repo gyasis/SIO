@@ -27,17 +27,17 @@ These map onto three phases of pre-merge review: **establish prior art**, **cros
 #### 1. Every prior session that touched this file or symbol
 
 ```bash
-session-search "<file/symbol names from diff>" --all --files
+sio search "<file/symbol names from diff>" --all --files
 ```
 
-`session-search` reads JSONL session transcripts directly — free, fast, exhaustive. `--all` because for pre-merge review you want the full history of the surface, not just the last 7 days. `--files` first so you can pick which sessions to read in detail.
+`sio search` reads JSONL session transcripts directly — free, fast, exhaustive. `--all` because for pre-merge review you want the full history of the surface, not just the last 7 days. `--files` first so you can pick which sessions to read in detail.
 
 Look for:
 - Sessions where the same file was edited and shipped cleanly → confirms the surface is well-trodden.
 - Sessions where the same file was edited and immediately reverted → that's a buried incident. Read it.
 - Sessions that touched adjacent symbols (`<feature surface>`-related) → expands the blast radius your diff might inherit.
 
-> **Rule of thumb:** never merge a shared-infra PR without `session-search --all --files` on the changed files and the primary symbols. The cost is one query; the upside is "oh, this exact line was rolled back in March."
+> **Rule of thumb:** never merge a shared-infra PR without `sio search --all --files` on the changed files and the primary symbols. The cost is one query; the upside is "oh, this exact line was rolled back in March."
 
 #### 2. Is there a codified pattern for this kind of change?
 
@@ -115,15 +115,15 @@ This is the multiplier. Adversarial-audit alone is "what's wrong with this diff?
 
 ```bash
 # 1. Full history of the surface
-session-search "<file path>" --all --files
-session-search "<primary symbol>" --all --files
+sio search "<file path>" --all --files
+sio search "<primary symbol>" --all --files
 
 # 2 + 3 (parallel — run in one message)
 /sio-recall "<feature surface>"
 /sio-flows  --query "<feature surface>"
 ```
 
-**Gate:** you've read at least the top 2 sessions from `session-search` and compared your diff against `/sio-recall` and `/sio-flows`. Note any deviations in the PR description.
+**Gate:** you've read at least the top 2 sessions from `sio search` and compared your diff against `/sio-recall` and `/sio-flows`. Note any deviations in the PR description.
 
 ### Phase 2: Codified-rule cross-check
 
@@ -153,7 +153,7 @@ Provide SIO findings as input context: prior session IDs, error cluster summarie
 
 The thing SIO catches that nothing else catches pre-merge: **"we already solved this, and the solution is in a session transcript no one remembers."** Reviewers operate on recent memory. CI tests cover what someone thought to test. Adversarial-audit covers what's logically wrong with the diff *as written*. None of those layers reach into "what broke last time someone tried this exact change."
 
-For shared infrastructure, the cost of a silent regression is multiplied by every downstream consumer that picks up the new behavior. The 30 seconds of prior-art lookup converts a class of incidents from "we'll find out in a week when sessions start failing" into "we caught it before merge because session-search surfaced the March rollback."
+For shared infrastructure, the cost of a silent regression is multiplied by every downstream consumer that picks up the new behavior. The 30 seconds of prior-art lookup converts a class of incidents from "we'll find out in a week when sessions start failing" into "we caught it before merge because sio search surfaced the March rollback."
 
 If your PR touches anything imported by more than a couple of consumers — shared models, hooks, MCP wiring, auth, schema, any config loaded at session start — this is the loop.
 

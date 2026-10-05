@@ -3,7 +3,7 @@ name: sio-search
 description: Search session history across all coding-agent harnesses (Claude, Codex, Gemini, Goose, OpenCode, Aider, PromptChain, Kimi, pi) via --agent, or scope any SIO analysis command to a single session. Ask naturally like "find where I fixed that dbt error", "search my sessions for X", "search Codex/PromptChain for Y", "scope to one session", or "/sio-search".
 user-invocable: true
 requires:
-  cli: "sio>=0.3.0"
+  cli: "sio>=0.5.0"
   skills: [sio-scan, sio-suggest]
   hooks: []
   optional: []
@@ -12,7 +12,7 @@ requires:
 # SIO Search — Cross-Harness Session Search & Session Scoping
 
 ## Dependencies
-- **CLI:** `sio >= 0.3.0`
+- **CLI:** `sio >= 0.5.0`
 - **Skills:** `/sio-scan` — run after finding the relevant session to mine it for errors; `/sio-suggest` — generate rules once a session is targeted with `--session`
 - **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 
@@ -64,7 +64,12 @@ NL-phrase searches almost always return 0.
 4. **Walk context with `--around N`** — role-aware ±N turns around each hit. This is
    DISTINCT from `--context N` (raw rg lines) and `--session <uuid>` (full transcript).
 5. `--recent` is recency-first discipline (default 7d). `--files` to locate, then
-   `--session <handle>` to read.
+   `--session <handle>` to read. **Deleted history:** sessions a harness already
+   removed live only in SIO's archive and are always older than its retention
+   window (Claude: 30 days) — search them with `--all` (or `--recent 0`).
+6. **Tool calls are searchable.** Claude hits cover conversation text, every
+   `tool_use` (tool name + input, e.g. a Bash command or file path) and every
+   `tool_result`; `metadata.matched_in` says which (`text` / `tool_use` / `tool_result`).
 
 **When Hop-1 is noisy** the CLI emits a Hop-2 suggestion on stderr (`--noise-threshold N`,
 default 20). Take it — don't ignore it and re-broaden.

@@ -3,7 +3,7 @@ name: sio-recall
 description: Recall how a task was solved in a previous session. Topic-filters distilled sessions, detects struggle→fix transitions, polishes via Gemini. Ask "how did we do X?" or "recall the dbt setup workflow" or "recall the snowflake deploy workflow".
 user-invocable: true
 requires:
-  cli: "sio>=0.3.0"
+  cli: "sio>=0.5.0"
   skills: [sio-scan]
   hooks: []
   optional: [memory-search]
@@ -12,7 +12,7 @@ requires:
 # SIO Recall — How Did We Do That?
 
 ## Dependencies
-- **CLI:** `sio >= 0.3.0`
+- **CLI:** `sio >= 0.5.0`
 - **Skills:** `/sio-scan` — use instead when you only need error-only lookup (not full workflow recall)
 - **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 - **Optional:** `/memory-search` — alternative for simple fact lookup (not workflow reconstruction)

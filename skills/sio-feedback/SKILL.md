@@ -3,7 +3,7 @@ name: sio-feedback
 description: Label the last AI action with satisfaction feedback (++ or --)
 trigger: "^(\\+\\+|--)"
 requires:
-  cli: "sio>=0.3.0"
+  cli: "sio>=0.5.0"
   skills: []
   hooks: []
   optional: []
@@ -12,7 +12,7 @@ requires:
 # SIO Feedback
 
 ## Dependencies
-- **CLI:** `sio >= 0.3.0`
+- **CLI:** `sio >= 0.5.0`
 - **Skills:** none
 - **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 

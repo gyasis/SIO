@@ -20,7 +20,7 @@ needs no other service.
 sio archive sync           # one pass; exit 1 if any file failed
 sio archive sync --json    # same, machine-readable
 sio archive status         # last run + per-agent manifest totals
-sio archive install        # schedule the sync daily (see Scheduling)
+sio archive install        # schedule the sync daily (sio init does this for you)
 ```
 
 Each pass mirrors every known session store into `~/.sio/archive/<agent>/...`
@@ -68,7 +68,19 @@ sidecar files inside the archive.
 ## Search
 
 `sio search` reads each agent's live store **plus** SIO's archived copy, so a
-session the harness deleted is still found. Nothing is reported twice:
+session the harness deleted is still found. **A deleted session is always older
+than the harness's retention window, so the default `--recent 7` never reaches
+it — search the archive with `--all` (or `--recent 0`):**
+
+```bash
+sio search "infra-broker" --agent claude --all          # every match, live + archived
+sio search "infra-broker" --agent claude --all --files  # which sessions
+```
+
+Claude matches cover the whole session record, not just the conversation: your
+prompts, the assistant's replies, every tool call (`tool_use`: tool name + input,
+such as a Bash command or a file path) and its output (`tool_result`). Each hit's
+`metadata.matched_in` says where it matched. Nothing is reported twice:
 
 - a session file that still exists live is read from the live copy only;
 - shared stores that exist in both places (Codex `history.jsonl`, the goose and
@@ -79,13 +91,76 @@ Archived Claude hits carry `source_kind: "archive"` (ripgrep and Python paths);
 archived hits from other agents carry `metadata.archived = true`. Older copies
 kept as `<name>.~<UTC>` are not searched. `sio mine` still reads live stores only.
 
+## Why SIO does not change the harnesses' own cleanup
+
+Claude Code deletes transcripts older than `cleanupPeriodDays` (default 30), and
+other harnesses have their own retention. SIO deliberately **leaves those defaults
+alone**: raising them makes every tool's store grow without bound and scatters the
+long-term record across many places that nobody watches. Instead `sio archive` is
+the single durable record — raw session files, owned by SIO, independent of any
+harness's retention. (Decided 2026-10-02 when this feature replaced SpecStory; a
+short-lived `cleanupPeriodDays: 36500` was reverted for exactly this reason.)
+
+So: do **not** "fix" history loss by raising `cleanupPeriodDays`. Check that the
+archive is running (`sio archive status`) instead. `gone_at_source` in that output
+counts sessions the harness has already deleted that SIO still holds.
+
+## Where each harness keeps sessions
+
+SIO uses the same `$HOME`-relative paths on Linux and macOS. Observed on both
+(2026-10-05, two Macs): Claude Code, Codex, pi, Kimi and opencode. The rest were
+not installed on the Macs checked; they use the same dot-paths by their own
+conventions:
+
+| Harness | Path | Linux | macOS |
+|---|---|---|---|
+| Claude Code | `~/.claude/projects/`, `~/.claude/history.jsonl` | ✓ | ✓ |
+| Codex CLI | `~/.codex/sessions/`, `~/.codex/history.jsonl` | ✓ | ✓ |
+| pi | `~/.pi/agent/sessions/` | ✓ | ✓ |
+| Gemini CLI | `~/.gemini/tmp/` | ✓ | not yet observed |
+| Kimi | `~/.kimi-code/sessions/` | ✓ | ✓ |
+| PromptChain | `~/.promptchain/sessions/` | ✓ | not yet observed |
+| goose | `~/.local/share/goose/sessions/` | ✓ | not yet observed |
+| opencode | `~/.local/share/opencode/` | ✓ | ✓ |
+
+Not archived: desktop GUI apps (`~/Library/Application Support/Claude`, `…/Codex`,
+`…/Cursor` on macOS) — their "Session Storage" folders are the app window's
+browser storage, not agent transcripts. A custom `$XDG_DATA_HOME` is not followed
+yet; goose/opencode stores moved there are not archived.
+
 ## Scheduling
+
+**`sio init` installs the schedule automatically** (since 0.5.3; opt out with
+`--no-archive`, remove with `sio init --uninstall`, which keeps the archive). Before
+0.5.3 the schedule was only created by running `sio archive install` by hand, so on
+most machines nothing was archiving — run `sio init` once after upgrading.
 
 ```bash
 sio archive install                 # daily (1440 minutes)
 sio archive install --interval 60   # hourly
 sio archive install --dry-run       # show the files and commands, change nothing
 ```
+
+### When it runs, and what happens if the machine is off
+
+| | Linux (systemd `--user`) | macOS (launchd) |
+|---|---|---|
+| Normal schedule | `OnCalendar=daily` (wall clock, midnight) | `StartInterval` (every N seconds) |
+| Machine **off** at that time | `Persistent=true`: the missed run fires once when the timer starts at the next boot | the job runs at load (`RunAtLoad`) |
+| Machine **asleep** | the missed calendar run fires once on wake | missed intervals coalesce into one run on wake |
+| Every boot / login | `OnBootSec=5min` — a run 5 minutes after boot | `RunAtLoad` — a run when the agent loads |
+
+`--interval` values that divide a day or an hour evenly (60, 120, 360, 30, 15, …)
+use the same wall-clock + `Persistent` schedule. Other values fall back to
+`OnUnitActiveSec=N` — that counts *awake* time since the last run and cannot catch
+up, so the run after each boot is its only catch-up. (`Persistent=` only has an
+effect with `OnCalendar=` — systemd.timer(5) — so it is not written there.)
+
+On WSL, each start of the Linux VM is a boot. On a headless Linux box, enable
+lingering (`loginctl enable-linger $USER`) so user timers run while you are logged out.
+
+Nothing is lost in practice: harnesses delete only while they run, after their own
+retention window (Claude Code: 30 days), and the archive runs every boot plus daily.
 
 On Linux this writes `~/.config/systemd/user/sio-archive.{service,timer}` and
 enables the timer; on macOS it writes `~/Library/LaunchAgents/io.sio.archive.plist`
@@ -107,11 +182,11 @@ ExecStart=/absolute/path/to/sio archive sync
 # ~/.config/systemd/user/sio-archive.timer
 [Timer]
 OnBootSec=5min
-OnUnitActiveSec=1h
-Persistent=true
+OnCalendar=daily        # `--interval 60` writes: OnCalendar=*-*-* 00/1:00:00
+Persistent=true         # only effective together with OnCalendar=
 [Install]
 WantedBy=timers.target
 ```
 
-Hourly is far inside Claude Code's 30-day window, so the harness default can stay
+Daily (or hourly) is far inside Claude Code's 30-day window, so the harness default can stay
 as it is.

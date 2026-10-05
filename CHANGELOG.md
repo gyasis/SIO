@@ -9,6 +9,219 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
+## [0.5.6] — 2026-10-05
+
+### Fixed — `sio search` could not find Claude tool calls or their output
+
+The archive keeps whole session files (prompts, replies, every tool call and
+result), but the per-match search read only `text` blocks. A Bash command, a file
+path the agent wrote, or a tool's output was unfindable — in live sessions and in
+the archive alike. Measured on a session Claude Code had already deleted
+(576 prompts, 525 tool calls): a term present 147 times returned 4 hits, all from
+conversation text. Only `--files` / `--count` (raw ripgrep) and `--sessions` saw
+tool calls, so the answer depended on the flag.
+
+- **Per-match Claude search covers the whole record**: text, `tool_use` (tool name
+  + input), `tool_result`, and the top-level `toolUseResult`. Each hit carries
+  `metadata.matched_in` (`text` / `tool_use` / `tool_result`); the snippet is taken
+  around the match so long tool output doesn't cut it off. Measured on real
+  sessions: a command run only via tools, 0 hits before → 7 after.
+- **Deleted history is reachable on purpose**: sessions a harness already deleted
+  are always older than its retention window, so the default `--recent 7` never
+  reaches them. `--help`, the `/sio-search` skill and the archive guide now say to
+  use `--all` (or `--recent 0`).
+- Docs: Kimi and opencode observed on macOS in the harness-paths table.
+- Tests: tool_use / tool_result / toolUseResult / long-output snippet / archived-only
+  session (all fail on the old parser). `sio mine` is unaffected (Claude mining
+  uses its native adapter, not this parser).
+
+## [0.5.5] — 2026-10-05
+
+### Fixed — archive works natively on macOS; the design decision is written down
+
+- **`sio init`'s archive line is platform-accurate** (`schedule_summary()`): on
+  macOS it describes the launchd job (at login/load, then every 24 h; intervals
+  missed while asleep run once on wake) instead of systemd's wall-clock schedule.
+- **Verified on a Mac Studio**: `sio init` installed the `io.sio.archive` launchd
+  agent and the hooks against the uv-tool interpreter by absolute path, kept the
+  existing `settings.json` keys and hooks, and the first sync archived Claude Code,
+  Codex and pi history.
+- **Docs: "Why SIO does not change the harnesses' own cleanup"** — leave
+  `cleanupPeriodDays` (and other retention) at default; `sio archive` is the single
+  durable record. Plus a table of where each harness keeps sessions on Linux and
+  macOS, and what is not archived (desktop-app storage; custom `$XDG_DATA_HOME`).
+
+## [0.5.4] — 2026-10-05
+
+### Fixed — the archive timer's catch-up was a no-op (and 0.5.3 said otherwise)
+
+The 0.5.3 notes, README and `sio init` output described the archive schedule as
+"Persistent" catch-up. It was not: the timer used `OnUnitActiveSec=1440min`, and
+`Persistent=` only has an effect on timers configured with `OnCalendar=`
+(systemd.timer(5)). The only real catch-up was `OnBootSec=5min`; and because
+`OnUnitActiveSec` counts awake time, a machine that mostly sleeps synced less
+often than daily.
+
+- **Daily is now `OnCalendar=daily` + `Persistent=true`**: a run missed while the
+  machine was off fires once at the next boot, and one missed while asleep fires
+  on wake. `OnBootSec=5min` (a run after every boot) is kept.
+- `--interval` values that divide a day or an hour evenly use the same calendar
+  form (`*-*-* 00/6:00:00`, `*:00/15`, …); others fall back to `OnUnitActiveSec`
+  **without** a `Persistent=` line, since it would do nothing.
+- `sio init` output, README and the archive guide now say what actually happens,
+  including a table of off / asleep / boot behaviour on Linux and macOS (launchd
+  was already right: `RunAtLoad` + `StartInterval`, which coalesces on wake).
+- Existing installs pick up the new timer on the next `sio init` (or
+  `sio archive install`), which rewrites the unit and reloads systemd.
+
+## [0.5.3] — 2026-10-05
+
+### Fixed — SIO told agents and users to run the deprecated `session-search`
+
+`session-search` was absorbed into SIO as **`sio search`** and survives only as a
+deprecated alias (installed by pip/uv/pipx, absent on source checkouts that don't
+put `.venv/bin` on PATH). Instructions still named the old command:
+
+- **The rule-generation prompt** (`core/dspy/signatures.py`) and the bundled
+  `/sio-suggestion-generator` skill taught generated rules to "start with
+  `session-search … --recent 7 --files`", so every suggestion inherited it. Now
+  `sio search`.
+- **`sio search --help` printed `usage: session-search`** and the module's usage
+  examples used the old name. Now `usage: sio search`.
+- Use-case guides (`docs/use-cases/`, 37 commands and mentions), the user guide,
+  the `sio mine --agent` help, the "no parser for agent" error, and the
+  `/sio-live` and `/sio-rule-generator` skills now say `sio search`.
+- **Unchanged on purpose:** the `session-search` alias itself, and the code that
+  recognises legacy `session-search` calls in old transcripts (hooks,
+  search-discipline metrics) and their tests.
+
+### Fixed — the session archive shipped but never ran
+
+`sio archive` (0.5.0) copies every agent's session history into `~/.sio/archive/`
+so it outlives harness cleanup — but only if something runs `sio archive sync`.
+The schedule was created solely by a manual `sio archive install`, which nothing
+called, so no machine was archiving (measured: no archive run, no timer).
+
+- **`sio init` now installs the archive schedule** (systemd `--user` timer /
+  launchd agent: daily, 5 min after boot — the "`Persistent` catch-up" claimed here was a no-op, corrected in 0.5.4), mirroring the
+  briefing-refresh timer. `--no-archive` opts out; `--dry-run` previews it.
+- **`sio init --uninstall` removes the schedule** (new `schedule.uninstall()`),
+  never the archive data.
+- A failed schedule install warns and never fails `init`.
+- Verified on a live machine: the timer fired on enable, the first sync copied
+  0.90 GB (Claude 787 sessions + prompt history, Codex, goose, opencode) in 5 s,
+  next run 24 h later.
+
+**Upgrade:** run `sio init` once — that is what turns archiving on.
+
+## [0.5.2] — 2026-10-05
+
+### Fixed — published CLI reference leaked a LAN address; stale version pins
+
+- **`docs/CLI_REFERENCE.md` regenerated.** It had been generated through a local
+  wrapper that printed `[sio-wrapper] ✓ ollama @ http://<LAN-IP>:11434 …` at the
+  top of all 62 command sections, publishing a private network address. The new
+  file comes from the plain console script and covers all 63 subcommands.
+- **`docs/gen_cli_reference.sh` scrubs and gates its output**: drops
+  `[sio-wrapper]` banner lines, rewrites `$HOME` to `~`, normalises
+  `python -m sio` to `sio`, and **exits non-zero** if a private IPv4 address or the
+  local username survives — a future regeneration cannot re-publish them.
+  Run it as `SIO_BIN=.venv/bin/sio docs/gen_cli_reference.sh`.
+- **Skill `requires: cli` pins bumped `sio>=0.3.0` → `sio>=0.5.0`** (67 lines,
+  34 bundled skills). The skills depend on 0.5 behaviour (rulebook paths, agent
+  isolation); the pins are informational, shipped in the installed
+  `sio/_bootstrap/skills` bundle, so stale ones made installs look like 0.3.
+
+## [0.5.1] — 2026-10-05
+
+### Fixed — `sio render` no longer floods every Claude Code session
+
+- **`--format claude-md` defaulted to `~/.claude/rules/auto/`**, which Claude Code
+  auto-loads into every session — each render added always-on context. It now
+  writes `~/.claude/rulebook/domains/sio-<name>-<id>.md` with a
+  `<!-- triggers: sio suggest, sio apply, sio optimize, <name> -->` line, so a
+  rules-injector loads it only during SIO work (verified against the injector:
+  loaded on `sio suggest`, not on unrelated commands). Top level of `domains/`
+  on purpose — injectors do not scan subfolders, so `rulebook/auto/` would never load.
+- **`--always-load`** (claude-md only) writes to `~/.claude/rules/core/` for a
+  rule that must hold in every session; the cost is stated when it is written.
+- **Warning** whenever any render output (including an explicit `-o`) lands
+  under `~/.claude/rules/`, with the per-prompt character cost.
+- **`--format skill` now writes `~/.claude/skills/<name>/SKILL.md`** (also for
+  `--all-active`) — the folder layout `sio init` installs. It used to write a flat
+  `~/.claude/skills/<name>.md`, which never replaced the placeholder skill it was
+  meant to regenerate.
+- Rendered rule filenames no longer double the prefix (`sio-sio-rule-generator-15.md`).
+- Docs: CLI reference for `sio render`, regeneration command in `skills/README.md`
+  (`--module-id` never existed), "Where rules live" covers render output.
+
+## [0.5.0] — 2026-10-05
+
+First release since 0.3.1. Everything below accumulated on `main` after 0.3.1;
+`0.4.0` was an in-tree version that was never tagged or released, so a build
+reporting `0.4.0` may predate the fixes here — upgrade to 0.5.0.
+
+**Highlights**
+
+- **`sio suggest` works again** — it had silently returned only `[Template]`
+  suggestions for every fresh LM call (run-log capture crash). Failures are now
+  named in the log and in `generation_failures`.
+- **Rules split into `~/.claude/rules/` (always loaded) and `~/.claude/rulebook/`
+  (on demand).** SIO installs, promotes *and now reads* rules in both — see
+  [docs/configuration.md#where-rules-live](docs/configuration.md#where-rules-live).
+- **Agent isolation** — one DB, a real `agent` column, no duplicate mining (#44).
+- **Cross-agent `sio search`**, **`sio archive`** (SIO keeps its own copy of every
+  session), and **pi / codex / opencode** as `sio init` install targets.
+- **Frustration detection** — profanity, `!!!` and "how many times" turns are mined
+  as `user_correction`.
+
+**Upgrading (required steps)**
+
+```bash
+uv tool upgrade self-improving-organism   # or pipx upgrade / pip install --upgrade / git pull
+sio init                                  # REQUIRED: runs migration 006 (agent column)
+sio --version                             # → 0.5.0
+```
+
+Skipping `sio init` leaves `sio suggest` reporting "No errors mined yet" on a full
+database. `sio db migrate` does not run migration 006. See
+[docs/troubleshooting.md](docs/troubleshooting.md).
+
+### Fixed — `sio suggest` silently produced only template suggestions
+
+- **Run-log capture crashed every fresh LM call.** `dspy_capture` wraps
+  `dspy.LM.__call__` and `json.dumps` the usage dict, which litellm fills with a
+  `CompletionTokensDetailsWrapper`. The `TypeError` escaped (only `OSError` was
+  caught) and — because success-path logging sat inside the LM `try` — was
+  recorded as an LM failure and re-raised. DSPy retried in JSON mode ("Failed to
+  use structured output format"), failed again, and `sio suggest --auto` fell
+  back to `[Template]` for every pattern whose call reached the network (42/42 on
+  one measured run). Cached responses carry empty usage, so they survived, which
+  made it look intermittent. Capture now serializes provider objects, never
+  raises, and runs outside the LM `try`.
+- **Auto-mode failures are named.** The warning carries the exception type,
+  message and root cause (the run log keeps only message text), and the batch
+  path records `error_class` / `error_message` in `generation_failures` instead
+  of an unexplained `dspy_returned_none`.
+- **Rule readers see `~/.claude/rulebook/`.** Claude Code auto-loads every `.md`
+  under `~/.claude/rules/`, so on-demand rules live in `~/.claude/rulebook/`.
+  `violations`, `budget`, `dedupe`, `rule-audit`, the suggest consultant,
+  active-rule stamping during `mine`, cohort snapshots and the bundled
+  `/sio-rule-audit` skill scanned only `rules/` and were blind to every rulebook
+  rule. All now resolve through `sio.core.paths.claude_rule_dirs()` /
+  `iter_claude_rule_files()`. Rule ids stay continuous (a rulebook rule keeps its
+  pre-move id), and a home without a rulebook hashes exactly as before.
+- **Frustration is detected as `user_correction`.** The phrase-only detector
+  missed profanity, `!!!`, "why do we not…", "how many times", "I told you", so
+  the angriest turns never reached `suggest`. Harness-generated "user" turns
+  (context-continuation summaries, relayed agent messages) are no longer counted.
+
+### Upgrade note (migration 006)
+
+After pulling, existing databases need migration 006 (the `agent` column).
+Without it `sio suggest` reports "No errors mined yet" because the agent filter
+matches nothing. `sio init` applies it.
+
 ### Added — `sio archive`: SIO keeps its own copy of every session
 
 - **`sio archive sync|status`** mirrors every coding agent's raw session store

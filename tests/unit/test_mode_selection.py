@@ -250,6 +250,34 @@ class TestAutoMode:
         )
         assert result is None
 
+    @patch("sio.suggestions.dspy_generator.generate_dspy_suggestion")
+    def test_auto_failure_is_named_and_can_propagate(
+        self,
+        mock_gen,
+        sample_pattern,
+        sample_dataset,
+        mock_config,
+        caplog,
+    ):
+        """The warning names the exception and its root cause; with
+        raise_errors=True the exception reaches the caller (which records it)."""
+        from sio.suggestions.dspy_generator import generate_auto_suggestion
+
+        root = TypeError("Object of type X is not JSON serializable")
+        wrapped = RuntimeError("DSPy call failed: boom")
+        wrapped.__cause__ = root
+        mock_gen.side_effect = wrapped
+
+        with caplog.at_level("WARNING", logger="sio.suggestions.dspy_generator"):
+            assert generate_auto_suggestion(sample_pattern, sample_dataset, mock_config) is None
+        msg = caplog.records[-1].getMessage()
+        assert "RuntimeError" in msg and "TypeError" in msg and "not JSON serializable" in msg
+
+        with pytest.raises(RuntimeError):
+            generate_auto_suggestion(
+                sample_pattern, sample_dataset, mock_config, raise_errors=True,
+            )
+
 
 # ===========================================================================
 # T066 — HITL interactive flow

@@ -34,12 +34,12 @@ These map onto the three phases of any risky change: **before**, **immediately a
 #### 1. Did we do this exact pattern before?
 
 ```bash
-session-search "<keywords of the change>" --recent 30 --files
+sio search "<keywords of the change>" --recent 30 --files
 ```
 
-`session-search` reads JSONL session transcripts directly — free, fast (~200ms), ground truth. If you wrote a similar script three weeks ago and it shipped fine, you'll see the session and can read what worked. If you wrote one and it broke, you'll see *that* too. Either way you stop guessing.
+`sio search` reads JSONL session transcripts directly — free, fast (~200ms), ground truth. If you wrote a similar script three weeks ago and it shipped fine, you'll see the session and can read what worked. If you wrote one and it broke, you'll see *that* too. Either way you stop guessing.
 
-> **Rule of thumb:** never make a config-mutating change without `session-search` first. The cost is one line; the upside is "oh, we already solved this."
+> **Rule of thumb:** never make a config-mutating change without `sio search` first. The cost is one line; the upside is "oh, we already solved this."
 
 #### 2. Is there a codified workflow for this kind of change?
 
@@ -60,7 +60,7 @@ session-search "<keywords of the change>" --recent 30 --files
 `/sio-flows` mines positive tool patterns — the "what successful sessions actually look like" view. Unlike `/sio-recall` (curated playbooks), `/sio-flows` shows raw recurring sequences across all sessions. Useful for: "am I doing this in the same order other sessions did, or am I about to deviate from a proven path?"
 
 **Pre-apply combo (parallel, ~30 seconds):**
-- `session-search` for literal text matches
+- `sio search` for literal text matches
 - `/sio-recall` for codified playbook
 - `/sio-flows` for raw tool-pattern evidence
 
@@ -124,7 +124,7 @@ If you have CLAUDE.md rules that touch the surface you just modified (e.g. "alwa
 
 ```bash
 # 1. Literal evidence from past sessions
-session-search "<change keywords>" --recent 30 --files
+sio search "<change keywords>" --recent 30 --files
 
 # 2 + 3 (parallel — run in one message)
 /sio-recall "<workflow description>"

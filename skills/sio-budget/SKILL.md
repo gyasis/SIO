@@ -2,7 +2,7 @@
 name: sio-budget
 description: Check instruction file budget usage. Ask naturally like "how much budget is left?" or "can I add more rules?".
 requires:
-  cli: "sio>=0.3.0"
+  cli: "sio>=0.5.0"
   skills: [sio-apply, sio-velocity, sio-violations]
   hooks: []
   optional: []
@@ -11,7 +11,7 @@ requires:
 # SIO Budget — Instruction File Budget Check
 
 ## Dependencies
-- **CLI:** `sio >= 0.3.0`
+- **CLI:** `sio >= 0.5.0`
 - **Skills:** `/sio-apply`, `/sio-velocity`, `/sio-violations` — used in follow-up actions depending on budget state
 - **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 

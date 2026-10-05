@@ -3,7 +3,7 @@ name: sio-validate
 description: Generate tool argument validation rules from SIO error patterns. Mines the SIO database for recurring tool_failure errors caused by bad arguments and proposes deny/auto-fix rules for the validate-args.js hook.
 user-invocable: true
 requires:
-  cli: "sio>=0.3.0"
+  cli: "sio>=0.5.0"
   skills: [sio]
   hooks: []
   optional: [cascade-shield]   # EXTERNAL hook — NOT shipped by SIO (see Dependencies note)
@@ -12,7 +12,7 @@ requires:
 # SIO Validate — Generate Validation Rules from Error Patterns
 
 ## Dependencies
-- **CLI:** `sio >= 0.3.0` (reads the SIO error database)
+- **CLI:** `sio >= 0.5.0` (reads the SIO error database)
 - **Skills:** `/sio` — master router; this skill is a sub-path of it
 - **Hooks:** none of SIO's own hooks are required.
 - **External (optional):** `cascade-shield` — a tool-argument-validation hook (`generate-validations.py` + `validate-args.js`) that is **NOT part of SIO and is not installed by `sio init`**. This skill mines SIO's error DB and feeds that external hook; it only does useful work if you have cascade-shield installed separately.

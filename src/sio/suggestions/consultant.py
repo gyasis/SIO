@@ -24,10 +24,10 @@ def _get_rule_file_paths() -> list[str]:
         Path.home() / ".claude" / "CLAUDE.md",
         Path.cwd() / "CLAUDE.md",
     ]
-    # Also check for rules/ directory
-    rules_dir = Path.home() / ".claude" / "rules"
-    if rules_dir.is_dir():
-        candidates.extend(rules_dir.rglob("*.md"))
+    # Every Claude rule dir — rules/ (auto-loaded core) AND rulebook/ (on-demand)
+    from sio.core.paths import iter_claude_rule_files  # noqa: PLC0415
+
+    candidates.extend(iter_claude_rule_files())
 
     return [str(p) for p in candidates if p.exists()]
 

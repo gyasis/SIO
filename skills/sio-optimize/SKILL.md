@@ -2,7 +2,7 @@
 name: sio-optimize
 description: Run DSPy prompt optimization for a skill
 requires:
-  cli: "sio>=0.3.0"
+  cli: "sio>=0.5.0"
   skills: []
   hooks: []
   optional: []
@@ -11,7 +11,7 @@ requires:
 # SIO Optimize
 
 ## Dependencies
-- **CLI:** `sio >= 0.3.0`
+- **CLI:** `sio >= 0.5.0`
 - **Skills:** none
 - **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 

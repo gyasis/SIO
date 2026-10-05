@@ -43,12 +43,41 @@ def systemd_files(exe: str, interval_minutes: int) -> dict[str, str]:
             "Description=Run sio archive sync on a schedule\n\n"
             "[Timer]\n"
             "OnBootSec=5min\n"
-            f"OnUnitActiveSec={interval_minutes}min\n"
-            "Persistent=true\n\n"
-            "[Install]\n"
+            + _timer_schedule(interval_minutes)
+            + "\n[Install]\n"
             "WantedBy=timers.target\n"
         ),
     }
+
+
+def on_calendar(interval_minutes: int) -> str | None:
+    """A wall-clock ``OnCalendar=`` expression for intervals that divide a day
+    (or an hour) evenly; None when the interval has no clean calendar form."""
+    if interval_minutes == 1440:
+        return "daily"
+    divides_day = interval_minutes % 60 == 0 and 1440 % interval_minutes == 0
+    if 60 <= interval_minutes < 1440 and divides_day:
+        return f"*-*-* 00/{interval_minutes // 60}:00:00"
+    if 0 < interval_minutes < 60 and 60 % interval_minutes == 0:
+        return f"*:00/{interval_minutes}"
+    return None
+
+
+def _timer_schedule(interval_minutes: int) -> str:
+    """Timer lines after OnBootSec.
+
+    ``Persistent=`` only works with ``OnCalendar=`` (systemd.timer(5)): it stores
+    the last trigger on disk and fires once on activation for any run missed
+    while the machine was off or asleep. So calendar-expressible intervals use
+    OnCalendar + Persistent. Anything else falls back to OnUnitActiveSec, which
+    counts *awake* time from the last run and cannot catch up — OnBootSec=5min
+    (a run after every boot) is its only catch-up, and Persistent is omitted
+    because it would be a no-op.
+    """
+    cal = on_calendar(interval_minutes)
+    if cal:
+        return f"OnCalendar={cal}\nPersistent=true\n"
+    return f"OnUnitActiveSec={interval_minutes}min\n"
 
 
 def launchd_plist(exe: str, interval_minutes: int, log: Path) -> str:
@@ -86,7 +115,26 @@ def _run(cmd: list[str], dry_run: bool, actions: list[str]) -> None:
         subprocess.run(cmd, check=True, capture_output=True, text=True)
 
 
-DEFAULT_INTERVAL_MINUTES = 1440  # daily: well inside a 30-day retention window
+# daily (OnCalendar=daily + Persistent): well inside a 30-day retention window
+DEFAULT_INTERVAL_MINUTES = 1440
+
+
+def schedule_summary(interval_minutes: int = DEFAULT_INTERVAL_MINUTES,
+                     platform: str | None = None) -> str:
+    """One line saying what the installed schedule actually does on this platform."""
+    platform = platform or sys.platform
+    if platform == "darwin":
+        hours = interval_minutes / 60
+        every = "every 24h" if interval_minutes == 1440 else f"every {hours:g}h"
+        return (f"launchd: at login/load, then {every}; "
+                "intervals missed while asleep run once on wake")
+    cal = on_calendar(interval_minutes)
+    if cal:
+        when = "daily" if cal == "daily" else f"OnCalendar={cal}"
+        return (f"systemd: {when} on the wall clock, a missed run fires once on the next "
+                "boot or wake, plus 5 min after every boot")
+    return (f"systemd: every {interval_minutes} min of uptime plus 5 min after every boot "
+            "(no catch-up for this interval)")
 
 
 def install(interval_minutes: int = DEFAULT_INTERVAL_MINUTES, dry_run: bool = False,
@@ -116,4 +164,33 @@ def install(interval_minutes: int = DEFAULT_INTERVAL_MINUTES, dry_run: bool = Fa
     if changed or dry_run:
         _run(["systemctl", "--user", "daemon-reload"], dry_run, actions)
     _run(["systemctl", "--user", "enable", "--now", f"{UNIT}.timer"], dry_run, actions)
+    return actions
+
+
+def uninstall(home: Path | None = None) -> list[str]:
+    """Remove the schedule (never the archive itself). Returns the actions taken."""
+    home = home or Path.home()
+    actions: list[str] = []
+    if sys.platform == "darwin":
+        plist = home / "Library/LaunchAgents" / f"{LAUNCHD_LABEL}.plist"
+        if plist.exists():
+            subprocess.run(["launchctl", "bootout", f"gui/{os.getuid()}", str(plist)],
+                           capture_output=True, text=True)
+            plist.unlink()
+            actions.append(f"removed {plist}")
+        return actions
+    if shutil.which("systemctl") is None:
+        return actions
+    unit_dir = home / ".config/systemd/user"
+    subprocess.run(["systemctl", "--user", "disable", "--now", f"{UNIT}.timer"],
+                   capture_output=True, text=True)
+    removed = False
+    for name in (f"{UNIT}.timer", f"{UNIT}.service"):
+        p = unit_dir / name
+        if p.exists():
+            p.unlink()
+            actions.append(f"removed {p}")
+            removed = True
+    if removed:
+        subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True, text=True)
     return actions

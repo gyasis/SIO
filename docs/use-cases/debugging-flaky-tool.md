@@ -46,10 +46,10 @@ If `/sio-recall` returns nothing, that's not a dead end — it just means the fi
 #### 3. Literal text match across all recent sessions
 
 ```bash
-session-search "<error keywords>" --recent 7 --files
+sio search "<error keywords>" --recent 7 --files
 ```
 
-`session-search` reads JSONL transcripts directly — ~200ms, zero cost. Grep the error message (or a distinctive fragment of it) against the last 7 days of sessions. Use `--files` first to see which sessions hit the same string; then `Read` the one or two most recent matches to see what actually fixed it.
+`sio search` reads JSONL transcripts directly — ~200ms, zero cost. Grep the error message (or a distinctive fragment of it) against the last 7 days of sessions. Use `--files` first to see which sessions hit the same string; then `Read` the one or two most recent matches to see what actually fixed it.
 
 If 7 days yields nothing, widen to `--recent 30`. If 30 yields nothing, this is genuinely novel and you have permission to escalate to `gemini_debug` — but now you have a real "I checked first" story instead of a "I gave up after three tries" story.
 
@@ -63,7 +63,7 @@ If 7 days yields nothing, widen to `--recent 30`. If 30 yields nothing, this is 
 
 ### Phase 3 — Codify the fix (suggest → review → apply → verify)
 
-Once you have a fix in hand (from `/sio-recall`, from a `session-search` hit, or from `gemini_debug`), the question is whether to write it down. The test: *would future-me, six weeks from now, on a fresh session with no context, re-discover this fix?* If no, codify. If yes, skip — not every fix is rule-worthy.
+Once you have a fix in hand (from `/sio-recall`, from a `sio search` hit, or from `gemini_debug`), the question is whether to write it down. The test: *would future-me, six weeks from now, on a fresh session with no context, re-discover this fix?* If no, codify. If yes, skip — not every fix is rule-worthy.
 
 #### 5. Generate a candidate rule from the cluster
 
@@ -101,7 +101,7 @@ A week later, `/sio-velocity` shows the error rate on the matching pattern *befo
 /sio-recall "<plain-English description>"
 
 # 2 + 3 (parallel — run in one message)
-session-search "<error keywords>" --recent 7 --files
+sio search "<error keywords>" --recent 7 --files
 /sio-suggest --grep "<error keywords>" --type repeated_attempt --preview
 ```
 
@@ -139,7 +139,7 @@ session-search "<error keywords>" --recent 7 --files
 
 The thing SIO catches that nothing else catches: **the same tool fails the same way in session after session, and each session re-discovers the fix from scratch.** The fix exists. It's in the transcripts. It's just not indexed in a way the next session can find without help.
 
-`/sio-recall` + `session-search` collapse "I have to figure this out again" into "someone already figured this out, here's the answer." `/sio-suggest` + `/sio-apply` close the loop so the *next* session doesn't even have to recall — the rule fires before the broken call happens.
+`/sio-recall` + `sio search` collapse "I have to figure this out again" into "someone already figured this out, here's the answer." `/sio-suggest` + `/sio-apply` close the loop so the *next* session doesn't even have to recall — the rule fires before the broken call happens.
 
 The retry-guard hook is what makes this loop physical. Without it, the agent loops indefinitely. With it, the agent is forced to pause, and SIO is what fills the pause productively.
 
@@ -147,7 +147,7 @@ The retry-guard hook is what makes this loop physical. Without it, the agent loo
 
 ## What this use case is *not*
 
-- Not a substitute for actually reading the error message. Run `session-search` and `/sio-recall`, but also *look at what the tool is telling you* — half the time the error is self-describing and you skipped past it.
+- Not a substitute for actually reading the error message. Run `sio search` and `/sio-recall`, but also *look at what the tool is telling you* — half the time the error is self-describing and you skipped past it.
 - Not a substitute for unit tests on tooling you control. If you own the tool that's flaky, fix the tool — don't paper over it with a CLAUDE.md rule.
 - Not a substitute for asking the user when you're genuinely stuck. SIO is for "has this been seen before"; the user is for "I have no idea what this domain even is." Different escalations.
 - Not a way to silence the retry-guard. If you find yourself wanting to bypass the hook on the 3rd call, you have already failed this loop — go back to step 1.

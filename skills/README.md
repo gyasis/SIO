@@ -21,7 +21,7 @@ Every skill declares a `requires:` block in its frontmatter:
 
 ```yaml
 requires:
-  cli: "sio>=0.3.0"     # the sio CLI must be installed
+  cli: "sio>=0.5.0"     # the sio CLI must be installed
   skills: [sio-scan]    # other SIO skills this one references (ship together)
   hooks: []             # SIO's telemetry hooks (global; see below) — rarely per-skill
   optional: [prd]       # enhances if present, safe to skip if absent
@@ -56,7 +56,7 @@ are NOT shipped by SIO (see table below).
 | `/sio-report` | Generate a visual HTML report of SIO analysis | `sio-scan`, `sio-suggest`, `sio-velocity` |
 | `/sio-review` | Interactively review pending improvement suggestions | `sio-apply` |
 | `/sio-router` | SIO meta-router for prompt-engineering targets. Detects the target_surface from agent in… | `sio-rule-generator` |
-| `/sio-rule-audit` | Audit which rules in CLAUDE.md / rules/domains/ / rules/tools/ exist as TEXT only versus… | `sio`, `sio-status`, `sio-suggest`, `sio-violations` |
+| `/sio-rule-audit` | Audit which rules in CLAUDE.md / rules/ / rulebook/ exist as TEXT only versus… | `sio`, `sio-status`, `sio-suggest`, `sio-violations` |
 | `/sio-rule-generator` | SIO-distilled CLAUDE.md rule generator. Given a Claude Code error pattern (pattern_descr… | — |
 | `/sio-scan` | Mine and analyze recent Claude Code session errors | `sio-suggest` |
 | `/sio-search` | Search session history across all six coding-agent harnesses, or scope any SIO analysis … | `sio-scan`, `sio-suggest` |
@@ -118,7 +118,8 @@ Declared `requires.optional` — the skill works without them, or clearly flags 
 `/sio-recall-flow`, `/sio-recall-recovery`, `/sio-recall-router` are **DSPy-rendered
 stubs**: their learned prompt lives in your local `~/.sio/sio.db` (optimized-module
 rows), not in the SKILL.md. On a fresh machine they're inert until regenerated with
-`sio render --module-id <N>`. They ship as placeholders so the slash command exists.
+`sio render <MODULE_ID> --name <skill>` (writes `~/.claude/skills/<skill>/SKILL.md`,
+replacing the placeholder). They ship as placeholders so the slash command exists.
 
 ## Portability
 

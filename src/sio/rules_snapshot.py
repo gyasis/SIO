@@ -34,21 +34,35 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
+from sio.core.paths import claude_rule_dirs
+
+# Kept for backward compatibility (tests / callers patch it). The walk below
+# covers EVERY rule dir — rules/ (auto-loaded core) and rulebook/ (on-demand).
 _RULES_ROOT = Path.home() / ".claude" / "rules"
 _EXCLUDE_DIR_PREFIXES = (".backup", ".archive", "__pycache__")
 
 
 def _walk_rule_files() -> list[Path]:
     """Yield active rule files (exclude backup/archive subdirectories)."""
-    if not _RULES_ROOT.is_dir():
-        return []
     out: list[Path] = []
-    for p in _RULES_ROOT.rglob("*.md"):
-        # Skip any path with an excluded directory segment
-        if any(part.startswith(_EXCLUDE_DIR_PREFIXES) for part in p.parts):
+    for root in _rule_roots():
+        if not root.is_dir():
             continue
-        out.append(p)
+        for p in root.rglob("*.md"):
+            # Skip any path with an excluded directory segment
+            if any(part.startswith(_EXCLUDE_DIR_PREFIXES) for part in p.parts):
+                continue
+            out.append(p)
     return out
+
+
+def _rule_roots() -> list[Path]:
+    """``_RULES_ROOT`` first (patchable), then the other Claude rule dirs."""
+    roots = [_RULES_ROOT]
+    for d in claude_rule_dirs(_RULES_ROOT.parent):
+        if d not in roots:
+            roots.append(d)
+    return roots
 
 
 def _rule_id(path: Path) -> str:
@@ -63,10 +77,16 @@ def _rule_id(path: Path) -> str:
     except OSError:
         return ""
     h = hashlib.sha256(content).hexdigest()[:12]
-    try:
-        rel = path.relative_to(_RULES_ROOT)
-    except ValueError:
-        rel = path
+    # Relative to whichever root holds it: a rulebook rule keeps the id it had
+    # before the rules/ -> rulebook/ move ("domains/x.md#..."), so rule-outcome
+    # history stays continuous.
+    rel: Path = path
+    for root in _rule_roots():
+        try:
+            rel = path.relative_to(root)
+            break
+        except ValueError:
+            continue
     return f"{rel}#{h}"
 
 

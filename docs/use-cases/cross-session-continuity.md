@@ -52,12 +52,12 @@ The pre-compact hook extracts errors→fixes, "important" markers, decisions, an
 
 ---
 
-## Phase 2 — Recover detail with session-search
+## Phase 2 — Recover detail with sio search
 
 The breadcrumbs above tell you *what* was happening. They don't always tell you *what was said* or *which exact path failed*. For that, mine the JSONL.
 
 ```bash
-session-search "<last-known keywords>" --recent 1 --context 3
+sio search "<last-known keywords>" --recent 1 --context 3
 ```
 
 `--recent 1` means today's sessions. `--context 3` gives three lines of surrounding context per hit — enough to reconstruct a turn. Pull the top 1-2 results and read them. Free, ~200ms, ground truth.
@@ -72,7 +72,7 @@ Different signal. Different cascade.
 /done-before
 ```
 
-This is BLOCKING. Runs Graphiti + `/sio-recall` + `session-search` in parallel, synthesizes one answer, and on success auto-codifies the winning workflow back to Graphiti. Use it whenever the user references prior successful work — "last time", "remember when we", "done before". Do NOT just run `session-search` and call it good; `/done-before` is the supervised version that prevents re-discovery loops.
+This is BLOCKING. Runs Graphiti + `/sio-recall` + `sio search` in parallel, synthesizes one answer, and on success auto-codifies the winning workflow back to Graphiti. Use it whenever the user references prior successful work — "last time", "remember when we", "done before". Do NOT just run `sio search` and call it good; `/done-before` is the supervised version that prevents re-discovery loops.
 
 ### When you want the codified version, not the raw trail
 
@@ -80,7 +80,7 @@ This is BLOCKING. Runs Graphiti + `/sio-recall` + `session-search` in parallel, 
 /sio-recall "<task description>"
 ```
 
-If a past session was distilled into a reusable playbook, this returns the polished version — the tool order, the gotchas, the pitfalls. Faster than reading the JSONL if the playbook exists. If it doesn't, fall back to `session-search`.
+If a past session was distilled into a reusable playbook, this returns the polished version — the tool order, the gotchas, the pitfalls. Faster than reading the JSONL if the playbook exists. If it doesn't, fall back to `sio search`.
 
 ### To see what session memory thinks is active right now
 
@@ -121,7 +121,7 @@ cat <cwd>/.memory/.pre-compact-discoveries.json | jq '.'    # 1c — only if /co
 
 ```bash
 # Phase 2 — Recover detail
-session-search "<last-known keywords>" --recent 1 --context 3
+sio search "<last-known keywords>" --recent 1 --context 3
 ```
 
 Or, if the user invoked prior work:
@@ -142,7 +142,7 @@ Or, if the user invoked prior work:
 
 Compactions and clears *used to be* silent context loss. The transcript collapsed, the agent guessed, the user spent the next ten minutes re-explaining what got lost. Multi-day handoffs were worse — there was no transcript at all, just a vague "let's keep going."
 
-The cascade memory protocol turns that into a recoverable read. `.memory/active-prds.json` anchors the plan. `.memory/session.json` and `.pre-compact-discoveries.json` anchor the tactical state. `session-search`, `/done-before`, and `/sio-recall` reach into the JSONL when those breadcrumbs aren't enough. Each layer is cheap (file read or 200ms grep), so doing all of them is faster than re-explaining once.
+The cascade memory protocol turns that into a recoverable read. `.memory/active-prds.json` anchors the plan. `.memory/session.json` and `.pre-compact-discoveries.json` anchor the tactical state. `sio search`, `/done-before`, and `/sio-recall` reach into the JSONL when those breadcrumbs aren't enough. Each layer is cheap (file read or 200ms grep), so doing all of them is faster than re-explaining once.
 
 The win isn't just resuming faster. It's *resuming correctly* — without re-doing work that already shipped, without re-asking decisions that were already made, without re-attaching to the wrong PRD because two are open in the project.
 

@@ -3,7 +3,7 @@ name: sio-router
 description: "SIO meta-router for prompt-engineering targets. Detects the target_surface from agent intent (claude_md_rule / skill_update / hook_config / mcp_config / settings_config / agent_profile / project_config) and dispatches to the appropriate trained SIO skill, falling back to /sio-rule-generator for un-trained surfaces."
 user-invocable: true
 requires:
-  cli: "sio>=0.3.0"
+  cli: "sio>=0.5.0"
   skills: [sio-rule-generator]
   hooks: []
   optional: [prd]
@@ -16,7 +16,7 @@ metadata:
 # SIO Router — pick the right generator
 
 ## Dependencies
-- **CLI:** `sio >= 0.3.0`
+- **CLI:** `sio >= 0.5.0`
 - **Skills:** `/sio-rule-generator` — primary dispatch target for `claude_md_rule` surface and fallback for all untrained surfaces
 - **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 - **Optional:** `/prd` — can be used to persist planning when a multi-surface engineering session spans many changes; demoted to optional because the router itself has no hard dependency on PRD state

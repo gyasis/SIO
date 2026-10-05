@@ -38,8 +38,8 @@ sio trend --grep "<expensive tool or model name>" --windows 30 --daily
 #### 2. Raw call counts by week
 
 ```bash
-session-search "<expensive model name>" --recent 30 --count
-session-search "<expensive model name>" --recent 60 --count
+sio search "<expensive model name>" --recent 30 --count
+sio search "<expensive model name>" --recent 60 --count
 ```
 
 The simplest possible diff. Compare the count for the last 30 days against the count for the 30 before that (run the second query, subtract). If you went from 12 calls/month to 180 calls/month, you have your answer — something is now routing through expensive model X by default.
@@ -121,8 +121,8 @@ If trend is flat after 7 days, the regression is fixed. If it's still climbing, 
 sio trend --windows 30 --daily
 
 # 2. Which expensive surfaces increased in raw count?
-session-search "<expensive model/tool>" --recent 30 --count
-session-search "<expensive model/tool>" --recent 60 --count
+sio search "<expensive model/tool>" --recent 30 --count
+sio search "<expensive model/tool>" --recent 60 --count
 
 # 3. Are cost rules being ignored?
 /sio-violations --rule "<cost rule key>"
