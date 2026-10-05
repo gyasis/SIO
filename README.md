@@ -118,10 +118,11 @@ The package name on pypi is `self-improving-organism`; the CLI binary stays
 `sio` for ergonomics. (Pypi publish hasn't happened yet — install from GitHub
 for now.)
 
-> **Install from `@main`, not from a tag.** The newest tag (`v0.3.1`, 2026-05-19)
-> predates `sio search` and every non-Claude harness adapter — a tag install
-> silently gives you a CLI with no cross-agent session search. Once a release is
-> cut past those, pin to it here.
+> **Install `@main` or pin `@v0.5.0`.** `v0.5.0` (2026-10-05) is the first release
+> with `sio search`, the non-Claude harness adapters, agent isolation, `sio archive`
+> and the `sio suggest` fixes. Do **not** install `v0.3.1` or older tags — they
+> predate all of that. (`0.4.0` was an in-tree version that was never released; a
+> build reporting `0.4.0` may be missing the 0.5.0 fixes.)
 
 **Recommended: an isolated install** so SIO's dependencies (DSPy, fastembed,
 onnxruntime, …) never touch your global or project Python:
@@ -133,9 +134,9 @@ uv tool install "self-improving-organism[all] @ git+https://github.com/gyasis/SI
 # or pipx — same isolation, pipx-managed venv
 pipx install "self-improving-organism[all] @ git+https://github.com/gyasis/SIO.git@main"
 
-# Verify — `sio --version` reports the pyproject version, which does not move
-# between releases; `sio search` is the real check that you got a current build.
-sio --version          # → 0.4.0
+# Verify — `sio --version` reports the pyproject version; `sio search` is the
+# functional check that you got a current build.
+sio --version          # → 0.5.0
 sio search --list-agents
 ```
 
@@ -173,7 +174,10 @@ See [`docs/getting-started.md`](docs/getting-started.md) for the full isolated-i
    overwritten — even on subsequent runs.
 2. **Stages SIO's bundled skills and tool rules** into your AI agent's
    config directory. For Claude Code that's `~/.claude/skills/sio-*/` and
-   `~/.claude/rules/tools/sio.md`. For **pi** it's `~/.pi/agent/skills/sio-*/`
+   `~/.claude/rulebook/tools/sio.md` — **not** `rules/`: Claude Code auto-loads
+   every `.md` under `~/.claude/rules/` into every session, so on-demand rules
+   live in `rulebook/` (see [Where rules live](docs/configuration.md#where-rules-live)).
+   For **pi** it's `~/.pi/agent/skills/sio-*/`
    (skills only — pi has no rules dir and no hooks system, so those are
    reported as unsupported rather than written). Idempotent,
    manifest-tracked, preserves anything you've edited, and never touches a
@@ -222,7 +226,7 @@ After `sio init`, your tree should look like:
   optimized/
 ~/.claude/
   skills/sio-*/        ← 19 SIO skill folders
-  rules/tools/sio.md   ← canonical SIO usage rule
+  rulebook/tools/sio.md ← canonical SIO usage rule (on-demand, not auto-loaded)
   .sio-managed.json    ← manifest tracking what SIO installed
 ~/.pi/agent/           (only with `--harness pi`, or when pi is auto-detected)
   skills/sio-*/        ← the same skill folders, validated against pi's loader
@@ -238,10 +242,24 @@ After `sio init`, your tree should look like:
 ### Upgrade
 
 ```bash
-pip install --upgrade git+https://github.com/gyasis/SIO.git@main
-sio init                    # safe — never clobbers user-edited files; re-pins hooks after the upgrade
+# 1. Get the new code (pick the line matching how you installed)
+uv tool upgrade self-improving-organism          # uv tool install
+pipx upgrade self-improving-organism             # pipx install
+pip install --upgrade "git+https://github.com/gyasis/SIO.git@main"   # pip
+git -C ~/path/to/SIO pull                        # editable / from-source install
+
+# 2. Run init — NOT optional after an upgrade
+sio init                    # applies pending DB migrations, re-stages skills/rules, re-pins hooks
 sio init --status           # confirm what shipped vs what's drifted
+sio --version               # → 0.5.0
 ```
+
+`sio init` is where database migrations run. Skip it after upgrading past 0.3.x and
+`sio suggest` reports **"No errors mined yet"** on a database full of errors: the
+agent-isolation migration (006) has not filled the new `agent` column, so the
+per-agent filter matches nothing. `sio init` never overwrites a file you edited —
+it reports it as `user-modified`; review those and use `--force` only if you want
+SIO's version back (originals go to `~/.sio/backups/`).
 
 ### First run (5 minutes)
 
