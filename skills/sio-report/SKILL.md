@@ -2,7 +2,7 @@
 name: sio-report
 description: Generate a visual HTML report of SIO analysis. Ask naturally like "give me a report" or "show me a summary of SIO findings".
 requires:
-  cli: "sio>=0.3.0"
+  cli: "sio>=0.5.0"
   skills: [sio-scan, sio-suggest, sio-velocity]
   hooks: []
   optional: []
@@ -11,7 +11,7 @@ requires:
 # SIO Report — Visual HTML Summary
 
 ## Dependencies
-- **CLI:** `sio >= 0.3.0`
+- **CLI:** `sio >= 0.5.0`
 - **Skills:** `/sio-scan` — surface errors to populate the report; `/sio-suggest` — generate patterns/suggestions shown in report; `/sio-velocity` — supplies rule-effectiveness data for the velocity section
 - **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 

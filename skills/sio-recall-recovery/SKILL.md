@@ -13,7 +13,7 @@ metadata:
   created_at: "2026-03-25T08:38:32.242155+00:00"
   rendered_at: "2026-05-16T19:54:39Z"
 requires:
-  cli: "sio>=0.3.0"
+  cli: "sio>=0.5.0"
   skills: []
   hooks: []
   optional: []
@@ -22,7 +22,7 @@ requires:
 # sio-recall-recovery (SIO-distilled)
 
 ## Dependencies
-- **CLI:** `sio >= 0.3.0`
+- **CLI:** `sio >= 0.5.0`
 - **Skills:** none
 - **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 

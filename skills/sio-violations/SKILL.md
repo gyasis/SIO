@@ -2,7 +2,7 @@
 name: sio-violations
 description: Detect when rules in CLAUDE.md are being violated. Ask naturally like "which rules are being ignored?" or "check for rule violations".
 requires:
-  cli: "sio>=0.3.0"
+  cli: "sio>=0.5.0"
   skills: [sio-budget, sio-scan, sio-suggest]
   hooks: []
   optional: []
@@ -11,7 +11,7 @@ requires:
 # SIO Violations — Find Ignored Rules
 
 ## Dependencies
-- **CLI:** `sio >= 0.3.0`
+- **CLI:** `sio >= 0.5.0`
 - **Skills:** `/sio-budget` — audit stale rule budget after removing ineffective rules; `/sio-scan` — scan sessions where violations occurred for deeper context; `/sio-suggest` — regenerate rules with improved wording when existing rules are frequently violated
 - **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 

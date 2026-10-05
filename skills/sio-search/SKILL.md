@@ -3,7 +3,7 @@ name: sio-search
 description: Search session history across all coding-agent harnesses (Claude, Codex, Gemini, Goose, OpenCode, Aider, PromptChain, Kimi, pi) via --agent, or scope any SIO analysis command to a single session. Ask naturally like "find where I fixed that dbt error", "search my sessions for X", "search Codex/PromptChain for Y", "scope to one session", or "/sio-search".
 user-invocable: true
 requires:
-  cli: "sio>=0.3.0"
+  cli: "sio>=0.5.0"
   skills: [sio-scan, sio-suggest]
   hooks: []
   optional: []
@@ -12,7 +12,7 @@ requires:
 # SIO Search — Cross-Harness Session Search & Session Scoping
 
 ## Dependencies
-- **CLI:** `sio >= 0.3.0`
+- **CLI:** `sio >= 0.5.0`
 - **Skills:** `/sio-scan` — run after finding the relevant session to mine it for errors; `/sio-suggest` — generate rules once a session is targeted with `--session`
 - **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 

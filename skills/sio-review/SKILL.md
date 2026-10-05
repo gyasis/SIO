@@ -2,7 +2,7 @@
 name: sio-review
 description: Interactively review pending improvement suggestions. Ask naturally like "review my suggestions" or "show me what SIO recommends".
 requires:
-  cli: "sio>=0.3.0"
+  cli: "sio>=0.5.0"
   skills: [sio-apply]
   hooks: []
   optional: []
@@ -11,7 +11,7 @@ requires:
 # SIO Review — Approve or Reject Suggestions
 
 ## Dependencies
-- **CLI:** `sio >= 0.3.0`
+- **CLI:** `sio >= 0.5.0`
 - **Skills:** `/sio-apply` — used after review to write approved suggestions to instruction files
 - **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 

@@ -2,7 +2,7 @@
 name: sio-rule-audit
 description: Audit which rules in CLAUDE.md / rules/ / rulebook/ exist as TEXT only versus which have actual ENFORCEMENT (hooks/skills/recipes/memory). Cross-references SIO violation counts to rank "rules most-violated AND least-enforced" as 6-channel-wiring candidates. Triggers on "audit rules", "which rules aren't enforced", "rule coverage", "what rules are unenforceable", "find rule gaps", "which rules need hooks", "rule-to-enforcement audit". Use to find the next AP-010-style cluster before it costs another long debugging session.
 requires:
-  cli: "sio>=0.3.0"
+  cli: "sio>=0.5.0"
   skills: [sio, sio-status, sio-suggest, sio-violations]
   hooks: []
   optional: []
@@ -11,7 +11,7 @@ requires:
 # /sio-rule-audit
 
 ## Dependencies
-- **CLI:** `sio >= 0.3.0`
+- **CLI:** `sio >= 0.5.0`
 - **Skills:** `/sio` — master router; `/sio-status` — check pipeline health before auditing; `/sio-suggest` — generates new rules after audit surfaces gaps; `/sio-violations` — sister skill (violation detection without enforcement-coverage analysis)
 - **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`)
 - **Bundled script:** `scripts/sio-rule-audit.py` (in this skill directory) — the audit runner

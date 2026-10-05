@@ -1,12 +1,11 @@
 # SIO CLI Reference
 
 > Auto-generated from `sio --help` and each subcommand's `--help`.
-> Regenerate with `docs/gen_cli_reference.sh`. SIO version: sio, version 0.3.1
+> Regenerate with `docs/gen_cli_reference.sh`. SIO version: sio, version 0.5.2
 
 ## Top-level
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio [OPTIONS] COMMAND [ARGS]...
 
   SIO: Self-Improving Organism for AI coding CLIs.
@@ -20,6 +19,7 @@ Commands:
   analyze               Read-only diagnostics over the mined corpus.
   apply                 Apply an approved suggestion to its target file.
   approve               Approve a suggestion by ID and promote to ground...
+  archive               Keep a never-deleted copy of every agent's raw...
   autoresearch          Autoresearch pipeline — automated suggestion...
   briefing              Show or refresh the session-start briefing of...
   budget                Show instruction budget usage per file.
@@ -85,7 +85,6 @@ Commands:
 ### `sio amplify`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio amplify [OPTIONS]
 
   Amplify a curated JSONL by synthesizing N variants per row.
@@ -129,7 +128,6 @@ Options:
 ### `sio analyze`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio analyze [OPTIONS] COMMAND [ARGS]...
 
   Read-only diagnostics over the mined corpus.
@@ -144,7 +142,6 @@ Commands:
 ### `sio apply`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio apply [OPTIONS] [SUGGESTION_ID]
 
   Apply an approved suggestion to its target file.
@@ -187,7 +184,6 @@ Options:
 ### `sio approve`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio approve [OPTIONS] SUGGESTION_ID
 
   Approve a suggestion by ID and promote to ground truth.
@@ -197,10 +193,26 @@ Options:
   --help           Show this message and exit.
 ```
 
+### `sio archive`
+
+```
+Usage: sio archive [OPTIONS] COMMAND [ARGS]...
+
+  Keep a never-deleted copy of every agent's raw session files
+  (~/.sio/archive).
+
+Options:
+  --help  Show this message and exit.
+
+Commands:
+  install  Schedule `sio archive sync` (systemd --user on Linux, launchd...
+  status   Show the last archive run and how many files each agent has...
+  sync     Copy new and grown session files into the archive.
+```
+
 ### `sio autoresearch`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio autoresearch [OPTIONS] COMMAND [ARGS]...
 
   Autoresearch pipeline — automated suggestion evaluation and scheduling.
@@ -216,7 +228,6 @@ Commands:
 ### `sio briefing`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio briefing [OPTIONS]
 
   Show or refresh the session-start briefing of actionable SIO insights.
@@ -238,7 +249,6 @@ Options:
 ### `sio budget`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio budget [OPTIONS]
 
   Show instruction budget usage per file.
@@ -258,7 +268,6 @@ Options:
 ### `sio changes`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio changes [OPTIONS]
 
   List applied changes and their status.
@@ -270,7 +279,6 @@ Options:
 ### `sio collect-recall`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio collect-recall [OPTIONS] QUERY
 
   Collect a recall example for training.
@@ -295,7 +303,6 @@ Options:
 ### `sio config`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio config [OPTIONS] COMMAND [ARGS]...
 
   View and test LLM configuration.
@@ -311,7 +318,6 @@ Commands:
 ### `sio costs`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio costs [OPTIONS] COMMAND [ARGS]...
 
   Cost transparency commands (Principle XII).
@@ -327,7 +333,6 @@ Commands:
 ### `sio curate`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio curate [OPTIONS]
 
   Produce a curated training dataset (JSONL + preview .md).
@@ -370,7 +375,6 @@ Options:
 ### `sio datasets`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio datasets [OPTIONS] COMMAND [ARGS]...
 
   Manage pattern datasets.
@@ -386,7 +390,6 @@ Commands:
 ### `sio db`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio db [OPTIONS] COMMAND [ARGS]...
 
   Database schema management commands.
@@ -401,48 +404,9 @@ Commands:
   repair             Mark stuck 'applying' migration rows as 'failed'.
 ```
 
-### `sio db drop-agent`
-
-```
-Usage: sio db drop-agent [OPTIONS] AGENT
-
-  Delete ONE coding agent's mined rows from SIO's database.
-
-  Removes that agent's rows from every mined-data table (error_records,
-  flow_events, positive_records, session_metrics, processed_sessions) and the
-  rows that reference them (pattern_errors, experiment_runs), in one
-  transaction, after a backup-API copy into <db dir>/backups/.
-
-  DRY RUN by default: prints per-table counts and writes nothing. Pass --yes
-  to execute. Unknown agent names are refused; 'claude' additionally needs
-  --including-claude.
-
-  This touches ONLY SIO's mined data. The agent's own session files on disk
-  (~/.pi, ~/.codex, ~/.claude/projects, ...) are never read or modified — re-
-  mining the agent later rebuilds its rows from them.
-
-Options:
-  --db-path TEXT      Path to the SIO database (default: $SIO_DB_PATH or
-                      $SIO_HOME/sio.db, $SIO_HOME default ~/.sio).
-  -y, --yes           Execute the deletion. Without it this is a DRY RUN that
-                      prints counts only.
-  --including-claude  Required to drop 'claude' — it is the bulk of the data.
-  --help              Show this message and exit.
-```
-
-`sio db migrate` also applies migration 006 (agent isolation: `agent` column, backfill,
-partial-id merge, dedupe, UNIQUE fingerprint, per-agent views) after the `scripts/`
-migrations, backing the DB up first. See the user guide, "Multi-agent storage".
-
-`drop-agent` also recomputes `patterns.error_count` / `session_count` / `first_seen` /
-`last_seen` for every pattern that lost members, in the same transaction, and lists them in
-the report; a pattern left with no members is kept with `error_count = 0` (never deleted).
-The dry run previews the same numbers. See the user guide, "Patterns follow the drop".
-
 ### `sio dedupe`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio dedupe [OPTIONS]
 
   Find and consolidate semantically duplicate rules.
@@ -466,7 +430,6 @@ Options:
 ### `sio differential-flows`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio differential-flows [OPTIONS]
 
   Find twin flows (same sequence, both success and failure outcomes).
@@ -502,7 +465,6 @@ Options:
 ### `sio discover`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio discover [OPTIONS]
 
   Discover skill candidates from mined patterns and flows.
@@ -527,7 +489,6 @@ Options:
 ### `sio distill`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio distill [OPTIONS] [SESSION_PATH]
 
   Distill a long session into a clean playbook of winning steps.
@@ -550,7 +511,6 @@ Options:
 ### `sio doctor`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio doctor [OPTIONS]
 
   Diagnose `sio` install / config problems.
@@ -568,7 +528,6 @@ Options:
 ### `sio errors`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio errors [OPTIONS]
 
   Browse mined errors with optional type and content filters.
@@ -599,7 +558,6 @@ Options:
 ### `sio experiment`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio experiment [OPTIONS] COMMAND [ARGS]...
 
   Cohort tagging — bookmark a config window and analyze it.
@@ -619,7 +577,6 @@ Commands:
 ### `sio export`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio export [OPTIONS]
 
   Export telemetry data.
@@ -634,7 +591,6 @@ Options:
 ### `sio export-dataset`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio export-dataset [OPTIONS]
 
   Export structured training datasets for DSPy/ML.
@@ -661,7 +617,6 @@ Options:
 ### `sio flows`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio flows [OPTIONS]
 
   Discover recurring positive tool sequence patterns.
@@ -690,7 +645,6 @@ Options:
 ### `sio gepa-status`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio gepa-status [OPTIONS]
 
   Show live GEPA progress for the most recent in-flight optimize run.
@@ -710,7 +664,6 @@ Options:
 ### `sio ground-truth`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio ground-truth [OPTIONS] COMMAND [ARGS]...
 
   Manage agent-generated ground truth for DSPy training.
@@ -728,7 +681,6 @@ Commands:
 ### `sio health`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio health [OPTIONS]
 
   Show per-skill health metrics.
@@ -743,7 +695,6 @@ Options:
 ### `sio init`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio init [OPTIONS]
 
   Stage SIO's bundled skills and rules into your AI coding harness.
@@ -784,7 +735,6 @@ Options:
 ### `sio install`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio install [OPTIONS]
 
   [REMOVED] Use `sio init` instead.
@@ -800,7 +750,6 @@ Options:
 ### `sio live`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio live [OPTIONS] COMMAND [ARGS]...
 
   Discover and read in-progress (live) coding-agent sessions.
@@ -809,15 +758,15 @@ Options:
   --help  Show this message and exit.
 
 Commands:
-  attach  ATTACH to a live session from another session and follow it...
-  ls      List currently-active sessions across harnesses and flag...
-  show    Print the TAIL of one session, locked to its id...
+  attach   ATTACH to a live session from another session and follow it...
+  cursors  List (or clear) saved resume cursors.
+  ls       List currently-active sessions across harnesses and flag...
+  show     Print the TAIL of one session, locked to its id...
 ```
 
 ### `sio mine`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio mine [OPTIONS]
 
   Mine recent sessions for errors and failures.
@@ -861,7 +810,6 @@ Options:
 ### `sio multi-train`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio multi-train [OPTIONS]
 
   Fire N optimize runs in parallel, one per surface (or LM combo).
@@ -893,7 +841,6 @@ Options:
 ### `sio optimize`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio optimize [OPTIONS]
 
   Run prompt optimization against the gold_standards corpus.
@@ -1001,7 +948,6 @@ Options:
 ### `sio optimize-ladder`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio optimize-ladder [OPTIONS]
 
   Run the full optimizer ladder (Bootstrap → AMPLIFY → MIPROv2 → GEPA).
@@ -1059,7 +1005,6 @@ Options:
 ### `sio optimize-suggestions`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio optimize-suggestions [OPTIONS]
 
   Optimize the suggestion module using ground truth corpus.
@@ -1080,7 +1025,6 @@ Options:
 ### `sio patterns`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio patterns [OPTIONS]
 
   Show discovered error patterns ranked by importance.
@@ -1096,7 +1040,6 @@ Options:
 ### `sio promote-flow`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio promote-flow [OPTIONS] FLOW_HASH
 
   Promote a flow pattern to a Claude Code skill file.
@@ -1113,7 +1056,6 @@ Options:
 ### `sio promote-positives`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio promote-positives [OPTIONS]
 
   Promote positive_records to ground_truth(label='pending').
@@ -1138,7 +1080,6 @@ Options:
 ### `sio promote-rule`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio promote-rule [OPTIONS] RULE_INDEX
 
   Promote a violated CLAUDE.md rule into a runtime PreToolUse hook.
@@ -1173,7 +1114,6 @@ Options:
 ### `sio promote-to-gold`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio promote-to-gold [OPTIONS] [INVOCATION_ID]
 
   Promote behavior_invocations to gold_standards for DSPy training.
@@ -1191,7 +1131,6 @@ Options:
 ### `sio purge`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio purge [OPTIONS]
 
   Purge old telemetry records from the main SIO database.
@@ -1220,7 +1159,6 @@ Options:
 ### `sio recall`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio recall [OPTIONS] QUERY
 
   Recall how a specific task was solved in a previous session.
@@ -1254,7 +1192,6 @@ Options:
 ### `sio reject`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio reject [OPTIONS] SUGGESTION_ID
 
   Reject a suggestion by ID.
@@ -1295,7 +1232,6 @@ Options:
 ### `sio report`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio report [OPTIONS]
 
   Generate a session report (terminal or HTML).
@@ -1320,7 +1256,6 @@ Options:
 ### `sio reproduce`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio reproduce [OPTIONS] MODULE_ID
 
   Show the exact sio optimize command that produced MODULE_ID.
@@ -1337,7 +1272,6 @@ Options:
 ### `sio review`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio review [OPTIONS]
 
   Batch-review unlabeled invocations.
@@ -1352,7 +1286,6 @@ Options:
 ### `sio rollback`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio rollback [OPTIONS] CHANGE_ID
 
   Rollback an applied change by ID.
@@ -1364,7 +1297,6 @@ Options:
 ### `sio rule-audit`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio rule-audit [OPTIONS] RULE_ID
 
   Audit a single rule with concrete error samples (PRD Surface 3).
@@ -1391,7 +1323,6 @@ Options:
 ### `sio rule-outcomes`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio rule-outcomes [OPTIONS] [RULE_ID]
 
   Per-rule outcomes drill-down (PRD Surface 2).
@@ -1412,7 +1343,6 @@ Options:
 ### `sio runs`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio runs [OPTIONS] [RUN_ID]
 
   Inspect SIO per-invocation run logs.
@@ -1434,7 +1364,6 @@ Options:
 ### `sio schedule`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio schedule [OPTIONS] COMMAND [ARGS]...
 
   Manage passive analysis schedule.
@@ -1453,9 +1382,8 @@ Commands:
 ### `sio search`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 usage: session-search [-h]
-                      [--agent {claude,codex,goose,opencode,gemini,aider,all}]
+                      [--agent {claude,codex,goose,opencode,gemini,aider,promptchain,kimi,pi,all}]
                       [--specstory] [--backups] [--all] [--recent RECENT]
                       [--limit LIMIT] [--files] [--count] [--context CONTEXT]
                       [--around N] [--clean] [--format {jsonl,text}]
@@ -1473,7 +1401,7 @@ options:
   -h, --help            show this help message and exit
   --agent {claude,codex,goose,opencode,gemini,aider,promptchain,kimi,pi,all}
                         Which agent's history to search (default: claude).
-                        'all' fans out to every harness.
+                        'all' fans out to every known harness.
   --specstory           Search SpecStory MD only.
   --backups             Include ~/.claude/backups.
   --all                 Claude: JSONL + SpecStory + backups. Equivalent to
@@ -1532,7 +1460,6 @@ options:
 ### `sio search-discipline`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio search-discipline [OPTIONS]
 
   Report search-discipline rates from invocation telemetry.
@@ -1564,7 +1491,6 @@ Options:
 ### `sio status`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio status [OPTIONS]
 
   Show 5-section SIO pipeline health status.
@@ -1580,7 +1506,6 @@ Options:
 ### `sio suggest`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio suggest [OPTIONS]
 
   Run the full pipeline: cluster -> persist -> dataset -> suggestions.
@@ -1669,7 +1594,6 @@ Options:
 ### `sio suggest-review`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio suggest-review [OPTIONS]
 
   Review pending improvement suggestions interactively.
@@ -1681,7 +1605,6 @@ Options:
 ### `sio train`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio train [OPTIONS]
 
   Train DSPy modules on exported datasets.
@@ -1714,7 +1637,6 @@ Options:
 ### `sio trend`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio trend [OPTIONS]
 
   Show growth / decline of pattern clusters over time.
@@ -1744,7 +1666,6 @@ Options:
 ### `sio velocity`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio velocity [OPTIONS]
 
   Show learning velocity trends — how error rates change after rules.
@@ -1782,7 +1703,6 @@ Options:
 ### `sio violations`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio violations [OPTIONS]
 
   Show detected rule violations (existing rules the assistant ignored).
@@ -1808,7 +1728,6 @@ Options:
 ### `sio watch`
 
 ```
-[sio-wrapper] ✓ ollama @ http://192.168.0.159:11434  task=ollama/qwen3-coder:30b  reflection=ollama/deepseek-r1:32b
 Usage: sio watch [OPTIONS]
 
   Watch a session live — tail events as they happen (Phase B).

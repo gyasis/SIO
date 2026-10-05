@@ -3,7 +3,7 @@ name: sio-live
 description: Discover and read IN-PROGRESS (live) coding-agent sessions — not the indexed past ones. See every session running right now, each one's repo/branch/worktree, and get warned when two live sessions share a working tree (a concurrent-edit collision). Then read or attach to a specific one by id. Ask naturally like "what sessions are running right now", "any concurrent sessions on this repo", "are we about to collide", "show me what the cadastre session is doing", "attach to session X", or "/sio-live".
 user-invocable: true
 requires:
-  cli: "sio>=0.3.0"
+  cli: "sio>=0.5.0"
   skills: [sio-search, sio-watch]
   hooks: []
   optional: []
@@ -12,7 +12,7 @@ requires:
 # SIO Live — Discover & Read In-Progress Sessions
 
 ## Dependencies
-- **CLI:** `sio >= 0.3.0`
+- **CLI:** `sio >= 0.5.0`
 - **Skills:** `/sio-search` (find/inspect INDEXED history), `/sio-watch` (tail a single session by handle). `sio live` complements both — it covers the one thing they can't: sessions that are *still running right now*.
 - **Hooks:** none beyond SIO's telemetry hooks (registered by `sio init`).
 
