@@ -117,3 +117,32 @@ def install(interval_minutes: int = DEFAULT_INTERVAL_MINUTES, dry_run: bool = Fa
         _run(["systemctl", "--user", "daemon-reload"], dry_run, actions)
     _run(["systemctl", "--user", "enable", "--now", f"{UNIT}.timer"], dry_run, actions)
     return actions
+
+
+def uninstall(home: Path | None = None) -> list[str]:
+    """Remove the schedule (never the archive itself). Returns the actions taken."""
+    home = home or Path.home()
+    actions: list[str] = []
+    if sys.platform == "darwin":
+        plist = home / "Library/LaunchAgents" / f"{LAUNCHD_LABEL}.plist"
+        if plist.exists():
+            subprocess.run(["launchctl", "bootout", f"gui/{os.getuid()}", str(plist)],
+                           capture_output=True, text=True)
+            plist.unlink()
+            actions.append(f"removed {plist}")
+        return actions
+    if shutil.which("systemctl") is None:
+        return actions
+    unit_dir = home / ".config/systemd/user"
+    subprocess.run(["systemctl", "--user", "disable", "--now", f"{UNIT}.timer"],
+                   capture_output=True, text=True)
+    removed = False
+    for name in (f"{UNIT}.timer", f"{UNIT}.service"):
+        p = unit_dir / name
+        if p.exists():
+            p.unlink()
+            actions.append(f"removed {p}")
+            removed = True
+    if removed:
+        subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True, text=True)
+    return actions

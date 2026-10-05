@@ -118,7 +118,7 @@ The package name on pypi is `self-improving-organism`; the CLI binary stays
 `sio` for ergonomics. (Pypi publish hasn't happened yet — install from GitHub
 for now.)
 
-> **Install `@main` or pin `@v0.5.2`.** `v0.5.0` (2026-10-05) was the first release
+> **Install `@main` or pin `@v0.5.3`.** `v0.5.0` (2026-10-05) was the first release
 > with `sio search`, the non-Claude harness adapters, agent isolation, `sio archive`
 > and the `sio suggest` fixes. Do **not** install `v0.3.1` or older tags — they
 > predate all of that. (`0.4.0` was an in-tree version that was never released; a
@@ -136,7 +136,7 @@ pipx install "self-improving-organism[all] @ git+https://github.com/gyasis/SIO.g
 
 # Verify — `sio --version` reports the pyproject version; `sio search` is the
 # functional check that you got a current build.
-sio --version          # → 0.5.2
+sio --version          # → 0.5.3
 sio search --list-agents
 ```
 
@@ -182,6 +182,12 @@ See [`docs/getting-started.md`](docs/getting-started.md) for the full isolated-i
    reported as unsupported rather than written). Idempotent,
    manifest-tracked, preserves anything you've edited, and never touches a
    skill it did not install.
+3. **Schedules the session archive** (`sio archive sync`, daily, 5 minutes after
+   boot, catch-up after downtime) so every agent's session history is copied into
+   `~/.sio/archive/` before harness cleanup can delete it (Claude Code removes
+   transcripts after 30 days). Linux: a `systemd --user` timer; macOS: a launchd
+   agent. Opt out with `sio init --no-archive`; `sio init --uninstall` removes the
+   schedule but never the archive. Check with `sio archive status`.
 
 ```bash
 # Auto-detect harness, install (creates ~/.sio/ + ~/.claude/skills/sio-*/)
@@ -251,7 +257,7 @@ git -C ~/path/to/SIO pull                        # editable / from-source instal
 # 2. Run init — NOT optional after an upgrade
 sio init                    # applies pending DB migrations, re-stages skills/rules, re-pins hooks
 sio init --status           # confirm what shipped vs what's drifted
-sio --version               # → 0.5.2
+sio --version               # → 0.5.3
 ```
 
 `sio init` is where database migrations run. Skip it after upgrading past 0.3.x and

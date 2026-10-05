@@ -99,6 +99,13 @@ def cli():
         "Claude Code). Skipped on --status / --dry-run unless explicit."
     ),
 )
+@click.option(
+    "--no-archive",
+    "no_archive",
+    is_flag=True,
+    help="Do not install the `sio archive sync` schedule (installed by default so "
+    "session history survives harness cleanup).",
+)
 @runlogged("init")
 def init(
     harness: str | None,
@@ -107,6 +114,7 @@ def init(
     uninstall: bool,
     status: bool,
     link_path: bool,
+    no_archive: bool = False,
 ) -> None:
     """Stage SIO's bundled skills and rules into your AI coding harness.
 
@@ -208,6 +216,39 @@ def init(
                     f"  [yellow]{'warn':<14}[/yellow] timer install failed: "
                     f"{rep.get('detail')} — continuing"
                 )
+
+    # Session archive schedule (`sio archive sync`). The archive only protects
+    # history if something runs it inside the shortest harness retention window
+    # (Claude Code: 30 days). It shipped as an opt-in `sio archive install` that
+    # nothing called, so no machine was actually archiving. Installed here by
+    # default, like the briefing timer; --no-archive opts out. Uninstall removes
+    # the schedule only, never the archive.
+    if not status and not no_archive:
+        from sio.archive import schedule as _archive_schedule  # noqa: PLC0415
+
+        console.print("\n[bold magenta]→ session archive schedule[/bold magenta]")
+        try:
+            if uninstall:
+                acts = _archive_schedule.uninstall()
+                console.print(
+                    f"  [white]{'removed':<14}[/white] {', '.join(acts) or '(nothing)'} "
+                    f"(archive data in ~/.sio/archive kept)"
+                )
+            elif dry_run:
+                for act in _archive_schedule.install(dry_run=True):
+                    console.print(f"  [dim](dry-run)[/dim] {act}")
+            else:
+                _archive_schedule.install()
+                console.print(
+                    f"  [green]{'installed':<14}[/green] sio archive sync — every "
+                    f"{_archive_schedule.DEFAULT_INTERVAL_MINUTES // 60}h, 5 min after boot, "
+                    f"Persistent (`sio archive status` to check)"
+                )
+        except Exception as exc:  # noqa: BLE001 — never fail init over a schedule
+            console.print(
+                f"  [yellow]{'warn':<14}[/yellow] archive schedule not installed: {exc}. "
+                f"Run `sio archive install` (or schedule `sio archive sync` with cron)."
+            )
 
     if harness:
         try:
@@ -1079,7 +1120,7 @@ def _warn_if_agent_migration_pending(conn) -> None:
     help=(
         "Which coding agent's sessions to mine in bulk. 'claude' uses the "
         "native JSONL/SpecStory scan; codex/gemini/goose/pi enumerate that "
-        "agent's store via the session-search parsers (content-level errors, "
+        "agent's store via the sio search parsers (content-level errors, "
         "plus harness-flagged tool failures where the parser carries them -- pi "
         "does). Ignored when --session is given."
     ),

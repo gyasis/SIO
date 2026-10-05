@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-session-search — unified cross-harness coding-agent session search.
+sio search — unified cross-harness coding-agent session search.
+
+(Absorbed from the standalone ``session-search`` tool, which remains as a
+deprecated alias with identical flags.)
 
 Searches the on-disk session history of every coding-agent harness installed
 on this box (claude, codex, goose, opencode, gemini, aider, promptchain, kimi, pi)
@@ -19,18 +22,18 @@ Output schema (JSONL — one object per match):
     }
 
 Usage:
-    session-search "pattern"                      # claude only, fast path
-    session-search "pattern" --all                # claude JSONL + SpecStory + backups
-    session-search "pattern" --specstory          # SpecStory MD only
-    session-search "pattern" --backups            # claude backups only
-    session-search "pattern" --agent goose        # single non-Claude harness
-    session-search "pattern" --agent all          # fan out across all harnesses
-    session-search "pattern" --recent 7           # files modified within last N days
-    session-search "pattern" --files              # emit unique source paths only
-    session-search "pattern" --count              # per-file match counts
-    session-search "pattern" --context 3          # 3 lines of context around match
-    session-search "pattern" --clean              # un-escape JSON in text output
-    session-search --list-agents                  # inventory of on-disk presence
+    sio search "pattern"                      # claude only, fast path
+    sio search "pattern" --all                # claude JSONL + SpecStory + backups
+    sio search "pattern" --specstory          # SpecStory MD only
+    sio search "pattern" --backups            # claude backups only
+    sio search "pattern" --agent goose        # single non-Claude harness
+    sio search "pattern" --agent all          # fan out across all harnesses
+    sio search "pattern" --recent 7           # files modified within last N days
+    sio search "pattern" --files              # emit unique source paths only
+    sio search "pattern" --count              # per-file match counts
+    sio search "pattern" --context 3          # 3 lines of context around match
+    sio search "pattern" --clean              # un-escape JSON in text output
+    sio search --list-agents                  # inventory of on-disk presence
 
 Exit codes: 0 ok, 1 usage error, 2 no matches.
 """
@@ -1484,7 +1487,7 @@ def expand_sessions(uuids: list[str], clean: bool) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="session-search",
+        prog="sio search",
         description="Unified cross-harness coding-agent session search.",
     )
     p.add_argument("pattern", nargs="?", help="Pattern to search for.")

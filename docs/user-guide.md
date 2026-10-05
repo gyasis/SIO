@@ -438,8 +438,8 @@ transcript. Session IDs are canonical **`agent:native_id`** URIs (e.g. `claude:<
 
 ### `sio search`
 
-Search coding-agent session history across all harnesses. All flags pass through to the absorbed
-`session-search` engine, whose `--help` lists the full flag set.
+Search coding-agent session history across all harnesses. `sio search --help` lists the full flag set
+(the engine was absorbed from the former standalone `session-search` tool).
 
 ```bash
 sio search "<pattern>" [--agent <harness>] [--recent <days>] [--files] [--count]

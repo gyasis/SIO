@@ -1,7 +1,7 @@
 # SIO CLI Reference
 
 > Auto-generated from `sio --help` and each subcommand's `--help`.
-> Regenerate with `docs/gen_cli_reference.sh`. SIO version: sio, version 0.5.2
+> Regenerate with `docs/gen_cli_reference.sh`. SIO version: sio, version 0.5.3
 
 ## Top-level
 
@@ -729,6 +729,8 @@ Options:
                   reachable from subprocesses with sanitized environments
                   (e.g., the Bash tool inside Claude Code). Skipped on
                   --status / --dry-run unless explicit.
+  --no-archive    Do not install the `sio archive sync` schedule (installed by
+                  default so session history survives harness cleanup).
   --help          Show this message and exit.
 ```
 
@@ -787,11 +789,11 @@ Options:
                                   Which coding agent's sessions to mine in
                                   bulk. 'claude' uses the native
                                   JSONL/SpecStory scan; codex/gemini/goose/pi
-                                  enumerate that agent's store via the
-                                  session-search parsers (content-level
-                                  errors, plus harness-flagged tool failures
-                                  where the parser carries them -- pi does).
-                                  Ignored when --session is given.
+                                  enumerate that agent's store via the sio
+                                  search parsers (content-level errors, plus
+                                  harness-flagged tool failures where the
+                                  parser carries them -- pi does). Ignored
+                                  when --session is given.
   --source [specstory|jsonl|both]
                                   Source type.
   --exclude-sidechains / --include-sidechains
@@ -1382,15 +1384,15 @@ Commands:
 ### `sio search`
 
 ```
-usage: session-search [-h]
-                      [--agent {claude,codex,goose,opencode,gemini,aider,promptchain,kimi,pi,all}]
-                      [--specstory] [--backups] [--all] [--recent RECENT]
-                      [--limit LIMIT] [--files] [--count] [--context CONTEXT]
-                      [--around N] [--clean] [--format {jsonl,text}]
-                      [--skeleton] [--session UUID] [--case-sensitive]
-                      [--fast] [--no-fast] [--list-agents] [--refine TERM]
-                      [--strategy STRATEGY] [--noise-threshold N]
-                      [pattern]
+usage: sio search [-h]
+                  [--agent {claude,codex,goose,opencode,gemini,aider,promptchain,kimi,pi,all}]
+                  [--specstory] [--backups] [--all] [--recent RECENT]
+                  [--limit LIMIT] [--files] [--count] [--context CONTEXT]
+                  [--around N] [--clean] [--format {jsonl,text}] [--skeleton]
+                  [--session UUID] [--case-sensitive] [--fast] [--no-fast]
+                  [--list-agents] [--refine TERM] [--strategy STRATEGY]
+                  [--noise-threshold N]
+                  [pattern]
 
 Unified cross-harness coding-agent session search.
 

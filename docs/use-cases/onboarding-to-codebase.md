@@ -28,17 +28,17 @@ Before reading a single source file, get the shape of past work.
 ### 1. Which sessions ever touched this code?
 
 ```bash
-session-search "<repo>" --all --files
+sio search "<repo>" --all --files
 ```
 
-`session-search --files` returns just the JSONL paths — a list of every session that mentioned `<repo>`. Sort by mtime. The most recent five or six sessions are your "what's the current state" set; the older ones are archaeological.
+`sio search --files` returns just the JSONL paths — a list of every session that mentioned `<repo>`. Sort by mtime. The most recent five or six sessions are your "what's the current state" set; the older ones are archaeological.
 
 > **Rule of thumb:** start with `--files` always. You're looking at a histogram of activity, not reading content yet.
 
 ### 2. What was the last substantive session about?
 
 ```bash
-session-search "<repo>" --recent 30 --files
+sio search "<repo>" --recent 30 --files
 # Read the top 1-2 JSONL files directly with Read tool
 ```
 
@@ -53,7 +53,7 @@ The most recent session is your handoff note from past-you. Read it for: the las
 `/work-recap` (sibling skill, not strictly SIO core but adjacent) gives you a chronological summary of recent sessions — what was done, what was decided, what files moved. Useful as a "headline reel" before you dive into any specific session.
 
 **Phase 1 combo (~1 minute):**
-- `session-search --files` to enumerate
+- `sio search --files` to enumerate
 - Read the top JSONL for the last substantive turn
 - `/work-recap` for the multi-day arc
 
@@ -140,7 +140,7 @@ If the repo has CLAUDE.md rules (project or global), `/sio-violations` shows whi
 
 ```bash
 # Phase 1 — Map (1 min)
-session-search "<repo>" --all --files
+sio search "<repo>" --all --files
 # Read top 1-2 most recent JSONLs
 /work-recap
 
@@ -192,4 +192,4 @@ All three benefit from the same three-minute read.
 - `docs/SIO_PHILOSOPHY.md` — why SIO is "measured assist, not autonomous override"
 - `docs/user-guide.md` — every CLI surface
 - `~/.claude/rules/tools/sio.md` — when to route the user to which SIO skill
-- `~/.claude/rules/domains/memory-search.md` — the cascade memory protocol (`session-search` first, always)
+- `~/.claude/rules/domains/memory-search.md` — the cascade memory protocol (`sio search` first, always)
