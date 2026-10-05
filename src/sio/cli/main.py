@@ -7402,17 +7402,28 @@ def velocity(error_type, window, fmt, skills, by_rule, min_records, experiment_n
 # ---------------------------------------------------------------------------
 
 
+def _find_claude_rule_file(path_part: str) -> Path | None:
+    """Resolve a rule-id path against every Claude rule dir (rules/, rulebook/)."""
+    from sio.core.paths import claude_rule_dirs  # noqa: PLC0415
+
+    for root in claude_rule_dirs():
+        cand = root / path_part
+        if cand.exists():
+            return cand
+    return None
+
+
 def _resolve_rule_title(rule_id: str) -> str:
     """Best-effort: read first H1/H2 from rule file referenced by rule_id.
 
-    rule_id format: ``<rules-path>#<sha[:12]>``. The current rules root is
-    ``~/.claude/rules/``. Returns empty string on any failure — failure
-    isolation per task spec.
+    rule_id format: ``<rules-path>#<sha[:12]>``, relative to whichever Claude
+    rule dir holds it (``rules/`` or ``rulebook/``). Returns empty string on any
+    failure — failure isolation per task spec.
     """
     try:
         path_part = rule_id.split("#", 1)[0]
-        full = Path.home() / ".claude" / "rules" / path_part
-        if not full.exists():
+        full = _find_claude_rule_file(path_part)
+        if full is None:
             return ""
         with open(full) as f:
             for line in f:
@@ -7710,9 +7721,11 @@ def rule_audit_cmd(rule_id, samples, window, judge, yes, write_report, fmt):
 
             # Read rule body for prevention_instructions context.
             path_part = rule_id.split("#", 1)[0]
-            rule_path = Path.home() / ".claude" / "rules" / path_part
+            rule_path = _find_claude_rule_file(path_part)
             rule_body = ""
             try:
+                if rule_path is None:
+                    raise FileNotFoundError(path_part)
                 rule_body = rule_path.read_text()[:4000]
             except Exception:
                 rule_body = "(rule file not readable)"
@@ -7873,11 +7886,11 @@ def violations(since, fmt):
         if candidate.exists():
             rule_file_paths.append(str(candidate))
 
-    # Check for rules/ directory files.
-    rules_dir = Path.home() / ".claude" / "rules"
-    if rules_dir.exists():
-        for md_file in sorted(rules_dir.rglob("*.md")):
-            rule_file_paths.append(str(md_file))
+    # Every Claude rule dir: rules/ (auto-loaded core) and rulebook/ (on-demand).
+    from sio.core.paths import iter_claude_rule_files  # noqa: PLC0415
+
+    for md_file in iter_claude_rule_files():
+        rule_file_paths.append(str(md_file))
 
     # Also check project-level CLAUDE.md and rules/.
     project_claude_md = Path.cwd() / "CLAUDE.md"
@@ -7892,7 +7905,10 @@ def violations(since, fmt):
 
     if not rule_file_paths:
         click.echo("No instruction files found to scan.")
-        click.echo("  Checked: ~/.claude/CLAUDE.md, ./CLAUDE.md, ~/.claude/rules/, ./rules/")
+        click.echo(
+            "  Checked: ~/.claude/CLAUDE.md, ./CLAUDE.md, ~/.claude/rules/, "
+            "~/.claude/rulebook/, ./rules/"
+        )
         return
 
     with _db_conn(db_path) as conn:
@@ -8032,11 +8048,11 @@ def _discover_rule_files() -> list[str]:
         if candidate.exists() and str(candidate) not in rule_file_paths:
             rule_file_paths.append(str(candidate))
 
-    # ~/.claude/rules/ — markdown files
-    user_rules = Path.home() / ".claude" / "rules"
-    if user_rules.exists():
-        for md in sorted(user_rules.rglob("*.md")):
-            rule_file_paths.append(str(md))
+    # ~/.claude/rules/ (auto-loaded core) AND ~/.claude/rulebook/ (on-demand)
+    from sio.core.paths import iter_claude_rule_files  # noqa: PLC0415
+
+    for md in iter_claude_rule_files():
+        rule_file_paths.append(str(md))
 
     # Project-level rules/
     project_rules = Path.cwd() / "rules"
@@ -8114,7 +8130,8 @@ def promote_rule(rule_index: int, mode: str, since: str | None, write: bool) -> 
     if not rule_file_paths:
         click.echo("No instruction files found to scan.")
         click.echo(
-            "  Checked: ~/.claude/CLAUDE.md, ./CLAUDE.md, ~/.claude/rules/, ./rules/"
+            "  Checked: ~/.claude/CLAUDE.md, ./CLAUDE.md, ~/.claude/rules/, "
+            "~/.claude/rulebook/, ./rules/"
         )
         raise SystemExit(2)
 
@@ -8409,11 +8426,11 @@ def budget(file_path):
             if candidate.exists() and candidate not in files_to_check:
                 files_to_check.append(candidate)
 
-        rules_dir = Path.home() / ".claude" / "rules"
-        if rules_dir.exists():
-            for md_file in sorted(rules_dir.rglob("*.md")):
-                if md_file not in files_to_check:
-                    files_to_check.append(md_file)
+        from sio.core.paths import iter_claude_rule_files  # noqa: PLC0415
+
+        for md_file in iter_claude_rule_files():
+            if md_file not in files_to_check:
+                files_to_check.append(md_file)
 
         project_claude_md = Path.cwd() / "CLAUDE.md"
         if project_claude_md.exists() and project_claude_md not in files_to_check:
@@ -8545,10 +8562,10 @@ def dedupe(threshold, dry_run, auto_apply):
         if candidate.exists():
             file_paths.append(str(candidate))
 
-    rules_dir = Path.home() / ".claude" / "rules"
-    if rules_dir.exists():
-        for md_file in sorted(rules_dir.rglob("*.md")):
-            file_paths.append(str(md_file))
+    from sio.core.paths import iter_claude_rule_files  # noqa: PLC0415
+
+    for md_file in iter_claude_rule_files():
+        file_paths.append(str(md_file))
 
     project_claude_md = Path.cwd() / "CLAUDE.md"
     if project_claude_md.exists() and str(project_claude_md) not in file_paths:

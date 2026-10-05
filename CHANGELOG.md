@@ -9,6 +9,41 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
+### Fixed — `sio suggest` silently produced only template suggestions
+
+- **Run-log capture crashed every fresh LM call.** `dspy_capture` wraps
+  `dspy.LM.__call__` and `json.dumps` the usage dict, which litellm fills with a
+  `CompletionTokensDetailsWrapper`. The `TypeError` escaped (only `OSError` was
+  caught) and — because success-path logging sat inside the LM `try` — was
+  recorded as an LM failure and re-raised. DSPy retried in JSON mode ("Failed to
+  use structured output format"), failed again, and `sio suggest --auto` fell
+  back to `[Template]` for every pattern whose call reached the network (42/42 on
+  one measured run). Cached responses carry empty usage, so they survived, which
+  made it look intermittent. Capture now serializes provider objects, never
+  raises, and runs outside the LM `try`.
+- **Auto-mode failures are named.** The warning carries the exception type,
+  message and root cause (the run log keeps only message text), and the batch
+  path records `error_class` / `error_message` in `generation_failures` instead
+  of an unexplained `dspy_returned_none`.
+- **Rule readers see `~/.claude/rulebook/`.** Claude Code auto-loads every `.md`
+  under `~/.claude/rules/`, so on-demand rules live in `~/.claude/rulebook/`.
+  `violations`, `budget`, `dedupe`, `rule-audit`, the suggest consultant,
+  active-rule stamping during `mine`, cohort snapshots and the bundled
+  `/sio-rule-audit` skill scanned only `rules/` and were blind to every rulebook
+  rule. All now resolve through `sio.core.paths.claude_rule_dirs()` /
+  `iter_claude_rule_files()`. Rule ids stay continuous (a rulebook rule keeps its
+  pre-move id), and a home without a rulebook hashes exactly as before.
+- **Frustration is detected as `user_correction`.** The phrase-only detector
+  missed profanity, `!!!`, "why do we not…", "how many times", "I told you", so
+  the angriest turns never reached `suggest`. Harness-generated "user" turns
+  (context-continuation summaries, relayed agent messages) are no longer counted.
+
+### Upgrade note
+
+After pulling, existing databases need migration 006 (the `agent` column).
+Without it `sio suggest` reports "No errors mined yet" because the agent filter
+matches nothing. `sio init` applies it.
+
 ### Added — `sio archive`: SIO keeps its own copy of every session
 
 - **`sio archive sync|status`** mirrors every coding agent's raw session store
