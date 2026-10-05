@@ -9,6 +9,38 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-10-05
+
+First release since 0.3.1. Everything below accumulated on `main` after 0.3.1;
+`0.4.0` was an in-tree version that was never tagged or released, so a build
+reporting `0.4.0` may predate the fixes here — upgrade to 0.5.0.
+
+**Highlights**
+
+- **`sio suggest` works again** — it had silently returned only `[Template]`
+  suggestions for every fresh LM call (run-log capture crash). Failures are now
+  named in the log and in `generation_failures`.
+- **Rules split into `~/.claude/rules/` (always loaded) and `~/.claude/rulebook/`
+  (on demand).** SIO installs, promotes *and now reads* rules in both — see
+  [docs/configuration.md#where-rules-live](docs/configuration.md#where-rules-live).
+- **Agent isolation** — one DB, a real `agent` column, no duplicate mining (#44).
+- **Cross-agent `sio search`**, **`sio archive`** (SIO keeps its own copy of every
+  session), and **pi / codex / opencode** as `sio init` install targets.
+- **Frustration detection** — profanity, `!!!` and "how many times" turns are mined
+  as `user_correction`.
+
+**Upgrading (required steps)**
+
+```bash
+uv tool upgrade self-improving-organism   # or pipx upgrade / pip install --upgrade / git pull
+sio init                                  # REQUIRED: runs migration 006 (agent column)
+sio --version                             # → 0.5.0
+```
+
+Skipping `sio init` leaves `sio suggest` reporting "No errors mined yet" on a full
+database. `sio db migrate` does not run migration 006. See
+[docs/troubleshooting.md](docs/troubleshooting.md).
+
 ### Fixed — `sio suggest` silently produced only template suggestions
 
 - **Run-log capture crashed every fresh LM call.** `dspy_capture` wraps
@@ -38,7 +70,7 @@ GitHub release pages (with full asset downloads) live at
   the angriest turns never reached `suggest`. Harness-generated "user" turns
   (context-continuation summaries, relayed agent messages) are no longer counted.
 
-### Upgrade note
+### Upgrade note (migration 006)
 
 After pulling, existing databases need migration 006 (the `agent` column).
 Without it `sio suggest` reports "No errors mined yet" because the agent filter

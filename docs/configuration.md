@@ -137,6 +137,32 @@ These are not configurable via config.toml — they are hardcoded conventions:
 | `~/.specstory/history/` | SpecStory session files (input) |
 | `~/.claude/projects/` | Claude JSONL transcripts (input) |
 | `~/.claude/settings.json` | Claude Code settings (hook registration) |
+| `~/.claude/rules/` | Claude Code rules **auto-loaded into every session** (read by SIO) |
+| `~/.claude/rulebook/` | On-demand rules — where SIO installs and promotes rules (read by SIO) |
+
+## Where rules live
+
+Claude Code reads **every** `.md` file under `~/.claude/rules/` into **every**
+session, recursively, following symlinks. Rules placed there cost context on every
+prompt whether or not they apply. SIO therefore follows a two-directory convention:
+
+| Directory | Loads | Put here |
+|---|---|---|
+| `~/.claude/rules/` (e.g. `rules/core/`) | always, by Claude Code | only universal rules that must hold in every session |
+| `~/.claude/rulebook/domains/`, `rulebook/tools/` | on demand — a PreToolUse rules-injector hook matches the tool name, the file stem, an alias symlink, or a `<!-- triggers: a, b -->` line | everything else, including every rule SIO installs or promotes |
+
+What SIO does with each:
+
+- **Writes** — `sio init` stages `rulebook/tools/sio.md`; `sio suggest` / `sio apply`
+  target `rulebook/tools/<tool>.md` and `rulebook/domains/<domain>.md`.
+- **Reads** — `violations`, `budget`, `dedupe`, `rule-audit`, the suggest
+  consultant, active-rule stamping during `mine` and cohort snapshots all scan
+  **both** directories via `sio.core.paths.claude_rule_dirs()`. A rule's id is
+  relative to the directory that holds it, so a rule moved from `rules/domains/`
+  to `rulebook/domains/` keeps its id and its history.
+
+Never add a compatibility symlink from `rules/` into `rulebook/` — Claude Code
+follows it and loads the whole rulebook again.
 
 ## Environment
 

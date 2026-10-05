@@ -118,6 +118,64 @@ sio status            # should now show non-zero error counts
 
 ---
 
+## `sio suggest` says "No errors mined yet" right after upgrading
+
+**Symptom**
+
+`sio errors` lists hundreds of errors, but `sio suggest` (or `--preview`) prints
+`No errors mined yet in the last 30 days`.
+
+**Cause**
+
+Agent isolation (0.5.0) scopes `suggest` to the harness's own rows via a new
+`agent` column. On a database created before 0.5.0 that column exists but is
+empty until migration 006 runs, so the filter matches nothing. `sio db migrate`
+does **not** apply it (it only runs `scripts/migrate_*.py`).
+
+**Fix**
+
+```bash
+sio init        # runs migration 006 (backs the DB up first), then re-stages skills
+```
+
+Check: `sqlite3 ~/.sio/sio.db "select agent, count(*) from error_records group by agent"`
+should show `claude`, not an empty string.
+
+---
+
+## `sio suggest` produces only `[Template]` suggestions
+
+**Symptom**
+
+Every suggestion is `[Template]` ("Improve reliability of unknown tool: …") with
+8–11% confidence, and the run log shows `Failed to use structured output format,
+falling back to JSON mode` followed by `Auto mode: DSPy generation failed`.
+Re-running sometimes "works" — usually only for patterns you ran before.
+
+**Cause (fixed in 0.5.0)**
+
+The run-log capture that wraps every LM call crashed while serializing the
+provider's usage object (`CompletionTokensDetailsWrapper is not JSON
+serializable`), turning every *fresh* API call into a failure. Cached responses
+have no usage details, so they slipped through — which is why it looked
+intermittent.
+
+**Fix**
+
+Upgrade to 0.5.0 and run `sio init`. If template fallbacks still appear, the
+warning now names the real exception (type, message, root cause), and
+`generation_failures` records `error_class` / `error_message`:
+
+```bash
+sqlite3 ~/.sio/sio.db "select reason, error_class, substr(error_message,1,120)
+  from generation_failures order by rowid desc limit 5"
+```
+
+Every LM call is also captured with its error in
+`~/.sio/runs/<run>_dspy.jsonl` (`"ok": false, "error": …`).
+
+---
+
 ## `fastembed` ONNX model downloads on first run
 
 **Symptom**
@@ -424,7 +482,7 @@ reports `sio.db` not found even after `sio init` ran successfully.
 **Cause**
 
 `SIO_DB_PATH` is set in your environment (or shell config) pointing to a different
-path than `~/.sio/sio.db`. The global rules file `~/.claude/rules/tools/sio.md`
+path than `~/.sio/sio.db`. The global rules file `~/.claude/rulebook/tools/sio.md`
 lists a known stale legacy path (`~/.claude/sio.db`) that some early installs wrote.
 
 **Fix**
