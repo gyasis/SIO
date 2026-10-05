@@ -79,6 +79,42 @@ Archived Claude hits carry `source_kind: "archive"` (ripgrep and Python paths);
 archived hits from other agents carry `metadata.archived = true`. Older copies
 kept as `<name>.~<UTC>` are not searched. `sio mine` still reads live stores only.
 
+## Why SIO does not change the harnesses' own cleanup
+
+Claude Code deletes transcripts older than `cleanupPeriodDays` (default 30), and
+other harnesses have their own retention. SIO deliberately **leaves those defaults
+alone**: raising them makes every tool's store grow without bound and scatters the
+long-term record across many places that nobody watches. Instead `sio archive` is
+the single durable record — raw session files, owned by SIO, independent of any
+harness's retention. (Decided 2026-10-02 when this feature replaced SpecStory; a
+short-lived `cleanupPeriodDays: 36500` was reverted for exactly this reason.)
+
+So: do **not** "fix" history loss by raising `cleanupPeriodDays`. Check that the
+archive is running (`sio archive status`) instead. `gone_at_source` in that output
+counts sessions the harness has already deleted that SIO still holds.
+
+## Where each harness keeps sessions
+
+SIO uses the same `$HOME`-relative paths on Linux and macOS. Observed on both
+(2026-10-05): Claude Code, Codex and pi. The others were not installed on the macOS
+machine checked; they use the same dot-paths there by their own conventions:
+
+| Harness | Path | Linux | macOS |
+|---|---|---|---|
+| Claude Code | `~/.claude/projects/`, `~/.claude/history.jsonl` | ✓ | ✓ |
+| Codex CLI | `~/.codex/sessions/`, `~/.codex/history.jsonl` | ✓ | ✓ |
+| pi | `~/.pi/agent/sessions/` | ✓ | ✓ |
+| Gemini CLI | `~/.gemini/tmp/` | ✓ | not yet observed |
+| Kimi | `~/.kimi-code/sessions/` | ✓ | not yet observed |
+| PromptChain | `~/.promptchain/sessions/` | ✓ | not yet observed |
+| goose | `~/.local/share/goose/sessions/` | ✓ | not yet observed |
+| opencode | `~/.local/share/opencode/` | ✓ | not yet observed |
+
+Not archived: desktop GUI apps (`~/Library/Application Support/Claude`, `…/Codex`,
+`…/Cursor` on macOS) — their "Session Storage" folders are the app window's
+browser storage, not agent transcripts. A custom `$XDG_DATA_HOME` is not followed
+yet; goose/opencode stores moved there are not archived.
+
 ## Scheduling
 
 **`sio init` installs the schedule automatically** (since 0.5.3; opt out with

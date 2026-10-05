@@ -9,6 +9,22 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
+## [0.5.5] — 2026-10-05
+
+### Fixed — archive works natively on macOS; the design decision is written down
+
+- **`sio init`'s archive line is platform-accurate** (`schedule_summary()`): on
+  macOS it describes the launchd job (at login/load, then every 24 h; intervals
+  missed while asleep run once on wake) instead of systemd's wall-clock schedule.
+- **Verified on a Mac Studio**: `sio init` installed the `io.sio.archive` launchd
+  agent and the hooks against the uv-tool interpreter by absolute path, kept the
+  existing `settings.json` keys and hooks, and the first sync archived Claude Code,
+  Codex and pi history.
+- **Docs: "Why SIO does not change the harnesses' own cleanup"** — leave
+  `cleanupPeriodDays` (and other retention) at default; `sio archive` is the single
+  durable record. Plus a table of where each harness keeps sessions on Linux and
+  macOS, and what is not archived (desktop-app storage; custom `$XDG_DATA_HOME`).
+
 ## [0.5.4] — 2026-10-05
 
 ### Fixed — the archive timer's catch-up was a no-op (and 0.5.3 said otherwise)

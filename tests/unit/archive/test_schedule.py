@@ -144,3 +144,11 @@ def test_non_calendar_interval_omits_noop_persistent(linux):
     assert "OnUnitActiveSec=45min" in timer
     assert "Persistent" not in timer and "OnCalendar" not in timer
     assert "OnBootSec=5min" in timer
+
+
+def test_schedule_summary_is_platform_accurate():
+    linux = schedule.schedule_summary(platform="linux")
+    mac = schedule.schedule_summary(platform="darwin")
+    assert linux.startswith("systemd:") and "wall clock" in linux and "boot or wake" in linux
+    assert mac.startswith("launchd:") and "wake" in mac and "wall clock" not in mac
+    assert "no catch-up" in schedule.schedule_summary(45, platform="linux")

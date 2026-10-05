@@ -119,6 +119,24 @@ def _run(cmd: list[str], dry_run: bool, actions: list[str]) -> None:
 DEFAULT_INTERVAL_MINUTES = 1440
 
 
+def schedule_summary(interval_minutes: int = DEFAULT_INTERVAL_MINUTES,
+                     platform: str | None = None) -> str:
+    """One line saying what the installed schedule actually does on this platform."""
+    platform = platform or sys.platform
+    if platform == "darwin":
+        hours = interval_minutes / 60
+        every = "every 24h" if interval_minutes == 1440 else f"every {hours:g}h"
+        return (f"launchd: at login/load, then {every}; "
+                "intervals missed while asleep run once on wake")
+    cal = on_calendar(interval_minutes)
+    if cal:
+        when = "daily" if cal == "daily" else f"OnCalendar={cal}"
+        return (f"systemd: {when} on the wall clock, a missed run fires once on the next "
+                "boot or wake, plus 5 min after every boot")
+    return (f"systemd: every {interval_minutes} min of uptime plus 5 min after every boot "
+            "(no catch-up for this interval)")
+
+
 def install(interval_minutes: int = DEFAULT_INTERVAL_MINUTES, dry_run: bool = False,
             home: Path | None = None) -> list[str]:
     """Install (or refresh) the schedule. Returns the actions taken, for display."""

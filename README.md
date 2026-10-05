@@ -118,7 +118,7 @@ The package name on pypi is `self-improving-organism`; the CLI binary stays
 `sio` for ergonomics. (Pypi publish hasn't happened yet — install from GitHub
 for now.)
 
-> **Install `@main` or pin `@v0.5.4`.** `v0.5.0` (2026-10-05) was the first release
+> **Install `@main` or pin `@v0.5.5`.** `v0.5.0` (2026-10-05) was the first release
 > with `sio search`, the non-Claude harness adapters, agent isolation, `sio archive`
 > and the `sio suggest` fixes. Do **not** install `v0.3.1` or older tags — they
 > predate all of that. (`0.4.0` was an in-tree version that was never released; a
@@ -136,7 +136,7 @@ pipx install "self-improving-organism[all] @ git+https://github.com/gyasis/SIO.g
 
 # Verify — `sio --version` reports the pyproject version; `sio search` is the
 # functional check that you got a current build.
-sio --version          # → 0.5.4
+sio --version          # → 0.5.5
 sio search --list-agents
 ```
 
@@ -258,7 +258,7 @@ git -C ~/path/to/SIO pull                        # editable / from-source instal
 # 2. Run init — NOT optional after an upgrade
 sio init                    # applies pending DB migrations, re-stages skills/rules, re-pins hooks
 sio init --status           # confirm what shipped vs what's drifted
-sio --version               # → 0.5.4
+sio --version               # → 0.5.5
 ```
 
 `sio init` is where database migrations run. Skip it after upgrading past 0.3.x and
