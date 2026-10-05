@@ -9,6 +9,29 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
+## [0.5.4] — 2026-10-05
+
+### Fixed — the archive timer's catch-up was a no-op (and 0.5.3 said otherwise)
+
+The 0.5.3 notes, README and `sio init` output described the archive schedule as
+"Persistent" catch-up. It was not: the timer used `OnUnitActiveSec=1440min`, and
+`Persistent=` only has an effect on timers configured with `OnCalendar=`
+(systemd.timer(5)). The only real catch-up was `OnBootSec=5min`; and because
+`OnUnitActiveSec` counts awake time, a machine that mostly sleeps synced less
+often than daily.
+
+- **Daily is now `OnCalendar=daily` + `Persistent=true`**: a run missed while the
+  machine was off fires once at the next boot, and one missed while asleep fires
+  on wake. `OnBootSec=5min` (a run after every boot) is kept.
+- `--interval` values that divide a day or an hour evenly use the same calendar
+  form (`*-*-* 00/6:00:00`, `*:00/15`, …); others fall back to `OnUnitActiveSec`
+  **without** a `Persistent=` line, since it would do nothing.
+- `sio init` output, README and the archive guide now say what actually happens,
+  including a table of off / asleep / boot behaviour on Linux and macOS (launchd
+  was already right: `RunAtLoad` + `StartInterval`, which coalesces on wake).
+- Existing installs pick up the new timer on the next `sio init` (or
+  `sio archive install`), which rewrites the unit and reloads systemd.
+
 ## [0.5.3] — 2026-10-05
 
 ### Fixed — SIO told agents and users to run the deprecated `session-search`
@@ -38,7 +61,7 @@ The schedule was created solely by a manual `sio archive install`, which nothing
 called, so no machine was archiving (measured: no archive run, no timer).
 
 - **`sio init` now installs the archive schedule** (systemd `--user` timer /
-  launchd agent: daily, 5 min after boot, `Persistent` catch-up), mirroring the
+  launchd agent: daily, 5 min after boot — the "`Persistent` catch-up" claimed here was a no-op, corrected in 0.5.4), mirroring the
   briefing-refresh timer. `--no-archive` opts out; `--dry-run` previews it.
 - **`sio init --uninstall` removes the schedule** (new `schedule.uninstall()`),
   never the archive data.

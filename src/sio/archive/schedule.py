@@ -43,12 +43,41 @@ def systemd_files(exe: str, interval_minutes: int) -> dict[str, str]:
             "Description=Run sio archive sync on a schedule\n\n"
             "[Timer]\n"
             "OnBootSec=5min\n"
-            f"OnUnitActiveSec={interval_minutes}min\n"
-            "Persistent=true\n\n"
-            "[Install]\n"
+            + _timer_schedule(interval_minutes)
+            + "\n[Install]\n"
             "WantedBy=timers.target\n"
         ),
     }
+
+
+def on_calendar(interval_minutes: int) -> str | None:
+    """A wall-clock ``OnCalendar=`` expression for intervals that divide a day
+    (or an hour) evenly; None when the interval has no clean calendar form."""
+    if interval_minutes == 1440:
+        return "daily"
+    divides_day = interval_minutes % 60 == 0 and 1440 % interval_minutes == 0
+    if 60 <= interval_minutes < 1440 and divides_day:
+        return f"*-*-* 00/{interval_minutes // 60}:00:00"
+    if 0 < interval_minutes < 60 and 60 % interval_minutes == 0:
+        return f"*:00/{interval_minutes}"
+    return None
+
+
+def _timer_schedule(interval_minutes: int) -> str:
+    """Timer lines after OnBootSec.
+
+    ``Persistent=`` only works with ``OnCalendar=`` (systemd.timer(5)): it stores
+    the last trigger on disk and fires once on activation for any run missed
+    while the machine was off or asleep. So calendar-expressible intervals use
+    OnCalendar + Persistent. Anything else falls back to OnUnitActiveSec, which
+    counts *awake* time from the last run and cannot catch up — OnBootSec=5min
+    (a run after every boot) is its only catch-up, and Persistent is omitted
+    because it would be a no-op.
+    """
+    cal = on_calendar(interval_minutes)
+    if cal:
+        return f"OnCalendar={cal}\nPersistent=true\n"
+    return f"OnUnitActiveSec={interval_minutes}min\n"
 
 
 def launchd_plist(exe: str, interval_minutes: int, log: Path) -> str:
@@ -86,7 +115,8 @@ def _run(cmd: list[str], dry_run: bool, actions: list[str]) -> None:
         subprocess.run(cmd, check=True, capture_output=True, text=True)
 
 
-DEFAULT_INTERVAL_MINUTES = 1440  # daily: well inside a 30-day retention window
+# daily (OnCalendar=daily + Persistent): well inside a 30-day retention window
+DEFAULT_INTERVAL_MINUTES = 1440
 
 
 def install(interval_minutes: int = DEFAULT_INTERVAL_MINUTES, dry_run: bool = False,

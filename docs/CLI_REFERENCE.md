@@ -1,7 +1,7 @@
 # SIO CLI Reference
 
 > Auto-generated from `sio --help` and each subcommand's `--help`.
-> Regenerate with `docs/gen_cli_reference.sh`. SIO version: sio, version 0.5.3
+> Regenerate with `docs/gen_cli_reference.sh`. SIO version: sio, version 0.5.4
 
 ## Top-level
 
