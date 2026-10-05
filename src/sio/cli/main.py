@@ -336,8 +336,17 @@ def init(
         if ir.success and not ir.errors:
             verb = "would " if dry_run else ""
             kind = "uninstall" if uninstall else "install"
+            # Name the files left alone on purpose, so a bare "complete" can't
+            # hide user-modified files that were not refreshed (#63).
+            held = sum(
+                1 for ch in ir.changes if ch.action == "skip" and "--force" in ch.reason
+            )
+            held_note = (
+                f", {held} skipped (modified/foreign; --force to overwrite)" if held else ""
+            )
             console.print(
-                f"  [green]✓[/green] {verb}{kind} complete — {len(ir.changes)} change(s)"
+                f"  [green]✓[/green] {verb}{kind} complete — "
+                f"{len(ir.changes)} change(s){held_note}"
             )
 
     # PATH integration step (opt-in via --link-path). On uninstall, removes

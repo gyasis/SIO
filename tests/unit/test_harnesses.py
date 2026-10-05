@@ -130,6 +130,19 @@ class TestClaudeCodeAdapterInstall:
         # Content must not have been overwritten.
         assert target.read_text().startswith("USER EDITED CONTENT")
 
+    def test_dry_run_matches_real_run_for_user_modified_file(self, tmp_path: Path) -> None:
+        # Issue #63: dry-run ignored the manifest, so a hand-edited file previewed
+        # as "would-update" while the real run skipped it as user-modified.
+        adapter = self._adapter(tmp_path)
+        adapter.install()
+        target = next(
+            iter(p for p in (tmp_path / ".claude").rglob("*") if p.is_file() and p.name != ".sio-managed.json")
+        )
+        target.write_text("USER EDITED CONTENT — do not overwrite\n")
+        preview = [ch.action for ch in adapter.install(dry_run=True).changes if ch.path == target]
+        real = [ch.action for ch in adapter.install().changes if ch.path == target]
+        assert preview == real == ["skip"]
+
     def test_force_overwrites_user_modified_with_backup(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
