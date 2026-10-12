@@ -376,6 +376,35 @@ canonical **`agent:native_id`** "Session URIs" (e.g. `claude:<uuid>`,
 | `sio archive install` | Run the sync on a schedule (daily by default): `systemd --user` timer on Linux, launchd on macOS |
 | `sio archive status` | Last archive run + per-agent file counts, deletions at source, versions |
 
+#### Mining OpenCode stores and Paperclip runs
+
+`sio mine --agent opencode|paperclip` reads those harnesses through their own
+adapters, which keep **tool calls and their output** (where failures live) and
+file them as errors: a shell command that exits non-zero or prints
+`fatal:`/`error:`, the same command run 3+ times in a session
+(`repeated_attempt`), and chat-template tokens (`<channel|>`, `<|im_start|>`)
+leaking into assistant text.
+
+```bash
+# any OpenCode data dir (or opencode.db); repeatable; replaces ~/.local/share/opencode
+sio mine --agent opencode --opencode-dir ~/.paperclip/instances/default/companies/<company>/<agent-home>/.local/share/opencode
+
+# or ADD stores to the default one for every run (os.pathsep-separated)
+export SIO_OPENCODE_DIRS=/path/to/store-a:/path/to/store-b
+sio mine --agent opencode
+
+# every Paperclip instance under ~/.paperclip (one SIO session per run log)
+sio mine --agent paperclip
+sio mine --agent paperclip --paperclip-home /path/to/.paperclip --paperclip-instance default
+```
+
+Session ids from a non-default OpenCode store are `opencode:<8-hex store hash>:<id>`, so
+two stores never collide (set `SIO_OPENCODE_DIRS` to resolve such a handle with `--session`).
+Paperclip sessions are `paperclip:<instance>:<runId>`. When the instance's HTTP API answers
+(2 s timeout; skipped silently if it is down) the error rows are tagged
+`paperclip:<company>/<agent>/<issue>` and a failed run adds its own error; otherwise ids are used.
+`--paperclip-home` defaults to `$SIO_PAPERCLIP_HOME`, else `~/.paperclip`.
+
 #### Database maintenance
 
 | Command | Description |
@@ -742,7 +771,7 @@ SIO classifies errors into four categories:
 |------|----------------|---------|
 | **tool_failure** | Tool calls that return errors | `FileNotFoundError`, `PermissionError`, command timeouts |
 | **user_correction** | User telling the agent it did the wrong thing | "That's not what I asked", "Wrong file" |
-| **repeated_attempt** | Same tool called 3+ times with similar input | Agent retrying a failing command |
+| **repeated_attempt** | Same tool called 3+ times with similar input (OpenCode/Paperclip: the same shell command 3+ times) | Agent retrying a failing command |
 | **agent_admission** | Agent acknowledging its own mistake | "I should have read the file first" |
 
 ## Suggestion Targets
