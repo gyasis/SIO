@@ -76,6 +76,82 @@ def test_snippet_contains_a_match_deep_in_long_output(live):
     assert "DEEPNEEDLE" in hit.content and len(hit.content) <= 2000
 
 
+FLAGGED_TOOL_RESULT = {
+    "type": "user", "timestamp": "2026-06-01T00:00:02Z",
+    "message": {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "t2", "is_error": True,
+         "content": "Exit code 2\nls: cannot access '/nope': FAILNEEDLE"},
+    ]},
+}
+FLAGGED_EMPTY_RESULT = {
+    "type": "user", "timestamp": "2026-06-01T00:00:03Z",
+    "message": {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "t3", "is_error": True, "content": ""},
+    ]},
+}
+UNFLAGGED_EMPTY_RESULT = {
+    "type": "user", "timestamp": "2026-06-01T00:00:04Z",
+    "message": {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "t4", "content": ""},
+    ]},
+}
+
+
+def test_flagged_failure_carries_the_harness_flag(live):
+    """The failure TEXT was already searchable; the verdict on it was discarded."""
+    _write(live / "-p" / "s.jsonl", FLAGGED_TOOL_RESULT)
+    [hit] = _hits("FAILNEEDLE")
+    assert "FAILNEEDLE" in hit.metadata["error"]
+    assert hit.metadata["error"].startswith("Exit code 2")
+
+
+def test_unflagged_result_has_no_error_key(live):
+    _write(live / "-p" / "s.jsonl", USER_TOOL_RESULT)
+    [hit] = _hits("RESULTNEEDLE")
+    assert "error" not in hit.metadata
+
+
+def test_flagged_result_with_no_output_still_surfaces(live):
+    """Empty content normally drops the event (see _matches); the flag keeps it."""
+    _write(live / "-p" / "s.jsonl", FLAGGED_EMPTY_RESULT)
+    [hit] = _hits("is_error")
+    assert hit.metadata["error"] == "is_error (empty tool result)"
+    assert hit.metadata["matched_in"] == ["error"]
+    assert hit.match_text == "is_error (empty tool result)"
+
+
+def test_unflagged_empty_result_is_still_dropped(live):
+    _write(live / "-p" / "s.jsonl", UNFLAGGED_EMPTY_RESULT)
+    assert _hits("is_error") == []
+
+
+def test_several_flagged_results_in_one_entry_are_joined(live):
+    entry = {"type": "user", "message": {"role": "user", "content": [
+        {"type": "tool_result", "is_error": True, "content": "first FAILNEEDLE"},
+        {"type": "tool_result", "is_error": True, "content": "second FAILNEEDLE"},
+    ]}}
+    _write(live / "-p" / "s.jsonl", entry)
+    [hit] = _hits("FAILNEEDLE")
+    assert hit.metadata["error"].splitlines() == ["first FAILNEEDLE", "second FAILNEEDLE"]
+
+
+def test_flag_is_capped_like_content(live):
+    entry = {"type": "user", "message": {"role": "user", "content": [
+        {"type": "tool_result", "is_error": True, "content": "CAPNEEDLE " + "z" * 5000},
+    ]}}
+    _write(live / "-p" / "s.jsonl", entry)
+    [hit] = _hits("CAPNEEDLE")
+    assert len(hit.metadata["error"]) == 2000
+
+
+def test_archived_flagged_failure_carries_the_flag(live):
+    arch = Path(os.environ["SIO_ARCHIVE_DIR"]) / "claude" / "projects"
+    _write(arch / "-p" / "deleted.jsonl", FLAGGED_TOOL_RESULT)
+    [hit] = _hits("FAILNEEDLE")
+    assert hit.metadata["source_kind"] == "archive"
+    assert "FAILNEEDLE" in hit.metadata["error"]
+
+
 def test_archived_only_session_tool_calls_are_searchable(live):
     arch = Path(os.environ["SIO_ARCHIVE_DIR"]) / "claude" / "projects"
     _write(arch / "-p" / "deleted.jsonl", ASSISTANT_TOOL_CALL)  # gone from live
