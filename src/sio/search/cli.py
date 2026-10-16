@@ -142,18 +142,27 @@ def _matches(text: str, pattern: str, case_sensitive: bool) -> bool:
     that gates on ``_matches`` drops empty-content events. That is deliberate:
     for search they are noise, and for bulk mining (``sio mine --agent``, which
     reads through these parsers) an event with no text carries nothing the
-    error extractor can classify. The one exception is pi: its parser also
-    keeps an event the HARNESS flagged as a failure (``isError`` tool result,
-    non-zero ``!cmd`` exit) even with empty content, because the flag itself is
-    the signal and ``mine --session`` (adapter path) files it too (#45).
+    error extractor can classify. Two parsers are exceptions, and they also keep
+    an event the HARNESS flagged as a failure even when its content is empty,
+    because the flag itself is the signal:
+
+    * **pi** — ``isError`` tool result, non-zero ``!cmd`` exit; ``mine --session``
+      (adapter path) files it too, so bulk and session agree (#45).
+    * **claude** — ``is_error`` tool_result. Search read the output but discarded
+      the verdict on it, so a failed tool call was indistinguishable from a
+      successful one. Note Claude does NOT flow through the adapter/bulk paths
+      (``_mine_agent_bulk`` is non-claude by construction): its mining reads
+      ``mining/jsonl_parser.py``, which has always handled ``is_error``. So this
+      is a SEARCH fix, and there is no bulk-vs-session parity to assert for it.
+      ``ClaudeAdapter`` still leaves ``SessionEvent.error`` unset — harmless on
+      today's paths, and deliberately left alone.
 
     If another parser starts carrying a harness failure flag, do the same
     there: gate on ``_matches(content) or (error and _matches(error))``, put the
-    flag in ``metadata["error"]`` (capped like content), and make the matching
-    adapter surface it on ``SessionEvent.error`` — then extend
-    ``test_bulk_and_session_paths_file_the_same_flagged_failures`` to that
-    agent. Until a parser has such a flag there is nothing to keep, so this is
-    not generalised.
+    flag in ``metadata["error"]`` (capped like content), and — if that agent is
+    mined through an adapter — make the adapter surface it on
+    ``SessionEvent.error`` and extend
+    ``test_bulk_and_session_paths_file_the_same_flagged_failures`` to it.
     """
     if not text:
         return False
@@ -227,10 +236,27 @@ def _iter_claude_jsonl(
                         continue
                     msg = entry.get("message") or {}
                     role = entry.get("type") or msg.get("role") or "unknown"
-                    parts = _claude_entry_parts(entry)
+                    parts, error = _claude_entry_parts(entry)
                     matched_in = sorted({k for k, t in parts if _matches(t, pattern, cs)})
+                    # A harness-flagged failure (``is_error`` tool_result) survives
+                    # even with empty content, as pi's does: the flag is the signal
+                    # (see _matches). Normally the failure text is also in the
+                    # tool_result part, so this only decides the empty case.
+                    if error and _matches(error, pattern, cs):
+                        matched_in = sorted({*matched_in, "error"})
                     if matched_in:
                         text = " ".join(t for _, t in parts if t)
+                        if matched_in == ["error"]:
+                            # Kept ONLY by the flag: the parts are just an empty
+                            # "[tool_result] " marker, so show the flag instead.
+                            text = error or ""
+                        meta = {
+                            "uuid": entry.get("uuid", ""),
+                            "source_kind": source_kind,
+                            "matched_in": matched_in,
+                        }
+                        if error is not None:
+                            meta["error"] = error[:2000]
                         yield Record(
                             agent=agent_label,
                             session_id=session_id,
@@ -238,11 +264,7 @@ def _iter_claude_jsonl(
                             role=role,
                             content=_snippet_around(text, pattern, cs),
                             source_path=str(jsonl),
-                            metadata={
-                                "uuid": entry.get("uuid", ""),
-                                "source_kind": source_kind,
-                                "matched_in": matched_in,
-                            },
+                            metadata=meta,
                             line=lineno,
                             match_text=text,
                         )
@@ -250,17 +272,24 @@ def _iter_claude_jsonl(
             continue
 
 
-def _claude_entry_parts(entry: dict) -> list[tuple[str, str]]:
+def _claude_entry_parts(entry: dict) -> tuple[list[tuple[str, str]], str | None]:
     """Every searchable piece of one Claude JSONL entry, tagged by where it came from.
 
     Conversation text alone is not the history: the work lives in tool calls
     (``tool_use`` name + input), their output (``tool_result``) and the top-level
     ``toolUseResult``. Per-match search used to read only ``text`` blocks, so a
     command or its output was unfindable — in live sessions and in the archive.
+
+    Returns the parts AND the harness's own failure flag: a ``tool_result`` block
+    with ``is_error`` true. Reading the output but discarding the verdict on it
+    left search unable to tell a failed tool call from a successful one — the
+    whole point of ``metadata["error"]``, which ``search_pi`` has carried since
+    #45. An entry with several flagged results joins them.
     """
     msg = entry.get("message") or {}
     blocks = msg.get("content")
     parts: list[tuple[str, str]] = []
+    flagged: list[str] = []
     if isinstance(blocks, list):
         for b in blocks:
             if not isinstance(b, dict):
@@ -279,13 +308,19 @@ def _claude_entry_parts(entry: dict) -> list[tuple[str, str]]:
                         x.get("text", "") if isinstance(x, dict) else str(x) for x in rc
                     )
                 parts.append(("tool_result", f"[tool_result] {rc or ''}"))
+                if b.get("is_error"):
+                    # A flagged result with NO output still gets a non-empty
+                    # error: the extractor reads an empty string as "not
+                    # flagged", so the flag would be lost. Mirrors pi's
+                    # "isError (empty tool result)".
+                    flagged.append(str(rc or "").strip() or "is_error (empty tool result)")
     else:
         parts.append(("text", str(blocks or entry.get("text", ""))))
     tur = entry.get("toolUseResult")  # stdout/stderr kept outside message.content
     if tur is not None:
         raw = tur if isinstance(tur, str) else json.dumps(tur, ensure_ascii=False)
         parts.append(("tool_result", f"[tool_result] {raw}"))
-    return parts
+    return parts, ("\n".join(flagged) if flagged else None)
 
 
 def _snippet_around(text: str, pattern: str, cs: bool, width: int = 2000) -> str:

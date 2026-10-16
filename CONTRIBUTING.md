@@ -88,7 +88,23 @@ ruff check .                     # check
 ruff check --fix .               # auto-fix safe violations
 ```
 
-Rules are the ruff defaults. Before opening a PR, `ruff check .` must exit 0.
+Rules are the ruff defaults. Keep the files you TOUCH clean: repo-wide
+`ruff check .` does not yet exit 0 (81 findings on 2026-10-16, a known backlog),
+so it is informational in `make ci` rather than a gate. `make lint-strict` is the
+hard version, for when that backlog is cleared.
+
+### Local CI
+
+There is **no GitHub Actions workflow** — CI runs on your machine before a merge:
+
+```bash
+make ci            # lint (informational) + the default test suite
+make test          # just the suite
+make lint-strict   # the hard lint gate
+```
+
+Report those local results on the PR. A missing or failed GitHub Actions check is
+not a merge blocker here, because there is no workflow to run.
 
 ---
 
