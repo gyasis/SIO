@@ -52,26 +52,26 @@ The **hooks** path (via `sio promote-rule`) is real enforcement — but hooks fi
 
 ### 2. Measurement has irreducible lag
 
-The current implementation requires ~2 weeks of organic rule churn before `sio velocity --by-rule` produces signal (see `src/sio/core/metrics/velocity.py`). Until then, every applied rule is a measurement-dark unknown. An autonomous SIO that applies-and-deprecates inside that window is making decisions on noise.
+The current implementation needs ~2 weeks of organic rule churn before `sio velocity --by-rule` produces signal (see `src/sio/core/metrics/velocity.py`). Until then, every applied rule is a measurement-dark unknown. An autonomous SIO that applies-and-deprecates inside that window is making decisions on noise.
 
 ### 3. The metric ≠ the outcome
 
-The DSPy `suggestion_quality_metric` scores rules on specificity + actionability + surface_accuracy. That's a *proxy* for "this rule is well-written." It is NOT a measure of "this rule reduces errors." Today (2026-05-18) we have no automatic outcome metric. Until we do, the human's judgment IS the outcome metric.
+The DSPy `suggestion_quality_metric` scores rules on specificity + actionability + surface_accuracy. That's a *proxy* for a well-written rule. It is NOT a measure of whether the rule reduces errors. Today (2026-05-18) we have no automatic outcome metric. Until we do, the human's judgment IS the outcome metric.
 
 ## What "measured assist" looks like
 
-The human shouldn't be eyeballing 50,000 error records and 278 pending suggestions manually. SIO provides three surfaces of math-backed assist:
+The human shouldn't be eyeballing 50,000 error records and 278 pending suggestions manually. SIO gives three surfaces of math-backed help:
 
 ### Surface 1 — Overview: `sio velocity --by-rule`
 Reads `error_records.active_rules` (the JSON snapshot column added 2026-05-15). For each rule active in the corpus, computes error rate by (target_surface, error_type) and groups by rule_id. Human reads the table; rules with positive deltas are candidates for keep, negative deltas for review.
 
 ### Surface 2 — Drill-down: `sio rule-outcomes <rule_id>`
-Per-rule deep stats: when applied, n_errors_before vs n_errors_after on the rule's target_surface, confidence interval based on sample size, related rule IDs. The "is this rule actually doing what I hoped" view.
+Per-rule deep stats. Shows, when applied, n_errors_before vs n_errors_after on the rule's target_surface, confidence interval based on sample size, related rule IDs. This is the "is this rule actually doing what I hoped" view.
 
 ### Surface 3 — Audit on demand: `sio rule-audit <rule_id>`
-The "I'm suspicious — dig in" command. Pulls error text samples from before and after the rule landed, surfaces the most-similar errors that STILL occurred after the rule, optionally runs an LLM judge ("does the rule's prevention_instructions actually apply to this error?"). The human reads the evidence and makes the call.
+The "I'm suspicious — dig in" command. Pulls error text samples from before and after the rule landed. Surfaces the most-similar errors that STILL occurred after the rule. Optionally runs an LLM judge ("does the rule's prevention_instructions actually apply to this error?"). The human reads the evidence and makes the call.
 
-(Surfaces 2 and 3 are not yet implemented as of 2026-05-18 — see PRD `sio_rule_outcomes_audit_2026-05-18.md` for the spec.)
+(Surfaces 2 and 3 do not exist as of 2026-05-18 — see PRD `sio_rule_outcomes_audit_2026-05-18.md` for the spec.)
 
 ## Where SIO is and isn't
 
@@ -93,11 +93,11 @@ What's **scaffolded but unmeasured**:
 
 What's **honest gap**:
 
-- ❌ Per-rule outcome metric (`rule_effectiveness_score`) — not implemented
-- ❌ `sio rule-outcomes` drill-down — not implemented
-- ❌ `sio rule-audit` deep-dive — not implemented
+- ❌ Per-rule outcome metric (`rule_effectiveness_score`) — not built
+- ❌ `sio rule-outcomes` drill-down — not built
+- ❌ `sio rule-audit` deep-dive — not built
 - ❌ DSPy training input that includes (rule, outcome) pairs — the model learns from rule QUALITY, not rule OUTCOMES
-- ❌ Auto-deprecation — **deliberately not built**. Auto-deprecation requires confidence in the outcome metric AND tolerance for false positives that briefly degrade the agent. We don't have either yet.
+- ❌ Auto-deprecation — **deliberately not built**. Auto-deprecation needs confidence in the outcome metric AND tolerance for false positives that briefly degrade the agent. We don't have either yet.
 
 ## Principles SIO enforces in code
 
@@ -115,32 +115,32 @@ What's **honest gap**:
 
 These are aspirational ideas that look attractive but conflict with the human-in-the-loop design:
 
-1. **Auto-deprecate failing rules.** Would require trust in an outcome metric that doesn't exist yet AND tolerance for false-positive deprecations that briefly degrade the agent. Surface the evidence, let the human decide.
+1. **Auto-deprecate failing rules.** Would need trust in an outcome metric that doesn't exist yet AND tolerance for false-positive deprecations that briefly degrade the agent. Surface the evidence, let the human decide.
 
-2. **Auto-promote successful flows to skills.** A skill is a contract about how Claude works. Adding skills automatically would introduce behavior the user didn't ask for. `sio promote-flow` requires explicit human invocation.
+2. **Auto-promote successful flows to skills.** A skill is a contract about how Claude works. Adding skills automatically would introduce behavior the user didn't ask for. `sio promote-flow` needs explicit human invocation.
 
-3. **A/B-test rules in production.** Tempting but hard to do without sample contamination. A rule fired for half the sessions can leak via shared `~/.claude/CLAUDE.md`. Defer until the outcome metric exists and isolation is solved.
+3. **A/B-test rules in production.** Tempting but hard to do without sample contamination. A rule fired for half the sessions can leak via shared `~/.claude/CLAUDE.md`. Defer until the outcome metric exists and you have solved isolation.
 
-4. **Re-train DSPy on outcome-driven labels automatically.** Would require the outcome metric AND an auto-labeler with a quality bar. Today the labeler is the human running `sio approve`. Keep it that way until the outcome metric is trustworthy.
+4. **Re-train DSPy on outcome-driven labels automatically.** Would need the outcome metric AND an auto-labeler with a quality bar. Today the labeler is the human running `sio approve`. Keep it that way until the outcome metric is trustworthy.
 
 ## How to read this doc if you're a future SIO user / contributor
 
 - If you're applying a rule for the first time: **expect a 2-week lag** before `sio velocity --by-rule` can tell you if it worked. Use your judgment.
 - If you suspect a rule is misfiring: **run `sio rule-audit <id>`** (once shipped). Read the evidence. Decide manually.
 - If you want SIO to "just figure it out": **that's not what this is.** SIO is an editor's assistant, not a self-driving system. The agent is the manuscript; you're the editor; SIO is the line-by-line reviewer.
-- If you find yourself reaching for auto-deprecation or auto-promotion: **read this doc again and check whether the outcome metric is in place yet.** If not, you're trading a known-good (human) judgment for a known-noisy (machine) one.
+- If you find yourself reaching for auto-deprecation or auto-promotion: **read this doc again.** Check whether the outcome metric is in place yet. If not, you're trading a known-good (human) judgment for a known-noisy (machine) one.
 
 ## Cross-references
 
 - `~/dev/projects/SIO/CLAUDE.md` — repo-level instructions enforced by hooks
 - `~/dev/projects/SIO/.specify/memory/constitution.md` — formal constitution (v1.7.0)
-- `~/dev/prd/scratch/sio_optimizer_ladder_2026-05-16.md` — ladder discipline (Tier 5 = ladder gate, gate the user CAN override but is logged)
+- `~/dev/prd/scratch/sio_optimizer_ladder_2026-05-16.md` — ladder discipline (Tier 5 = ladder gate, gate the user CAN override, and SIO logs the override)
 - `~/dev/prd/scratch/sio_dataset_versioning_2026-05-16.md` — trainsets table + content-hashing
 - `~/dev/prd/scratch/sio_background_persistence_design_2026-05-18.md` — crash-resilient compound `optimize-ladder` design
-- (To be filed) `~/dev/prd/scratch/sio_rule_outcomes_audit_2026-05-18.md` — `sio velocity --by-rule` extension + `sio rule-outcomes` + `sio rule-audit` CLI commands
+- (Not yet filed) `~/dev/prd/scratch/sio_rule_outcomes_audit_2026-05-18.md` — `sio velocity --by-rule` extension + `sio rule-outcomes` + `sio rule-audit` CLI commands
 
 ## Revision log
 
 | Version | Date | Change |
 |---|---|---|
-| 0.1 | 2026-05-18 | Initial draft. Captures the "measured assist, not autonomous override" design stance. Added in response to today's strategic audit conversation: human element is the FEATURE, math-backed surfaces are how we earn the human's trust over time. |
+| 0.1 | 2026-05-18 | Initial draft. Captures the design stance in this document's title. Added in response to today's strategic audit conversation: human element is the FEATURE, math-backed surfaces are how we earn the human's trust over time. |

@@ -6,7 +6,7 @@ Complete CLI reference for SIO.
 
 ### `sio mine`
 
-Mine recent AI coding sessions for errors and failures.
+Mine recent AI coding sessions for errors.
 
 ```bash
 sio mine --since <time-expression> [--project <name>] [--source <type>]
@@ -51,7 +51,7 @@ sio mine --since "6h"
 |------|-------------|
 | `tool_failure` | Tool call returned an error |
 | `user_correction` | User corrected the AI's output |
-| `repeated_attempt` | Same action attempted multiple times |
+| `repeated_attempt` | Same action tried multiple times |
 | `undo` | User undid/reverted an AI action |
 
 ---
@@ -64,9 +64,9 @@ Show discovered error patterns ranked by importance.
 sio patterns
 ```
 
-Displays a Rich table with columns: rank, pattern description, error count, session count, last seen date, and importance score.
+Shows a Rich table with columns: rank, pattern description, error count, session count, last seen date, and importance score.
 
-The score combines frequency (how often) and recency (how recently) to prioritize patterns that are both common and current.
+The score combines frequency (how often) and recency (how recently) to rank patterns that are both common and current.
 
 ---
 
@@ -170,7 +170,7 @@ Idempotent — safe to run multiple times.
 
 ### `sio schedule status`
 
-Check whether cron jobs are installed.
+Check whether cron jobs exist.
 
 ```bash
 sio schedule status
@@ -194,7 +194,7 @@ Reports: errors mined, patterns found, datasets built, pending reviews, applied 
 
 ### `sio flows`
 
-Discover recurring positive tool sequences using n-gram extraction and RLE compression. No LLM required ($0).
+Discover recurring positive tool sequences using n-gram extraction and RLE compression. It does not need an LLM ($0).
 
 ```bash
 sio flows [--min-support <n>] [--since <time>] [--top <n>]
@@ -233,7 +233,7 @@ sio flows --since "1 month"
 
 ### `sio distill`
 
-Extract the winning path from a session, removing failed attempts, retries, and dead ends. No LLM required ($0).
+Extract the winning path from a session, removing failed tries, retries, and dead ends. It does not need an LLM ($0).
 
 ```bash
 sio distill [--latest] [--session <id>] [--output <path>]
@@ -249,7 +249,7 @@ sio distill [--latest] [--session <id>] [--output <path>]
 
 **What it produces:**
 
-A focused playbook containing only the steps that led to a successful outcome. Failed tool calls, repeated attempts, and exploratory dead ends are stripped out.
+A focused playbook containing only the steps that led to a successful outcome. SIO removes failed tool calls, repeated tries, and exploratory dead ends.
 
 **Examples:**
 
@@ -318,14 +318,14 @@ sio export-dataset --task <task> [--output-dir <path>] [--format <fmt>] [--dry-r
 | `--task` | (required) | Task type: `routing`, `recovery`, `flow`, or `all` |
 | `--output-dir` | `~/.sio/datasets/` | Output directory |
 | `--format` | `jsonl` | Output format: `jsonl` or `parquet` |
-| `--dry-run` | off | Show what would be exported without writing files |
+| `--dry-run` | off | Print what SIO would export without writing files |
 
 **Task types:**
 
 | Task | Training Data | Use Case |
 |------|--------------|----------|
 | `routing` | Error → correct tool mapping | Teach the agent which tool to use |
-| `recovery` | Failed attempt → recovery steps | Teach error recovery patterns |
+| `recovery` | Failed try → recovery steps | Teach error recovery patterns |
 | `flow` | Tool sequence → outcome | Teach positive workflows |
 
 **Examples:**
@@ -368,13 +368,13 @@ sio collect-recall "fixing Playwright timeouts"
 sio collect-recall "Cube API connection" --label good
 ```
 
-Stored examples go into the `recall_examples` DB table and are used by `sio train --task recall`.
+The `recall_examples` DB table holds stored examples. `sio train --task recall` uses them.
 
 ---
 
 ### `sio train`
 
-Run DSPy BootstrapFewShot or GEPA optimization on exported datasets. Requires an LLM API key (~$0.02-0.05 per run).
+Run DSPy BootstrapFewShot or GEPA optimization on exported datasets. It needs an LLM API key (~$0.02-0.05 per run).
 
 ```bash
 sio train --task <task> [--optimizer <opt>] [--model <model>] [--max-demos <n>]
@@ -429,17 +429,17 @@ sio train --task routing --model azure/gpt-5-mini
 
 SIO absorbed the standalone `session-search` tool. `sio search` finds sessions across all
 coding-agent harnesses (targeted with `--agent <harness>`). Every analysis command (`mine`, `errors`, `suggest`, `collect-recall`)
-can be scoped to a single session with `--session`, turning SIO into a targeted debugger for one
+accepts `--session` to limit it to a single session. This turns SIO into a targeted debugger for one
 transcript. Session IDs are canonical **`agent:native_id`** URIs (e.g. `claude:<uuid>`,
-`goose:<name>`); legacy bare IDs are matched transparently. The pipe idiom ties the two together:
+`goose:<name>`); SIO matches legacy bare IDs transparently. The pipe idiom ties the two together:
 `sio search "dbt" --files | sio errors --session -`.
 
 ---
 
 ### `sio search`
 
-Search coding-agent session history across all harnesses. `sio search --help` lists the full flag set
-(the engine was absorbed from the former standalone `session-search` tool).
+Search coding-agent session history across all harnesses. `sio search --help` lists the full option set
+(the engine came from the former standalone `session-search` tool).
 
 ```bash
 sio search "<pattern>" [--agent <harness>] [--recent <days>] [--files] [--count]
@@ -470,17 +470,17 @@ sio search "<pattern>" [--agent <harness>] [--recent <days>] [--files] [--count]
 | `--no-fast` | — | Disable ripgrep fast path |
 | `--list-agents` | — | Print inventory of agents with on-disk history, then exit |
 
-**Result ordering (both paths):** results are emitted **newest-first by file mtime**,
-so the most recent sessions appear at the top — the recency-first discipline
-`sio search-discipline` measures. The fast path achieves this by sorting the file
-list itself and running ripgrep single-threaded (`-j1`); note that rg's own
-`--sort`/`--sortr` flags do **not** help here, because they only apply when ripgrep
-performs its own directory traversal, not when it is handed an explicit file list.
+**Result ordering (both paths):** SIO emits results **newest-first by file mtime**,
+so the most recent sessions appear at the top. This is the recency-first discipline
+that `sio search-discipline` measures. The fast path does this by sorting the file
+list itself and running ripgrep single-threaded (`-j1`). Note that rg's own
+`--sort`/`--sortr` options do **not** help here. They apply only when ripgrep
+does its own directory traversal, not when you give it an explicit file list.
 
 **Cross-agent adapters:**
 
 Claude, Codex, Kimi and pi use direct file adapters (Goose and OpenCode read their SQLite
-stores); the remaining agents (`gemini`, `aider`, `promptchain`) use a *search-backed adapter*
+stores). The remaining agents (`gemini`, `aider`, `promptchain`) use a *search-backed adapter*
 built on their respective on-disk stores:
 
 | Agent | Store location |
@@ -492,19 +492,19 @@ built on their respective on-disk stores:
 | `aider` | per-repo `.aider.chat.history.md` files under `~/dev/` |
 | `promptchain` | `~/.promptchain/sessions/<uuid>/messages.jsonl` (the PromptChain TUI/CLI agent; uuid→name via `sessions.db`) |
 | `kimi` | `~/.kimi-code/sessions/<workspace>/session_<uuid>/agents/<agent>/wire.jsonl` |
-| `pi` | `~/.pi/agent/sessions/<cwd-dir>/<iso-ts>_<uuid>.jsonl` (the pi coding agent; session id = file stem; `isError` tool results are mined as `tool_failure`) |
+| `pi` | `~/.pi/agent/sessions/<cwd-dir>/<iso-ts>_<uuid>.jsonl` (the pi coding agent; session id = file stem; `sio mine` records `isError` tool results as `tool_failure`) |
 
 Pass `--agent all` to fan out across every harness in one call. Use `--list-agents` to see
 which harnesses have on-disk history on this machine.
 
-**Empty-content events are dropped, on purpose.** Every parser gates on `_matches`, which
-never matches an empty text — so an event with no content is neither a search hit nor,
-through `sio mine --agent` (which reads through these same parsers), a mined event. The one
-exception is `pi`: its parser keeps an event the harness itself flagged as a failure
-(`isError`, a non-zero `!cmd` exit) even with empty content, because the flag is the signal
+**SIO drops empty-content events, on purpose.** Every parser gates on `_matches`, which
+never matches an empty text. So an event with no content is not a search hit. Through
+`sio mine --agent` (which reads through these same parsers), it is not a mined event either. The one
+exception is `pi`. Its parser keeps an event that the harness itself flagged as a failure
+(`isError`, a non-zero `!cmd` exit) even with empty content. The flag is the signal,
 and `mine --session` files it too. No other harness carries such a flag today, so nothing is
-lost there; when one does, its parser gets the same treatment (see the `_matches` docstring
-in `sio/search/cli.py` for the exact steps) rather than a general mechanism built ahead of
+lost there. When one does, its parser gets the same treatment (see the `_matches` docstring
+in `sio/search/cli.py` for the exact steps). We do not build a general mechanism ahead of
 a need.
 
 **Examples:**
@@ -553,7 +553,7 @@ Every analysis command accepts `--session` to restrict processing to a single tr
 | `sio collect-recall` | `--session` | Distill a specific session JSONL path |
 
 `sio mine` routes non-Claude sessions through the cross-agent adapter EXTRACT layer automatically.
-`sio errors` and `sio suggest` apply fuzzy partial-ID resolution: a short bare id is expanded
+`sio errors` and `sio suggest` apply fuzzy partial-ID resolution: they expand a short bare id
 against the DB and reports candidates when more than one session matches.
 
 **Pipe idiom:**
@@ -571,7 +571,7 @@ sio errors --session "$(sio search 'dbt compile error' --files | head -1)"
 ### `sio watch`
 
 Live-tail a session's events as they happen (Phase B; Claude-native sessions only so far).
-`--session` is **required**.
+`--session` is **mandatory**.
 
 ```bash
 sio watch --session <handle> [--from-start] [--tools-only]
@@ -605,7 +605,7 @@ sio watch --session claude:<uuid> --tools-only
 Discover and read **in-progress** (still-being-written) sessions — the one thing
 `sio search` can't do, because it only indexes *finished* transcripts. Finds live
 sessions by transcript mtime, resolves each one's repo/branch/worktree, and
-**flags collisions** when two live sessions share a working tree. Full guide:
+**marks collisions** when two live sessions share a working tree. Full guide:
 [docs/live-sessions.md](live-sessions.md).
 
 ```bash
@@ -618,22 +618,22 @@ sio live attach <id>        # attach read-only to a peer session and follow it
 
 | Command | Key options | Description |
 |--------|-------------|-------------|
-| `sio live ls` | `-m/--minutes` (60), `--repo PATH`, `--as-json` | List live sessions; flag same-working-tree collisions |
+| `sio live ls` | `-m/--minutes` (60), `--repo PATH`, `--as-json` | List live sessions; mark same-working-tree collisions |
 | `sio live show <id>` | `-n/--tail` (40), `-f/--follow`, `--tools-only` | Print a session's recent tail; optionally follow |
 | `sio live attach <id>` | `-c/--context` (15), `--tools-only` | Follow a peer session read-only from another session |
 
 Collision key is the **working tree root**: two live sessions in the same
 checkout collide (`⚠`); sessions in separate git worktrees of one repo do not.
-Claude sessions are resolved richly (their JSONL carries `cwd`+`gitBranch`); other
-harnesses are listed best-effort. See `/sio-live`.
+SIO resolves Claude sessions richly (their JSONL carries `cwd`+`gitBranch`). It lists other
+harnesses best-effort. See `/sio-live`.
 
 ---
 
 ### `sio db backfill-sessions`
 
 Migrate legacy bare session IDs (pre-merge rows, no colon) to the canonical `agent:<id>` form.
-Idempotent and non-destructive: only rows without a colon are touched. A timestamped backup is
-created before any write.
+Idempotent and non-destructive: it touches only rows without a colon. SIO creates a timestamped backup
+before any write.
 
 ```bash
 sio db backfill-sessions [--db-path <path>] [--agent <name>] [--dry-run]
@@ -660,8 +660,8 @@ sio db backfill-sessions
 sio db backfill-sessions --agent goose
 ```
 
-After the migration, `--session` handles will resolve correctly for both old (bare) and new
-(canonical) rows during the transition window — the match helper matches both forms
+After the migration, `--session` handles will resolve for both old (bare) and new
+(canonical) rows during the transition window. The match helper matches both forms
 transparently until all rows are canonical.
 
 ---
@@ -679,22 +679,22 @@ convention:
 | `flow_events` | `session_id` | tool-flow n-grams (claude only today) |
 | `positive_records` | `session_id` | positive signals (claude pipeline) |
 | `session_metrics` | `session_id` | per-session aggregates (claude pipeline + hooks) |
-| `processed_sessions` | `file_path` | what has been mined already (file path for claude, canonical `agent:native_id` for the others) |
+| `processed_sessions` | `file_path` | what `sio mine` already processed (file path for claude, canonical `agent:native_id` for the others) |
 
 `pattern_errors` and `experiment_runs` reference rows in those tables by id and follow them
 (remapped on dedupe, deleted on drop-agent). `patterns`, `suggestions`, `datasets`,
 `velocity_snapshots`, `recall_examples`, `behavior_invocations` (which has its own
-`platform` column) are cross-agent aggregates and are left as they are.
+`platform` column) are cross-agent aggregates and stay as they are.
 
-**Enforcement.** The column is `NOT NULL`; the Python write seam (`insert_error_record`
-and friends) derives it from the canonical session id, and an `AFTER INSERT` trigger on each
+**Enforcement.** The column is `NOT NULL`. The Python write seam (`insert_error_record`
+and friends) derives it from the canonical session id. An `AFTER INSERT` trigger on each
 table derives it for any writer that left it empty (raw SQL, old hook code). A row can
 therefore never sit in the DB without an agent that matches its session id. The rule is the
 one `parse_handle` uses: a known-agent prefix wins, anything else is the legacy Claude id.
 
 **Per-agent views.** For every known agent there is `errors_<agent>` and `flows_<agent>`
-(`errors_pi`, `errors_claude`, `flows_codex`, ...). They are plain SQL views — zero copies,
-always in sync — re-created on every DB open, so an agent added to `KNOWN_AGENTS` gets its
+(`errors_pi`, `errors_claude`, `flows_codex`, ...). They are plain SQL views with zero copies,
+always in sync. SIO re-creates them on every DB open, so an agent added to `KNOWN_AGENTS` gets its
 views the next time any `sio` command runs:
 
 ```bash
@@ -706,19 +706,19 @@ sio errors --agent pi          # the same rows through the CLI
 `session_id, timestamp, error_type, tool_name, error_text` (NULL-safe), with `error_text`
 compared on its **first 2000 characters** (`ERROR_TEXT_FINGERPRINT_CHARS`). That prefix is
 the cap the search parsers behind `mine --agent` put on every event's content; the adapters
-behind `mine --session` read the whole text. So an error longer than 2000 characters read
-truncated one way and whole the other is still ONE row — the write seam
-(`insert_error_record`) looks the fingerprint up before inserting, returns "already present",
-and when the incoming text is a longer read of the stored one it upgrades the stored text in
-place, so the full text wins whichever path ran first. Two errors that genuinely differ only
-past character 2000 (same session, same timestamp, same tool) are treated as one; that is the
+behind `mine --session` read the whole text. So an error longer than 2000 characters, read
+truncated one way and whole the other way, is still ONE row. The write seam
+(`insert_error_record`) looks the fingerprint up before inserting and returns "already present".
+When the incoming text is a longer read of the stored one, it upgrades the stored text in
+place. So the full text wins whichever path ran first. Two errors that genuinely differ only
+past character 2000 (same session, same timestamp, same tool) count as one. That is the
 trade-off for storing the full text without a schema change. Underneath, the exact UNIQUE
-index (`ux_error_records_fingerprint`) is unchanged and remains the hard guard
-(`INSERT OR IGNORE`). Rows stored before this rule are left as they are — a DB that already
-holds a truncated/full pair keeps both; migration 006's dedupe applies the prefix rule, but
-only on a DB it has not yet migrated. Non-claude sessions are recorded in
+index (`ux_error_records_fingerprint`) does not change and remains the hard guard
+(`INSERT OR IGNORE`). Rows stored before this rule stay as they are. A DB that already
+holds a truncated/full pair keeps both. Migration 006's dedupe applies the prefix rule, but
+only on a DB it has not yet migrated. SIO records non-claude sessions in
 `processed_sessions` under their canonical id with a signature (event count + last
-timestamp). Re-mining an unchanged session is a skip; a session that grew is re-read and only
+timestamp). SIO skips an unchanged session on re-mining. It re-reads a session that grew, and only
 its new errors land. `sio mine` prints `N new, M already present` so a run that captured
 nothing new is never mistaken for a window with nothing in it. `mine --session pi:<partial>`
 and `mine --agent pi` file the same session under the same full id (`pi:<file stem>`).
@@ -733,17 +733,17 @@ crash rolls everything back; two concurrent callers apply it exactly once):
    `<db dir>/backups/sio.db.<utc-ts>.pre-agent-migration.bak` (WAL-safe; never `cp`).
 2. Add `agent` (+ index) to the five tables above.
 3. Backfill: `pi:…` → `pi`, bare id or `claude:…` → `claude`. A prefix that is NOT a known
-   agent (e.g. `wuphf:…`) is filed under claude by the legacy rule **and counted in the
-   report** — review those rows; nothing is silently dropped.
-4. Merge partial non-claude ids into the full canonical id when the partial is a
-   **token-bounded** fragment of exactly one full id in the same table: at least 8
-   characters, and sitting at a token boundary of the longer id (start of string or after
-   one of `-_.:/`, and end of string or before one). So `pi:01a0a495` folds into
+   agent (e.g. `wuphf:…`) goes under claude by the legacy rule **and the report counts
+   it**. Review those rows. SIO drops nothing silently.
+4. Merge partial non-claude ids into the full canonical id. Merge only when the partial is a
+   **token-bounded** fragment of exactly one full id in the same table. The fragment has
+   at least 8 characters. It sits at a token boundary of the longer id (start of string
+   or after one of `-_.:/`, and end of string or before one). So `pi:01a0a495` folds into
    `pi:2026-09-15T10-20-49-318Z_01a0a495-6525-…`, while a name-style id such as a goose
    `main` is never folded into `domain-fix` — a bare substring match would weld two
-   sessions together. Ambiguous partials (two or more candidates) are left and listed.
-5. Dedupe exact duplicates (lowest id survives; `pattern_errors` and `experiment_runs`
-   are remapped to the survivor), then add the UNIQUE fingerprint index.
+   sessions together. SIO leaves ambiguous partials (two or more candidates) and lists them.
+5. Dedupe exact duplicates (lowest id survives; SIO remaps `pattern_errors` and `experiment_runs`
+   to the survivor), then add the UNIQUE fingerprint index.
 6. Create triggers + per-agent views, stamp `schema_version` 6.
 
 The report prints per-table, per-agent counts before and after, partial ids merged,
@@ -751,7 +751,7 @@ duplicates removed, and ambiguous / unknown-prefix counts.
 
 ### `sio db drop-agent <agent>`
 
-Remove one agent's mined data — "if we decide to not use an agent we can just get rid of it".
+Delete one agent's mined data — "if we decide to not use an agent we can just get rid of it".
 
 ```bash
 sio db drop-agent pi                 # DRY RUN: per-table counts, nothing written
@@ -761,21 +761,22 @@ sio db drop-agent claude --yes --including-claude   # claude is the bulk of the 
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `AGENT` | — | one of `KNOWN_AGENTS`; anything else is refused (exit 2) |
+| `AGENT` | — | one of `KNOWN_AGENTS`; SIO refuses anything else (exit 2) |
 | `--db-path` | `$SIO_DB_PATH` or `~/.sio/sio.db` | database to operate on |
 | `--yes` / `-y` | off | execute; without it the command is a dry run |
-| `--including-claude` | off | required when `AGENT` is `claude` |
+| `--including-claude` | off | needed when `AGENT` is `claude` |
 
 **Patterns follow the drop.** A pattern is a cluster of `error_records` rows (the
 `pattern_errors` links), and its `error_count`, `session_count`, `first_seen` and `last_seen`
-are aggregates of that membership. Deleting an agent's errors removes their links, so every
-pattern that lost a member has those four recomputed from its surviving links in the same
-transaction (only `active` links where the 004 column exists — the membership `sio trend`
-reads). A pattern left with **no** members is kept, with `error_count = 0` and
-`session_count = 0` and its `first_seen` / `last_seen` left as they were: the command was
-asked to delete the agent's rows, not the cross-agent aggregates — nor the suggestions and
-datasets that reference a pattern by id. A zero-member pattern is visible in the report and
-in the table, drops out of any `min_count` filter, and can be deleted deliberately. The report
+are aggregates of that membership. Deleting an agent's errors deletes their links.
+So SIO recomputes those four values for every pattern that lost a member.
+It uses the surviving links, in the same
+transaction (only `active` links where the 004 column exists, which is the membership that `sio trend`
+reads). SIO keeps a pattern left with **no** members, with `error_count = 0` and
+`session_count = 0`, and with its `first_seen` / `last_seen` as they were. The command
+deletes the agent's rows. It does not delete the cross-agent aggregates or the suggestions and
+datasets that reference a pattern by id. A zero-member pattern shows in the report and
+in the table and drops out of any `min_count` filter. You can delete it deliberately. The report
 lists each affected pattern:
 
 ```
@@ -788,8 +789,8 @@ The dry run previews the same numbers (`patterns would recompute: …`) and writ
 
 Deletes the agent's rows from `error_records`, `flow_events`, `positive_records`,
 `session_metrics`, `processed_sessions` plus the `pattern_errors` / `experiment_runs` rows
-that reference them. It touches **only SIO's mined data**: the agent's own session files on
-disk (`~/.pi`, `~/.codex`, `~/.claude/projects`, ...) are never read or modified, so a later
+that reference them. It touches **only SIO's mined data**. SIO never reads or changes the agent's own session files on
+disk (`~/.pi`, `~/.codex`, `~/.claude/projects`, ...), so a later
 `sio mine --agent <name>` rebuilds the rows from them.
 
 ---
@@ -817,7 +818,7 @@ Show per-skill health metrics.
 sio health [--platform claude-code] [--skill <name>] [--format table|json]
 ```
 
-Displays satisfaction rates, invocation counts, and flags for skills that need attention.
+Shows satisfaction rates, invocation counts, and flags for skills that need attention.
 
 ### `sio review`
 
@@ -953,7 +954,8 @@ sio gepa-status [--watch]
 |--------|---------|-------------|
 | `--watch` | off | Re-print every 5 seconds until the process finishes |
 
-Reads the latest runlog JSON from `~/.sio/runs/` and surfaces: active optimizer name, current iteration / trial, best validation score so far, per-iteration score history (last 10), idle time, parse error / truncation counters, and any GEPA/MIPRO warning tiers that have fired.
+Reads the latest runlog JSON from `~/.sio/runs/`. It surfaces the active optimizer name and the current iteration / trial.
+It also surfaces the best validation score so far and the per-iteration score history (last 10). It also surfaces idle time, parse error / truncation counters, and any GEPA/MIPRO warning tiers that fired.
 
 **Examples:**
 
@@ -1095,7 +1097,7 @@ sio curate [--since <time>] [--emphasis] [--classified] [--pattern <slug>]
 | `--error-type` | — | Restrict to one or more error types; repeat flag for multiple |
 | `--exclude-corrections` | on | Drop `user_correction` rows |
 | `--exclude-cascade` | on | Drop cascade-failure rows |
-| `--has-positive-recovery` | off | Require a `positive_records` event within `--recovery-window-seconds` |
+| `--has-positive-recovery` | off | Need a `positive_records` event within `--recovery-window-seconds` |
 | `--recovery-window-seconds` | `600` | Recovery window when using `--has-positive-recovery` |
 | `--limit` | None | Max rows to emit (newest first) |
 | `-o` / `--output` | `~/.sio/curated/<ts>.jsonl` | Output JSONL path |
@@ -1144,7 +1146,7 @@ sio amplify -i <curated.jsonl> [-o <output.jsonl>] [-n <n-per-row>]
 | `--task-mode` | config default | LM tier: `cheap` (Flash, recommended), `work` (Pro), `free` (Ollama), `personal` (gpt-4o-mini), `personal-strong` (gpt-5) |
 | `--budget-override` | None | Override the 24h spend cap for this run |
 | `--no-diversity-filter` | off | Disable cosine-similarity deduplication of variants |
-| `--diversity-threshold` | `0.95` | Cosine similarity above which variants are deduplicated (lower = more aggressive) |
+| `--diversity-threshold` | `0.95` | Cosine similarity above which SIO deduplicates variants (lower = more aggressive) |
 
 **Cost callout:** Amplification calls the configured LLM for every input row × `--n-per-row`. Start with `--task-mode cheap` and a small curated set. Budget check fires automatically before the first call.
 
@@ -1298,7 +1300,7 @@ sio promote-rule 1 --mode block --write
 
 ### `sio differential-flows`
 
-Find twin flows — the same tool sequence that appears with both success and failure outcomes — and export paired training examples. Requires no LLM.
+Find twin flows and export paired training examples. A twin flow is the same tool sequence that appears with both success and failure outcomes. It needs no LLM.
 
 ```bash
 sio differential-flows [--min-success <n>] [--min-failure <n>] [--per-cohort <n>]
@@ -1316,7 +1318,7 @@ sio differential-flows [--min-success <n>] [--min-failure <n>] [--per-cohort <n>
 | `-o` / `--output` | `~/.sio/differential/differential_<ts>.jsonl` | Output JSONL path |
 | `--positives-for-builder` | off | Emit flat positive examples in `PatternToRule` shape (for `dataset_builder`) instead of paired cohort rows |
 
-The output JSONL is automatically registered in the `trainsets` table and can be fed directly to `sio optimize --trainset-file`.
+SIO registers the output JSONL in the `trainsets` table automatically. You can feed it directly to `sio optimize --trainset-file`.
 
 **Examples:**
 

@@ -2,19 +2,19 @@
 
 **Scenario class:** Your context just got truncated mid-task. Or it's the next morning and yesterday's plan lives only in your head and the JSONL trail. Or a multi-day task is being picked up in a fresh session — maybe by you, maybe by a colleague continuing your work. Without SIO, you re-explain everything from scratch and probably re-do work that was already shipped. With SIO, the agent reconstructs context from the cascade of project-local breadcrumbs and the JSONL ground truth.
 
-This is the loop SIO is built for on the *resume* side: **the past doesn't get re-narrated, it gets re-read.**
+This is the loop SIO targets on the *resume* side: **the past doesn't get re-narrated, it gets re-read.**
 
 ---
 
 ## The story
 
-You're three hours into a multi-step refactor. Six files touched, one PR drafted, two subagents spawned, a couple of architectural pivots logged. Context hits 90%. `/compact` fires. The transcript collapses into a summary, and the next turn lands in a session that knows roughly what you were doing but has lost the *specifics* — which file you stopped mid-edit on, what the last failing test was, what the user said "no, the other one" to.
+You're three hours into a multi-step refactor. Six files touched, one PR drafted, two subagents spawned, a couple of architectural pivots logged. Context hits 90%. `/compact` fires. The transcript collapses into a summary. The next turn lands in a session that knows roughly what you were doing. But it has lost the *specifics*. It lost which file you stopped mid-edit on, what the last failing test was, and what the user said "no, the other one" to.
 
 Or: it's 8 AM the next day. You open a new terminal in the same project. You type "let's keep going" — and the agent has zero memory of what "keep going" means. It will *guess*, and the guess will be wrong.
 
 Or: you're sharing a project with a colleague. They open a session in your repo to continue a `<task description>` you started Tuesday. They have no transcript, no PRD in their head, no idea which subagent decisions were already made.
 
-All three scenarios collapse to the same problem: **the plan persists, but the *anchor* to the plan has been lost.** SIO + the cascade memory protocol re-anchor it.
+All three scenarios collapse to the same problem: **the plan persists, but you lost the *anchor* to the plan.** SIO + the cascade memory protocol re-anchor it.
 
 ---
 
@@ -80,7 +80,7 @@ This is BLOCKING. Runs Graphiti + `/sio-recall` + `sio search` in parallel, synt
 /sio-recall "<task description>"
 ```
 
-If a past session was distilled into a reusable playbook, this returns the polished version — the tool order, the gotchas, the pitfalls. Faster than reading the JSONL if the playbook exists. If it doesn't, fall back to `sio search`.
+If SIO distilled a past session into a reusable playbook, this returns the polished version — the tool order, the gotchas, the pitfalls. Faster than reading the JSONL if the playbook exists. If it doesn't, fall back to `sio search`.
 
 ### To see what session memory thinks is active right now
 
@@ -88,7 +88,7 @@ If a past session was distilled into a reusable playbook, this returns the polis
 /session-review
 ```
 
-Shows discoveries, open tasks, session status. Use it after `/compact` to confirm what survived, or at the start of any resume to see what the agent already considers "in scope".
+Shows discoveries, open tasks, session status. Use it after `/compact` to confirm what survived. Use it at the start of any resume to see what the agent already considers "in scope".
 
 ---
 
@@ -144,14 +144,14 @@ Compactions and clears *used to be* silent context loss. The transcript collapse
 
 The cascade memory protocol turns that into a recoverable read. `.memory/active-prds.json` anchors the plan. `.memory/session.json` and `.pre-compact-discoveries.json` anchor the tactical state. `sio search`, `/done-before`, and `/sio-recall` reach into the JSONL when those breadcrumbs aren't enough. Each layer is cheap (file read or 200ms grep), so doing all of them is faster than re-explaining once.
 
-The win isn't just resuming faster. It's *resuming correctly* — without re-doing work that already shipped, without re-asking decisions that were already made, without re-attaching to the wrong PRD because two are open in the project.
+The win isn't just resuming faster. It's *resuming correctly* — without re-doing work that already shipped, without re-asking decisions you already made, and without re-attaching to the wrong PRD because two are open in the project.
 
 ---
 
 ## What this use case is *not*
 
 - Not a substitute for the user being explicit about scope when starting fresh. If you're genuinely starting a new task with no prior context, say so — don't make SIO go hunting for a parent that doesn't exist.
-- Not a memory system that survives full repo wipes. `.memory/` is project-local; if the project is deleted or moved without the directory, the breadcrumbs go with it. The JSONL trail in `~/.claude/projects/` persists separately, but PRD/session.json continuity does not.
+- Not a memory system that survives full repo wipes. `.memory/` is project-local; if you delete or move the project without the directory, the breadcrumbs go with it. The JSONL trail in `~/.claude/projects/` persists separately, but PRD/session.json continuity does not.
 - Not real-time across simultaneous sessions. Two sessions running in the same project at the same time can write conflicting state to `.memory/` — this is a known multi-session gap. Resume sequentially, not in parallel.
 - Not a replacement for committing your work. PRDs and session state are *ephemeral persistence*; only git is durable persistence. If the work is real, commit it before the next compaction.
 

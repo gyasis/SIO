@@ -1,8 +1,8 @@
 # Use Case: Discovering & Promoting a Workflow That's Already Working
 
-**Scenario class:** Most SIO docs talk about errors, friction, and regressions. This one is the opposite. SIO also mines the **positive signal** — recurring tool sequences that succeed. When you keep running the same three skills in the same order to answer one question, or you just solved a hard problem with a clever sequence and don't want to lose it, the question becomes: *should this be one skill, and which version of it reflects what I actually do?*
+**Scenario class:** Most SIO docs talk about errors, friction, and regressions. This one is the opposite. SIO also mines the **positive signal** — recurring tool sequences that succeed. Maybe you keep running the same three skills in the same order to answer one question. Or you just solved a hard problem with a clever sequence and don't want to lose it. Then the question becomes: *should this be one skill, and which version of it reflects what I actually do?*
 
-This is the loop SIO is built for on the positive side: **mine prior sessions for what works, promote it into a reusable artifact, optimize the prompts inside it.**
+SIO builds this loop for the positive side: **mine prior sessions for what works, promote it into a reusable artifact, optimize the prompts inside it.**
 
 ---
 
@@ -26,7 +26,7 @@ That's where the discovery → promotion loop comes in.
 /sio-flows
 ```
 
-`/sio-flows` mines recurring positive tool sequences across all your recent sessions. Output is a ranked list: each row is a sequence (`<tool-a>` → `<tool-b>` → `<tool-c>`), the frequency, the first-seen date, and a hint about whether it converged on a successful outcome. The top of the list is your actual daily rhythm, whether or not you've named it.
+`/sio-flows` mines recurring positive tool sequences across all your recent sessions. Output is a ranked list. Each row is a sequence (`<tool-a>` → `<tool-b>` → `<tool-c>`), the frequency, the first-seen date, and a hint about whether it converged on a successful outcome. The top of the list is your actual daily rhythm, even if you haven't named it.
 
 For most users the first few runs are a small revelation — there are 2-3 sequences you didn't realize were sequences. They were just "what I do."
 
@@ -36,9 +36,9 @@ For most users the first few runs are a small revelation — there are 2-3 seque
 /sio-discover
 ```
 
-`/sio-discover` is the targeted variant: it finds sequences scoped to the current repo (or to a domain you specify) and ranks them as **skill candidates**. The output is opinionated — not just "here are sequences," but "here are sequences that look like they want to be a skill, here's why, here's a draft name."
+`/sio-discover` is the targeted variant: it finds sequences scoped to the current repo (or to a domain you specify) and ranks them as **skill candidates**. The output takes a position. It gives not just "here are sequences," but "here are sequences that look like they want to be a skill, here's why, here's a draft name."
 
-Run `/sio-flows` to see the landscape; run `/sio-discover` when you've decided the landscape has something promotable in it.
+Run `/sio-flows` to see all the flows; run `/sio-discover` when you've decided the flows include something promotable.
 
 #### 3. Did I just solve something I want to preserve?
 
@@ -46,7 +46,7 @@ Run `/sio-flows` to see the landscape; run `/sio-discover` when you've decided t
 /sio-distill
 ```
 
-If the trigger is "I just solved a clever thing" rather than "I keep doing this every morning," start with `/sio-distill`. It takes a long exploratory session and compresses it into a clean playbook — strips out the dead ends, keeps the path that worked, normalizes the tool calls. The output is the same shape as what `/sio-discover` returns, just sourced from one session instead of many.
+If the trigger is "I just solved a clever thing" instead of "I keep doing this every morning," start with `/sio-distill`. It takes a long exploratory session and compresses it into a clean playbook. It strips out the dead ends, keeps the path that worked, and normalizes the tool calls. The output is the same shape as what `/sio-discover` returns, just sourced from one session instead of many.
 
 > **Rule of thumb:** if it happened ≥3 times → `/sio-flows`. If it happened once but mattered → `/sio-distill`. Either way, you end up with a candidate before promoting.
 
@@ -72,7 +72,7 @@ If you're unsure, look at the underlying sessions: `sio search "<keywords from t
 /sio-promote-flow
 ```
 
-`/sio-promote-flow` takes a single mined flow (from `/sio-flows` or `/sio-discover`) and writes it out as a `~/.claude/skills/<workflow>.md` file. The skill file includes: the tool sequence, the prompts at each step extracted from the source sessions, a trigger description, and a `cross-references` block pointing at the originating session IDs (so future-you can audit it).
+`/sio-promote-flow` takes a single mined flow (from `/sio-flows` or `/sio-discover`) and writes it out as a `~/.claude/skills/<workflow>.md` file. The skill file includes these items: the tool sequence, the prompts at each step extracted from the source sessions, a trigger description, and a `cross-references` block. The block points at the originating session IDs, so future-you can audit it.
 
 This is **not** an autonomous commit — `/sio-promote-flow` produces a draft and surfaces it for review. The mined sequence is ground truth, but the *prompts* and the *trigger phrasing* need a human pass before they go live.
 
@@ -96,9 +96,9 @@ If the trigger is "save this session's workflow," `/sio-codify-workflow` is the 
 sio optimize --skill <skill name>
 ```
 
-Once the skill exists, the prompts inside each step are first-draft text lifted from your sessions. They work because that's what worked in the original runs — but they can almost always be tightened. `sio optimize` runs DSPy (GEPA by default, or `--optimizer mipro` / `bootstrap`) on the prompts, using your historical successful runs as the training signal. The output is a revised version of the skill where each step's prompt has been compiled against the data.
+Once the skill exists, the prompts inside each step are first-draft text lifted from your sessions. They work because that's what worked in the original runs, but you can almost always tighten them. `sio optimize` runs DSPy (GEPA by default, or `--optimizer mipro` / `bootstrap`) on the prompts, using your historical successful runs as the training signal. The output is a revised version of the skill where DSPy compiled each step's prompt against the data.
 
-This phase is optional. A promoted skill is useful immediately; optimization makes it better over time. Most users skip Phase 4 on the first promotion and circle back after the skill has been used 10-20 times — at that point there's enough usage data to make optimization meaningful.
+This phase is optional. A promoted skill is useful immediately; optimization makes it better over time. Most users skip Phase 4 on the first promotion. They circle back after using the skill 10-20 times. At that point there's enough usage data to make optimization meaningful.
 
 ---
 
@@ -135,11 +135,11 @@ The check costs 30 seconds and frequently surfaces a pattern that's different �
 
 ## Why this loop matters
 
-Most "I should build a skill for this" intuitions are wrong, and the failure mode is silent: you write a skill, it sits there, you don't use it because subtly it doesn't match the actual flow, and six months later you delete it. The hand-scaffolded skill encoded the agent's *theory* of what you do, not the *evidence* of what you do.
+Most "I should build a skill for this" intuitions are wrong, and the failure mode is silent: you write a skill and it sits there. You don't use it because subtly it doesn't match the actual flow. Six months later you delete it. The hand-scaffolded skill encoded the agent's *theory* of what you do, not the *evidence* of what you do.
 
 Mined patterns flip the polarity. The data tells you which intuitions are real, which are aspirational, and which are stale habits worth replacing. The `/sio-flows` → `/sio-promote-flow` → `sio optimize` loop is the difference between writing skills by guess and writing them by ground truth.
 
-There's a related rule in `~/.claude/rules/tools/sio.md`: **when the user describes inefficiency, route to flow skills.** That rule exists because the agent's default reflex on "I keep doing X" is to draft a new skill by hand. Don't. Check `/sio-flows` first.
+There's a related rule in `~/.claude/rules/tools/sio.md`: **when the user describes inefficiency, route to flow skills.** That rule exists because the agent's default reflex is to draft a new skill by hand. The trigger is "I keep doing X". Don't. Check `/sio-flows` first.
 
 ---
 
@@ -147,7 +147,7 @@ There's a related rule in `~/.claude/rules/tools/sio.md`: **when the user descri
 
 - **Not magic.** Promoted skills still need a human review pass on the trigger description and the per-step prompts. `/sio-promote-flow` drafts; it does not commit autonomously.
 - **Not a substitute for one-off skills.** Some skills exist for things that happen once a quarter (annual review, audit prep, migration). Those don't recur enough to mine. Hand-write them.
-- **Not a substitute for thinking.** A high-frequency pattern can still be the wrong abstraction. Mining tells you it recurs; it doesn't tell you it *should* recur. If the data shows you running the same five-step workaround every morning, the right move might be to fix the underlying tool, not codify the workaround.
+- **Not a substitute for thinking.** A high-frequency pattern can still be the wrong abstraction. Mining tells you it recurs; it doesn't tell you it *should* recur. If the data shows you running the same five-step workaround every morning, the right move might be to fix the underlying tool. Don't codify the workaround.
 - **Not real-time.** `/sio-flows` needs sessions to mine. A pattern that emerged yesterday probably needs another few days of recurrence before it shows up reliably.
 
 ---

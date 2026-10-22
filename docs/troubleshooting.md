@@ -1,7 +1,7 @@
 # Troubleshooting
 
 This page covers the most common failure modes when running SIO. For each problem,
-a **symptom**, **cause**, and **fix** are given. Many of these are also caught
+each entry gives a **symptom**, **cause**, and **fix**. `sio doctor` also catches many of these
 automatically by `sio doctor`.
 
 ---
@@ -19,17 +19,17 @@ sio suggest
 
 **Cause**
 
-SIO needs at least one LLM provider to generate suggestions. The model is resolved
-in priority order:
+SIO needs at least one LLM provider to generate suggestions. SIO resolves the model
+in this priority order:
 
 1. `SIO_TASK_LM` env var (any DSPy-compatible model string)
 2. `[llm.task]` block in `~/.sio/config.toml`
-3. Hard default: `gemini/gemini-flash-latest` (requires `GEMINI_API_KEY`)
+3. Hard default: `gemini/gemini-flash-latest` (needs `GEMINI_API_KEY`)
 
-If none of these resolve to a working model, suggestions cannot be generated.
+If none of these resolve to a working model, SIO cannot generate suggestions.
 
 `sio doctor` → `config.toml` check will report `warn` if every `[llm]` block
-is commented out.
+has only comment lines.
 
 **Fix**
 
@@ -86,8 +86,8 @@ are in a non-standard location, the miner finds nothing.
 
 **Cause — empty or very new database**
 
-The `sio.db` at `~/.sio/sio.db` (or wherever `SIO_DB_PATH` points) may be freshly
-initialized and contain no error records yet. Mine a specific session to populate it.
+The `sio.db` at `~/.sio/sio.db` (or wherever `SIO_DB_PATH` points) may be new
+and contain no error records yet. Mine a specific session to populate it.
 
 **Fix**
 
@@ -148,7 +148,7 @@ should show `claude`, not an empty string.
 **Symptom**
 
 Every suggestion is `[Template]` ("Improve reliability of unknown tool: …") with
-8–11% confidence, and the run log shows `Failed to use structured output format,
+8–11% confidence. The run log shows `Failed to use structured output format,
 falling back to JSON mode` followed by `Auto mode: DSPy generation failed`.
 Re-running sometimes "works" — usually only for patterns you ran before.
 
@@ -156,7 +156,7 @@ Re-running sometimes "works" — usually only for patterns you ran before.
 
 The run-log capture that wraps every LM call crashed while serializing the
 provider's usage object (`CompletionTokensDetailsWrapper is not JSON
-serializable`), turning every *fresh* API call into a failure. Cached responses
+serializable`). This turned every *fresh* API call into a failure. Cached responses
 have no usage details, so they slipped through — which is why it looked
 intermittent.
 
@@ -223,12 +223,12 @@ model_optimized.onnx failed. File doesn't exist
 
 **Cause**
 
-The model cache directory **exists but is incomplete** — the snapshot folder is
+The model cache directory **exists but is incomplete** — the snapshot directory is
 there while the `.onnx` weights are not. Usually one of:
 
-- the cache lives under `/tmp` (e.g. `/tmp/fastembed_cache`) and `/tmp` was cleared
-  on reboot, leaving partial directories;
-- a first-run download was interrupted;
+- the cache lives under `/tmp` (e.g. `/tmp/fastembed_cache`) and a reboot cleared `/tmp`,
+  leaving partial directories;
+- a first-run download stopped before it finished;
 - the machine is offline and only metadata was ever fetched.
 
 This is **not** the same as "model not downloaded yet" (that just pauses and
@@ -255,7 +255,7 @@ see the `embedding_backend = "api"` snippet above.
 
 > Note: a constructor failure here used to surface as a confusing
 > `AttributeError: 'FastEmbedBackend' object has no attribute '_cache_conn'` in
-> `__del__`, which buried the real error. That is fixed — you now see the
+> `__del__`, which buried the real error. The fix removed that error — you now see the
 > `NoSuchFile` above directly.
 
 ---
@@ -281,7 +281,7 @@ The Claude Code adapter checks for `~/.claude/` before auto-detecting the harnes
 (the pi adapter likewise checks for `~/.pi/agent/`, or `$PI_CODING_AGENT_DIR`;
 codex for `~/.codex/`, or `$CODEX_HOME`; opencode for `~/.config/opencode/`, or
 `$XDG_CONFIG_HOME/opencode`).
-On a fresh machine where Claude Code has never been launched, the directory is
+On a fresh machine where you never started Claude Code, the directory is
 absent and the adapter silently skips.
 
 **Cause — hooks registered but not wired into settings.json**
@@ -329,12 +329,12 @@ sio doctor
 `sio init` registers each hook in `~/.claude/settings.json` as
 `<sys.executable> -m <module>` — the **absolute path of the Python that ran
 `sio init`**. With an isolated install (`uv tool`, `pipx`) that path lives
-inside the tool's venv. If the venv is rebuilt at a new path (a `uv tool
-upgrade`/`--reinstall`, a `pipx reinstall`) or removed, the pinned command no
-longer resolves and Claude Code silently skips the hook — capture stops.
+inside the tool's venv. A rebuild can move the venv to a new path (a `uv tool
+upgrade`/`--reinstall`, a `pipx reinstall`). You can also remove it. In both cases the pinned command no
+longer resolves. Claude Code then silently skips the hook — capture stops.
 
-A special case: bootstrapping with **ephemeral `uvx`** writes a path that is
-discarded the moment the command finishes, so capture never starts.
+A special case: bootstrapping with **ephemeral `uvx`** writes a path that
+disappears the moment the command finishes, so capture never starts.
 
 **Fix**
 
@@ -367,7 +367,7 @@ AttributeError: module 'dspy' has no attribute 'JSONAdapter'
 
 **Cause**
 
-SIO requires `dspy >= 3.1.3`. Older installs of DSPy (v2.x) have a different API
+SIO needs `dspy >= 3.1.3`. Older installs of DSPy (v2.x) have a different API
 and are missing `dspy.GEPA`, `dspy.JSONAdapter`, and other symbols SIO depends on.
 
 **Fix**
@@ -419,8 +419,8 @@ sio schedule install
 
 Cron jobs run with a minimal environment — `~/.local/bin` (where pip user-installs
 land) is often not on cron's `PATH`. The cron entry uses `sys.executable -m sio`
-to bypass this (hardcodes the full Python interpreter path), but if the venv was
-deleted or rebuilt, the path may be stale.
+to bypass this (it hardcodes the full Python interpreter path), but if someone
+deleted or rebuilt the venv, the path may be stale.
 
 ```bash
 # Reinstall after any venv rebuild:
@@ -434,7 +434,7 @@ which python3   # compare to the interpreter in the cron line
 
 **Fix — cron not available (Windows)**
 
-SIO's scheduler requires `crontab` (POSIX). On Windows, use Task Scheduler instead.
+SIO's scheduler needs `crontab` (POSIX). On Windows, use Task Scheduler instead.
 `sio schedule install` will raise `RuntimeError: Cron scheduling is not supported on Windows`.
 
 ---
@@ -476,12 +476,12 @@ they target different DB paths or run them sequentially via cron.
 
 **Symptom**
 
-`sio status` shows 0 errors even though sessions have been mined before. Or `sio doctor`
+`sio status` shows 0 errors even though you mined sessions before. Or `sio doctor`
 reports `sio.db` not found even after `sio init` ran successfully.
 
 **Cause**
 
-`SIO_DB_PATH` is set in your environment (or shell config) pointing to a different
+Your environment (or shell config) sets `SIO_DB_PATH` to point to a different
 path than `~/.sio/sio.db`. The global rules file `~/.claude/rulebook/tools/sio.md`
 lists a known stale legacy path (`~/.claude/sio.db`) that some early installs wrote.
 
@@ -502,8 +502,7 @@ ls -lh ~/.sio/sio.db
 sqlite3 ~/.sio/sio.db "SELECT COUNT(*) FROM error_records;" 2>/dev/null
 ```
 
-The canonical path is always `~/.sio/sio.db`. The `SIO_DB_PATH` variable is
-intended only for test environments and alternate installs.
+The canonical path is always `~/.sio/sio.db`. The `SIO_DB_PATH` variable exists only for test environments and alternate installs.
 
 ---
 

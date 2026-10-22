@@ -2,7 +2,7 @@
 
 **A closed-loop system that learns from your AI coding sessions and makes your agent better over time.**
 
-SIO watches how you use AI coding tools (Claude Code, Cursor, etc.), mines your session transcripts for error patterns, clusters them into actionable insights, generates improvement suggestions, and applies approved changes to your configuration — all with human oversight.
+SIO watches how you use AI coding tools (Claude Code, Cursor, etc.) and mines your session transcripts for error patterns. It clusters the patterns into actionable insights and generates improvement suggestions. It applies approved changes to your configuration — all with human oversight.
 
 Your AI agent makes the same mistakes repeatedly. SIO fixes that.
 
@@ -10,13 +10,13 @@ Your AI agent makes the same mistakes repeatedly. SIO fixes that.
 
 ## The Problem
 
-AI coding assistants are powerful but repetitive in their failures:
+AI coding assistants repeat the same failures:
 - They read files that don't exist
 - They run commands that fail the same way each time
 - They ignore corrections you've given before
 - They use the wrong tool for the job
 
-These patterns are buried in session transcripts. SIO extracts them, finds the signal, and proposes targeted fixes (CLAUDE.md rules, hook configs, skill updates) that prevent recurrence.
+Session transcripts bury these patterns. SIO extracts them, finds the signal, and proposes targeted fixes (CLAUDE.md rules, hook configs, skill updates) that prevent recurrence.
 
 > **Design stance:** SIO is **measured assist, not autonomous override**. Detection, generation, and outcome measurement are automatic. Application, deprecation, and final judgment are human. See [`docs/SIO_PHILOSOPHY.md`](docs/SIO_PHILOSOPHY.md) for the full design rationale.
 
@@ -75,15 +75,15 @@ The v004 remediation hardened every stage of the pipeline:
 - **Per-platform DB sync**: Hook writes land in `~/.sio/<platform>/behavior_invocations.db`; `sio sync` idempotently copies to canonical `~/.sio/sio.db` using `INSERT OR IGNORE` dedup on `(platform, session_id, timestamp, tool_name)`.
 - **DSPy-first optimization**: Three optimizers wired (`GEPA` default, `MIPROv2`, `BootstrapFewShot`). Run via `sio optimize --optimizer gepa`.
 - **File-size guard**: Files > 1 GB skipped with WARNING in `_file_hash` (FR-027).
-- **Within-type dedup**: `_dedup_by_error_type_priority` now groups by `(session_id, user_message, error_type)` so `tool_failure` and `user_correction` rows are preserved side-by-side (FR-020).
+- **Within-type dedup**: `_dedup_by_error_type_priority` now groups by `(session_id, user_message, error_type)` so `tool_failure` and `user_correction` rows stay side-by-side (FR-020).
 - **Atomic writes**: All config-file writes use `os.replace` + timestamped backup, keep-last-10 retention.
 
 **The full pipeline:**
 
 | Stage | What Happens | CLI Command |
 |-------|-------------|-------------|
-| **Mine** | Parse SpecStory `.md` and Claude `.jsonl` transcripts for tool failures, user corrections, repeated attempts, agent admissions | `sio mine --since "7 days"` |
-| **Cluster** | Group similar errors using fastembed embeddings + cosine similarity | (automatic) |
+| **Mine** | Parse SpecStory `.md` and Claude `.jsonl` transcripts for tool failures, user corrections, repeated tries, agent admissions | `sio mine --since "7 days"` |
+| **Cluster** | Group similar failures using fastembed embeddings + cosine similarity | (automatic) |
 | **Rank** | Score patterns by frequency x recency x session spread | `sio patterns` |
 | **Dataset** | Build labeled positive/negative training datasets per pattern | `sio datasets collect` |
 | **Suggest** | Generate improvement proposals via DSPy modules or template engine | `sio suggest` |
@@ -103,12 +103,12 @@ The v004 remediation hardened every stage of the pipeline:
 
 - Python 3.11+
 - An AI coding tool that produces session transcripts. Coverage differs by
-  direction — the two are easy to conflate because both are called "adapters":
+  direction — the two are easy to conflate because both use the name "adapters":
   - **Reading** sessions (`sio search`, `sio mine`): claude, codex, goose,
     opencode, gemini, aider, promptchain, kimi, pi. `sio search --list-agents`
     shows which have data on this machine.
-  - **Installing into** a harness (`sio init` — skills, rules, hook telemetry):
-    Claude Code (all three), and pi / codex / opencode (skills only — each
+  - **Installing into** a harness (`sio init` — skills, rules, hook telemetry).
+    The targets are Claude Code (all three), and pi / codex / opencode (skills only — each
     reports the asset types it has no home for). Cursor and Windsurf error
     out (PRs welcome).
 
@@ -178,14 +178,14 @@ See [`docs/getting-started.md`](docs/getting-started.md) for the full isolated-i
    every `.md` under `~/.claude/rules/` into every session, so on-demand rules
    live in `rulebook/` (see [Where rules live](docs/configuration.md#where-rules-live)).
    For **pi** it's `~/.pi/agent/skills/sio-*/`
-   (skills only — pi has no rules dir and no hooks system, so those are
-   reported as unsupported rather than written). Idempotent,
+   (skills only — pi has no rules dir and no hooks system, so SIO
+   reports those as unsupported and does not write them). Idempotent,
    manifest-tracked, preserves anything you've edited, and never touches a
    skill it did not install.
-3. **Schedules the session archive** (`sio archive sync`: daily on the wall clock,
-   a missed run fires once on the next boot or wake, plus a run 5 minutes after every
-   boot) so every agent's session history is copied into
-   `~/.sio/archive/` before harness cleanup can delete it (Claude Code removes
+3. **Schedules the session archive** (`sio archive sync`: daily on the wall clock.
+   A missed run fires once on the next boot or wake, plus a run 5 minutes after every
+   boot). The archive copies every agent's session history into
+   `~/.sio/archive/` before harness cleanup can remove it (Claude Code removes
    transcripts after 30 days). Linux: a `systemd --user` timer; macOS: a launchd
    agent. Opt out with `sio init --no-archive`; `sio init --uninstall` removes the
    schedule but never the archive. Check with `sio archive status`.
@@ -215,9 +215,9 @@ sio init --harness opencode     # opencode → ~/.config/opencode/skills/sio-*/
 ```
 
 Supported install targets: `claude-code` (skills + rules + hook telemetry),
-and `pi`, `codex`, `opencode` (skills only — none has a rules dir SIO may
+and `pi`, `codex`, `opencode` (skills only). None has a rules dir SIO may
 write to, and their hook/plugin systems do not take Claude Code's telemetry
-hooks; the install output names what was not installed and why).
+hooks. The install output names what SIO did not install and why.
 `cursor` / `windsurf` are stubs. The per-harness capability matrix is in
 [docs/getting-started.md](docs/getting-started.md#pi-earendil-workspi-coding-agent).
 
@@ -261,7 +261,7 @@ sio init --status           # confirm what shipped vs what's drifted
 sio --version               # → 0.5.6
 ```
 
-`sio init` is where database migrations run. Skip it after upgrading past 0.3.x and
+`sio init` runs the database migrations. Skip it after upgrading past 0.3.x and
 `sio suggest` reports **"No errors mined yet"** on a database full of errors: the
 agent-isolation migration (006) has not filled the new `agent` column, so the
 per-agent filter matches nothing. `sio init` never overwrites a file you edited —
@@ -334,7 +334,7 @@ temperature = 0.7
 max_tokens = 16000
 ```
 
-Every provider block is commented out by default — `sio suggest` will fail
+Every provider block is a comment by default — `sio suggest` will fail
 loudly with "no LM available" until you opt in. This is intentional: a
 fresh install should never silently dispatch to the wrong provider.
 
@@ -359,7 +359,7 @@ Aider, PromptChain, Kimi, pi) — pick one with `--agent <harness>` (default `cl
 Every analysis command can be **scoped to one session** via `--session`,
 turning SIO into a targeted debugger for a single session/process. Session ids are
 canonical **`agent:native_id`** "Session URIs" (e.g. `claude:<uuid>`,
-`goose:<name>`); legacy bare ids are matched transparently.
+`goose:<name>`); SIO matches legacy bare ids transparently.
 
 | Command | Description |
 |---------|-------------|
@@ -407,7 +407,7 @@ canonical **`agent:native_id`** "Session URIs" (e.g. `claude:<uuid>`,
 
 #### Multi-Hop Targeted Search (v3.1 — 2026-04-24)
 
-Single-pass grep in `sio suggest` forces an impossible trade-off: wide grep returns noisy unrelated suggestions, tight grep starves DSPy of training data. **Hop-2** narrows Hop-1's result set with a second predicate so rare-but-high-signal clusters are preserved.
+Single-pass grep in `sio suggest` forces an impossible trade-off: wide grep returns noisy unrelated suggestions, tight grep starves DSPy of training data. **Hop-2** narrows Hop-1's result set with a second predicate so rare-but-high-signal clusters stay in the result.
 
 | Flag | Purpose |
 |---|---|
@@ -444,7 +444,7 @@ See `~/dev/prd/sio_multi_hop_search_2026-04-24.md` for the design rationale and 
 | `sio init --link-path` | Append a managed `export PATH=...` block to your shell rc |
 | `sio init --uninstall` | Surgically remove SIO-managed files |
 | `sio doctor` | 7-check diagnostic with one-line fix commands for any problem |
-| `sio config show` | Display current configuration |
+| `sio config show` | Show current configuration |
 | `sio config test` | Test configuration validity |
 | `sio schedule install` | Install cron jobs for passive analysis |
 | `sio schedule status` | Check scheduler status |
@@ -487,7 +487,7 @@ assist, not autonomous override" design stance.
 | `sio optimize-ladder --yes` | Skip the cost-confirmation prompt (still subject to 24h budget cap) |
 | `sio optimize --resume-from <module_id>` | Resume after a prior successful rung — auto-resolves `--trainset-file` from the prior row's `trainset_id` |
 
-#### Discipline gates (each has a `--skip-*` override; overrides are logged for SIO mining)
+#### Discipline gates (each has a `--skip-*` override; SIO logs overrides for mining)
 
 | Gate | Refuses when | Empirical basis |
 |------|---------|---|
@@ -666,7 +666,7 @@ v3.0 imports the best features from 10+ self-improving agent tools (claude-refle
 | **Enhanced Extraction** | Extracts tokens, costs, cache efficiency, sub-agent data from JSONL (>90% field coverage, up from ~35%) | `sio mine` |
 | **Positive Signals** | Captures confirmations, gratitude, implicit approvals — not just errors | `sio mine` |
 | **Sentiment Scoring** | Per-message sentiment (-1 to +1) with frustration escalation detection | `sio mine` |
-| **Learning Velocity** | Measures how fast error rates decrease after rules are applied | `sio velocity` |
+| **Learning Velocity** | Measures how fast error rates decrease after you apply rules | `sio velocity` |
 | **Confidence Decay** | Patterns not seen in 14+ days lose confidence (floor 0.3) | automatic |
 | **Pattern Grading** | Lifecycle: emerging → strong → established → declining | automatic |
 | **Instruction Budget** | Line caps on CLAUDE.md/rules files with auto-consolidation | `sio budget` |
@@ -717,7 +717,7 @@ hook + JSONL telemetry is auto-scoped to the window. Full guide:
 >   concept: testing a candidate rule on an isolated branch before
 >   promoting. Backend module: `src/sio/core/arena/experiment.py`.
 >
-> They share the word "experiment" but are unrelated. The `--experiment NAME`
+> They share the word "experiment" but have no relation to each other. The `--experiment NAME`
 > scope flag (on mine/suggest/trend/flows/velocity) refers to the cohort.
 
 ### New Database Tables (v3.0)
@@ -740,7 +740,7 @@ SIO classifies errors into four categories:
 
 | Type | What It Catches | Example |
 |------|----------------|---------|
-| **tool_failure** | Tool calls that return errors | `FileNotFoundError`, `PermissionError`, command timeouts |
+| **tool_failure** | Tool calls that return failures | `FileNotFoundError`, `PermissionError`, command timeouts |
 | **user_correction** | User telling the agent it did the wrong thing | "That's not what I asked", "Wrong file" |
 | **repeated_attempt** | Same tool called 3+ times with similar input | Agent retrying a failing command |
 | **agent_admission** | Agent acknowledging its own mistake | "I should have read the file first" |
@@ -752,10 +752,10 @@ Generated suggestions can target multiple configuration surfaces:
 | Target | File | What Changes |
 |--------|------|-------------|
 | `claude_md_rule` | `CLAUDE.md` | Add behavioral rules the agent follows |
-| `hook_config` | `.claude/settings.json` | Modify hook behavior |
+| `hook_config` | `.claude/settings.json` | Change hook behavior |
 | `skill_update` | `skills/*/SKILL.md` | Update skill instructions |
 | `mcp_config` | MCP server config | Adjust MCP tool settings |
-| `settings_config` | `.claude/settings.json` | Modify Claude Code settings |
+| `settings_config` | `.claude/settings.json` | Change Claude Code settings |
 | `project_config` | Project files | Update project-level config |
 
 ## DSPy Integration
@@ -782,7 +782,7 @@ optimizer = "bootstrap"
 
 ## Data Storage
 
-All data is stored locally in SQLite (WAL mode, FK enforced):
+SIO stores all data locally in SQLite (WAL mode, FK enforced):
 
 ```
 ~/.sio/
@@ -819,10 +819,10 @@ sio recall "query"                             (uses trained model — $0)
 
 ## Security
 
-- **Path validation**: All file writes are restricted to `~/.sio/`, `~/.claude/`, and the current working directory. Arbitrary path traversal is blocked.
-- **Secret scrubbing**: API keys (OpenAI, Anthropic, GitHub, AWS), SSH/PEM keys, JWTs, and bearer tokens are scrubbed before any LLM processing.
+- **Path validation**: SIO restricts all file writes to `~/.sio/`, `~/.claude/`, and the current working directory. It blocks arbitrary path traversal.
+- **Secret scrubbing**: SIO scrubs API keys (OpenAI, Anthropic, GitHub, AWS), SSH/PEM keys, JWTs, and bearer tokens before any LLM processing.
 - **Rollback safety**: Applied changes check for manual edits before overwriting. Use `--force` to override.
-- **No data exfiltration**: All processing is local. LLM calls (when DSPy is enabled) only send scrubbed error summaries, never raw session content.
+- **No data exfiltration**: All processing is local. LLM calls (when you enable DSPy) only send scrubbed error summaries, never raw session content.
 
 ## Development
 

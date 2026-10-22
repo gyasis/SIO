@@ -11,8 +11,8 @@
 ### Isolated install (recommended for using SIO)
 
 SIO pulls in DSPy, fastembed, onnxruntime, and friends. Install it in an
-**isolated environment** so those never collide with your global or project
-Python — the `sio` binary still lands on your PATH:
+**isolated environment**. Then those packages never collide with your global or project
+Python. The `sio` binary still lands on your PATH:
 
 ```bash
 # ⭐ uv tool — isolated venv, sio on PATH (uv 0.4+)
@@ -51,7 +51,7 @@ sio --version
 >
 > | Situation | What happens | Do this |
 > |-----------|--------------|---------|
-> | Bootstrap with ephemeral **`uvx`** | env is discarded → pinned hook path is dead | use **`uv tool install`** (persistent), not `uvx`, for the capture setup |
+> | Bootstrap with ephemeral **`uvx`** | uvx discards the env → pinned hook path is dead | use **`uv tool install`** (persistent), not `uvx`, for the capture setup |
 > | **`uv tool upgrade`** / **`pipx reinstall`** moves the venv | hooks silently stop firing | **re-run `sio init`** afterward |
 > | Not sure if capture is live | — | run **`sio doctor`** (it flags stale hook paths) |
 >
@@ -75,14 +75,14 @@ What pi gets, and what it deliberately does not:
 
 | Bundled asset | On pi |
 |---|---|
-| Skills (`skills/<name>/SKILL.md` + siblings) | Installed. Each `SKILL.md` is checked against pi's own loader rules (`name` = `[a-z0-9-]{1,64}`, `description` required and ≤ 1024 chars) and transformed only if it would fail — the transform is listed in the install output. |
+| Skills (`skills/<name>/SKILL.md` + siblings) | Installed. SIO checks each `SKILL.md` against pi's own loader rules (`name` = `[a-z0-9-]{1,64}`, `description` needed and ≤ 1024 chars). SIO transforms it only if it would fail, and the install output lists the transform. |
 | Tool rules (`rulebook/tools/*.md`) | **Not installed** — pi has no rules dir; standing context is your own `AGENTS.md`, which SIO never edits. Reported as unsupported. |
 | Hook telemetry | **Not registered** — pi has extensions, not a hooks system. Ingest pi sessions with `sio mine --agent pi` / `sio search --agent pi` instead. |
 
-Skills SIO did not install — including symlinked ones from other tools — are
-never modified or removed, even if they share a name with an SIO skill
-(`--force` is the only override, and it backs the file up first). Restart pi
-after installing; it reads the skills dir at startup.
+SIO never changes or removes a skill it did not install. This includes symlinked
+skills from other tools, even if they share a name with an SIO skill.
+(`--force` is the only override, and it backs the file up first.) Restart pi
+after installing. It reads the skills dir at startup.
 
 ### codex (`@openai/codex`, Codex CLI)
 
@@ -103,13 +103,13 @@ codex-cli 0.154.0 by driving its own loader (`codex app-server` →
 
 | Bundled asset | On codex |
 |---|---|
-| Skills (`skills/<name>/SKILL.md` + siblings) | Installed into `$CODEX_HOME/skills/`. codex requires YAML frontmatter and a non-empty `description` (its loader reports `missing field description` / `missing YAML frontmatter` and drops the skill); `name` is optional and unconstrained. A `SKILL.md` is transformed only if it would be dropped, and the transform is listed in the install output. |
+| Skills (`skills/<name>/SKILL.md` + siblings) | Installed into `$CODEX_HOME/skills/`. codex needs YAML frontmatter and a non-empty `description` (its loader reports `missing field description` / `missing YAML frontmatter` and drops the skill). `name` is optional and unconstrained. SIO transforms a `SKILL.md` only if codex would drop it, and the install output lists the transform. |
 | Tool rules (`rulebook/tools/*.md`) | **Not installed** — codex's `rules/` dir holds execpolicy `.rules` command-approval files, not markdown; standing context is your own `AGENTS.md`, which SIO never edits. Reported as unsupported. |
 | Hook telemetry | **Not registered** — codex has a hooks system (`hooks/hooks.json`, feature `hooks`), but SIO's telemetry hooks parse Claude Code's payload. Ingest codex sessions with `sio mine --agent codex` / `sio search --agent codex` instead. |
 
 Other things in `~/.codex` that SIO never touches: `config.toml`, `auth.json`,
 `skills/.system/` (codex's own bundled skills), and every skill SIO did not
-install — the dry run names them, symlinked ones marked `(symlink)`.
+install. The dry run names them and marks symlinked ones `(symlink)`.
 
 ### opencode (`opencode-ai`)
 
@@ -123,22 +123,22 @@ sio init --harness opencode --status
 sio init --harness opencode --uninstall
 ```
 
-What opencode takes, and what it deliberately does not — established against
-opencode 1.18.4 from the `customize-opencode` skill compiled into its binary
-and by running `opencode debug skill` against a temporary HOME:
+This is what opencode takes, and what it deliberately does not take. We established it
+against opencode 1.18.4. We used the `customize-opencode` skill compiled into its binary,
+and we ran `opencode debug skill` against a temporary HOME:
 
 | Bundled asset | On opencode |
 |---|---|
-| Skills (`skills/<name>/SKILL.md` + siblings) | Installed into `~/.config/opencode/skills/` (opencode also reads `skill/`). Its loader enforces no name pattern or description length; a skill without a `description` is never surfaced to the model, so that is the one thing conformed (listed in the install output if it happens). |
+| Skills (`skills/<name>/SKILL.md` + siblings) | Installed into `~/.config/opencode/skills/` (opencode also reads `skill/`). Its loader enforces no name pattern or description length; opencode never shows the model a skill without a `description`. SIO conforms only that one thing, and the install output lists it if it happens. |
 | Tool rules (`rulebook/tools/*.md`) | **Not installed** — opencode has no rules dir; standing context is your own `AGENTS.md` or the `instructions` key in `opencode.json`, neither of which SIO edits. Reported as unsupported. |
 | Hook telemetry | **Not registered** — opencode has plugins (`plugin/*.ts`), not a hooks system. Ingest with `sio mine --agent opencode` / `sio search --agent opencode`. |
 
 Two opencode-specific facts the adapter reflects:
 
 - **opencode already scans `~/.claude/skills/`** ("external skills"), so on a
-  machine with a Claude Code install of SIO the skills are visible to it before
+  machine with a Claude Code install of SIO, opencode can see the skills before
   `sio init --harness opencode` runs. The install output says so. The global
-  copy is still worth having: on a name clash the global dir wins, and it stays
+  copy is still worth having. On a name clash the global dir wins, and it stays
   available with `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1` or on a machine
   without Claude Code.
 - **`OPENCODE_CONFIG_DIR` is not a relocation.** It adds a second config root
@@ -146,8 +146,8 @@ Two opencode-specific facts the adapter reflects:
   adapter therefore installs into the XDG dir and honours `XDG_CONFIG_HOME`
   only.
 
-`opencode.json` is never touched. Restart opencode after installing; config
-and skills are loaded once at startup.
+`opencode.json` is never touched. Restart opencode after installing. It loads config
+and skills once at startup.
 
 ## First Run
 
@@ -249,7 +249,7 @@ This finds recurring tool sequences that led to successful outcomes — patterns
 sio distill --latest
 ```
 
-Extracts the winning path from your most recent session, stripping out failed attempts and dead ends.
+Extracts the winning path from your most recent session, removing failed tries and dead ends.
 
 ### 7. Topic-filtered recall (v2.1)
 
@@ -281,7 +281,7 @@ SIO runs passively in the background:
 3. When a pattern reaches enough occurrences, SIO generates a suggestion
 4. Suggestions appear in `~/.sio/suggestions.md` (the home file)
 5. You review and approve/reject at your convenience
-6. Approved changes are applied to your CLAUDE.md, hooks, or skills
+6. SIO applies approved changes to your CLAUDE.md, hooks, or skills
 7. If something goes wrong, `sio rollback <id>` reverts the change
 
 ## Verification

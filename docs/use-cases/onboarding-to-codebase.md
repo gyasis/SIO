@@ -1,8 +1,8 @@
 # Use Case: Onboarding (Yourself or an Agent) to an Unfamiliar Codebase
 
-**Scenario class:** You're returning to a `<repo>` you haven't touched in six weeks. Or you've inherited a colleague's project. Or a fresh agent session has been dropped into a directory with thirty modules, an opinionated `CLAUDE.md`, and no obvious entry point. `git log` tells you *what* changed, but not *why* it was tried, what was abandoned, or which sequence of tools actually got it to compile last time.
+**Scenario class:** You're returning to a `<repo>` you haven't touched in six weeks. Or you've inherited a colleague's project. Or a fresh agent session starts in a directory with thirty modules, an opinionated `CLAUDE.md`, and no obvious entry point. `git log` tells you *what* changed. It does not tell you *why* anyone tried it, what anyone abandoned, or which sequence of tools actually got it to compile last time.
 
-SIO sits one layer above git: **it remembers what the agent did, what the agent tried, and what the agent gave up on.** That's the layer onboarding needs.
+SIO sits one layer above git. **It remembers what the agent did, what the agent tried, and what the agent gave up on.** That's the layer onboarding needs.
 
 ---
 
@@ -12,7 +12,7 @@ You open `<repo>` after six weeks. You remember shipping a `<feature area>` PRD,
 
 - Which dead ends you ruled out (and why)
 - Whether the integration with `<external system>` ever stabilized
-- What's still TODO vs what's actually done vs what's been silently abandoned
+- What's still TODO vs what's actually done vs what someone silently abandoned
 - Which CLI invocation actually works for the local test loop (you tried four; one of them worked)
 
 `README.md` tells you the happy path. `CLAUDE.md` tells you the rules. Neither tells you the *history* — the lived experience of the last person (or agent) who sat in this directory and tried to make it move.
@@ -42,7 +42,7 @@ sio search "<repo>" --recent 30 --files
 # Read the top 1-2 JSONL files directly with Read tool
 ```
 
-The most recent session is your handoff note from past-you. Read it for: the last task attempted, the last error hit, the last decision made. If there's a `Next pickup:` line in a PRD diary or a session note, that's where you actually resume.
+The most recent session is your handoff note from past-you. Read it for: the last task it tried, the last error hit, the last decision made. If there's a `Next pickup:` line in a PRD diary or a session note, that's where you actually resume.
 
 ### 3. Day-by-day, what happened?
 
@@ -50,7 +50,7 @@ The most recent session is your handoff note from past-you. Read it for: the las
 /work-recap
 ```
 
-`/work-recap` (sibling skill, not strictly SIO core but adjacent) gives you a chronological summary of recent sessions — what was done, what was decided, what files moved. Useful as a "headline reel" before you dive into any specific session.
+`/work-recap` (sibling skill, not strictly SIO core but adjacent) gives you a chronological summary of recent sessions. It covers what the sessions did, what they decided, and what files moved. Useful as a "headline reel" before you examine any specific session.
 
 **Phase 1 combo (~1 minute):**
 - `sio search --files` to enumerate
@@ -63,7 +63,7 @@ You now know the *shape* of past work without having read a line of source code.
 
 ## Phase 2 — Find codified knowledge
 
-Past sessions are raw. Codified playbooks and mined patterns are processed — the agent (or you) already extracted the useful bits.
+Past sessions are raw. Codified playbooks and mined patterns are ready to use: the agent (or you) already extracted the useful bits.
 
 ### 4. Has anyone written a playbook for this kind of task?
 
@@ -73,7 +73,7 @@ Past sessions are raw. Codified playbooks and mined patterns are processed — t
 # e.g. "regenerating <feature area> after schema change"
 ```
 
-`/sio-recall` searches distilled sessions — past successful flows that were compressed into reusable recipes. If you (or a previous agent) ever ran `/sio-codify-workflow` on a task in this repo, it'll surface here. The output is the exact tool sequence and command order that worked.
+`/sio-recall` searches distilled sessions — past successful flows that SIO compressed into reusable recipes. If you (or a previous agent) ever ran `/sio-codify-workflow` on a task in this repo, it'll surface here. The output is the exact tool sequence and command order that worked.
 
 If nothing returns, that's information too: this repo has no codified playbooks yet. Consider running `/sio-codify-workflow` at the end of your session to leave a breadcrumb for the next person.
 
@@ -84,7 +84,7 @@ If nothing returns, that's information too: this repo has no codified playbooks 
 # or narrower: /sio-flows --query "<feature area>"
 ```
 
-`/sio-flows` mines positive tool patterns — recurring successful sequences across all sessions, not curated. If you're trying to figure out "what's the *normal* way to do `<X>` in this repo," `/sio-flows` answers it empirically. Different from `/sio-recall` (curated, prose) — this one is the raw mined evidence.
+`/sio-flows` mines positive tool patterns — recurring successful sequences across all sessions, not curated. If you're trying to determine "what's the *normal* way to do `<X>` in this repo," `/sio-flows` answers it empirically. Different from `/sio-recall` (curated, prose) — this one is the raw mined evidence.
 
 ### 6. Are there mined skill candidates specific to this repo?
 
@@ -92,7 +92,7 @@ If nothing returns, that's information too: this repo has no codified playbooks 
 /sio-discover
 ```
 
-`/sio-discover` looks across mined patterns for tool sequences that occur often enough to be worth promoting into a named skill. If a workflow happens four times in this repo's sessions but has never been codified, it shows up here. Read it as a list of "things this repo has clearly *wanted* a skill for, but never got one."
+`/sio-discover` looks across mined patterns for tool sequences that occur often enough to be worth promoting into a named skill. If a workflow happens four times in this repo's sessions but nobody codified it, it shows up here. Read it as a list of "things this repo has clearly *wanted* a skill for, but never got one."
 
 ### 7. Project-specific notes — the file-memory layer
 
@@ -101,7 +101,7 @@ ls ~/.claude/projects/-home-gyasisutton-dev-projects-<repo>/memory/
 # Then Read MEMORY.md if it exists
 ```
 
-File memory (`~/.claude/projects/.../memory/`) is where project-specific facts get pinned — things too narrow for Graphiti and too important for a session note. If the previous agent (or you) was disciplined, there's an index here.
+File memory (`~/.claude/projects/.../memory/`) is where project-specific facts get pinned — things too narrow for Graphiti and too important for a session note. If the previous agent (or you) kept discipline, there's an index here.
 
 **Phase 2 gate:** if `/sio-recall` and `/sio-flows` both return rich results, the repo has institutional memory and you can resume work confidently. If both are sparse, you're in pioneer territory — proceed cautiously and codify as you go.
 
@@ -118,10 +118,10 @@ Where the agent struggled before is where *you* will struggle now. SIO surfaces 
 # or narrower by feature area
 ```
 
-`/sio-scan` returns error events, repeated attempts, and `user_correction` markers. Filtered to this repo, it's a map of historical pain. The clusters tell you:
+`/sio-scan` returns error events, repeated tries, and `user_correction` markers. Filtered to this repo, it's a map of historical pain. The clusters tell you:
 
 - **A repeated error** → an unsolved problem. The previous session didn't fix it; it just stopped that day.
-- **Repeated attempts on the same command** → an undocumented gotcha. The fix is somewhere in the JSONL — read the resolving turn.
+- **Repeated tries on the same command** → an undocumented gotcha. The fix is somewhere in the JSONL — read the resolving turn.
 - **`user_correction` cluster** → the agent's defaults are wrong for this repo. There's a missing rule or skill.
 
 Each cluster is a known rough edge. Going in armed with the list is the difference between "stepping on the rake" and "knowing where the rakes are."
@@ -132,7 +132,7 @@ Each cluster is a known rough edge. Going in armed with the list is the differen
 /sio-violations
 ```
 
-If the repo has CLAUDE.md rules (project or global), `/sio-violations` shows which sessions ignored them. A rule that's been violated three times in this repo without anyone fixing it is either: (a) a rule that needs rewording, or (b) a real ongoing problem the previous sessions punted on. Either way, you want to know before you write your first line.
+If the repo has CLAUDE.md rules (project or global), `/sio-violations` shows which sessions ignored them. Sessions may violate a rule three times in this repo and nobody fixes it. Then it is one of two things. Case (a) is a rule that needs rewording. Case (b) is a real ongoing problem the previous sessions punted on. Either way, you want to know before you write your first line.
 
 ---
 
@@ -155,7 +155,7 @@ ls ~/.claude/projects/-home-gyasisutton-dev-projects-<repo>/memory/
 /sio-violations
 ```
 
-**Total time:** about three minutes. **Output:** a map of what was tried, what worked, what's codified, and where the rakes are.
+**Total time:** about three minutes. **Output:** a map of what sessions tried, what worked, what's codified, and where the rakes are.
 
 Now read the code.
 
@@ -163,7 +163,7 @@ Now read the code.
 
 ## Why this loop matters
 
-The thing onboarding *misses* without SIO: **the abandoned attempts.** `git log` shows what landed. The README shows the happy path. CLAUDE.md shows the rules. None of them show the three approaches you tried last month before settling on the fourth — and none of them stop you from re-trying the first three.
+The thing onboarding *misses* without SIO: **the abandoned tries.** `git log` shows what landed. The README shows the happy path. CLAUDE.md shows the rules. None of them show the three approaches you tried last month before settling on the fourth. None of them stop you from re-trying the first three.
 
 A fresh agent in particular has no episodic memory across sessions. Without SIO, every fresh session re-discovers the same dead ends. With SIO, the agent can read what its past selves tried and skip the re-litigation.
 
@@ -182,7 +182,7 @@ All three benefit from the same three-minute read.
 - Not a replacement for reading `README.md`, `CLAUDE.md`, or the actual source. SIO maps the *agent's history* with the code; it does not teach you the code itself.
 - Not a replacement for a PRD or design doc. If the previous session was mid-plan, the PRD is the canonical artifact — SIO points you to it, doesn't replicate it.
 - Not useful on a brand-new repo with no session history. SIO needs sessions to mine; on day one of a greenfield project, there's nothing to recall. (Codify as you go and the next person benefits.)
-- Not real-time. The signal is mined from accumulated transcripts. If you started this repo this morning, come back in a week.
+- Not real-time. SIO mines the signal from accumulated transcripts. If you started this repo this morning, come back in a week.
 
 ---
 
