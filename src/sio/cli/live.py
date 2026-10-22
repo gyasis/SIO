@@ -54,6 +54,7 @@ GEMINI_TMP = HOME / ".gemini" / "tmp"
 KIMI_SESSIONS = HOME / ".kimi-code" / "sessions"
 KIMI_SESSION_INDEX = HOME / ".kimi-code" / "session_index.jsonl"
 PI_SESSIONS = HOME / ".pi" / "agent" / "sessions"
+OMP_SESSIONS = HOME / ".omp" / "agent" / "sessions"
 
 # Env vars a harness might expose so a session can identify ITSELF as "you".
 _SELF_ID_ENVS = ("SIO_SESSION_ID", "CLAUDE_SESSION_ID", "CLAUDE_SESSION")
@@ -583,27 +584,32 @@ def _codex_session(path: Path) -> dict[str, Any]:
     }
 
 
-def _pi_session(path: Path) -> dict[str, Any]:
+def _pi_session(path: Path, agent: str = "pi") -> dict[str, Any]:
     """Probe of one pi ``<iso-ts>_<uuid>.jsonl`` session (cwd from its header).
 
     The ``{type:"session", cwd, ...}`` header is always line 1, so this is a
     single cheap line read, exactly like ``_codex_session``. The native_id is
     the file stem (the codex convention), which is what ``sio search --files``
-    and ``manifest_from_handle`` agree on.
+    and ``manifest_from_handle`` agree on. omp (``agent="omp"``) shares the
+    format but puts a ``title`` record on line 1, so the header is searched
+    for within the first few lines.
     """
     cwd = None
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
-            first = fh.readline()
-        if first.strip():
-            entry = json.loads(first)
-            if entry.get("type") == "session":
-                cwd = entry.get("cwd")
+            for _ in range(3):
+                line = fh.readline()
+                if not line.strip():
+                    break
+                entry = json.loads(line)
+                if entry.get("type") == "session":
+                    cwd = entry.get("cwd")
+                    break
     except (OSError, json.JSONDecodeError):
         pass
     st = path.stat()
     return {
-        "agent": "pi",
+        "agent": agent,
         "native_id": path.stem,
         "path": str(path),
         "cwd": cwd,
@@ -702,6 +708,8 @@ def discover_sessions(minutes: int) -> list[dict[str, Any]]:
         rows.append(_kimi_session(fp, kimi_index))
     for fp in _recent(PI_SESSIONS, "*.jsonl", cutoff):
         rows.append(_pi_session(fp))
+    for fp in _recent(OMP_SESSIONS, "*.jsonl", cutoff):
+        rows.append(_pi_session(fp, "omp"))
 
     # Collapse resume/compact continuations that share a session id (newest wins),
     # so one logical session is one row and never collides with itself.
@@ -1135,7 +1143,7 @@ def live_attach(
     The companion to ``sio live ls``: find the peer session, then attach to keep
     watching it as it works — a short context tail, then a live stream. This is
     a read-only observer (it never writes to the attached session); Ctrl-C to
-    detach. Live follow currently supports Claude sessions.
+    detach. Live follow supports claude, pi, omp, codex, kimi, goose and opencode sessions.
 
     COST NOTE: every streamed event becomes a turn in the observing session,
     which re-reads its whole context. Prefer ``sio live show`` polling; attach

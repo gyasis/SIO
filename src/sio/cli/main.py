@@ -1123,11 +1123,11 @@ def _warn_if_agent_migration_pending(conn) -> None:
 @click.option("--project", default=None, help="Filter by project name.")
 @click.option(
     "--agent",
-    type=click.Choice(["claude", "codex", "gemini", "goose", "pi"]),
+    type=click.Choice(["claude", "codex", "gemini", "goose", "pi", "omp"]),
     default="claude",
     help=(
         "Which coding agent's sessions to mine in bulk. 'claude' uses the "
-        "native JSONL/SpecStory scan; codex/gemini/goose/pi enumerate that "
+        "native JSONL/SpecStory scan; codex/gemini/goose/pi/omp enumerate that "
         "agent's store via the sio search parsers (content-level errors, "
         "plus harness-flagged tool failures where the parser carries them -- pi "
         "does). Ignored when --session is given."
