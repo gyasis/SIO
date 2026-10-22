@@ -6,13 +6,13 @@ sio search — unified cross-harness coding-agent session search.
 deprecated alias with identical flags.)
 
 Searches the on-disk session history of every coding-agent harness installed
-on this box (claude, codex, goose, opencode, gemini, aider, promptchain, kimi, pi)
+on this box (claude, codex, goose, opencode, gemini, aider, promptchain, kimi, pi, omp)
 using ONE pattern and ONE output schema. Defaults to Claude-native fast mode
 (ripgrep short-circuit, ~189ms) to preserve hardwired callers.
 
 Output schema (JSONL — one object per match):
     {
-      "agent":        "claude|codex|goose|opencode|gemini|aider|promptchain|kimi|pi",
+      "agent":        "claude|codex|goose|opencode|gemini|aider|promptchain|kimi|pi|omp",
       "session_id":   "<agent-native id>",
       "ts":           "<ISO-8601 UTC, best-effort>",
       "role":         "user|assistant|tool|system|info|unknown",
@@ -859,6 +859,25 @@ def search_kimi(
 def search_pi(
     pattern: str, cs: bool, cutoff: float | None, archive: bool = False
 ) -> Iterator[Record]:
+    yield from _search_pi_format("pi", ".pi", pattern, cs, cutoff, archive)
+
+
+def search_omp(
+    pattern: str, cs: bool, cutoff: float | None, archive: bool = False
+) -> Iterator[Record]:
+    """Search omp (oh-my-pi, a pi fork) transcripts: pi's format v3 under
+    ``~/.omp/agent/sessions/<cwd-encoded-dir>/<iso-ts>_<uuid>.jsonl``."""
+    yield from _search_pi_format("omp", ".omp", pattern, cs, cutoff, archive)
+
+
+def _search_pi_format(
+    agent: str,
+    home_dir: str,
+    pattern: str,
+    cs: bool,
+    cutoff: float | None,
+    archive: bool,
+) -> Iterator[Record]:
     """Search pi coding-agent transcripts.
 
     Layout: ``~/.pi/agent/sessions/<cwd-encoded-dir>/<iso-ts>_<uuid>.jsonl``
@@ -872,7 +891,7 @@ def search_pi(
     """
     from sio.adapters.pi.adapter import events_from_entry
 
-    root = _store(HOME / ".pi" / "agent" / "sessions", archive)
+    root = _store(HOME / home_dir / "agent" / "sessions", archive)
     if not root.exists():
         return
     for fp in root.rglob("*.jsonl"):
@@ -904,13 +923,13 @@ def search_pi(
                             ev.error and _matches(ev.error, pattern, cs)
                         ):
                             continue
-                        meta: dict = {"source_kind": "pi", "entry_type": obj.get("type")}
+                        meta: dict = {"source_kind": agent, "entry_type": obj.get("type")}
                         if ev.tool:
                             meta["tool"] = ev.tool
                         if ev.error is not None:
                             meta["error"] = ev.error[:2000]
                         yield Record(
-                            agent="pi",
+                            agent=agent,
                             session_id=session_id,
                             ts=ev.ts,
                             role=ev.role,
@@ -934,10 +953,11 @@ PARSERS = {
     "promptchain": search_promptchain,
     "kimi": search_kimi,
     "pi": search_pi,
+    "omp": search_omp,
 }
 
 #: Agents whose stores ``sio archive sync`` keeps (claude handles its own, see search_claude).
-ARCHIVED_AGENTS = {"codex", "goose", "opencode", "gemini", "promptchain", "kimi", "pi"}
+ARCHIVED_AGENTS = {"codex", "goose", "opencode", "gemini", "promptchain", "kimi", "pi", "omp"}
 
 
 def with_archive(parse):
@@ -1304,6 +1324,7 @@ def inventory() -> list[tuple[str, str, bool]]:
         ("promptchain", str(HOME / ".promptchain/sessions")),
         ("kimi", str(HOME / ".kimi-code" / "sessions")),
         ("pi", str(HOME / ".pi" / "agent" / "sessions")),
+        ("omp", str(HOME / ".omp" / "agent" / "sessions")),
     ]
     rows = []
     for agent, path in checks:

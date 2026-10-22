@@ -51,5 +51,5 @@ class SearchBackedAdapter:
     ) -> Iterator[SessionEvent]:
         raise NotImplementedError(
             f"live watch not supported for agent '{self.agent}' yet (Phase B "
-            "currently supports claude)."
+            "supports claude, pi, omp, codex, kimi, goose and opencode)."
         )

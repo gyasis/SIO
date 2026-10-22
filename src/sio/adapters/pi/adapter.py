@@ -30,11 +30,10 @@ the same way Claude/Kimi/Codex do (poll file size).
 from __future__ import annotations
 
 import json
-import os
-import time
 from collections.abc import Iterable, Iterator
 from typing import Any
 
+from sio.adapters._tail import tail_lines
 from sio.adapters.base import SessionEvent, SessionManifest
 
 
@@ -277,27 +276,10 @@ class PiAdapter:
         """
         path = manifest.path
         call_names: dict[str, str] = {}
-        offset = 0 if from_start else os.path.getsize(path)
-        while True:
+        for line in tail_lines(path, poll_interval=poll_interval, from_start=from_start):
             try:
-                size = os.path.getsize(path)
-            except OSError:
-                time.sleep(poll_interval)
+                obj = json.loads(line)
+            except json.JSONDecodeError:
                 continue
-            if size < offset:  # file truncated / rotated
-                offset = 0
-            if size > offset:
-                with open(path, encoding="utf-8", errors="replace") as fh:
-                    fh.seek(offset)
-                    for line in fh:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            obj = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
-                        if isinstance(obj, dict):
-                            yield from events_from_entry(obj, call_names)
-                    offset = fh.tell()
-            time.sleep(poll_interval)
+            if isinstance(obj, dict):
+                yield from events_from_entry(obj, call_names)
