@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import Any
 
 import click
+
 from sio.core.paths import sio_home as _default_sio_home
 
 HOME = Path.home()

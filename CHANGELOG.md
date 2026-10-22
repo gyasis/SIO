@@ -9,6 +9,39 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
+### Fixed — two bugs that `ruff` had been reporting as style
+
+Clearing the repo's 81-finding lint backlog surfaced two real bugs. Both
+had sat behind a rule that nothing gated on, and neither had a test.
+
+- **`load_gold_standards()` raised `RecursionError` whenever the caller
+  omitted `db_path`.** `core/dspy/datasets.py` imported
+  `db_path as _default_db_path`. It then defined a function of the same name
+  whose body called `_default_db_path()`. The def shadowed the import, so the
+  function called itself. Reported as `F811 redefinition`; the fix removes the
+  shadowing def.
+- **One malformed JSON block killed the parse of a whole SpecStory file.** The
+  failure handler in `mining/specstory_parser.py` read `str(file_path)`, a
+  name absent from `_extract_md_tool_calls()`, so it raised `NameError` from
+  inside the `except`. The handler 30 lines above already logs a stable key
+  instead, and its comment records the same bug class from v0.1.4. Reported as
+  `F821 undefined-name`; the fix follows the sibling's pattern.
+
+### Changed — `make ci` gates on lint, and the repo ships a prose linter
+
+- **`ruff check .` exits 0, and `make lint` is now a hard gate.** It was
+  informational while 81 pre-existing findings stood. A new finding is a
+  regression and fails the build.
+- **Two tests stopped half-way and now finish.** `test_promote_to_gold.py`
+  captured a second gold id and never checked it, though its own comment
+  states the contract. Two cascade tests threw away a `CliRunner` result, so
+  they would have passed on a non-zero exit. All three now assert.
+- **`ste-glossary.txt` + `make ste FILE=<path>`** score prose against an
+  ASD-STE100 rule set. The repo-wide baseline and the scope decisions behind
+  it live in `docs/code-quality-baseline.md`. Not wired into `ci`: the
+  first-party baseline is 9.16 against a 2.0 target, so score the files you
+  touch.
+
 ## [0.5.6] — 2026-10-05
 
 ### Fixed — `sio search` could not find Claude tool calls or their output

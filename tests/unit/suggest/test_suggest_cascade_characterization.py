@@ -52,14 +52,12 @@ from __future__ import annotations
 
 import csv
 import os
-from io import StringIO
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
-
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
@@ -520,6 +518,7 @@ class TestWithinCache:
                 catch_exceptions=False,
             )
 
+        assert result.exit_code == 0, f"suggest exited {result.exit_code}: {result.output}"
         assert not get_records_called, (
             "get_error_records must NOT be called when --within is set"
         )
@@ -560,6 +559,7 @@ class TestWithinCache:
                 catch_exceptions=False,
             )
 
+        assert result.exit_code == 0, f"suggest exited {result.exit_code}: {result.output}"
         assert len(cluster_inputs) >= 1, "cluster_errors must be called with CSV errors"
         # 3 errors from CSV should reach cluster_errors
         assert len(cluster_inputs[0]) == 3, (

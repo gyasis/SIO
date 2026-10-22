@@ -21,12 +21,9 @@ import pytest
 
 from sio.promote_rule import (
     DetectionPattern,
-    HookGenerationResult,
-    VerificationResult,
     generate_and_register,
     verify_against_history,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

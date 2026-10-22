@@ -18,14 +18,12 @@ under ``~/.sio/`` is touched.
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 from pathlib import Path
 
 import pytest
 
 from sio.harnesses.claude_code import ClaudeCodeAdapter
-
 
 # ---------------------------------------------------------------------------
 # Schema-bootstrap fixtures

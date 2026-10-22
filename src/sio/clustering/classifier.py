@@ -257,7 +257,8 @@ def tag_records(records: list[dict], max_workers: int = 8) -> None:
             def _one(rec):
                 cat = classify_error(rec.get("tool_name"), rec.get("error_text"))
                 with lock:
-                    # Use idx (object id is unique within this list call) — records have no `id` yet
+                    # Use idx (object id is unique within this list call)
+                    # — records have no `id` yet
                     results[id(rec)] = cat
 
             with ThreadPoolExecutor(max_workers=max_workers) as pool:

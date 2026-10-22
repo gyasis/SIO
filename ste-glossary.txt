@@ -1,0 +1,53 @@
+# SIO technical glossary for `ste-lint --glossary ste-glossary.txt`.
+#
+# Terms here are NEVER flagged. A term earns its place only if it is a real
+# name in this project (a library, a schema column, a CLI concept) — not
+# because a writer likes the word. One term per line; matching is
+# case-insensitive and whole-word.
+
+# --- stack / libraries (proper nouns) ---
+Rich
+DSPy
+GEPA
+MIPROv2
+BootstrapFewShot
+fastembed
+HDBSCAN
+ONNX
+numpy
+pandas
+sqlite
+SQLite
+WAL
+Click
+tomllib
+ruff
+pytest
+tqdm
+litellm
+Ollama
+Gemini
+OpenAI
+torch
+uv
+
+# --- SIO domain terms that ste-lint reads as rotating synonyms ---
+# `error` and `failure` are DISTINCT things here: `error_records` is a mined
+# table, `log_failure` is the observability sink. Collapsing them would be
+# wrong, so both are protected.
+error
+failure
+# A "tool" is a harness tool call (tool_use / tool_result). A "script" is a
+# file under scripts/. A "program" is neither. They are not interchangeable.
+tool
+script
+# Click's own vocabulary: an `option` takes a value, a `flag` does not.
+option
+flag
+# `config` is the ~/.sio/config.toml object; `settings` is not a SIO concept.
+config
+configuration
+
+# --- python builtins that read as inflated verbs ---
+enumerate
+terminate

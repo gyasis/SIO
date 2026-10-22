@@ -21,13 +21,10 @@ Ranks by ratio: (violations + 1) / (enforcement_channels + 1) — high = high-pa
 
 import argparse
 import json
-import os
 import re
 import sqlite3
-import sys
-from pathlib import Path
-from collections import defaultdict
 from datetime import datetime, timedelta
+from pathlib import Path
 
 HOME = Path.home()
 CLAUDE_MD = HOME / ".claude/CLAUDE.md"
@@ -108,12 +105,16 @@ def scan_directory_for_terms(directory: Path, key_terms: list, glob_pattern: str
     matches = []
     if not key_terms:
         return matches
-    pattern = re.compile(r"\b(" + "|".join(re.escape(t) for t in key_terms) + r")\b", re.IGNORECASE)
+    pattern = re.compile(
+        r"\b(" + "|".join(re.escape(t) for t in key_terms) + r")\b",
+        re.IGNORECASE,
+    )
     for f in directory.glob(glob_pattern):
         if not f.is_file():
             continue
         # Skip backups, state, irrelevant files
-        if any(part in (".git", "node_modules", "state", "backups", "__pycache__") for part in f.parts):
+        _skip_dirs = (".git", "node_modules", "state", "backups", "__pycache__")
+        if any(part in _skip_dirs for part in f.parts):
             continue
         try:
             content = f.read_text(encoding="utf-8", errors="replace")
@@ -292,11 +293,17 @@ def audit():
             + " " + ("m" if e["memory"] else "·")
         )
         text = r["rule"][:75]
-        print(f"{i:>3} | {r['score']:>5} | {r['violations']:>4} | {r['enforcement_count']:>3} | {marks:<7} | {text}")
+        print(
+            f"{i:>3} | {r['score']:>5} | {r['violations']:>4} | "
+            f"{r['enforcement_count']:>3} | {marks:<7} | {text}"
+        )
         print(f"     | {r['file']}:{r['line']} ({r['section'][:60]})")
 
     print("\nLegend: h=hook s=skill r=recipe m=memory  ·=not bound")
-    print("High score = high violation count + low enforcement coverage = next 6-channel-wiring candidate")
+    print(
+        "High score = high violation count + low enforcement coverage "
+        "= next 6-channel-wiring candidate"
+    )
     print("\nSee `/sio-rule-audit` skill for the 6-channel-wiring pattern.")
 
 

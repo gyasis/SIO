@@ -153,11 +153,6 @@ def test_extra_roots_env_var_allows_path(tmp_path: Path, monkeypatch):
 
     original_roots = writer.ALLOWLIST_ROOTS
     # Simulate the extra roots being loaded
-    extra_roots_env = (
-        monkeypatch.getenv("SIO_APPLY_EXTRA_ROOTS")
-        if hasattr(monkeypatch, "getenv")
-        else extra_root
-    )
     writer.ALLOWLIST_ROOTS = list(original_roots) + [extra_root]
 
     try:

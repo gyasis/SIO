@@ -22,9 +22,9 @@ from pathlib import Path
 
 import click
 
+from sio.core.paths import db_path as _default_db_path
 from sio.core.runlog import current as _runlog_current
 from sio.core.runlog import runlogged
-from sio.core.paths import db_path as _default_db_path
 
 
 @click.command("render")

@@ -88,20 +88,36 @@ ruff check .                     # check
 ruff check --fix .               # auto-fix safe violations
 ```
 
-Rules are the ruff defaults. Keep the files you TOUCH clean: repo-wide
-`ruff check .` does not yet exit 0 (81 findings on 2026-10-16, a known backlog),
-so it is informational in `make ci` rather than a gate. `make lint-strict` is the
-hard version, for when that backlog is cleared.
+Rules live in `ruff.toml`: `line-length = 99`, `select = ["E", "F", "I", "W"]`,
+and E501 off for tests. `ruff check .` exits 0 as of 2026-10-22, so `make ci`
+gates on it. A new finding is a regression — fix the finding, do not soften
+the gate. The 81-finding backlog that once made this informational is gone;
+`docs/code-quality-baseline.md` records what it held.
 
 ### Local CI
 
 There is **no GitHub Actions workflow** — CI runs on your machine before a merge:
 
 ```bash
-make ci            # lint (informational) + the default test suite
+make ci            # ruff (hard gate) + the default test suite
 make test          # just the suite
-make lint-strict   # the hard lint gate
+make lint          # just ruff
 ```
+
+### Prose
+
+`ste-lint` scores prose against an ASD-STE100 rule set, with this repo's
+`ste-glossary.txt` to shield real names such as `Rich`, `error` and `tool`:
+
+```bash
+make ste FILE=docs/your-page.md          # score one file
+make ste-report FILE=docs/your-page.md   # exit 1 if that file scores >= 2.0
+```
+
+This is not in `make ci`. The first-party baseline is 9.16 violations per 100
+verbs against a 2.0 target, so a repo-wide gate would fail for prose nobody is
+touching. Score the files you edit. `docs/code-quality-baseline.md` holds the
+baseline and the scope decisions behind it.
 
 Report those local results on the PR. A missing or failed GitHub Actions check is
 not a merge blocker here, because there is no workflow to run.
@@ -247,7 +263,7 @@ pulling new hook changes.
 Before opening a pull request:
 
 - [ ] `pytest` passes (unit + integration)
-- [ ] `ruff check .` exits 0 (no lint violations)
+- [ ] `make ci` passes (`ruff check .` exits 0, and the suite is green)
 - [ ] New CLI commands have `@runlogged` and honor `SIO_DB_PATH`
 - [ ] No bare `dspy.LM(...)` calls outside `lm_factory.py`
 - [ ] CHANGELOG.md updated under `## [Unreleased]` with a brief entry

@@ -659,8 +659,12 @@ def _extract_md_tool_calls(segment: str) -> list[dict[str, Any]]:
                     tool_input = raw_json
                 except (json.JSONDecodeError, ValueError) as e:
                     from sio.core.observability import log_failure  # noqa: PLC0415
+                    # No file_path in this scope — this helper takes only the
+                    # segment text. Use a stable key, as the sibling handler
+                    # above does; `str(file_path)` here raised NameError and
+                    # took down the whole file (same class as the v0.1.4 fix).
                     log_failure(
-                        "parse_errors", str(file_path), e,
+                        "parse_errors", "<md_tool_call>", e,
                         stage="tool_input_fenced_json", severity="debug",
                     )
                     tool_input = None

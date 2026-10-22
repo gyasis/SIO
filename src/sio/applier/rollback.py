@@ -10,6 +10,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+
 from sio.core.paths import sio_home as _default_sio_home
 
 _ALLOWED_ROOTS: list[Path] = [
