@@ -3,12 +3,12 @@
 ## Problem
 
 The session-start briefing (`sio briefing`, injected by each harness adapter's
-SessionStart hook) is built by `build_session_briefing()`, which scans the SIO
+SessionStart hook) comes from `build_session_briefing()`, which scans the SIO
 DBs — now ~93 MB (`sio.db`) + ~131 MB (`behavior_invocations.db`). The original
 design (commit `3de1a15`, 2026-04-03) assumed `<500 chars, <3s`, so it computed
 the briefing **synchronously on every session start** with no cache and no
-timeout. As the corpus grew (and after the 14-day search-discipline scan landed
-in `4a3df6f`), that synchronous compute grew to **2+ minutes**, blocking every
+timeout. The corpus grew, and the 14-day search-discipline scan landed
+in `4a3df6f`. That synchronous compute then grew to **2+ minutes**, and it blocked every
 interactive session start (Claude Code and any other adapter).
 
 ## Design: compute off-session, read on-session
@@ -34,10 +34,11 @@ Heavy work moves off the hot path entirely.
   - the **systemd user timer** (`sio briefing --refresh --if-idle`), and
   - the existing passive-analysis pipeline (`run_analysis()` — daily/weekly),
     which already runs mine→cluster→suggest off-session.
-  `refresh_store()` is guarded by a lock (mutual exclusion — never two heavy
-  computes at once) and a hard SIGALRM ceiling (`SIO_BRIEFING_BUILD_TIMEOUT`,
-  default 15 min — a *hung-compute* guard, not a perf cap; Phase B makes the real
-  compute milliseconds).
+  `refresh_store()` takes a lock (mutual exclusion — never two heavy
+  computes at once).
+  It also has a hard SIGALRM ceiling (`SIO_BRIEFING_BUILD_TIMEOUT`,
+  default 15 min — a *hung-compute* guard, not a perf cap). Phase B makes the real
+  compute milliseconds.
 
 ## Why a systemd **user** timer (not crontab, not Prefect/Airflow)
 
@@ -48,19 +49,19 @@ Heavy work moves off the hot path entirely.
   `OnCalendar` timers, *not* monotonic `OnUnitInactiveState`.) `OnBootSec=3min`
   adds a fresh-boot refresh.
 - **No always-on daemon / no new dependency.** The timer fires a oneshot service
-  that exits — unlike Prefect/Airflow/Dagster, which want a persistent server +
-  DB + UI and are built for multi-machine DAG orchestration, not "refresh a
+  that exits. Prefect/Airflow/Dagster differ: they want a persistent server +
+  DB + UI. Their makers designed them for multi-machine DAG orchestration, not "refresh a
   cached file on a laptop." (An orchestrator would *add* the resource-burden
   problem this fix removes.)
-- **Non-disruptive.** Service is `Nice=19` + `IOSchedulingClass=idle` and
-  `--if-idle` gated (refresh when the user is idle or the store is too stale;
+- **Non-disruptive.** The service uses `Nice=19` + `IOSchedulingClass=idle`.
+  The `--if-idle` flag gates it (refresh when the user is idle or the store is too stale;
   skip when active and fresh — with a staleness backstop so it never goes
   stale for long).
 
 ## Portability — wired into install
 
-The timer is installed by **`sio init`** (and `sio schedule install-briefing`),
-so moving to a new machine and running the normal SIO setup wires up the
+**`sio init`** (and `sio schedule install-briefing`) installs the timer.
+So moving to a new machine and running the normal SIO setup wires up the
 off-session refresh automatically — no manual per-machine step. Where
 `systemctl --user` is unavailable the installer degrades gracefully (the store
 still works, refreshed by whatever else runs `sio briefing --refresh`).
@@ -97,17 +98,17 @@ thing." Profiling the 6 sections first showed that was the **wrong fix**:
 | **violations** | **minutes** |
 
 The DBs are small and well-indexed (error_records = 5,466 rows). The entire
-cost was in **`detect_violations`**, which recomputed rule-invariant work inside
-its `for error × for rule` double loop: it rebuilt each rule's content-word set
+cost was in **`detect_violations`**. It recomputed rule-invariant work inside
+its `for error × for rule` double loop. It rebuilt each rule's content-word set
 and **recompiled a `\bword\b` regex per term, per rule, per error** — tens of
 millions of `re.compile`/`.search` calls (420 rules × ~600 records).
 
-A rollup would not have helped (the cost isn't a DB scan) and would have been
+A rollup would not have helped (the cost isn't a DB scan). Also, it would have been
 *invalidated on every rule-file edit* (violation counts depend on the mutable
 rule set). The correct fix is algorithmic and behaviour-preserving:
 
 1. **Hoist** all rule-invariant work out of the error loop (compute per rule once).
-2. **Tokenise** each record once (`set(re.findall(r"\w+", text))`) and match plain
+2. **Tokenise** each record once (`set(re.findall(r"\w+", text))`). Then match plain
    words by **token-set membership** — a `\bword\b` match for a pure-`\w+` term is
    exactly "the term is a token of the text". Replaces ~290k regex `.search`
    calls with O(1) set lookups.
@@ -115,4 +116,4 @@ rule set). The correct fix is algorithmic and behaviour-preserving:
 Verified byte-identical to the old algorithm (same violation set, fingerprinted
 with `PYTHONHASHSEED=0`). Result: **violations minutes → ~1.9s** (283× on the
 per-record cost), full off-session briefing compute **2–10 min → ~10s**. Even a
-full recompute is now cheap, so no delta table is needed.
+full recompute is now cheap, so you need no delta table.

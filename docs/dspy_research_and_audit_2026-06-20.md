@@ -1,7 +1,7 @@
 # DSPy / GEPA — Research Brief + SIO Implementation Audit (2026-06-20)
 
-Consolidated from a multi-source research pass (DSPy official docs via context7, web/practitioner
-sources, Gemini deep-research, and the memory_lane_v4 corpus) **plus** an audit of SIO's current DSPy
+This document consolidates a multi-source research pass (DSPy official docs via context7, web/practitioner
+sources, Gemini deep-research, and the memory_lane_v4 corpus). It **also** has an audit of SIO's current DSPy
 usage (`src/sio/core/dspy/`). Goal: are we using DSPy the right way, and what to improve?
 
 Source tags: `[docs]` dspy.ai · `[web]` practitioner/paper · `[deep]` Gemini · `[corpus]` memory_lane_v4.
@@ -27,7 +27,7 @@ Source tags: `[docs]` dspy.ai · `[web]` practitioner/paper · `[deep]` Gemini �
 1. **Anti-verbatim overfit (Dropbox, real):** GEPA copies example-specific terms (names, phrases) into the prompt → train-up, generalize-down. **Add a metric/instruction constraint forbidding example-specific content.** `[web]`
 2. **Prompt-bloat guard:** length-penalized objective, e.g. `score = quality − 0.01·(tokens/1000)`. `[deep]`
 3. **LLM-judge biases** to design against: position, **verbosity** (judges favor longer output >90%), self-preference (mitigated by reflector ≠ task model). `[corpus]`
-4. **Deploy safety:** for a judge already in production, prefer constrained optimization (select from a validated instruction library) over a full rewrite, to protect the output contract. `[web]`
+4. **Deploy safety:** for a judge in production, prefer constrained optimization (select from a validated instruction library) over a full rewrite. This protects the output contract. `[web]`
 
 ### Real-world validation (near-identical to our use case)
 - **Dropbox Dash optimized an LLM *relevance judge* with DSPy on `gpt-oss-120b` → 45% error reduction; 1–2 weeks → 1–2 days.** `[web]`

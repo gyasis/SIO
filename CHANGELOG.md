@@ -42,6 +42,21 @@ had sat behind a rule that nothing gated on, and neither had a test.
   first-party baseline is 9.16 against a 2.0 target, so score the files you
   touch.
 
+### Changed — the user-facing docs now read as Simplified Technical English
+
+`README.md`, `CONTRIBUTING.md` and everything under `docs/` went from 504
+violations to 57, or 9.29 to **1.00** per 100 verbs. 28 of 29 files score
+under 2.0. No code block, command, path or number changed: a before/after
+comparison of every fenced block across the 27 edited files came back
+byte-identical.
+
+`docs/agent-recognizers.md` stays at 7.80 on purpose. Its marker lists are the
+literal trigger phrases that `error_extractor.py` compiles into regexes, so
+rewriting them would make the document lie about what the code matches.
+
+`src/` docstrings, `tests/`, `specs/`, `CHANGELOG.md` and the PRDs keep their
+prose. The changelog and the PRDs record what happened at the time.
+
 ## [0.5.6] — 2026-10-05
 
 ### Fixed — `sio search` could not find Claude tool calls or their output

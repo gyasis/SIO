@@ -99,8 +99,8 @@ Both share the same CLI entry point (`sio`) and database infrastructure.
 | `time_filter.py` | Flexible date filtering using `python-dateutil`. Supports relative durations, natural language, shorthands, and absolute dates. SpecStory files use filename-encoded timestamps; others use mtime. |
 | `pipeline.py` | Orchestrates the full mining flow: collect files → filter by time → filter by project → parse → extract errors → insert into DB. |
 | `flow_extractor.py` | Extracts tool call sequences from sessions. Applies n-gram extraction (2-5 grams) and RLE compression to collapse repeated tools. Uses success heuristics (no errors following the sequence) to score flows. |
-| `flow_pipeline.py` | Flow mining pipeline that orchestrates extraction, aggregation, and storage. Provides aggregation queries (flows by frequency, by session spread, by success rate). |
-| `session_distiller.py` | Distills a full session transcript into a playbook containing only the winning path. Strips failed attempts, retries, and dead-end explorations. |
+| `flow_pipeline.py` | Flow mining pipeline that orchestrates extraction, aggregation, and storage. Gives aggregation queries (flows by frequency, by session spread, by success rate). |
+| `session_distiller.py` | Distills a full session transcript into a playbook containing only the winning path. Strips failed runs, retries, and dead-end explorations. |
 | `recall.py` | Topic-filtered distillation. Filters sessions by query relevance, detects struggle-then-fix patterns, and builds Gemini polish prompt for optional cleanup. |
 
 ### `src/sio/clustering/` — Pattern Discovery
@@ -206,7 +206,7 @@ SIO v2.1 explicitly separates operations by cost to make spending predictable:
 
 The cheap tier uses no LLM calls at all — only regex parsing, SQLite aggregation, and local embedding models (fastembed). This means you can run the full mining and flow discovery pipeline on any machine without an API key.
 
-The expensive tier requires an LLM API key configured in `~/.sio/config.toml` under `[llm]`.
+The expensive tier needs an LLM API key configured in `~/.sio/config.toml` under `[llm]`.
 
 ## Skills (Claude Code Slash Commands)
 

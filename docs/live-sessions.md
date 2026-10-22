@@ -15,11 +15,11 @@ works against **finished, indexed** transcripts. That is exactly the wrong tool
 for one important question: *what is running **right now**, and am I about to step
 on it?*
 
-A live, still-being-written session is invisible to an index that was built from
+A live, still-being-written session is invisible to an index that SIO builds from
 past transcripts. So `sio live` does not use the index at all. It detects
 sessions by a **real-time signal** — a transcript file whose mtime changed in the
-last few minutes — and then reads three fields that Claude Code writes on **every
-JSONL line** but that SIO's indexers never consumed:
+last few minutes. Then it reads three fields. Claude Code writes these fields on **every
+JSONL line**, but SIO's indexers never consumed them:
 
 | Field | Used for |
 |---|---|
@@ -31,8 +31,8 @@ From `cwd` it resolves — via live `git` — the **working tree root**, the
 **repository** (git common dir), and the **current branch (HEAD)**. That is
 enough to answer "who is live, where, on what branch" and to flag collisions.
 
-This is a net-new index dimension: SIO keys everything else on the transcript's
-filename UUID and never on repo/branch, so nothing competes with the repo/branch
+This is a net-new index dimension. SIO keys everything else on the transcript's
+filename UUID and never on repo/branch. So nothing competes with the repo/branch
 view `sio live` builds.
 
 ---
@@ -66,7 +66,7 @@ Example:
 |---|---|
 | `⚠` | **Collision** — shares a live working tree with another session |
 | `◆` | Same working tree as the shell you ran `sio live` from |
-| `← you` | Your own session — only when a session-id env var is set (see below) |
+| `← you` | Your own session — only when you set a session-id env var (see below) |
 
 ### The collision model
 
@@ -75,20 +75,21 @@ not just the repo. That is deliberate:
 
 - **Same working tree, ≥2 live sessions → collision (`⚠`).** They are literally
   editing the same files on the same branch; concurrent writes will conflict.
-- **Same repo but different git worktrees → not a collision.** Separate worktrees
+- **Same repo but different git worktrees → not a collision.**
+  Separate worktrees
   have independent working directories and HEADs — that is precisely the
   isolation move the warning recommends. Sessions in `cadastre` and
   `cadastre-epic-b` share a repository but not a working tree, so they do not
   collide.
 
-Branch shown is the **live working-tree HEAD** from `git`, with the transcript's
-`gitBranch` only as a fallback — because every session in one working tree shares
-that tree's branch, and the live value is what actually governs the collision.
+The branch shown is the **live working-tree HEAD** from `git`. The transcript's
+`gitBranch` is only a fallback. Every session in one working tree shares
+that tree's branch, and the live value governs the collision.
 
 ### `--as-json`
 
 Emits `agent, native_id, cwd, branch, toplevel, common_dir, collision, mtime,
-msgs, last` per session — so an agent in another session can poll for peers and
+msgs, last` per session. An agent in another session can then poll for peers and
 collisions programmatically.
 
 ---
@@ -141,10 +142,10 @@ option below works on **both** `show` and `attach`, and they **compose**.
 | `--no-save` | peek without advancing the saved cursor |
 
 **Kinds.** Every event is exactly one of four: `tool` (what it ran), `text`
-(assistant prose), `user` (what it was told), `system` (harness bookkeeping —
+(assistant prose), `user` (what the user said), `system` (harness bookkeeping —
 `attachment` / `mode` / `queue-operation` / …). System records are ~63% of a
-Claude transcript and render **blank**, so blank-bodied events are dropped
-unless you pass `--include-blank`. Tool events are kept even when their body is
+Claude transcript and render **blank**, so the tool drops blank-bodied events
+unless you pass `--include-blank`. The tool keeps tool events even when their body is
 empty, because the tool name is itself the signal.
 
 The pivot this exists for — an agent reading a peer, then drilling in:
@@ -173,20 +174,21 @@ sio live cursors --clear <id|all>         # forget one, or all
 ```
 
 `attach` also saves on the way out — Ctrl-C **and** SIGTERM (what `TaskStop` /
-`timeout` send), so a harness detach leaves a usable resume point rather than
-silently dropping it. That is what makes attach → work → re-attach lossless
+`timeout` send), so a harness detach leaves a usable resume point and
+never drops it silently. That is what makes attach → work → re-attach lossless
 instead of a reason to hold a stream open.
 
 Semantics + guarantees:
 
-- The saved cursor is the newest **matched** event — "everything up to here has
-  been shown to me under my current filter" — so a resume never skips something
+- The saved cursor is the newest **matched** event. It means "I have seen everything up to here
+  under my current filter". So a resume never skips something
   the previous call actually displayed. Switching to a *wider* filter on resume
   picks up from that point forward; it does not retroactively replay events the
   narrower filter excluded. Use `--digest` (unfiltered) for a canonical cursor.
 - Writes are **atomic** (temp file + `os.replace`), so two live observers writing
   at once cannot leave a half-written store.
-- The store is **bounded** to 200 entries (oldest evicted) and **failure-tolerant**:
+- The store is **bounded** to 200 entries (oldest evicted).
+  It is also **failure-tolerant**:
   a missing, unreadable, or corrupt store degrades to "no cursor" and the read
   still succeeds — state must never break a read.
 
@@ -225,28 +227,29 @@ context. Measured on a real 20-hour attach (60 events delivered):
 | per single ~80-token event | **≈331k tokens of context** |
 | share of the observing session's total traffic | **~18.5%** |
 
-The cost is **not** the watched session's volume (that was 1.27% of it) — it is
-`notifications × your own context size`, so a long attach gets more expensive
+The cost is **not** the watched session's volume (that was 1.27% of it). It is
+`notifications × your own context size`. So a long attach gets more expensive
 every hour even if the peer does nothing new.
 
-**Therefore:** `sio live ls` to discover → `sio live show --digest` / `--since`
-to poll (a poll rides a turn you are already having) → `attach` **only** for
-genuine real-time need, and detach as soon as it lands.
+**Therefore:** `sio live ls` to discover.
+Then `sio live show --digest` / `--since`
+to poll (a poll rides a turn you are already having).
+Use `attach` **only** for a real-time need, and detach as soon as it lands.
 
 ---
 
 ## Agent coverage
 
-**Claude Code** is covered richly — its JSONL carries `cwd` + `gitBranch` on
+**Claude Code** has rich coverage — its JSONL carries `cwd` + `gitBranch` on
 every line, so repo/branch/worktree/collision resolution is exact.
 
 Other harnesses (`goose`, `codex`, `gemini`, `aider`, `kimi`, `pi`) are **listed
-best-effort** when active: shown with whatever working-dir signal is trivially
+best-effort** when active. SIO shows them with whatever working-dir signal is trivially
 available (e.g. goose's `working_dir`, codex's and pi's line-1 header `cwd`) and
 without git collision resolution. Live **follow** (`show --follow`, `attach`,
-`sio watch`) is implemented for the file-backed harnesses — Claude, Codex, Kimi
-and pi (each tails its session file by size) — while the search-backed agents'
-live adapters raise `NotImplementedError` until implemented.
+`sio watch`) exists for the file-backed harnesses — Claude, Codex, Kimi
+and pi (each tails its session file by size). The search-backed agents'
+live adapters raise `NotImplementedError` until someone builds them.
 
 ---
 
@@ -270,7 +273,7 @@ to `sio search`). Tests: `tests/unit/test_live.py`.
 
 - **Sub-agent transcripts** live at `<session-id>/subagents/agent-*.jsonl` and
   carry the **parent** session id. They are the same session, not a concurrent
-  one — `sio live` skips them, and dedups any resume/compact continuations that
+  one. `sio live` skips them, and dedups any resume/compact continuations that
   share a session id, so one logical session is exactly one row (and never
   collides with itself).
 - **`← you` self-marking** reads an optional `SIO_SESSION_ID` / `CLAUDE_SESSION_ID`

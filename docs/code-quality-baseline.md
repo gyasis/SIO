@@ -126,8 +126,56 @@ make ste-report FILE=<path>                  # exit 1 if that file is over 2.0
 target, so a repo-wide gate would fail on day one for prose nobody is touching.
 Score the files you edit instead.
 
-## 4. What this sweep did NOT do
+## 4. The docs pass
 
-327 first-party files still score at or over 2.0. This file fixed one of them
-as a worked example and left the rest. A full rewrite touches 120,283 words of
-prose, so it needs its own decision and its own pass.
+A second pass then rewrote the user-facing docs: `README.md`,
+`CONTRIBUTING.md` and everything under `docs/`.
+
+| set | files | violations | per 100 verbs |
+|---|---:|---:|---:|
+| before | 28 | 504 | 9.29 |
+| after | 29 | 57 | **1.00** |
+
+28 of the 29 files now score under 2.0. Across all first-party prose the score
+moved from 9.16 to 6.64, because `src/`, `tests/` and `specs/` stayed as they
+were.
+
+### One file stays over the limit, on purpose
+
+`docs/agent-recognizers.md` scores 7.80. Its "Core markers" lists are the
+literal trigger phrases that `src/sio/mining/error_extractor.py` compiles into
+regexes, which the source writes as `previous\s+attempt` and the like. Checked
+2026-10-22: the flagged phrases `previous attempt`, `could be improved` and
+`take into account` are all live patterns. Rewriting them would make the
+document lie about what the code matches. Line 63 also quotes the Reflexion
+paper. With about 140 verbs, the file can carry only 2 violations, so it cannot
+pass while it stays correct. Leave it.
+
+### Three lessons the pass paid for
+
+**A table cell can quote the tool.** Four cells in `docs/user-guide.md` held
+the verbatim `--help` strings of `--dry-run`, `--emphasis` and `--classified`
+(`src/sio/cli/main.py:3247`, `:5179`, `:5181`). Rewriting the prose rewrote
+those quotes, and the guide then disagreed with `sio --help`. The help string
+is the fact, so the cells went back. Before you reword a cell that describes a
+flag, grep `src/` for the string.
+
+**One name per thing applies to the project's own name for itself.** The
+rewrite turned "measured assist" into "measured help" in three files, and
+paraphrased it in a fourth. Meanwhile `README.md`, five use-case pages and the
+title of `docs/SIO_PHILOSOPHY.md` kept the original. That left the philosophy
+document contradicting its own title. The term is a name, so `assist` is now in
+the glossary and all 11 uses read the same way.
+
+**Active voice can move a date.** A heading in `docs/cookbook.md` went from
+`what changes should never have been made` to `what changes you should never
+make`. The first looks back at changes a user reverted, which is what
+`sio errors --type undo` reports. The second gives advice. It now reads "which
+changes the agent should never have made": active, and still looking back.
+
+### What the pass did NOT touch
+
+`src/` docstrings, `tests/`, `specs/`, `CHANGELOG.md` and the `PRD*.md` files
+keep their prose. The changelog and the PRDs record what happened at the time,
+so editing them edits the record. 300 first-party files still score at or over
+2.0, almost all of them docstrings and test prose.

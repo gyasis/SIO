@@ -48,6 +48,20 @@ flag
 config
 configuration
 
+# `assist` is the project's named design stance: README calls SIO "measured
+# assist, not autonomous override" in bold, and docs/SIO_PHILOSOPHY.md carries
+# it in its title. It is a name, so it never changes.
+assist
+
+# `(required)` is the literal value in the Default column of every option
+# table in docs/user-guide.md, and `Require ...` is the verbatim --help string
+# of --emphasis / --classified (src/sio/cli/main.py:5179,5181). Both are
+# strings that must match the tool, not prose to improve. Checked 2026-10-22:
+# all 12 findings were table values or quoted help, none was prose. If a
+# reviewer finds a PROSE use of "required", delete these two lines instead.
+require
+required
+
 # --- python builtins that read as inflated verbs ---
 enumerate
 terminate
