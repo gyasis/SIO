@@ -9,7 +9,7 @@
 ## Overview
 
 SIO uses three DSPy optimizers in a fixed ladder to improve the `SuggestionGenerator`
-module — the DSPy program that turns clustered error patterns into actionable CLAUDE.md
+module. This is the DSPy program that turns clustered error patterns into actionable CLAUDE.md
 rules. The module signature is `PatternToRule`:
 
 ```
@@ -31,7 +31,7 @@ Metric: `suggestion_quality_metric` — weighted sum of three sub-scores:
 ### 1. BootstrapFewShot (`bootstrap`)
 
 **What it does:** Selects up to `max_labeled_demos` demonstrations from the training
-set and optionally bootstraps additional demos by running the module on training
+set and optionally bootstraps more demos by running the module on training
 examples and keeping those that score above the metric threshold. Produces a compiled
 module with a richer few-shot prompt.
 
@@ -106,7 +106,7 @@ dspy.GEPA(
 - `task_lm` (cheap, fast, cached) — `get_task_lm()` — runs forward passes
 - `reflection_lm` (strong, uncached) — `get_reflection_lm()` — critiques prompt candidates
 
-Both are resolved through `lm_factory.py`. Configure via env or `~/.sio/config.toml`:
+`lm_factory.py` resolves both. Configure via env or `~/.sio/config.toml`:
 ```toml
 [llm.task]
 model = "gemini/gemini-flash-latest"
@@ -135,8 +135,8 @@ SIO prints a banner before GEPA starts so there are no cost surprises.
 - GEPA #14 on amplified 372-row trainset: **0.7224**
 - GEPA #15 on same trainset: **0.8653** vs baseline 0.6768 — **+27.9%**
 - GEPA on un-amplified 93-row curate: timed out at 60 min, **$1.11 wasted** with zero
-  useful output (reflection LM never reached evaluation — this is the cautionary tale
-  that motivated the amplify-first gate)
+  useful output. The reflection LM never reached evaluation. This is the cautionary tale
+  that motivated the amplify-first gate
 
 **When to use it:**
 - After MIPROv2 has already run on the same trainset (ladder gate enforces this)
@@ -217,7 +217,7 @@ E.g. 51 input rows, target 300 → `ceil((300-51)/51)` = 5. Add 1–2 extra for 
 
 ## Recommended entry point: `sio optimize-ladder`
 
-Use `sio optimize-ladder` rather than calling each optimizer individually. It:
+Use `sio optimize-ladder`. Do not call each optimizer individually. It:
 
 1. Resolves the input trainset and registers it in the `trainsets` table
 2. Checks which rungs already have scored rows in `optimized_modules` (idempotent on
@@ -298,12 +298,12 @@ ls ~/.sio/runs/          # raw JSONL run logs + _dspy.jsonl sidecars
 
 The `[budget]` block in `~/.sio/config.toml` sets a hard 24h cap. The `[llm.banned]`
 block refuses specific model IDs at construction time (enforced by `lm_factory.py`).
-Per the project's cost-control rule, `gpt-4o` is permanently banned — never appears
+Per the project's cost-control rule, the project permanently bans `gpt-4o` — it never appears
 as a default.
 
-`sio optimize-ladder` always prints a cost estimate and requires confirmation (or
+`sio optimize-ladder` always prints a cost estimate and needs confirmation (or
 `--yes`) before executing. For high-cost tiers (`medium`, `heavy`) GEPA emits an
-additional `⚠ HIGH-COST BUDGET TIER` warning.
+extra `⚠ HIGH-COST BUDGET TIER` warning.
 
 ```bash
 SIO_GEPA_BUDGET=heavy sio optimize ...   # opt in to expensive tier explicitly

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+
 from sio.core.paths import db_path as _default_db_path
 
 logger = logging.getLogger(__name__)

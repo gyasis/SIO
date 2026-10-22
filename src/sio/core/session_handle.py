@@ -24,6 +24,7 @@ KNOWN_AGENTS: tuple[str, ...] = (
     "promptchain",
     "kimi",
     "pi",
+    "omp",
     # wuphf carries NO local transcript store: an external bridge writes its
     # rows directly into the DB (behavior_invocations / error_records / ...).
     # Anything that enumerates KNOWN_AGENTS to probe an agent's on-disk
@@ -124,6 +125,9 @@ def from_path(path_str: str) -> str:
     elif "/.pi/" in s:
         # <iso-ts>_<uuid>.jsonl -- the stem is the native id (codex convention).
         agent = "pi"
+    elif "/.omp/" in s:
+        # Same <iso-ts>_<uuid>.jsonl layout as pi (omp is a pi fork).
+        agent = "omp"
     else:
         agent = LEGACY_AGENT
     return f"{agent}:{native}"

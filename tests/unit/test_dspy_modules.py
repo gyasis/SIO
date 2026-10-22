@@ -7,9 +7,6 @@ These tests are intentionally RED until the Module classes are defined.
 
 from __future__ import annotations
 
-import inspect
-
-
 # Audit Round 2 C-R2.6 (Hunter #2, DSPy) consolidation: `TestSuggestionModule`
 # class (4 tests) has been REMOVED because the `SuggestionModule` class it
 # covered was deleted in the same commit. The canonical replacement is

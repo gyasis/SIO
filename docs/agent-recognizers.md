@@ -24,15 +24,16 @@ Every pattern traces to a source: `sio` (existing lexicon) or `arxiv:<id>`.
 | `user_correction` | user | user corrects the agent ("no, actually", "that's wrong", "i meant") | `sio` |
 | `undo_event` | user | user wants a revert ("revert that", "roll back"); guards out `git push` | `sio` |
 
-These are documented here for completeness; their patterns are the source of
+This document lists them for completeness. Their patterns are the source of
 truth in the module. Do not duplicate-edit — extend, don't fork.
 
 ---
 
 ## Part 2 — Proposed new recognizers (mined from the papers)
 
-Confidence tiers: **A** = verbatim from a paper's marker list (high), **B** =
-paraphrased from paper prose/examples, **C** = inferred from a described failure
+Confidence tiers: **A** = verbatim from a paper's marker list (high).
+**B** = paraphrased from paper prose/examples.
+**C** = inferred from a described failure
 mode (use with care, tune precision).
 
 ### `agent_uncertainty` — tier A
@@ -54,7 +55,7 @@ Agent asserts certainty (boosters / factive presupposition) about a claim.
   i'm certain · i am certain · i'm sure · 100% sure/confident · it must be ·
   guaranteed · obviously · clearly · evidently · it is known that.
 - **Precision note:** "definitely/certainly/clearly" occur in benign prose —
-  exactly the over-claim the paper studies. Expect to tune (e.g. require an
+  exactly the over-claim the paper studies. Expect to tune (e.g. demand an
   adjacent claim) before using as a hard signal.
 
 ### `agent_self_reflection` — tier B
@@ -89,7 +90,7 @@ Agent flags it is working from an assumption / inferred info, not known fact.
 - **Overlap:** heavy with `agent_uncertainty`. Kept separate because epistemic-
   *access* hedging ("to the best of my knowledge", "i'll assume") is
   phenomenologically distinct from pure probability hedging ("maybe"). Merge into
-  an `agent_uncertainty` subtype if a flatter ontology is preferred.
+  an `agent_uncertainty` subtype if you prefer a flatter ontology.
 
 ### `agent_stuck` — tier C (lower confidence — indirect grounding)
 Agent signals impasse / repeated failure / giving up — OR a *false* "done"
@@ -102,7 +103,7 @@ signal that masks being stuck.
   i've tried (multiple|several) · exhausted (all|my). *(False-stop variant —
   "everything looks good" / "it is correct" — is real but noisy; track
   separately if used.)*
-- **Note:** phrases are reasoned from the failure descriptions, **not** verbatim
+- **Note:** the authors reasoned the phrases from the failure descriptions, **not** verbatim
   marker lists. Validate against real transcripts before trusting.
 
 ---
@@ -112,13 +113,13 @@ signal that masks being stuck.
 These pattern sets now live in `src/sio/mining/error_extractor.py`, exposed via
 the public **`detect_agent_states(content) -> list[str]`** multi-label
 classifier. Same style as the existing sets: word-boundary anchored,
-`re.IGNORECASE`. The long-tail template phrases from the papers are intentionally
-omitted (too rare to earn a pattern).
+`re.IGNORECASE`. The module intentionally omits the long-tail template phrases from the papers
+(too rare to earn a pattern).
 
 **Integration decision (important):** `detect_agent_states()` is a standalone
-classifier and is **NOT** wired into `extract_errors()`. The
-uncertainty/overconfidence/assumption markers are common in normal assistant
-prose; emitting them as mined-error records would flood the top-N rankings (the
+classifier and is **NOT** wired into `extract_errors()`.
+The uncertainty/overconfidence/assumption markers are common in normal assistant
+prose. Emitting them as mined-error records would flood the top-N rankings (the
 same pollution `_is_hook_block_noise` guards against). Callers opt in by calling
 `detect_agent_states()` directly. To promote a *specific* rare recognizer
 (e.g. `agent_stuck`) into the mined-error stream, add a dispatch block in
@@ -212,7 +213,7 @@ _STUCK_PATTERNS: list[re.Pattern[str]] = [
    `agent_uncertainty` (granular corpus; phrase overlap is minimal after
    dedup). Revisit if a flatter consumer wants them merged.
 2. **Overconfidence precision** — SHIPPED as-is, flagged low-precision in code +
-   doc. Treat as advisory, not a hard signal, until tuned (e.g. require an
+   doc. Treat as advisory, not a hard signal, until tuned (e.g. demand an
    adjacent claim).
 3. **`agent_stuck` (tier C)** — SHIPPED but marked tier-C/experimental; validate
    against real transcripts before trusting. The "false-done" variant

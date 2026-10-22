@@ -210,7 +210,8 @@ _ASSUMPTION_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\bas\s+far\s+as\s+i['']?m?\s+aware\b", re.IGNORECASE),
 ]
 
-# Impasse / repeated failure (tier C — validate before trusting).  Source: arxiv:2303.11366/17651/2409.12917
+# Impasse / repeated failure (tier C — validate before trusting).
+# Source: arxiv:2303.11366/17651/2409.12917
 _STUCK_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\bi['']?m\s+(?:not\s+able|unable)\s+to\b", re.IGNORECASE),
     re.compile(r"\bi\s+can['']?t\s+figure\s+(?:this\s+)?out\b", re.IGNORECASE),

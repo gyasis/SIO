@@ -110,7 +110,9 @@ class TestDiscover:
         monkeypatch.setattr(live, "CLAUDE_PROJECTS", projects)
         monkeypatch.setattr(live, "GOOSE_DB", tmp_path / "nope" / "sessions.db")
         monkeypatch.setattr(live, "OPENCODE_DB", tmp_path / "nope" / "opencode.db")
-        for attr in ("CODEX_SESSIONS", "GEMINI_TMP", "KIMI_SESSIONS", "PI_SESSIONS"):
+        for attr in (
+            "CODEX_SESSIONS", "GEMINI_TMP", "KIMI_SESSIONS", "PI_SESSIONS", "OMP_SESSIONS",
+        ):
             monkeypatch.setattr(live, attr, tmp_path / "nope" / attr)
         monkeypatch.setattr(live, "KIMI_SESSION_INDEX", tmp_path / "nope" / "index.jsonl")
 
@@ -168,6 +170,7 @@ class TestCodexDiscovery:
         monkeypatch.setattr(live, "KIMI_SESSIONS", tmp_path / "nope" / "kimi")
         monkeypatch.setattr(live, "KIMI_SESSION_INDEX", tmp_path / "nope" / "index.jsonl")
         monkeypatch.setattr(live, "PI_SESSIONS", tmp_path / "nope" / "pi")
+        monkeypatch.setattr(live, "OMP_SESSIONS", tmp_path / "nope" / "omp")
 
     def test_discovers_nested_jsonl_rollout_and_reads_cwd(self, tmp_path, monkeypatch):
         codex_sessions = tmp_path / ".codex" / "sessions"
@@ -377,7 +380,7 @@ class TestPiDiscovery:
         monkeypatch.setattr(live, "CLAUDE_PROJECTS", tmp_path / "nope" / "projects")
         monkeypatch.setattr(live, "GOOSE_DB", tmp_path / "nope" / "sessions.db")
         monkeypatch.setattr(live, "OPENCODE_DB", tmp_path / "nope" / "opencode.db")
-        for attr in ("CODEX_SESSIONS", "GEMINI_TMP", "KIMI_SESSIONS"):
+        for attr in ("CODEX_SESSIONS", "GEMINI_TMP", "KIMI_SESSIONS", "OMP_SESSIONS"):
             monkeypatch.setattr(live, attr, tmp_path / "nope" / attr)
         monkeypatch.setattr(live, "KIMI_SESSION_INDEX", tmp_path / "nope" / "index.jsonl")
         monkeypatch.setattr(live, "PI_SESSIONS", pi_sessions)

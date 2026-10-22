@@ -19,6 +19,7 @@ import json
 import math
 from pathlib import Path
 from typing import Any
+
 from sio.core.paths import sio_home as _default_sio_home
 
 _FACETS_DIR = str(_default_sio_home() / "facets")

@@ -20,12 +20,13 @@ _GOOSE_DB = Path.home() / ".local" / "share" / "goose" / "sessions" / "sessions.
 _OPENCODE_DB = Path.home() / ".local" / "share" / "opencode" / "opencode.db"
 _CODEX_SESSIONS = Path.home() / ".codex" / "sessions"
 _PI_SESSIONS = Path.home() / ".pi" / "agent" / "sessions"
+_OMP_SESSIONS = Path.home() / ".omp" / "agent" / "sessions"
 
 
 def adapter_for(agent: str):
     """Return the :class:`SessionAdapter` for ``agent``.
 
-    Claude, Kimi, Goose, OpenCode, Codex and pi use direct adapters (file- or
+    Claude, Kimi, Goose, OpenCode, Codex, pi and omp use direct adapters (file- or
     SQLite-backed); every other agent that has a ``sio.search.cli`` parser
     uses the generic search-backed adapter. Unknown agents raise
     NotImplementedError.
@@ -59,6 +60,11 @@ def adapter_for(agent: str):
         from sio.adapters.pi.adapter import PiAdapter
 
         return PiAdapter()
+
+    if agent == "omp":
+        from sio.adapters.omp.adapter import OmpAdapter
+
+        return OmpAdapter()
 
     from sio.search.cli import PARSERS
 
@@ -146,6 +152,22 @@ def manifest_from_handle(handle: str) -> SessionManifest | None:
         path = matches[-1]
         return SessionManifest(
             agent="pi",
+            native_id=path.stem,
+            kind="file",
+            path=str(path),
+            encoding="jsonl",
+        )
+
+    if agent == "omp":
+        # Same file-stem / uuid-substring resolution as pi.
+        matches = sorted(_OMP_SESSIONS.rglob(f"{native}.jsonl"))
+        if not matches:
+            matches = sorted(_OMP_SESSIONS.rglob(f"*{native}*.jsonl"))
+        if not matches:
+            return None
+        path = matches[-1]
+        return SessionManifest(
+            agent="omp",
             native_id=path.stem,
             kind="file",
             path=str(path),

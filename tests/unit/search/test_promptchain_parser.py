@@ -16,8 +16,6 @@ import json
 import sqlite3
 from pathlib import Path
 
-import pytest
-
 
 def _make_fixture(home: Path) -> str:
     """Create ~/.promptchain/sessions/<uuid>/messages.jsonl + sessions.db.

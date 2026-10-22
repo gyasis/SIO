@@ -1,8 +1,8 @@
 # Use Case: Validating a Risky Config Change Before & After Apply
 
-**Scenario class:** You've written a small script that mutates a piece of agent infrastructure (an MCP server registry, a hook config, a shell rc fragment, a CI workflow file). It dry-runs cleanly. You want SIO to help you (a) sanity-check the assumptions before you flip `--apply`, and (b) catch regressions in the first few sessions after it lands.
+**Scenario class:** You've written a small script that mutates a piece of agent infrastructure. Examples are an MCP server registry, a hook config, a shell rc fragment, or a CI workflow file. It dry-runs cleanly. You want SIO to help you in two ways. First, (a) sanity-check the assumptions before you flip `--apply`. Second, (b) catch regressions in the first few sessions after it lands.
 
-This is the bread-and-butter loop SIO is built for: **mine prior sessions for ground truth, then mine future sessions for outcome.**
+This is the bread-and-butter loop SIO exists for: **mine prior sessions for ground truth, then mine future sessions for outcome.**
 
 ---
 
@@ -15,7 +15,7 @@ You have a script `regen-config-entries.py` that regenerates N entries in a JSON
 - Has an `--apply` mode (atomic write + `.bak.<tag>` sibling)
 - Is idempotent
 
-Dry-run looks correct. Three new entries would be added, zero modified, zero removed. The change is small and reversible — but the config file is loaded by every future agent session, so a mistake propagates silently. You want a second opinion before you commit.
+Dry-run looks correct. The script would add three new entries, change zero, and remove zero. The change is small and reversible — but every future agent session loads the config file, so a mistake propagates silently. You want a second opinion before you commit.
 
 You also have a parallel PRD describing a "wrapper-as-proxy" alternative if Option 1 (the slug-pinned entries this script writes) gets noisy in practice.
 
@@ -48,7 +48,7 @@ sio search "<keywords of the change>" --recent 30 --files
 # e.g. "idempotent JSON config edit with atomic rename and .bak sibling"
 ```
 
-`/sio-recall` runs over distilled sessions — successful past flows that have been compressed into reusable playbooks. If the pattern exists, it returns the exact tool order (backup → write-temp → fsync → rename → verify) so you can compare your script's order against it. If it doesn't exist, that's a signal you might want to codify *this* session once the change lands (`/sio-codify-workflow`).
+`/sio-recall` runs over distilled sessions — successful past flows that SIO compressed into reusable playbooks. If the pattern exists, it returns the exact tool order (backup → write-temp → fsync → rename → verify) so you can compare your script's order against it. If it doesn't exist, that's a signal you might want to codify *this* session once the change lands (`/sio-codify-workflow`).
 
 #### 3. What tool sequence has actually worked for changes like this?
 
@@ -74,7 +74,7 @@ If all three agree, ship. If two of three disagree with what your script does, s
 /sio-scan --recent 1 --grep "<keywords>"
 ```
 
-`/sio-scan` mines the last N days of sessions for error events, repeated attempts, and `user_correction` markers. Run it 24 hours after the apply with grep tuned to the surface you changed.
+`/sio-scan` mines the last N days of sessions for error events, repeated tries, and `user_correction` markers. Run it 24 hours after the apply with grep tuned to the surface you changed.
 
 - **0 hits** → the change is invisible to the agent, which is the goal.
 - **A few hits, all expected** → noted, but acceptable (e.g. one stale session caught a transition).
@@ -98,7 +98,7 @@ The non-error signal. If the user said "no that's not what I meant" or "use the 
 sio trend --grep "<new entry name>" --windows 14
 ```
 
-`sio trend` shows pattern-cluster growth over time. After a week, you want to see calls trending up on the new code path and trending flat/down on the old one. If usage is split or still flowing through the legacy path, the new entries aren't being picked up — which usually means either a CLI/loader cache issue or a missing migration step.
+`sio trend` shows pattern-cluster growth over time. After a week, you want to see calls trending up on the new code path and trending flat/down on the old one. If usage is split or still flowing through the legacy path, the agent isn't picking up the new entries. This usually means either a CLI/loader cache issue or a missing migration step.
 
 #### 7. Do existing rules still hold under the new behavior?
 
@@ -106,7 +106,7 @@ sio trend --grep "<new entry name>" --windows 14
 /sio-violations --rule "<rule key>"
 ```
 
-If you have CLAUDE.md rules that touch the surface you just modified (e.g. "always pass `_slug` to MCP calls"), `/sio-violations` shows which sessions in the last N days ignored them. After a config change, this is the canary for "did the agent revert to old habits because the rule was tied to the old surface?"
+You may have CLAUDE.md rules that touch the surface you just changed (e.g. "always pass `_slug` to MCP calls"). For those rules, `/sio-violations` shows which sessions in the last N days ignored them. After a config change, this is the canary for one question. Did the agent revert to old habits? The rule might belong to the old surface.
 
 #### 8. Are the rules you wrote actually reducing errors?
 
@@ -114,7 +114,7 @@ If you have CLAUDE.md rules that touch the surface you just modified (e.g. "alwa
 /sio-velocity --rule "<rule key>"
 ```
 
-`/sio-velocity` is the empirical post-condition: error rate on a given pattern **before** the rule was applied vs **after**. If you wrote a rule to lock in the change (e.g. "always use the slug-pinned entry"), velocity tells you whether errors on that pattern are dropping. If they're not, the rule isn't biting and needs rewording — or the change itself wasn't the right one.
+`/sio-velocity` is the empirical post-condition. It reports the error rate on a given pattern **before** you applied the rule vs **after**. If you wrote a rule to lock in the change (e.g. "always use the slug-pinned entry"). Velocity tells you whether errors on that pattern are dropping. If they're not, the rule isn't biting and needs rewording. Or the change itself was wrong.
 
 ---
 
@@ -164,7 +164,7 @@ sio trend --grep "<new identifier>" --windows 7
 
 ## Why this loop matters
 
-The thing SIO catches that nothing else catches: **silent success → eventual friction**. The config change *works* in the sense that no exception is thrown. But it shifts the agent's default path in a way that surfaces a week later as "why is the agent always picking the wrong slug?" or "why does this hook never fire on the new project?"
+SIO catches one thing that nothing else catches: **silent success → eventual friction**. The config change *works* in the sense that no exception is thrown. But it shifts the agent's default path. A week later this surfaces as "why is the agent always picking the wrong slug?" Or it surfaces as "why does this hook never fire on the new project?"
 
 `/sio-scan`, `/sio-flows`, and `sio trend` are what turn that lag into a 24-hour feedback loop instead of a one-week regret loop.
 

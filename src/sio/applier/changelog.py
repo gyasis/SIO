@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+
 from sio.core.paths import sio_home as _default_sio_home
 
 _DEFAULT_CHANGELOG = str(_default_sio_home() / "changelog.md")

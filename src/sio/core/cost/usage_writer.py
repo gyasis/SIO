@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import threading
 from datetime import datetime, timezone
+
 from sio.core.paths import sio_home as _default_sio_home
 
 USAGE_LOG = _default_sio_home() / "usage.log"
@@ -58,7 +59,8 @@ def summarize(since_days: int = 7) -> dict:
 
     by_model: dict[str, dict] = {}
     by_day: dict[str, dict] = {}
-    total_cost = 0.0; total_calls = 0
+    total_cost = 0.0
+    total_calls = 0
 
     with open(USAGE_LOG) as f:
         for line in f:
@@ -68,7 +70,8 @@ def summarize(since_days: int = 7) -> dict:
                 continue
             if cutoff_iso and e.get("ts", "") < cutoff_iso:
                 continue
-            m = e["model"]; day = e["ts"][:10]
+            m = e["model"]
+            day = e["ts"][:10]
             for d, k in ((by_model, m), (by_day, day)):
                 slot = d.setdefault(k, {"calls": 0, "in_tok": 0, "out_tok": 0, "cost": 0.0})
                 slot["calls"] += 1

@@ -44,6 +44,7 @@ SOURCES: list[tuple[str, str]] = [
     ("codex/history.jsonl", ".codex/history.jsonl"),
     ("gemini/tmp", ".gemini/tmp"),
     ("pi/sessions", ".pi/agent/sessions"),
+    ("omp/sessions", ".omp/agent/sessions"),
     ("kimi/sessions", ".kimi-code/sessions"),
     ("promptchain/sessions", ".promptchain/sessions"),
     ("goose/sessions", ".local/share/goose/sessions"),

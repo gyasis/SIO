@@ -24,7 +24,18 @@ import sqlite3
 
 import pytest
 
-from sio.suggestions.generator import generate_suggestions
+# _TARGET_FILE_MAP (Audit Round 2 C-R2.6 migration): the test's
+# valid-change-type set was a hand-maintained copy of an earlier DSPy-output
+# taxonomy (the 7 LLM-chooseable target_surface values). Production routing
+# (generator._infer_change_type + _TARGET_FILE_MAP) supports a different set
+# including `tool_rule` and `domain_rule` for tool- and domain-specific rule
+# files. Import from the source of truth so the test can't drift again.
+from sio.suggestions.generator import (
+    _TARGET_FILE_MAP as _PROD_CHANGE_TYPES,
+)
+from sio.suggestions.generator import (
+    generate_suggestions,
+)
 
 # ---------------------------------------------------------------------------
 # Module-level constants
@@ -42,15 +53,6 @@ _REQUIRED_SUGGESTION_KEYS: frozenset[str] = frozenset(
         "status",
     }
 )
-
-# Audit Round 2 C-R2.6 migration: the test's valid-change-type set was a
-# hand-maintained copy of an earlier DSPy-output taxonomy (the 7 LLM-
-# chooseable target_surface values). Production routing
-# (generator._infer_change_type + _TARGET_FILE_MAP) supports a different
-# set including `tool_rule` and `domain_rule` for tool- and
-# domain-specific rule files. Import from the source of truth so the
-# test can't drift from production again.
-from sio.suggestions.generator import _TARGET_FILE_MAP as _PROD_CHANGE_TYPES
 
 # generate_suggestions falls through to a real DSPy LM call — opt-in only.
 pytestmark = pytest.mark.network

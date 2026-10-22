@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import click
+
 from sio.core.paths import sio_home as _default_sio_home
 
 _RUNS_DIR = _default_sio_home() / "runs"

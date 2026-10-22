@@ -6,6 +6,7 @@ import logging
 import os
 import tomllib
 from dataclasses import dataclass
+
 from sio.core.paths import sio_home as _default_sio_home
 
 logger = logging.getLogger(__name__)

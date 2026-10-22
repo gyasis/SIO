@@ -22,6 +22,7 @@ import traceback
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Optional
+
 from sio.core.paths import sio_home as _default_sio_home
 
 _RUNS_DIR = _default_sio_home() / "runs"

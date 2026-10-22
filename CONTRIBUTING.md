@@ -54,7 +54,7 @@ sio init --status                # show what is installed vs packaged
 
 `sio init` copies the bundled content from `skills/`, `rules/`, and `docs/` (bundled
 via `pyproject.toml`'s `force-include`) into your harness config (e.g. `~/.claude/`).
-Re-running is safe — user-modified files are preserved unless `--force` is passed.
+Re-running is safe — `sio init` keeps user-modified files unless you pass `--force`.
 
 ---
 
@@ -88,20 +88,36 @@ ruff check .                     # check
 ruff check --fix .               # auto-fix safe violations
 ```
 
-Rules are the ruff defaults. Keep the files you TOUCH clean: repo-wide
-`ruff check .` does not yet exit 0 (81 findings on 2026-10-16, a known backlog),
-so it is informational in `make ci` rather than a gate. `make lint-strict` is the
-hard version, for when that backlog is cleared.
+Rules live in `ruff.toml`: `line-length = 99`, `select = ["E", "F", "I", "W"]`,
+and E501 off for tests. `ruff check .` exits 0 as of 2026-10-22, so `make ci`
+gates on it. A new finding is a regression — fix the finding, do not soften
+the gate. The 81-finding backlog that once made this informational is gone;
+`docs/code-quality-baseline.md` records what it held.
 
 ### Local CI
 
 There is **no GitHub Actions workflow** — CI runs on your machine before a merge:
 
 ```bash
-make ci            # lint (informational) + the default test suite
+make ci            # ruff (hard gate) + the default test suite
 make test          # just the suite
-make lint-strict   # the hard lint gate
+make lint          # just ruff
 ```
+
+### Prose
+
+`ste-lint` scores prose against an ASD-STE100 rule set, with this repo's
+`ste-glossary.txt` to shield real names such as `Rich`, `error` and `tool`:
+
+```bash
+make ste FILE=docs/your-page.md          # score one file
+make ste-report FILE=docs/your-page.md   # exit 1 if that file scores >= 2.0
+```
+
+This is not in `make ci`. The first-party baseline is 9.16 violations per 100
+verbs against a 2.0 target. A repo-wide gate would fail for prose nobody is
+touching. Score the files you edit. `docs/code-quality-baseline.md` holds the
+baseline and the scope decisions behind it.
 
 Report those local results on the PR. A missing or failed GitHub Actions check is
 not a merge blocker here, because there is no workflow to run.
@@ -152,7 +168,7 @@ To add a new feature:
    - `PRD.md` — problem statement, user stories, acceptance criteria
    - `tasks.md` — implementation tasks (used by the dev-kid orchestrator)
    - `contracts/` — API contracts for new DSPy modules or CLI commands
-2. Implement in `src/sio/`; wire the new CLI command into `src/sio/cli/main.py`.
+2. Write the code in `src/sio/`; wire the new CLI command into `src/sio/cli/main.py`.
 3. Add tests in `tests/unit/` and `tests/integration/`.
 4. Update `CHANGELOG.md` under `## [Unreleased]`.
 
@@ -160,7 +176,7 @@ To add a new feature:
 
 ## Adding a new CLI command
 
-All commands are registered on the `cli` Click group in `src/sio/cli/main.py`.
+All commands attach to the `cli` Click group in `src/sio/cli/main.py`.
 The pattern from existing commands:
 
 ```python
@@ -183,10 +199,10 @@ def my_command_cmd(thing: str, dry_run: bool) -> None:
 
 Key conventions:
 
-- **Import inside the function body** — `sio.cli.main` is imported at startup; lazy
+- **Import inside the function body** — startup imports `sio.cli.main`; lazy
   imports keep cold-start fast and prevent circular import errors.
-- **Always honor `SIO_DB_PATH`** — use `os.environ.get("SIO_DB_PATH", ...)` rather than
-  hardcoding `~/.sio/sio.db` (42 sites were swept for exactly this in v0.3.0).
+- **Always honor `SIO_DB_PATH`** — use `os.environ.get("SIO_DB_PATH", ...)`. Never
+  hardcode `~/.sio/sio.db` (42 sites were swept for exactly this in v0.3.0).
 - **Decorate with `@runlogged`** — this writes a JSONL run-log to `~/.sio/runs/` and
   enables `sio runs` to surface per-stage timings and LLM call accounting.
 - **Sub-groups** (e.g. `ground-truth`, `datasets`, `config`, `schedule`) use
@@ -222,8 +238,8 @@ Resolution order for each role (env override → `~/.sio/config.toml` → hard d
 | task | `SIO_TASK_LM` | `gemini/gemini-flash-latest` |
 | reflection | `SIO_REFLECTION_LM` | `gemini/gemini-pro-latest` |
 
-Models listed in `[llm.banned].models` in `~/.sio/config.toml` are refused at
-construction time (see `cost-control.md` — `gpt-4o` is permanently banned).
+SIO refuses models listed in `[llm.banned].models` in `~/.sio/config.toml` at
+construction time (see `cost-control.md` — `gpt-4o` is on the permanent ban list).
 
 ---
 
@@ -247,12 +263,12 @@ pulling new hook changes.
 Before opening a pull request:
 
 - [ ] `pytest` passes (unit + integration)
-- [ ] `ruff check .` exits 0 (no lint violations)
+- [ ] `make ci` passes (`ruff check .` exits 0, and the suite is green)
 - [ ] New CLI commands have `@runlogged` and honor `SIO_DB_PATH`
 - [ ] No bare `dspy.LM(...)` calls outside `lm_factory.py`
 - [ ] CHANGELOG.md updated under `## [Unreleased]` with a brief entry
-- [ ] If the change adds or modifies a DSPy module, the `tests/contract/` tests cover it
-- [ ] If the change touches a spec feature, the corresponding `specs/NNN-*/` task is updated
+- [ ] If the change adds or changes a DSPy module, the `tests/contract/` tests cover it
+- [ ] If the change touches a spec feature, the corresponding `specs/NNN-*/` task has an update
 
 ---
 

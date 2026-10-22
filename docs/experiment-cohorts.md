@@ -1,10 +1,10 @@
 # Experiment Cohorts (`sio experiment`)
 
-Bookmark a window around a config/prompt/tooling change, then measure how
+Bookmark a window around a config/prompt/tooling change. Then measure how
 it affected your agent — error rates, error classes, and tool-flow
-patterns — A/B against a prior baseline. **No debug instrumentation
-required:** SIO already captures every tool call (hook DB) and every
-session (JSONL); this feature just *labels* a slice of that stream so you
+patterns — A/B against a prior baseline. **You need no debug instrumentation:**
+SIO already captures every tool call (hook DB) and every
+session (JSONL). This feature just *labels* a slice of that stream so you
 can talk about it cleanly.
 
 > **Naming caution.** SIO has two unrelated things called "experiment":
@@ -21,12 +21,12 @@ can talk about it cleanly.
 ## The problem it solves
 
 You change your system prompt / CLAUDE.md, add a skill, or wire a new
-hook, and you want clean data on whether it helped — *without* hand-rolling
+hook. You want clean data on whether it helped — *without* hand-rolling
 debug scripts or remembering the exact date and grep tokens later.
 
 The raw telemetry is already there. What was missing was a first-class way
-to say *"this dataset is about my new thing,"* snapshot the config it ran
-under, and diff it against how things looked before. That's the cohort.
+to say *"this dataset is about my new thing."* The cohort also snapshots the config it ran
+under. It diffs that config against how things looked before. That's the cohort.
 
 ---
 
@@ -79,7 +79,7 @@ Three formats via `--format`:
 
 ## Scope filter — `--experiment NAME`
 
-Any of these commands can be narrowed to a cohort's window:
+You can limit any of these commands to a cohort's window:
 
 ```bash
 sio mine     --experiment sysprompt-v2     # mine just that window (resolves --since for you)
@@ -100,9 +100,9 @@ with `--by-rule`.)
 | Table | Columns | Notes |
 |---|---|---|
 | `experiments` | `name (unique)`, `start_ts`, `close_ts`, `note`, `config_hash`, `project`, `status` | One row per cohort. `status ∈ {open, closed}`. |
-| `experiment_runs` | `event_id`, `experiment_name`, `source_table` | Join table. Events are tagged by **timestamp window at query time** — the source tables (`behavior_invocations`, `error_records`, `flow_events`, …) are never mutated in place. |
+| `experiment_runs` | `event_id`, `experiment_name`, `source_table` | Join table. SIO tags events by **timestamp window at query time** — it never mutates the source tables (`behavior_invocations`, `error_records`, `flow_events`, …) in place. |
 
-Schema is brought up by `migrate_005_experiments()` (wired into
+`migrate_005_experiments()` creates the schema (wired into
 `src/sio/core/db/bootstrap.py`); `init_db()` also creates the tables on
 fresh installs.
 

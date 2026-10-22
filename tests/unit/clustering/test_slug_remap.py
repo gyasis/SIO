@@ -221,7 +221,7 @@ def test_remap_is_idempotent(db, db_path):
 
     _seed_pattern(db, old_slug, error_ids)
     _seed_pattern(db, new_slug, error_ids)  # 100% overlap
-    gt_ids = _seed_ground_truth(db, old_slug, n=2)
+    _seed_ground_truth(db, old_slug, n=2)
 
     summary1 = remap_slugs(db, dry_run=False)
     summary2 = remap_slugs(db, dry_run=False)

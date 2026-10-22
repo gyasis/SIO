@@ -23,8 +23,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sio.promote_rule.extractor import DetectionPattern
 from sio.core.paths import db_path as _default_db_path
+from sio.promote_rule.extractor import DetectionPattern
 
 # ---------------------------------------------------------------------------
 # Hook script template — string formatted with the rule + detection details.

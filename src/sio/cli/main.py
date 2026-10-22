@@ -12,10 +12,11 @@ import click
 
 from sio.core.constants import DEFAULT_PLATFORM
 from sio.core.observability import log_failure
+from sio.core.paths import db_path as _default_db_path
+from sio.core.paths import sio_home as _default_sio_home
 from sio.core.runlog import current as _runlog_current
 from sio.core.runlog import runlogged
 from sio.core.session_handle import KNOWN_AGENTS as _KNOWN_AGENTS
-from sio.core.paths import db_path as _default_db_path, sio_home as _default_sio_home
 
 _DEFAULT_DB_DIR = str(_default_sio_home() / DEFAULT_PLATFORM)
 
@@ -1123,11 +1124,11 @@ def _warn_if_agent_migration_pending(conn) -> None:
 @click.option("--project", default=None, help="Filter by project name.")
 @click.option(
     "--agent",
-    type=click.Choice(["claude", "codex", "gemini", "goose", "pi"]),
+    type=click.Choice(["claude", "codex", "gemini", "goose", "pi", "omp"]),
     default="claude",
     help=(
         "Which coding agent's sessions to mine in bulk. 'claude' uses the "
-        "native JSONL/SpecStory scan; codex/gemini/goose/pi enumerate that "
+        "native JSONL/SpecStory scan; codex/gemini/goose/pi/omp enumerate that "
         "agent's store via the sio search parsers (content-level errors, "
         "plus harness-flagged tool failures where the parser carries them -- pi "
         "does). Ignored when --session is given."
@@ -9334,7 +9335,10 @@ def db_migrate(db_path):
 @click.option(
     "--db-path",
     default=None,
-    help="Path to the SIO database (default: $SIO_DB_PATH or $SIO_HOME/sio.db, $SIO_HOME default ~/.sio).",
+    help=(
+        "Path to the SIO database (default: $SIO_DB_PATH or $SIO_HOME/sio.db, "
+        "$SIO_HOME default ~/.sio)."
+    ),
 )
 @click.option(
     "--yes",

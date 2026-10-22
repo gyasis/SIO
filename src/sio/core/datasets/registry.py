@@ -6,7 +6,9 @@ import shutil
 import sqlite3
 from pathlib import Path
 from typing import Optional
-from sio.core.paths import db_path as _default_db_path, sio_home as _default_sio_home
+
+from sio.core.paths import db_path as _default_db_path
+from sio.core.paths import sio_home as _default_sio_home
 
 DATASETS_DIR = _default_sio_home() / "datasets"
 

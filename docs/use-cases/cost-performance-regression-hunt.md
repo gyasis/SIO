@@ -1,6 +1,6 @@
 # Use Case: Hunting a Cost or Performance Regression
 
-**Scenario class:** Your monthly API bill jumped without an obvious cause, OR a workflow that used to take 10 minutes now takes 40, OR token usage per session has crept up week-over-week. You don't have an APM tool that ties LLM spend to agent intent — but you do have SIO, which has timestamps, tool-call counts, sequences, and content hashes for every prior session. That's enough to do forensic archaeology without grepping logs by hand.
+**Scenario class:** Your monthly API bill jumped without an obvious cause, OR a workflow that used to take 10 minutes now takes 40, OR token usage per session has crept up week-over-week. You don't have an APM tool that ties LLM spend to agent intent. But you do have SIO. SIO has timestamps, tool-call counts, sequences, and content hashes for every prior session. That's enough to do forensic archaeology without grepping logs by hand.
 
 This use case is the inverse of the config-change loop: instead of validating a known change, you're hunting a change you didn't notice you made.
 
@@ -31,7 +31,7 @@ sio trend --windows 30 --daily
 sio trend --grep "<expensive tool or model name>" --windows 30 --daily
 ```
 
-`sio trend` buckets pattern clusters per day (or per week with `--weekly`). The unfiltered view shows which clusters grew. The grep'd view shows whether a specific tool or model class (e.g. "expensive model X" calls, "deep research" calls, retry-heavy patterns) is the one trending up.
+`sio trend` buckets pattern clusters per day (or per week with `--weekly`). The unfiltered view shows which clusters grew. The grep'd view shows whether one specific tool or model class is trending up. Examples are "expensive model X" calls, "deep research" calls, and retry-heavy patterns.
 
 > **Rule of thumb:** if `sio trend --windows 30 --daily` shows a cluster doubling in the last 7 days, that cluster is your suspect. Cost regressions almost always show up as a single dominant cluster growing, not a uniform shift.
 
@@ -44,7 +44,7 @@ sio search "<expensive model name>" --recent 60 --count
 
 The simplest possible diff. Compare the count for the last 30 days against the count for the 30 before that (run the second query, subtract). If you went from 12 calls/month to 180 calls/month, you have your answer — something is now routing through expensive model X by default.
 
-This also catches the case where the trend is invisible at the cluster level because the calls are spread across many session types — but the *raw count* still doubled.
+This also catches the case where the trend is invisible at the cluster level. The calls are spread across many session types, but the *raw count* still doubled.
 
 #### 3. Has any cost-related rule started getting violated?
 
@@ -53,7 +53,7 @@ This also catches the case where the trend is invisible at the cluster level bec
 /sio-violations --rule "<other cost-control rule key>"
 ```
 
-If you have rules in `~/.claude/rules/domains/cost-control.md` (e.g. "never use expensive model X as default fallback"), `/sio-violations` shows how often those rules were ignored over the last N days. A rule that was at 0 violations/week and is now at 4/week is a smoking gun.
+You may have rules in `~/.claude/rules/domains/cost-control.md` (e.g. "never use expensive model X as default fallback"). For those, `/sio-violations` shows how often sessions ignored them over the last N days. A rule that was at 0 violations/week and is now at 4/week is a smoking gun.
 
 ### Phase 2 — Localize the regression (which workflow, which tool)
 
@@ -64,9 +64,9 @@ If you have rules in `~/.claude/rules/domains/cost-control.md` (e.g. "never use 
 # e.g. "morning sync workflow" or "code review subagent"
 ```
 
-`/sio-flows` returns the recurring positive tool sequence for that workflow. Compare what you see today against what you remember (or against what the same query returned a month ago — check `~/.sio/previews/` or your shell history for the prior run).
+`/sio-flows` returns the recurring positive tool sequence for that workflow. Compare what you see today against what you remember. You can also compare against what the same query returned a month ago. Check `~/.sio/previews/` or your shell history for the prior run.
 
-The common regression: a workflow that used to be `read → edit → bash` (3 calls) is now `read → search → read → search → edit → bash → bash → read` (8 calls). Same outcome, 2-3× the tokens. Usually caused by an over-eager retry rule, a newly-installed hook that fires extra searches, or a subagent being spawned where it didn't used to be.
+The common regression: a workflow that used to be `read → edit → bash` (3 calls) is now `read → search → read → search → edit → bash → bash → read` (8 calls). Same outcome, 2-3× the tokens. Usual causes are an over-eager retry rule, a newly-installed hook that fires extra searches, or a subagent that the workflow now spawns.
 
 #### 5. Did error retries spike (more retries = more tokens = more cost)?
 
@@ -90,9 +90,9 @@ ORDER BY day DESC, calls DESC;
 EOF
 ```
 
-The per-platform DB is the floor of truth. Every tool call the hook layer saw is in there with a timestamp. If `sio trend` and `/sio-flows` give you a suspect, this query confirms it at the raw-call level — and lets you see the exact day the regression started, which is usually within 24 hours of whatever change caused it.
+The per-platform DB is the floor of truth. Every tool call the hook layer saw is in there with a timestamp. If `sio trend` and `/sio-flows` give you a suspect, this query confirms it at the raw-call level. It also shows the exact day the regression started. That day is usually within 24 hours of whatever change caused it.
 
-Knowing the start date is the unlock. Once you have it, `git log --since` on `~/.claude/` and `~/.claude.json` will surface the offending commit.
+Knowing the start date is the key. Once you have it, `git log --since` on `~/.claude/` and `~/.claude.json` will surface the offending commit.
 
 ### Phase 3 — Verify the fix
 
@@ -108,7 +108,7 @@ You wrote a rule (or rolled back a config). The fix is real if and only if:
 - `sio trend` shows the suspect cluster going flat or shrinking over the next 7 days.
 - `/sio-velocity` on any new rule you added shows error/violation rate trending toward zero.
 
-If trend is flat after 7 days, the regression is fixed. If it's still climbing, your fix didn't bind — the rule isn't being enforced, or the rollback missed the actual cause.
+If trend is flat after 7 days, you fixed the regression. If it's still climbing, your fix didn't bind. The rule is not in force, or the rollback missed the actual cause.
 
 ---
 
@@ -161,7 +161,7 @@ sio trend --grep "<suspect cluster>" --windows 14 --daily
 
 No APM tool tracks LLM token cost by **agent intent**. They track HTTP calls, tokens-in/tokens-out, latency. They don't tell you "the morning-sync workflow doubled in cost because a hook started spawning a code-review subagent on every commit."
 
-SIO does, because SIO tracks **tool sequences tied to session intent**, not just isolated API calls. The unit of analysis is the workflow, not the request. That's what makes a 30-day backward look forensically useful: you can ask "what did sessions look like in week 1 vs week 5" and get a structural answer, not a token-count answer.
+SIO does, because SIO tracks **tool sequences tied to session intent**, not just isolated API calls. The unit of analysis is the workflow, not the call. That's what makes a 30-day backward look forensically useful. You can ask "what did sessions look like in week 1 vs week 5" and get a structural answer, not a token-count answer.
 
 The other thing this catches: cost regressions where no individual session is anomalous. Every session is +10% more expensive than it used to be. You'd never spot that in a per-request log. You spot it instantly in `sio trend`.
 
@@ -171,7 +171,7 @@ The other thing this catches: cost regressions where no individual session is an
 
 - **Not a billing dashboard.** SIO doesn't know your prices, your provider's tier, or your actual dollar spend. It tells you *what shifted in agent behavior* — you map that to dollars yourself.
 - **Not real-time.** The regression needs at least a few days of post-shift sessions to be visible in the trend. Don't expect to catch a cost spike the same hour it starts.
-- **Doesn't catch costs from non-Claude-Code surfaces.** If you're running a separate background daemon, a CI job that calls an LLM API, or an external automation — SIO can't see those calls. Only sessions that route through the Claude Code hook layer get telemetry.
+- **Doesn't catch costs from non-Claude-Code surfaces.** SIO can't see calls from a separate background daemon, a CI job that calls an LLM API, or an external automation. Only sessions that route through the Claude Code hook layer get telemetry.
 - **Not a substitute for setting hard budget caps.** Detection is reactive. Pair this loop with provider-level spend limits.
 
 ---

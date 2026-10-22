@@ -1,12 +1,12 @@
 # Cookbook
 
-Real-world recipes for common SIO workflows. Each recipe has been tested against live Claude Code session data.
+Real-world recipes for common SIO workflows. We tested each recipe against live Claude Code session data.
 
 ---
 
 ## Story 1: "What's my agent doing wrong?"
 
-You suspect Claude keeps making the same mistakes. Find out in 30 seconds.
+You suspect Claude keeps making the same mistakes. Learn it in 30 seconds.
 
 ```bash
 # Mine the last week of Claude sessions
@@ -145,7 +145,7 @@ sio suggest --type tool_failure
 
 ## Story 5: "Review and approve a suggestion"
 
-Once suggestions are generated, review them interactively.
+After SIO generates suggestions, review them interactively.
 
 ```bash
 sio suggest-review
@@ -167,7 +167,7 @@ sio reject 43 --note "too generic, need more data"
 
 ## Story 6: "Focus on a specific MCP tool's failures"
 
-SIO catches errors from all MCP tools — Graphiti, Atlassian, DuckDB, Tableau, etc.
+SIO captures problems from all MCP tools — Graphiti, Atlassian, DuckDB, Tableau, etc.
 
 ```bash
 # See patterns for all errors, then look for MCP tools
@@ -232,11 +232,11 @@ sio suggest --type agent_admission --min-examples 2
 sio errors --type user_correction -n 10
 ```
 
-Shows the exact phrases where users corrected the agent: "no, that's wrong", "I meant X", "not what I wanted", etc. These surface misunderstandings between user intent and agent behavior.
+Shows the exact phrases where users corrected the agent. Examples: "no, that's wrong", "I meant X", "not what I wanted", etc. These phrases show misunderstandings between user intent and agent behavior.
 
 ---
 
-## Story 9: "Undo tracking — what changes should never have been made"
+## Story 9: "Undo tracking — which changes the agent should never have made"
 
 ```bash
 sio errors --type undo
@@ -258,7 +258,7 @@ Every time a user said "undo that", "revert that", "git checkout", or "roll back
 
 ## Story 10: "Sibling tool call cascade — the Claude Code bug"
 
-A known Claude Code bug: when parallel tool calls are dispatched and one fails, all siblings are cancelled. SIO detects these automatically.
+A known Claude Code bug: when the agent dispatches parallel tool calls and one fails, Claude Code cancels all siblings. SIO detects these automatically.
 
 ```bash
 sio patterns
@@ -285,7 +285,7 @@ sio patterns
 
 ## Story 11: "Repo development — live feedback while coding"
 
-This is the power play. Run SIO against the project you're actively developing to discover what structural changes are needed — not after the fact, but while you're building.
+This is the power play. Run SIO against the project you're developing. It shows which structural changes the project needs — not after the fact, but while you build.
 
 **Scenario**: You're building a new feature with Claude Code. After a few hours of coding, you want to know what's going wrong in the agent's interactions with your codebase.
 
@@ -299,9 +299,9 @@ sio errors --type tool_failure -n 20
 
 **What you learn from the errors:**
 
-The errors tell you about your code structure:
-- **Repeated `Read` failures** on certain paths → your file organization is confusing the agent
-- **`Edit` failures** with "old_string not unique" → your code has duplicated blocks that need refactoring
+These results tell you about your code structure:
+- **`Read` calls that keep failing** on certain paths → your file organization is confusing the agent
+- **`Edit` calls that fail** with "old_string not unique" → your code has duplicated blocks that need refactoring
 - **Bash test failures** happening 3+ times → your test setup has a gap
 - **Agent admissions** like "I missed the import" → your module structure has implicit dependencies
 
@@ -354,7 +354,7 @@ Generate CLAUDE.md rules for your repo → Agent works better →
 Write more code → repeat
 ```
 
-This turns SIO from a post-hoc analysis tool into a **live development companion** that tells you where your codebase is hard for an AI agent to work with.
+This turns SIO from a post-hoc analysis tool into a **live development companion**. It tells you where your codebase is hard for an AI agent to work with.
 
 ---
 
@@ -375,15 +375,15 @@ sio errors
 
 The error type summary table is your scorecard. After applying targeted CLAUDE.md rules:
 - **repeated_attempt** should decrease (agent stops spinning)
-- **tool_failure** should decrease (preconditions are checked)
+- **tool_failure** should decrease (the agent meets preconditions)
 - **user_correction** should decrease (agent understands intent better)
-- **agent_admission** may increase initially (agent becomes more self-aware with better prompts) then decrease as root causes are fixed
+- **agent_admission** may increase initially (agent becomes more self-aware with better prompts) then decrease as you fix root causes
 
 ---
 
 ## Story 13: "Find all Databricks SQL failures across every project"
 
-This is the cross-project search story. You've been working with Databricks SQL across multiple projects — jira issues, pipelines, data work — and you want to gather every SQL failure the agent has ever hit, regardless of which project folder it lived in.
+This is the cross-project search story. You've been working with Databricks SQL across multiple projects — jira issues, pipelines, data work. You want every SQL failure the agent ever hit, regardless of which project folder it lived in.
 
 **Step 1: Mine everything**
 
@@ -418,7 +418,7 @@ Error Type Summary (matching 'databricks': 564 hits)
 └──────────────────┴───────┘
 ```
 
-564 errors across all your projects that mention Databricks. The `--grep` flag searches error text, user messages, surrounding context, AND source file paths — so it catches everything.
+564 hits across all your projects that mention Databricks. The `--grep` flag searches error text, user messages, surrounding context, AND source file paths — so it catches everything.
 
 **Step 3: Drill into the SQL failures**
 
@@ -471,7 +471,7 @@ sio errors --grep "connection refused"
 sio suggest --grep snowflake --min-examples 2
 ```
 
-**The power here**: You're not limited to project folders. Any keyword that appears anywhere in your Claude session history — error messages, user requests, agent responses, file paths — gets surfaced.
+**The power here**: You're not limited to project folders. Any keyword that appears anywhere in your Claude session history — error messages, user prompts, agent responses, file paths — appears in the results.
 
 ---
 
@@ -557,14 +557,14 @@ sio mine --since "2026-01-15"   # absolute date
 
 ## Integration with Claude Code
 
-SIO reads your existing session files — no additional setup needed:
+SIO reads your existing session files — no more setup needed:
 
 | Source | Path | Format |
 |--------|------|--------|
 | SpecStory | `~/.specstory/history/` | Markdown conversations |
 | Claude JSONL | `~/.claude/projects/` | Raw wire-format transcripts |
 
-Approved suggestions modify your `CLAUDE.md` rules, which Claude Code reads on every session start. The feedback loop is:
+Approved suggestions change your `CLAUDE.md` rules, which Claude Code reads on every session start. The feedback loop is:
 
 ```
 Claude makes mistakes → SIO mines them → clusters into patterns →

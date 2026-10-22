@@ -134,7 +134,7 @@ class TestRollbackAppliedChange:
 
         # Execute rollback
         rollback_fn, _ = _import_rollback()
-        result = rollback_fn(row_id, db_path=db_path)
+        rollback_fn(row_id, db_path=db_path)
 
         # Target must revert to original
         reverted = target.read_text(encoding="utf-8")

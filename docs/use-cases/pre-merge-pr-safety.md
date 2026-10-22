@@ -1,16 +1,16 @@
 # Use Case: Pre-Merge PR Safety on Shared Infrastructure
 
-**Scenario class:** You've opened a PR that touches a piece of code lots of downstream systems depend on — a shared model, a hook, an MCP server wiring, an auth helper, a schema migration. The diff is small. CI is green. Reviewers will nod. You still want a second opinion before merge, because the blast radius if this is wrong is "everyone's next session."
+**Scenario class:** You've opened a PR that touches a piece of code that lots of downstream systems depend on. Examples are a shared model, a hook, an MCP server wiring, an auth helper, or a schema migration. The diff is small. CI is green. Reviewers will nod. You still want a second opinion before merge. If this is wrong, the blast radius is "everyone's next session."
 
-SIO is the **prior-art layer**. It answers "have we touched this surface before, and what broke when we did?" `/adversarial-audit` is the **active layer** — it answers "what's wrong with this diff right now?" Use both. SIO goes first; adversarial-audit consumes its output.
+SIO is the **prior-art layer**. It answers "have we touched this surface before, and what broke when we did?" `/adversarial-audit` is the **active layer**. It answers "what's wrong with this diff right now?" Use both. SIO goes first. Adversarial-audit consumes its output.
 
 ---
 
 ## The story
 
-You're on a small team. The PR modifies `<file path>` — a file that gets imported by half the agent stack. There are no behavioral tests covering the exact code path you touched, because the file is infrastructure: it gets exercised implicitly by every other workflow. The reviewer's mental model of "what could break" is bounded by their memory of recent incidents. Yours is too.
+You're on a small team. The PR changes `<file path>` — a file that half the agent stack imports. There are no behavioral tests covering the exact code path you touched, because the file is infrastructure: it gets exercised implicitly by every other workflow. Memory of recent incidents limits the reviewer's mental model of "what could break". Yours has the same limit.
 
-That's the gap. The institutional memory of "we tried something like this two months ago and it silently broke X" lives in session transcripts, not in anyone's head and not in the PR description. SIO is the only thing that reads those transcripts at scale.
+That's the gap. The institutional memory of "we tried something like this two months ago and it silently broke X" lives in session transcripts. It is not in anyone's head or in the PR description. SIO is the only thing that reads those transcripts at scale.
 
 The question is: **before I hit Merge, what do prior sessions say about this surface?**
 
@@ -33,11 +33,11 @@ sio search "<file/symbol names from diff>" --all --files
 `sio search` reads JSONL session transcripts directly — free, fast, exhaustive. `--all` because for pre-merge review you want the full history of the surface, not just the last 7 days. `--files` first so you can pick which sessions to read in detail.
 
 Look for:
-- Sessions where the same file was edited and shipped cleanly → confirms the surface is well-trodden.
-- Sessions where the same file was edited and immediately reverted → that's a buried incident. Read it.
+- Sessions where someone edited the same file and shipped cleanly → confirms the surface is well-trodden.
+- Sessions where someone edited the same file and immediately reverted it → that's a buried incident. Read it.
 - Sessions that touched adjacent symbols (`<feature surface>`-related) → expands the blast radius your diff might inherit.
 
-> **Rule of thumb:** never merge a shared-infra PR without `sio search --all --files` on the changed files and the primary symbols. The cost is one query; the upside is "oh, this exact line was rolled back in March."
+> **Rule of thumb:** never merge a shared-infra PR without `sio search --all --files` on the changed files and the primary symbols. The cost is one query; the upside is "oh, someone rolled back this exact line in March."
 
 #### 2. Is there a codified pattern for this kind of change?
 
@@ -46,9 +46,9 @@ Look for:
 # e.g. "shared hook ordering" or "MCP entry add with backup"
 ```
 
-`/sio-recall` runs over distilled, curated playbooks — past successful flows that have been compressed into reusable patterns. If your diff matches a codified pattern, you can compare your implementation step-for-step. If your diff *contradicts* a codified pattern (e.g. the playbook says "always emit a `.bak` sibling before atomic rename" and your diff skips that step), stop and justify the deviation in the PR description before merge.
+`/sio-recall` runs over distilled, curated playbooks — past successful flows that SIO turned into reusable patterns. If your diff matches a codified pattern, you can compare your implementation step-for-step. Sometimes your diff *contradicts* a codified pattern. For example, the playbook says "always emit a `.bak` sibling before atomic rename" and your diff skips that step. Then stop and justify the deviation in the PR description before merge.
 
-If there's no codified pattern for this surface, that's a signal: this is high-blast-radius work that hasn't been formalized. Treat it as such.
+If there's no codified pattern for this surface, that's a signal: this is high-blast-radius work that nobody has formalized. Treat it as such.
 
 #### 3. What does a working tool sequence on this surface look like?
 
@@ -68,7 +68,7 @@ The gap between flows and recall is often where the real institutional knowledge
 /sio-scan --grep "<keywords from the diff>" --recent 30
 ```
 
-`/sio-scan` mines the last N days of sessions for error events, `repeated_attempt` markers, and `user_correction` events. Run it scoped to the keywords of your diff — file names, symbol names, the names of any new identifiers you're introducing.
+`/sio-scan` mines the last N days of sessions for error events, `repeated_attempt` markers, and `user_correction` events. Scope it to the keywords of your diff. Use file names, symbol names, and the names of any new identifiers you add.
 
 - **Zero clusters** → the surface is quiet. Lower risk.
 - **One cluster of known errors** → expected; check that your diff doesn't reintroduce them.
@@ -82,11 +82,11 @@ Bring the cluster summary into the PR description as "Prior incidents on this su
 /sio-violations --rule "<rule key>"
 ```
 
-If there are rules in CLAUDE.md that touch your surface (e.g. "always pass `_slug` to MCP calls", "never use `SELECT *`", "atomic rename + `.bak` sibling on config writes"), `/sio-violations` shows whether sessions in the last N days have been honoring them.
+Some rules in CLAUDE.md can touch your surface (e.g. "always pass `_slug` to MCP calls", "never use `SELECT *`", "atomic rename + `.bak` sibling on config writes"). For those, `/sio-violations` shows whether sessions in the last N days honored them.
 
 Two failure modes to catch pre-merge:
 - Your diff violates an active rule → the rule will start firing on you. Either fix the diff or update the rule with a justification in the PR.
-- The surface has a rule but it's already being violated regularly → the rule is dead and your diff might be reinforcing the wrong behavior. Flag it.
+- The surface has a rule but sessions already violate it regularly → the rule is dead and your diff might be reinforcing the wrong behavior. Flag it.
 
 ### Phase 3 — Hand off to `/adversarial-audit` with SIO findings as context
 
@@ -102,10 +102,10 @@ SIO's job is to **arm adversarial-audit with prior-art context** before it runs:
 
 - The session IDs from Phase 1 → adversarial-audit can read the prior incident sessions as part of its sweep.
 - The error clusters from `/sio-scan` → become targeted hunt queries ("verify this PR doesn't reintroduce <cluster pattern>").
-- The codified pattern from `/sio-recall` → becomes a deviation check ("does this diff deviate from the codified flow, and is the deviation justified?").
+- The codified pattern from `/sio-recall` → becomes a deviation test ("does this diff deviate from the codified flow, and is the deviation justified?").
 - The rule list from `/sio-violations` → becomes a compliance check.
 
-This is the multiplier. Adversarial-audit alone is "what's wrong with this diff?" SIO + adversarial-audit is "what's wrong with this diff *in the context of every prior session that touched this surface*?"
+This is the multiplier. Adversarial-audit alone asks "what's wrong with this diff?" SIO + adversarial-audit together ask a wider question. It is "what's wrong with this diff *in the context of every prior session that touched this surface*?"
 
 ---
 
@@ -135,7 +135,7 @@ sio search "<primary symbol>" --all --files
 /sio-violations --rule "<rule key>"
 ```
 
-**Gate:** no unknown error clusters on this surface in the last 30 days, and no active-rule violations introduced by the diff. If either fires, resolve before requesting review.
+**Gate:** no unknown error clusters on this surface in the last 30 days, and no active-rule violations introduced by the diff. If either fires, resolve before you ask for review.
 
 ### Phase 3: Adversarial-audit handoff
 
@@ -143,19 +143,19 @@ sio search "<primary symbol>" --all --files
 /adversarial-audit
 ```
 
-Provide SIO findings as input context: prior session IDs, error cluster summaries, codified pattern reference, rule compliance status.
+Give SIO findings as input context: prior session IDs, error cluster summaries, codified pattern reference, rule compliance status.
 
-**Gate:** adversarial-audit verdict table has zero CONFIRMED findings AND every NEEDS-TEST item has a concrete test plan. Then — and only then — request human review.
+**Gate:** adversarial-audit verdict table has zero CONFIRMED findings AND every NEEDS-TEST item has a concrete test plan. Then — and only then — ask for human review.
 
 ---
 
 ## Why this loop matters
 
-The thing SIO catches that nothing else catches pre-merge: **"we already solved this, and the solution is in a session transcript no one remembers."** Reviewers operate on recent memory. CI tests cover what someone thought to test. Adversarial-audit covers what's logically wrong with the diff *as written*. None of those layers reach into "what broke last time someone tried this exact change."
+SIO catches one thing that nothing else catches pre-merge: **"we already solved this."** The solution is in a session transcript no one remembers. Reviewers operate on recent memory. CI tests cover what someone thought to test. Adversarial-audit covers what's logically wrong with the diff *as written*. None of those layers reach into "what broke last time someone tried this exact change."
 
-For shared infrastructure, the cost of a silent regression is multiplied by every downstream consumer that picks up the new behavior. The 30 seconds of prior-art lookup converts a class of incidents from "we'll find out in a week when sessions start failing" into "we caught it before merge because sio search surfaced the March rollback."
+For shared infrastructure, a silent regression costs more with every downstream consumer that picks up the new behavior. The 30 seconds of prior-art lookup converts a class of incidents. Before: "we'll learn in a week when sessions start failing". After: "we caught it before merge because sio search surfaced the March rollback."
 
-If your PR touches anything imported by more than a couple of consumers — shared models, hooks, MCP wiring, auth, schema, any config loaded at session start — this is the loop.
+If more than a couple of consumers import something your PR touches, this is the loop. That includes shared models, hooks, MCP wiring, auth, schema, and any config loaded at session start.
 
 ---
 

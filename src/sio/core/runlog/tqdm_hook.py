@@ -24,7 +24,6 @@ def install() -> None:
     if _INSTALLED:
         return
     try:
-        import tqdm as _tqdm  # noqa: PLC0415
         from tqdm import tqdm as _tqdm_cls  # noqa: PLC0415
     except ImportError:
         return

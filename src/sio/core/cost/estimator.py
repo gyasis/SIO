@@ -19,7 +19,8 @@ PRICING: dict[str, dict[str, float]] = {
     "openai/gpt-5-mini":                    {"in": 0.25, "out": 2.00},
     "openai/gpt-5-nano":                    {"in": 0.05, "out": 0.40},
     "openai/gpt-4o-mini":                   {"in": 0.15, "out": 0.60},
-    "openai/gpt-4o":                        {"in": 2.50, "out": 10.00},  # banned, listed for cost ref
+    # gpt-4o is banned; listed only so cost comparisons stay honest.
+    "openai/gpt-4o":                        {"in": 2.50, "out": 10.00},
     # Anthropic (illustrative; SIO doesn't bill these today)
     "anthropic/claude-3-5-sonnet-20241022": {"in": 3.00, "out": 15.00},
     "anthropic/claude-sonnet-4-6":          {"in": 3.00, "out": 15.00},
@@ -119,6 +120,8 @@ def estimate_optimize_run(
             "model": est.model, "calls": est.calls,
             "low": est.low, "mid": est.mid, "high": est.high,
         }
-        total_low += est.low; total_mid += est.mid; total_high += est.high
+        total_low += est.low
+        total_mid += est.mid
+        total_high += est.high
     out["total"] = {"low": total_low, "mid": total_mid, "high": total_high}
     return out

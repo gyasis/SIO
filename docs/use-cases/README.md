@@ -1,13 +1,13 @@
 # SIO Use Cases
 
-Eight scenario-driven walkthroughs showing how to wire SIO's CLI surfaces into the work you already do. Each doc is generic (no project names, no PII) and follows the same shape: **story → phased SIO surfaces → checklist with gates → why it matters → what it's NOT → cross-references**.
+Eight scenario-driven walkthroughs showing how to wire SIO's CLI surfaces into the work you already do. Each doc is generic (no project names, no PII). Each doc follows the same shape: **story → phased SIO surfaces → checklist with gates → why it matters → what it's NOT → cross-references**.
 
 | Use Case | When to reach for it |
 |---|---|
 | [Validating a config change](validating-a-config-change.md) | You're about to `--apply` a script that mutates always-loaded infra (`~/.claude.json`, hooks, rc files, CI workflows). |
-| [Debugging a flaky tool](debugging-flaky-tool.md) | The agent has hit the same failure 3+ times. Time to stop retrying and check if this was solved before. |
+| [Debugging a flaky tool](debugging-flaky-tool.md) | The agent has hit the same failure 3+ times. Time to stop retrying and check if someone solved this before. |
 | [Pre-merge PR safety](pre-merge-pr-safety.md) | A PR touches shared infrastructure. SIO is the *prior-art* layer; pair it with `/adversarial-audit` for the active-bug layer. |
-| [Onboarding to a codebase](onboarding-to-codebase.md) | Returning to a project after weeks. SIO answers "what's been tried here and what stuck." |
+| [Onboarding to a codebase](onboarding-to-codebase.md) | Returning to a project after weeks. SIO answers "what has anyone tried here and what stuck." |
 | [Cost / performance regression hunt](cost-performance-regression-hunt.md) | Token bill or wall-clock spiked. Find which workflow drifted without manual log archaeology. |
 | [Rule lifecycle](rule-lifecycle.md) | When to codify a CLAUDE.md rule, when to audit it, when to retire it. Rules aren't free; SIO is the audit layer. |
 | [Cross-session continuity](cross-session-continuity.md) | Resume work after `/compact`, `/clear`, or a fresh shell — without re-explaining everything. |

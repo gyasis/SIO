@@ -125,7 +125,7 @@ stale_days = 30
 
 ## File System Paths
 
-These are not configurable via config.toml — they are hardcoded conventions:
+These are not configurable via config.toml — SIO hardcodes them as conventions:
 
 | Path | Purpose |
 |------|---------|
@@ -144,7 +144,7 @@ These are not configurable via config.toml — they are hardcoded conventions:
 
 Claude Code reads **every** `.md` file under `~/.claude/rules/` into **every**
 session, recursively, following symlinks. Rules placed there cost context on every
-prompt whether or not they apply. SIO therefore follows a two-directory convention:
+prompt, if they apply or not. SIO therefore follows a two-directory convention:
 
 | Directory | Loads | Put here |
 |---|---|---|
@@ -171,7 +171,7 @@ follows it and loads the whole rulebook again.
 
 ## Environment
 
-SIO requires:
+SIO needs:
 
 - **Python 3.11+**
 - **crontab** available (for `sio schedule install`)
@@ -179,7 +179,7 @@ SIO requires:
 
 ## Environment Variables
 
-All `SIO_*` variables are optional overrides. None are required for basic use — the defaults shown here are what SIO uses when the variable is unset.
+All `SIO_*` variables are optional overrides. Basic use needs none of them — the defaults shown here are what SIO uses when the variable is unset.
 
 ### Paths
 
@@ -225,7 +225,7 @@ SIO uses two LM roles: a **task LM** for forward passes (cheap, fast, cached) an
 | Variable | Type | Default | Purpose |
 |----------|------|---------|---------|
 | `SIO_BACKGROUND_MODE` | string | _(off)_ | Set to `"1"` when running from cron, systemd, or any non-interactive caller. Suppresses ANSI codes and interactive prompts, and enables implicit `--yes` on all gates. Cron installs set this automatically via the job command. |
-| `SIO_APPLY_EXTRA_ROOTS` | string | _(empty)_ | Colon-separated list of additional root directories that `sio apply` is allowed to write to. By default only `~/.claude/` is in the allowlist. Example: `SIO_APPLY_EXTRA_ROOTS=/home/user/.cursor:/home/user/.windsurf`. |
+| `SIO_APPLY_EXTRA_ROOTS` | string | _(empty)_ | Colon-separated list of more root directories that `sio apply` can write to. By default only `~/.claude/` is in the allowlist. Example: `SIO_APPLY_EXTRA_ROOTS=/home/user/.cursor:/home/user/.windsurf`. |
 
 ### Quick-start example
 

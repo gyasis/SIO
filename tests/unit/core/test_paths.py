@@ -14,8 +14,6 @@ from __future__ import annotations
 import ast
 import pathlib
 
-import pytest
-
 from sio.core.paths import db_path, sio_home
 
 SRC_ROOT = pathlib.Path(__file__).resolve().parents[3] / "src" / "sio"

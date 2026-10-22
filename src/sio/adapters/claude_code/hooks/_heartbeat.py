@@ -18,8 +18,8 @@ import os
 import sys
 from pathlib import Path
 
-from sio.core.util.time import utc_now_iso
 from sio.core.paths import sio_home as _default_sio_home
+from sio.core.util.time import utc_now_iso
 
 HEALTH_FILE: Path = _default_sio_home() / "hook_health.json"
 

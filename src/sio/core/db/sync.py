@@ -16,7 +16,8 @@ from pathlib import Path
 
 from sio.core.constants import DEFAULT_PLATFORM
 from sio.core.db.connect import open_db
-from sio.core.paths import db_path as _default_db_path, sio_home as _default_sio_home
+from sio.core.paths import db_path as _default_db_path
+from sio.core.paths import sio_home as _default_sio_home
 
 # ---------------------------------------------------------------------------
 # Path resolution (honours env overrides for testing)

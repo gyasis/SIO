@@ -29,7 +29,9 @@ from __future__ import annotations
 
 import os
 import time
-from sio.core.paths import db_path as _default_db_path, sio_home as _default_sio_home
+
+from sio.core.paths import db_path as _default_db_path
+from sio.core.paths import sio_home as _default_sio_home
 
 _DEFAULT_TTL = 6 * 3600
 # Off-session ceiling: this runs off-hours / on idle, so the cap only guards

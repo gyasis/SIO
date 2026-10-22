@@ -7,7 +7,7 @@
 
 `sio amplify -i <input.jsonl>` takes a curated JSONL (typically from `sio curate`) and synthesizes variants per row via Gemini Flash. Each variant preserves the original `pattern_id` but varies surface features (paths, tool names, line numbers, phrasing). A second Flash call judges each variant and drops those that drift to a different category.
 
-**Why it exists:** MIPROv2 and GEPA need ≥200 / ≥300 rows respectively to perform their Bayesian / reflective search reliably (Constitution XIV). Most curated datasets are ~50-100 rows. Amplification bridges that gap.
+**Why it exists:** MIPROv2 and GEPA need ≥200 / ≥300 rows respectively to run their Bayesian / reflective search reliably (Constitution XIV). Most curated datasets are ~50-100 rows. Amplification bridges that gap.
 
 **The decision you actually have to make:** `--n-per-row`. Everything else has a sensible default.
 

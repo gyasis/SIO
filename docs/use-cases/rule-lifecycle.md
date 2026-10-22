@@ -1,6 +1,6 @@
 # Use Case: The Rule Lifecycle — When to Codify, When to Let Go
 
-**Scenario class:** You just got bit by the same agent mistake for the third time this week. Your instinct is to write a CLAUDE.md rule. Sometimes that's right. Often it isn't. And the rules you wrote a month ago — are they still earning their keep, or are they quietly burning tokens and misleading future agents?
+**Scenario class:** You just got bit by the same agent mistake for the third time this week. Your instinct is to write a CLAUDE.md rule. Sometimes that's right. Often it isn't. And the rules you wrote a month ago — do they still earn their keep? Or do they quietly burn tokens and mislead future agents?
 
 Rules are not free. Every rule loaded into context costs tokens forever. A stale rule is worse than no rule because it actively misleads. SIO is what turns rule-writing from a gut decision into a data-backed one.
 
@@ -59,7 +59,7 @@ You've confirmed the cluster. Now generate the rule text from the data, not from
 /sio-suggest --grep "<same keywords>"
 ```
 
-`/sio-suggest` reads the error cluster and drafts a CLAUDE.md rule grounded in the specific failure modes. It tends to be more precise than a hand-written rule because it cites the exact phrases the agent emitted before failing.
+`/sio-suggest` reads the error cluster and drafts a CLAUDE.md rule grounded in the specific failure modes. It is usually more precise than a hand-written rule because it cites the exact phrases the agent emitted before failing.
 
 Then review before anything lands:
 
@@ -95,9 +95,9 @@ A rule that lands is not a rule that works. Two SIO surfaces tell you whether th
 /sio-violations --rule "<rule key>"
 ```
 
-`/sio-violations` finds sessions in the last N days where the rule applied but was ignored. Two readings:
+`/sio-violations` finds sessions in the last N days where the rule applied but the agent ignored it. Two readings:
 
-- **0-1 violations/month** → the rule is internalized. Good.
+- **0-1 violations/month** → the agent follows the rule on its own. Good.
 - **3+ violations/month, same rule** → the agent is reading the rule and ignoring it. Either the wording is too soft ("should" → "MUST"), the rule isn't loading in the right tier, or the cluster shifted under the rule.
 
 #### Is the rule reducing errors?
@@ -176,7 +176,7 @@ The constitution caps it at 200 lines for exactly this reason (per `~/.claude/CL
 - An old rule has to clear `/sio-velocity` and `/sio-violations`.
 - Neither is judgment. Both are evidence.
 
-When the loop is closed, the rule set stays small, sharp, and current. When the loop is open, the rule set grows, contradicts itself, and stops being read.
+When you close the loop, the rule set stays small, sharp, and current. When the loop is open, the rule set grows, contradicts itself, and agents stop reading it.
 
 ---
 
@@ -185,7 +185,7 @@ When the loop is closed, the rule set stays small, sharp, and current. When the 
 - **Not a substitute for reading what the rule actually says.** `/sio-velocity` tells you the rule is biting; it doesn't tell you it's biting *correctly*. A rule that fixes errors by steering the agent into a worse pattern still scores positive velocity. Read the rule.
 - **Not a substitute for human judgment on universal-vs-project-specific.** SIO can tell you a cluster exists across 5 sessions. It can't tell you the cluster is universal or just an artifact of one weird repo. That's your call — the admission test is yours, not the tool's.
 - **Not real-time.** Velocity needs 4+ weeks to be a stable read. Don't audit a rule the week after you wrote it; you'll get noise.
-- **Not a license to skip `/paired-debate` on architectural rules.** A rule that changes how the agent reasons (not just how it routes tools) deserves a debate, not just a `/sio-suggest` draft.
+- **Not a license to skip `/paired-debate` on architectural rules.** A rule that changes how the agent reasons (not just how it routes tools) needs a debate. A `/sio-suggest` draft is not enough.
 
 ---
 
