@@ -26,7 +26,7 @@ from typing import Any, Protocol, runtime_checkable
 class SessionManifest:
     """Where a single session lives and how to read it."""
 
-    agent: str  # claude | codex | goose | opencode | gemini | aider | promptchain | kimi | pi | omp
+    agent: str  # claude|codex|goose|opencode|gemini|aider|promptchain|kimi|pi|omp
     native_id: str  # agent-native session id
     kind: str  # "file" | "db"
     path: str  # filesystem path (file) or db path (db)
