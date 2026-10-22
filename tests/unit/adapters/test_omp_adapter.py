@@ -98,3 +98,16 @@ def test_live_probe_finds_cwd_past_title_line(tmp_path):
     row = _pi_session(_make_fixture(tmp_path), "omp")
     assert row["agent"] == "omp" and row["cwd"] == "/home/someone/code/demo"
     assert row["native_id"] == STEM
+
+
+def test_live_locate_resolves_bare_prefix_to_omp(tmp_path, monkeypatch):
+    from sio.adapters import factory
+    from sio.cli import live
+
+    _make_fixture(tmp_path)
+    monkeypatch.setattr(factory, "_OMP_SESSIONS", tmp_path / ".omp" / "agent" / "sessions")
+    monkeypatch.setattr(factory, "_PI_SESSIONS", tmp_path / "nope" / "pi")
+    monkeypatch.setattr(factory, "_CODEX_SESSIONS", tmp_path / "nope" / "codex")
+    monkeypatch.setattr(live, "_resolve_claude_partial", lambda native: None)
+    agent, _adapter, manifest = live._locate(UUID[:8])
+    assert agent == "omp" and manifest.native_id == STEM

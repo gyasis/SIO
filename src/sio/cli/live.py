@@ -892,8 +892,17 @@ def _locate(session: str):
     if agent == "claude":
         path = _resolve_claude_partial(native)
         if path is None:
-            raise click.ClickException(f"Session not found: {session}")
-        handle = f"claude:{path.stem}"
+            # A bare id parses as claude; fall through to the other file-backed
+            # stores (omp/pi/codex) before giving up. An explicit "claude:" is final.
+            if not session.startswith("claude:"):
+                for other in ("omp", "pi", "codex"):
+                    if manifest_from_handle(f"{other}:{native}") is not None:
+                        agent, handle = other, f"{other}:{native}"
+                        break
+            if agent == "claude":
+                raise click.ClickException(f"Session not found: {session}")
+        else:
+            handle = f"claude:{path.stem}"
     try:
         manifest = manifest_from_handle(handle)
     except NotImplementedError as exc:
