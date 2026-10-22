@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import dspy
+
 from sio.core.paths import db_path as _default_db_path
 
 logger = logging.getLogger(__name__)
@@ -45,10 +46,6 @@ _MODULE_BUILDERS: dict[str, Any] = {}  # populated after function defs
 # ---------------------------------------------------------------------------
 # DB helpers
 # ---------------------------------------------------------------------------
-
-
-def _default_db_path() -> str:
-    return str(_default_db_path())
 
 
 def load_gold_standards(
