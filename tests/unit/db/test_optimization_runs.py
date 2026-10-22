@@ -94,7 +94,7 @@ def test_mark_prior_inactive_flips_old_rows(tmp_db):
     from sio.core.db.queries import mark_prior_inactive, record_optimization_run  # noqa: PLC0415
 
     # Insert two rows for the same module
-    id1 = record_optimization_run(
+    record_optimization_run(
         tmp_db,
         module_name="suggestion_generator",
         optimizer_name="bootstrap",
@@ -106,7 +106,7 @@ def test_mark_prior_inactive_flips_old_rows(tmp_db):
         reflection_lm=None,
         artifact_path="/tmp/artifact_v1.json",
     )
-    id2 = record_optimization_run(
+    record_optimization_run(
         tmp_db,
         module_name="suggestion_generator",
         optimizer_name="gepa",

@@ -9,6 +9,7 @@ from __future__ import annotations
 import sqlite3
 
 import click
+
 from sio.core.paths import db_path as _default_db_path
 
 _MODEL_TO_MODE = {

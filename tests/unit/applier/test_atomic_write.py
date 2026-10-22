@@ -141,8 +141,6 @@ def test_atomic_write_size_check_triggers_integrity_error(target_file: Path, mon
     # Monkeypatch os.replace to write truncated content instead
     import os as _os
 
-    real_replace = _os.replace
-
     def corrupt_replace(src, dst):
         # Write only 10 bytes (far below 90% of 1000)
         Path(dst).write_text("corrupted\n", encoding="utf-8")

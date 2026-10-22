@@ -8,6 +8,7 @@ import os
 import sqlite3
 import sys
 from datetime import datetime, timedelta, timezone
+
 from sio.core.paths import sio_home as _default_sio_home
 
 logger = logging.getLogger(__name__)

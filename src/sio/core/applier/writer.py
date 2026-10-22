@@ -18,8 +18,9 @@ import os
 import sqlite3
 from pathlib import Path
 
+from sio.core.paths import db_path as _default_db_path
+from sio.core.paths import sio_home as _default_sio_home
 from sio.core.util.time import utc_now_iso
-from sio.core.paths import db_path as _default_db_path, sio_home as _default_sio_home
 
 # ---------------------------------------------------------------------------
 # Allowlist roots (FR-019, R-14)

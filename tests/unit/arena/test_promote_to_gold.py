@@ -171,6 +171,9 @@ class TestPromoteToGold:
 
         assert gold_id_1 is not None
         # Second call should either return None or the same ID — no duplicate row
+        assert gold_id_2 is None or gold_id_2 == gold_id_1, (
+            f"Duplicate promote must return None or the same id, got {gold_id_2!r}"
+        )
         count = tmp_sio_db.execute(
             "SELECT COUNT(*) FROM gold_standards WHERE invocation_id = ?",
             (invocation_id,),

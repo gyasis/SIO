@@ -18,7 +18,9 @@ import sysconfig
 from dataclasses import dataclass, field
 from importlib.metadata import distributions
 from pathlib import Path
-from sio.core.paths import db_path as _default_db_path, sio_home as _default_sio_home
+
+from sio.core.paths import db_path as _default_db_path
+from sio.core.paths import sio_home as _default_sio_home
 
 # pylint: disable=cyclic-import — only at call time
 _PKG_NAME_NEW = "self-improving-organism"
@@ -69,7 +71,6 @@ def _check_ladder_discipline() -> CheckResult:
     on the same trainset.
     """
     import sqlite3
-    from pathlib import Path
     db = str(_default_db_path())
     try:
         conn = sqlite3.connect(db)
@@ -125,7 +126,6 @@ def _check_reproducibility_gaps() -> CheckResult:
     reflection_lm (when applicable), trainset_id, seed populated.
     """
     import sqlite3
-    from pathlib import Path
     db = str(_default_db_path())
     try:
         conn = sqlite3.connect(db)
@@ -213,7 +213,6 @@ def _check_runlog_health() -> CheckResult:
     """
     import json as _json
     from datetime import datetime, timedelta, timezone
-    from pathlib import Path
 
     runs_dir = _default_sio_home() / "runs"
     if not runs_dir.exists():

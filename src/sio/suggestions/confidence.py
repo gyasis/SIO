@@ -7,18 +7,18 @@ Public API
 
 The score is a weighted combination of three signals:
 
-- error_count weight  (40 %): capped at 30 errors for normalisation
-- dataset coverage    (30 %): log-scaled total examples, capped at 90
-- rank_score          (30 %): passed through directly (already 0–1)
+- error_count weight  (40 %): caps at 30 errors to normalise
+- dataset coverage    (30 %): log-scaled total examples, caps at 90
+- rank_score          (30 %): passes through directly (already 0–1)
 
-When *last_seen* is provided, the final score is multiplied by a temporal
-decay factor based on how recently the pattern was observed:
+Pass *last_seen* and the scorer multiplies the final score by a temporal
+decay factor. That factor tracks how recently the pattern last appeared:
 
 - Fresh band (0 to decay_fresh_days):  multiplier = 1.0
 - Cooling band (decay_fresh_days to decay_stale_days):  linear 1.0 -> 0.6
 - Stale band (> decay_stale_days):  linear 0.6 -> decay_floor at 2x stale_days
 
-The final score is clamped to [0.0, 1.0].
+The scorer then clamps the final score to [0.0, 1.0].
 """
 
 from __future__ import annotations
