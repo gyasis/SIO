@@ -188,6 +188,27 @@ def _do_finalize(stdin_json: str, *, conn=None) -> list[str]:
                 if fpath:
                     saved_files.append(fpath)
 
+        # Mirror this session's rows into the canonical sio.db. The hooks write to the
+        # per-platform DB while every reader (status, training, analysis) reads sio.db; with
+        # no caller the canonical table simply stayed empty — 0 rows against 55,348 captured
+        # by 2026-10-27. Incremental, so it copies one session's worth, and wrapped so a
+        # sync failure can never take the hook down (hooks are observational, never blocking).
+        try:
+            from sio.core.db.connect import open_db  # noqa: PLC0415
+            from sio.core.db.sync import sync_behavior_invocations  # noqa: PLC0415
+            from sio.core.paths import db_path as _canonical_db  # noqa: PLC0415
+
+            since = None
+            try:
+                with open_db(_canonical_db(), read_only=True) as _c:
+                    _r = _c.execute("SELECT MAX(timestamp) FROM behavior_invocations").fetchone()
+                since = _r[0] if _r and _r[0] else None
+            except Exception:
+                since = None
+            sync_behavior_invocations(since_timestamp=since)
+        except Exception:
+            logger.exception("behavior_invocations sync failed in stop hook")
+
         # NOTE: Do NOT write to processed_sessions here.
         # The stop hook does not know the real file SHA-256 hash.
         # processed_sessions is exclusively managed by the mining pipeline

@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+from sio.core.db.schema import init_db
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -62,26 +64,29 @@ CREATE UNIQUE INDEX IF NOT EXISTS ix_bi_identity
 
 
 def _seed_platform_rows(path: Path, count: int = 10, ts_prefix: str = "2026-04-20T") -> None:
-    """Insert `count` rows into a per-platform behavior_invocations DB."""
-    conn = sqlite3.connect(str(path))
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute(_PLATFORM_DDL)
+    """Insert `count` rows into a per-platform behavior_invocations DB.
+
+    Uses the REAL schema via init_db. These helpers previously built a hand-written
+    11-column table with no `behavior_type`, so the sync was exercised against a schema in
+    which its defect could not occur — which is how `INSERT OR IGNORE` silently dropping
+    every row survived a green suite (PRD sio_behavior_invocations_sync_fix, 2026-10-27).
+    """
+    conn = init_db(str(path))
     for i in range(count):
         conn.execute(
             "INSERT INTO behavior_invocations "
-            "(session_id, timestamp, tool_name, user_message) VALUES (?, ?, ?, ?)",
-            (f"sess-{i:03d}", f"{ts_prefix}{i:02d}:00:00+00:00", "Read", f"msg-{i}"),
+            "(session_id, timestamp, platform, user_message, behavior_type, tool_name) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (f"sess-{i:03d}", f"{ts_prefix}{i:02d}:00:00+00:00", "claude-code",
+             f"msg-{i}", "skill", "Read"),
         )
     conn.commit()
     conn.close()
 
 
 def _seed_canonical_schema(path: Path) -> None:
-    """Create canonical sio.db schema with UNIQUE index."""
-    conn = sqlite3.connect(str(path))
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute(_CANONICAL_DDL)
-    conn.execute(_CANONICAL_INDEX)
+    """Create the canonical schema — the real one, via init_db (see _seed_platform_rows)."""
+    conn = init_db(str(path))
     conn.execute("""
         CREATE TABLE IF NOT EXISTS schema_version (
             version INTEGER PRIMARY KEY,
@@ -123,11 +128,7 @@ def sync_dbs(tmp_path: Path, monkeypatch):
 
     _seed_canonical_schema(sio_path)
     # Platform DB starts with 10 rows
-    conn = sqlite3.connect(str(plat_path))
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute(_PLATFORM_DDL)
-    conn.commit()
-    conn.close()
+    init_db(str(plat_path)).close()
 
     monkeypatch.setenv("SIO_DB_PATH", str(sio_path))
     monkeypatch.setenv("SIO_PLATFORM_DB_PATH", str(plat_path))
@@ -200,8 +201,7 @@ def test_sync_since_timestamp_scopes_correctly(sync_dbs, monkeypatch):
     sio_path, plat_path = sync_dbs
 
     # Seed rows with timestamps spanning two days
-    conn = sqlite3.connect(str(plat_path))
-    conn.execute(_PLATFORM_DDL)
+    conn = init_db(str(plat_path))
     rows_old = [
         ("sess-old-0", "2026-04-19T10:00:00+00:00", "Read", "old-msg-0"),
         ("sess-old-1", "2026-04-19T11:00:00+00:00", "Bash", "old-msg-1"),
@@ -211,11 +211,12 @@ def test_sync_since_timestamp_scopes_correctly(sync_dbs, monkeypatch):
         ("sess-new-1", "2026-04-20T11:00:00+00:00", "Write", "new-msg-1"),
         ("sess-new-2", "2026-04-20T12:00:00+00:00", "Read", "new-msg-2"),
     ]
-    for r in rows_old + rows_new:
+    for sess, ts, tool, msg in rows_old + rows_new:
         conn.execute(
-            "INSERT INTO behavior_invocations (session_id, timestamp, tool_name, user_message) "
-            "VALUES (?, ?, ?, ?)",
-            r,
+            "INSERT INTO behavior_invocations "
+            "(session_id, timestamp, platform, user_message, behavior_type, tool_name) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (sess, ts, "claude-code", msg, "skill", tool),
         )
     conn.commit()
     conn.close()
