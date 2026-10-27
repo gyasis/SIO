@@ -394,6 +394,60 @@ def init(
 
 
 @cli.command()
+@click.option("--full", is_flag=True, help="Copy every row, not just rows newer than the "
+                                           "newest canonical timestamp.")
+@click.option(
+    "--format", "fmt", type=click.Choice(["table", "json"]), default="table",
+    help="Output format.",
+)
+@runlogged("sync")
+def sync(full, fmt):
+    """Copy per-platform behavior_invocations into the canonical sio.db.
+
+    Spec 004 SC-001 specifies verifying this command; it had never been built. The hooks
+    write to ~/.sio/<platform>/behavior_invocations.db while every reader (status, training,
+    analysis) reads ~/.sio/sio.db, so without this the canonical table stays empty — it held
+    0 rows against 55,348 captured on 2026-10-27.
+
+    Incremental by default: copies rows at or after the newest canonical timestamp.
+    """
+    import json as _json  # noqa: PLC0415
+
+    from sio.core.db.connect import open_db  # noqa: PLC0415
+    from sio.core.db.sync import SyncIntegrityError, sync_behavior_invocations  # noqa: PLC0415
+    from sio.core.paths import db_path as _canonical_db  # noqa: PLC0415
+
+    since = None
+    if not full:
+        try:
+            with open_db(_canonical_db(), read_only=True) as conn:
+                row = conn.execute(
+                    "SELECT MAX(timestamp) FROM behavior_invocations"
+                ).fetchone()
+            since = row[0] if row and row[0] else None
+        except Exception:
+            since = None  # no canonical rows yet -> full copy
+
+    try:
+        results = sync_behavior_invocations(since_timestamp=since, detailed=True)
+    except SyncIntegrityError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if fmt == "json":
+        click.echo(_json.dumps(results, indent=2))
+        return
+
+    mode = "full" if full else f"since {since}" if since else "full (canonical empty)"
+    click.echo(f"sync ({mode})")
+    for platform, counts in results.items():
+        click.echo(
+            f"  {platform}: {counts['copied']} copied, "
+            f"{counts['already_present']} already present, "
+            f"{counts['source']} in source"
+        )
+
+
+@cli.command()
 @click.option("--platform", default=DEFAULT_PLATFORM, help="Platform filter.")
 @click.option("--skill", default=None, help="Skill name filter.")
 @click.option(
@@ -4349,7 +4403,9 @@ def sio_status(plain: bool = False):
 
             sync_drift_data = compute_sync_drift()
             for platform, drift in sync_drift_data.items():
-                if drift.get("drift_pct", 0.0) >= 0.05:
+                # Any unsynced row is a gap. The old gate (>= 5% drift) showed a check
+                # mark while ~1,770 tool calls were missing at 35k rows.
+                if drift.get("row_gap", 0) > 0:
                     any_error = True
         except Exception:
             sync_drift_data = {}
@@ -4387,11 +4443,12 @@ def sio_status(plain: bool = False):
         for platform, drift in sync_drift_data.items():
             canonical = drift.get("canonical_count", 0)
             per_plat = drift.get("per_platform_count", 0)
-            pct = drift.get("drift_pct", 0.0)
-            if pct >= 0.05:
-                drift_icon = "[red]✗[/red]"
-            elif pct >= 0.01:
-                drift_icon = "[yellow]⚠[/yellow]"
+            gap = drift.get("row_gap", 0)
+            # Show the EXACT gap. A percentage gate hid ~1,770 missing tool calls behind a
+            # check mark at 35k rows, which is how a sync that had never copied a single
+            # row still reported "in sync".
+            if gap > 0:
+                drift_icon = f"[red]✗ {gap:,} rows behind[/red]"
             else:
                 drift_icon = "[green]✓ in sync[/green]"
             train_table.add_row(
@@ -4462,7 +4519,8 @@ def sio_status(plain: bool = False):
             click.echo(
                 f"  behavior_invocations (sio.db) {drift.get('canonical_count', 0)} "
                 f"<-> {platform}: {drift.get('per_platform_count', 0)} "
-                f"({drift.get('drift_pct', 0.0) * 100:.1f}% drift)"
+                f"(gap: {drift.get('row_gap', 0)} rows, "
+                f"{drift.get('drift_pct', 0.0) * 100:.1f}%)"
             )
         for k, v in training_data.items():
             click.echo(f"  {k}: {v}")

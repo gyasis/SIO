@@ -14,6 +14,22 @@ from sio.core.telemetry.secret_scrubber import scrub
 logger = logging.getLogger(__name__)
 
 
+def _behavior_type_for(tool_name: str) -> str:
+    """Map a tool call to a legal `behavior_type`.
+
+    Every row was hardcoded "skill", so 44,425 Bash calls on razer were filed as skills and
+    any analysis grouping by behavior_type saw exactly one group. `mcp_tool` is already a
+    legal CHECK value so MCP calls can be classified now. A plain tool call (Bash, Read,
+    Edit, Write) still has NO correct value in the CHECK domain
+    ('skill','mcp_tool','preference','instructions_rule'); adding one needs a schema
+    migration and is kept to its own commit (PRD sio_behavior_invocations_sync_fix, F5).
+    Until then those keep the historical value rather than silently failing the CHECK.
+    """
+    if tool_name and tool_name.startswith("mcp__"):
+        return "mcp_tool"
+    return "skill"
+
+
 def log_invocation(
     conn: sqlite3.Connection,
     session_id: str,
@@ -23,6 +39,7 @@ def log_invocation(
     error: str | None,
     user_message: str,
     platform: str,
+    transcript_path: str | None = None,
 ) -> int:
     """Log a single tool invocation to the behavior database.
 
@@ -62,7 +79,7 @@ def log_invocation(
             "timestamp": now,
             "platform": platform,
             "user_message": scrubbed_message,
-            "behavior_type": "skill",
+            "behavior_type": _behavior_type_for(tool_name),
             "actual_action": tool_name,
             "expected_action": None,
             "activated": labels["activated"],
@@ -71,7 +88,7 @@ def log_invocation(
             "user_satisfied": None,
             "user_note": None,
             "passive_signal": None,
-            "history_file": None,
+            "history_file": transcript_path or None,
             "line_start": None,
             "line_end": None,
             "token_count": None,
@@ -80,7 +97,9 @@ def log_invocation(
             "labeled_at": None,
             "tool_name": tool_name,
             "tool_input": tool_input,
-            "conversation_pointer": None,  # populated by hook when available
+            # The evidence pointer: without it no row can be walked back to the
+            # transcript that produced it. Was hardcoded None despite the audit note above.
+            "conversation_pointer": transcript_path or None,
         }
 
         return insert_invocation(conn, record)
