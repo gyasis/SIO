@@ -27,6 +27,7 @@ Session transcripts bury these patterns. SIO extracts them, finds the signal, an
 | 🖼️ [Feature infographic](docs/sio-feature-infographic.html) | One-page visual map of everything SIO can do (open in a browser) |
 | [Getting started](docs/getting-started.md) | Install, `sio init`, first-run walkthrough |
 | [User guide](docs/user-guide.md) | Full CLI reference for every command |
+| [Operating SIO](docs/operating-sio.md) | **What to run and when** — the pipeline in order, a state probe, and the next command for each state |
 | [Configuration & env vars](docs/configuration.md) | `config.toml` options + all `SIO_*` environment variables |
 | [Architecture](docs/architecture.md) | Data flow, DB schema, file layout |
 | [Optimizer ladder guide](docs/optimizer-guide.md) | Bootstrap → AMPLIFY → MIPROv2 → GEPA, discipline gates, cost awareness |

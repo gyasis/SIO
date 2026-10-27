@@ -46,6 +46,84 @@ SIO mines your Claude Code session history to find errors, discover workflows, d
 | **Search INDEXED session history** | `/sio-search` | `sio search "query"` | Free |
 | **Tail one session by handle** | `/sio-watch` | `sio watch --session <h>` | Free |
 
+## Bare `/sio` — diagnose, then OFFER (for the agent)
+
+Triggers: the user says just `sio` or `/sio`, or asks "what should I run", "where are we
+with sio", "what's next", "anything waiting".
+
+They are not asking for a command list. They are asking **where the pipeline stands and
+what to do about it.** Answer in three parts, in this order.
+
+### Step 1 — probe the state (free, read-only, always safe)
+
+```bash
+python3 - <<'EOF'
+import sqlite3, os, datetime
+sio  = os.path.expanduser('~/.sio/sio.db')
+plat = os.path.expanduser('~/.sio/claude-code/behavior_invocations.db')
+c = sqlite3.connect(f'file:{sio}?mode=ro',  uri=True)
+p = sqlite3.connect(f'file:{plat}?mode=ro', uri=True)
+now = datetime.datetime.now(datetime.timezone.utc)
+def one(conn, q, d=0):
+    try: return conn.execute(q).fetchone()[0] or d
+    except Exception: return d
+def age(ts):
+    if not ts: return 'never'
+    try: return f"{(now - datetime.datetime.fromisoformat(str(ts).replace('Z','+00:00'))).days}d ago"
+    except Exception: return '?'
+pending = one(c, "select count(*) from suggestions where status='pending'")
+print(f"capture      {one(p,'select count(*) from behavior_invocations'):,} rows, newest {age(one(p,'select max(timestamp) from behavior_invocations',None))}")
+print(f"sync         canonical {one(c,'select count(*) from behavior_invocations'):,} / per-platform {one(p,'select count(*) from behavior_invocations'):,}")
+print(f"mine         {one(c,'select count(*) from error_records'):,} errors, last {age(one(c,'select max(mined_at) from processed_sessions',None))}")
+print(f"flows        {one(c,'select count(*) from flow_events'):,} events, last {age(one(c,'select max(mined_at) from flow_events',None))}")
+print(f"patterns     {one(c,'select count(*) from patterns'):,}, last {age(one(c,'select max(created_at) from patterns',None))}")
+print(f"suggestions  {one(c,'select count(*) from suggestions'):,} total, {pending} pending")
+print(f"applied      {one(c,'select count(*) from applied_changes'):,}")
+EOF
+```
+
+### Step 2 — say where the pipeline stands
+
+Three or four lines. Name what is current and what is stale, with ages. Do not paste the
+raw probe output and leave the user to read it.
+
+### Step 3 — offer exactly ONE next action, and ASK
+
+Walk this table top to bottom. Stop at the first row that matches. Propose that command
+and nothing else.
+
+| State | Offer | Why it is first |
+|---|---|---|
+| pending suggestions > 0 | `sio suggest-review` | work already paid for, sitting unread |
+| canonical far below per-platform | `sio sync` | every reader reads canonical |
+| mine older than ~2 days | `sio mine --recent 7` | everything downstream needs it |
+| flows stale, mine fresh | `sio flows` | cheapest unmined signal |
+| patterns stale, mine fresh | `sio discover` | suggestions need patterns |
+| patterns fresh, suggestions older | `sio suggest` | **costs ~$0.05 — say so** |
+| applied > 0, 2+ weeks old | `sio velocity` | the only read on whether rules worked |
+| nothing matches | say the loop is current | do not invent work |
+
+Phrase it as a question: *"95 suggestions have been pending since 19 days ago, and you
+have applied none of them. Want me to run `sio suggest-review`?"*
+
+### The rules that make this useful instead of annoying
+
+- **OFFER, do not run.** Stages 4-9 write files, cost money, or both. The probe is the only
+  thing to run unprompted.
+- **One suggestion, not a menu.** A list of eight options is the thing the user was trying
+  to avoid by typing `sio`.
+- **A stale stage is usually not a broken stage.** Stages 4-9 are manual by design
+  (`docs/SIO_PHILOSOPHY.md`). "Flows are 23 days old" means nobody asked for flows. Never
+  report that as a fault or a regression.
+- **Always say the cost** before offering `sio suggest`. It is the only command here that
+  spends money.
+- **Review beats generate.** Never offer `sio suggest` while suggestions are pending.
+  Generating more proposals buries the unread ones.
+- **`sio search` needs no pipeline.** If the user wants "have I hit this before", route
+  straight to `/sio-search`; it reads transcripts and ignores every stage above.
+
+Full reference: `docs/operating-sio.md` in the SIO repo.
+
 ## How to Route (for the agent)
 
 When the user asks something SIO-related, determine which sub-command to invoke.
