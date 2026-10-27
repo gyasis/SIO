@@ -17,6 +17,47 @@ from sio.core.constants import DEFAULT_PLATFORM as _DEFAULT_PLATFORM  # noqa: E4
 _DEFAULT_DB_DIR = str(_default_sio_home() / _DEFAULT_PLATFORM)
 
 
+def _extract_tool_result(payload: dict) -> tuple[str, str | None]:
+    """Pull (output, error) out of a PostToolUse payload.
+
+    Claude Code sends `tool_response`, NOT `tool_output`/`error`. Reading the wrong key
+    meant auto_label() always saw output="" and error=None, so every one of the 55,348 rows
+    captured by 2026-10-27 was labelled activated=1, correct_action=1, correct_outcome=0 —
+    a corpus asserting that 99.99% of tool calls produced nothing.
+
+    `tool_response` is a dict for Bash-like tools (stdout/stderr/exit_code/is_error) and a
+    bare string for others. `tool_output`/`error` are still honoured so other harnesses and
+    the existing contract tests keep working.
+    """
+    error = payload.get("error")
+    resp = payload.get("tool_response")
+
+    if resp is None:
+        return payload.get("tool_output", ""), error
+    if isinstance(resp, str):
+        return resp, error
+    if not isinstance(resp, dict):
+        return str(resp), error
+
+    out = next((resp[k] for k in ("stdout", "output", "content", "result")
+                if resp.get(k) is not None), None)
+    if out is None:
+        # Unknown shape: keep it as text so "did this produce anything" stays answerable
+        # instead of silently collapsing to the empty string.
+        out = json.dumps(resp, ensure_ascii=False, default=str)
+    elif not isinstance(out, str):
+        out = json.dumps(out, ensure_ascii=False, default=str)
+
+    if error is None:
+        stderr = resp.get("stderr") or ""
+        code = resp.get("exit_code", resp.get("return_code"))
+        if resp.get("is_error"):
+            error = stderr or "is_error"
+        elif isinstance(code, int) and code != 0:
+            error = stderr or f"exit_code={code}"
+    return out, error
+
+
 def handle_post_tool_use(stdin_json: str, *, conn=None) -> str:
     """Process a PostToolUse hook event.
 
@@ -53,8 +94,7 @@ def handle_post_tool_use(stdin_json: str, *, conn=None) -> str:
         session_id = payload.get("session_id", "unknown")
         tool_name = payload.get("tool_name", "unknown")
         tool_input = json.dumps(payload.get("tool_input", {}))
-        tool_output = payload.get("tool_output", "")
-        error = payload.get("error")
+        tool_output, error = _extract_tool_result(payload)
         user_message = payload.get("user_message", "[UNAVAILABLE]")
 
         log_invocation(
@@ -66,6 +106,7 @@ def handle_post_tool_use(stdin_json: str, *, conn=None) -> str:
             error=error,
             user_message=user_message,
             platform=_DEFAULT_PLATFORM,
+            transcript_path=payload.get("transcript_path"),
         )
 
         # Passive signal detection (T043)
