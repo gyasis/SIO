@@ -12,6 +12,10 @@ from sio.core.paths import sio_home as _default_sio_home
 
 logger = logging.getLogger(__name__)
 
+
+class _SkipSync(Exception):
+    """Raised to skip the canonical sync when the hook did not open its own connection."""
+
 from sio.core.constants import DEFAULT_PLATFORM as _DEFAULT_PLATFORM  # noqa: E402
 
 _DEFAULT_DB_DIR = str(_default_sio_home() / _DEFAULT_PLATFORM)
@@ -193,7 +197,15 @@ def _do_finalize(stdin_json: str, *, conn=None) -> list[str]:
         # no caller the canonical table simply stayed empty — 0 rows against 55,348 captured
         # by 2026-10-27. Incremental, so it copies one session's worth, and wrapped so a
         # sync failure can never take the hook down (hooks are observational, never blocking).
+        # ONLY when this hook owns its connection, i.e. the real runtime path. An injected
+        # `conn` means an embedded caller or a test, and the sync resolves GLOBAL paths
+        # (~/.sio/sio.db and the real per-platform DB) regardless of that connection. Without
+        # this guard `tests/unit/test_hooks.py` — which sets neither SIO_DB_PATH nor SIO_HOME —
+        # copied 55,475 production rows into the real canonical DB during a test run. A hook
+        # must never write outside the connection it was handed.
         try:
+            if not own_conn:
+                raise _SkipSync
             from sio.core.db.connect import open_db  # noqa: PLC0415
             from sio.core.db.sync import sync_behavior_invocations  # noqa: PLC0415
             from sio.core.paths import db_path as _canonical_db  # noqa: PLC0415
@@ -206,6 +218,8 @@ def _do_finalize(stdin_json: str, *, conn=None) -> list[str]:
             except Exception:
                 since = None
             sync_behavior_invocations(since_timestamp=since)
+        except _SkipSync:
+            pass
         except Exception:
             logger.exception("behavior_invocations sync failed in stop hook")
 
