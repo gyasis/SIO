@@ -107,6 +107,51 @@ Actual error logs (extract the specific fix from these):
 Write the specific, machine-actionable rule:"""
 
 
+def _governor_settings() -> tuple[str, str, str]:
+    """(base_url, api_key, model) for the local Atelier governor (gemma4:12b)."""
+    base = os.environ.get("SIO_GOV_BASE") or "http://192.168.0.159:8799/llm/ollama/v1"
+    key = os.environ.get("SIO_GOV_KEY") or "governor-no-key-needed"
+    model = os.environ.get("SIO_REFINER_GOV_MODEL") or "gemma4:12b"
+    return base, key, model
+
+
+def _paid_refiner_allowed() -> bool:
+    """Paid refiner providers are opt-in (owner decision 2026-10-15)."""
+    return os.environ.get("SIO_ALLOW_PAID_REFINER") == "1"
+
+
+def _try_governor(prompt: str, system: str) -> str | None:
+    """Refine via the local Atelier governor (OpenAI-compat, free, thinking off)."""
+    if os.environ.get("SIO_REFINER_NO_GOVERNOR") == "1":
+        return None
+    base, key, model = _governor_settings()
+    try:
+        import openai
+
+        client = openai.OpenAI(base_url=base, api_key=key, timeout=120)
+        response = client.chat.completions.create(
+            model=model,
+            max_tokens=1500,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            # thinking OFF on the OpenAI-compat route (think:false is /api/chat only)
+            extra_body={"reasoning_effort": "none"},
+        )
+        return response.choices[0].message.content
+    except Exception as exc:
+        import sys as _sys
+        print(
+            f"  [REFINER_FALLBACK_GOVERNOR] Refinement failed: "
+            f"{type(exc).__name__}: {exc} at {base} — governor unreachable; "
+            "paid providers are skipped unless SIO_ALLOW_PAID_REFINER=1.",
+            file=_sys.stderr,
+            flush=True,
+        )
+        return None
+
+
 def _try_anthropic(prompt: str, system: str) -> str | None:
     """Try to refine using the Anthropic API directly."""
     api_key = os.environ.get("ANTHROPIC_API_KEY")
@@ -358,7 +403,11 @@ def _guess_correct_format(value: str, expected_type: str) -> str:
 
 
 def is_refinement_available() -> bool:
-    """Check if any LLM API is available for refinement."""
+    """True if the local governor is enabled, or (opt-in) a paid API key exists."""
+    if os.environ.get("SIO_REFINER_NO_GOVERNOR") != "1":
+        return True
+    if not _paid_refiner_allowed():
+        return False
     return any(
         [
             os.environ.get("ANTHROPIC_API_KEY"),
@@ -410,11 +459,13 @@ def refine_suggestion(
         )
 
         # Try providers in order of preference
-        refined = (
-            _try_anthropic(prompt, _REFINE_SYSTEM_PROMPT)
-            or _try_gemini(prompt, _REFINE_SYSTEM_PROMPT)
-            or _try_openai(prompt, _REFINE_SYSTEM_PROMPT)
-        )
+        refined = _try_governor(prompt, _REFINE_SYSTEM_PROMPT)
+        if not refined and _paid_refiner_allowed():
+            refined = (
+                _try_anthropic(prompt, _REFINE_SYSTEM_PROMPT)
+                or _try_gemini(prompt, _REFINE_SYSTEM_PROMPT)
+                or _try_openai(prompt, _REFINE_SYSTEM_PROMPT)
+            )
 
         if refined and _quality_check(refined, generic_rule):
             logger.info("LLM refinement passed quality check")

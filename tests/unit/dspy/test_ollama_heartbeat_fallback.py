@@ -24,6 +24,7 @@ def _reset_state(monkeypatch):
     lm_factory._reset_heartbeat_cache()
     for var in (
         "SIO_NO_OLLAMA_FALLBACK",
+        "SIO_ALLOW_PAID_FALLBACK",
         "SIO_OLLAMA_FALLBACK_TASK_LM",
         "SIO_OLLAMA_FALLBACK_REFLECTION_LM",
         "SIO_OLLAMA_HEARTBEAT_TIMEOUT",
@@ -89,7 +90,22 @@ def test_ollama_alive_keeps_original_model(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+def test_ollama_down_paid_fallback_refused_without_optin(monkeypatch):
+    """2026-10-15: a paid fallback is NOT taken silently -- fails loudly."""
+    monkeypatch.setenv("OLLAMA_HOST", "http://10.99.99.99:11434")
+    monkeypatch.setenv("SIO_OLLAMA_FALLBACK_TASK_LM", "openai/gpt-4o-mini")
+    with patch(
+        "sio.core.dspy.lm_factory.urllib.request.urlopen",
+        side_effect=urllib.error.URLError("Connection refused"),
+    ):
+        with pytest.raises(RuntimeError, match="SIO_ALLOW_PAID_FALLBACK=1"):
+            lm_factory._apply_ollama_heartbeat_fallback(
+                "ollama/qwen3-coder:30b", role="task"
+            )
+
+
 def test_ollama_down_with_fallback_swaps_task(monkeypatch):
+    monkeypatch.setenv("SIO_ALLOW_PAID_FALLBACK", "1")
     monkeypatch.setenv("OLLAMA_HOST", "http://10.99.99.99:11434")
     monkeypatch.setenv("SIO_OLLAMA_FALLBACK_TASK_LM", "openai/gpt-4o-mini")
     with patch(
@@ -104,6 +120,7 @@ def test_ollama_down_with_fallback_swaps_task(monkeypatch):
 
 def test_ollama_down_with_fallback_swaps_reflection(monkeypatch):
     """Reflection role reads SIO_OLLAMA_FALLBACK_REFLECTION_LM, not the task one."""
+    monkeypatch.setenv("SIO_ALLOW_PAID_FALLBACK", "1")
     monkeypatch.setenv("OLLAMA_HOST", "http://10.99.99.99:11434")
     monkeypatch.setenv("SIO_OLLAMA_FALLBACK_TASK_LM", "openai/gpt-4o-mini")
     monkeypatch.setenv("SIO_OLLAMA_FALLBACK_REFLECTION_LM", "openai/gpt-5-mini")
@@ -240,6 +257,7 @@ def test_default_host_is_localhost(monkeypatch):
 def test_5xx_response_treated_as_dead(monkeypatch):
     monkeypatch.setenv("OLLAMA_HOST", "http://192.168.1.100:11434")
     monkeypatch.setenv("SIO_OLLAMA_FALLBACK_TASK_LM", "openai/gpt-4o-mini")
+    monkeypatch.setenv("SIO_ALLOW_PAID_FALLBACK", "1")
     with patch(
         "sio.core.dspy.lm_factory.urllib.request.urlopen",
         return_value=_fake_response(503),
