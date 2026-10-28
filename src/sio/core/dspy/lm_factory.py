@@ -202,6 +202,16 @@ def _apply_ollama_heartbeat_fallback(model: str, role: str) -> str:
         else "SIO_OLLAMA_FALLBACK_TASK_LM"
     )
     fallback = os.environ.get(fallback_env)
+    if fallback and not fallback.startswith("ollama/") and (
+        os.environ.get("SIO_ALLOW_PAID_FALLBACK") != "1"
+    ):
+        # 2026-10-15 owner decision: never silently go to a paid provider.
+        raise RuntimeError(
+            f"Ollama at {host} is unreachable (role={role}, model={model}) and "
+            f"{fallback_env}={fallback} is a PAID provider. Refusing to fall "
+            "back silently. Fix: bring the Mac Studio / Ollama up, or export "
+            "SIO_ALLOW_PAID_FALLBACK=1 to explicitly allow the paid fallback."
+        )
     if fallback:
         logger.warning(
             "Ollama heartbeat failed at %s — falling back to %s "
@@ -532,6 +542,43 @@ def configure_default() -> None:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Atelier governor (local gemma4:12b) defaults — 2026-10-15 owner decision
+# ---------------------------------------------------------------------------
+# `sio suggest` uses the LOCAL model via the Atelier governor instead of paid
+# OpenAI. config.toml points at env vars SIO_GOV_BASE / SIO_GOV_KEY; because
+# environment.d changes need a re-login, we default them here when unset.
+# The governor ignores the key, but the openai client requires a non-empty one.
+GOVERNOR_DEFAULT_BASE = "http://192.168.0.159:8799/llm/ollama/v1"
+GOVERNOR_DEFAULT_KEY = "governor-no-key-needed"
+_GOVERNOR_MARK = ":8799/llm/ollama"
+
+
+def _is_governor_base(api_base: str | None) -> bool:
+    return bool(api_base) and _GOVERNOR_MARK in api_base
+
+
+def _lm_endpoint_kwargs(config: SIOConfig, kwargs: dict) -> None:
+    """Fill api_key/api_base (and governor thinking-off) into ``kwargs``."""
+    if config.llm_api_key_env:
+        api_key = os.environ.get(config.llm_api_key_env)
+        if not api_key and config.llm_api_key_env == "SIO_GOV_KEY":
+            api_key = GOVERNOR_DEFAULT_KEY
+        if api_key:
+            kwargs["api_key"] = api_key
+    if config.llm_api_base_env:
+        api_base = os.environ.get(config.llm_api_base_env)
+        if not api_base and config.llm_api_base_env == "SIO_GOV_BASE":
+            api_base = GOVERNOR_DEFAULT_BASE
+        if api_base:
+            kwargs["api_base"] = api_base
+    if _is_governor_base(kwargs.get("api_base")):
+        # Thinking OFF on the OpenAI-compat route: extra_body is forwarded
+        # verbatim by litellm (a top-level reasoning_effort can be dropped for
+        # unknown models). NOT think:false -- that is /api/chat only.
+        kwargs["extra_body"] = {"reasoning_effort": "none"}
+
+
 def create_lm(config: SIOConfig) -> dspy.LM | None:
     """Create a dspy.LM from config or auto-detected env vars.
 
@@ -552,14 +599,7 @@ def create_lm(config: SIOConfig) -> dspy.LM | None:
             "max_tokens": config.llm_max_tokens,
             "num_retries": 3,
         }
-        if config.llm_api_key_env:
-            api_key = os.environ.get(config.llm_api_key_env)
-            if api_key:
-                kwargs["api_key"] = api_key
-        if config.llm_api_base_env:
-            api_base = os.environ.get(config.llm_api_base_env)
-            if api_base:
-                kwargs["api_base"] = api_base
+        _lm_endpoint_kwargs(config, kwargs)
         return dspy.LM(**kwargs)
 
     openai_key = os.environ.get("OPENAI_API_KEY")
@@ -600,14 +640,7 @@ def create_sub_lm(config: SIOConfig) -> dspy.LM | None:
             "temperature": config.llm_temperature,
             "max_tokens": config.llm_max_tokens,
         }
-        if config.llm_api_key_env:
-            api_key = os.environ.get(config.llm_api_key_env)
-            if api_key:
-                kwargs["api_key"] = api_key
-        if config.llm_api_base_env:
-            api_base = os.environ.get(config.llm_api_base_env)
-            if api_base:
-                kwargs["api_base"] = api_base
+        _lm_endpoint_kwargs(config, kwargs)
         return dspy.LM(**kwargs)
 
     return create_lm(config)
