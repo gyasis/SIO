@@ -8,6 +8,7 @@ import os
 import sys
 from datetime import datetime, timezone
 
+from sio.adapters.claude_code.hooks._session_metrics import transcript_metrics
 from sio.core.paths import sio_home as _default_sio_home
 
 logger = logging.getLogger(__name__)
@@ -79,6 +80,10 @@ def _do_snapshot(stdin_json: str, *, conn=None) -> None:
         record = {
             "session_id": session_id,
             "file_path": transcript_path,
+            # Zeros only when the transcript cannot be read; transcript_metrics
+            # overwrites every one of these below. They were hardcoded, so 514
+            # session_metrics rows read 0/0/0 and `sio report` summed a cost of zero
+            # for sessions that had spent millions of tokens.
             "total_input_tokens": 0,
             "total_output_tokens": 0,
             "total_cache_read_tokens": 0,
@@ -96,6 +101,10 @@ def _do_snapshot(stdin_json: str, *, conn=None) -> None:
             "model_used": None,
             "mined_at": now,
         }
+        # Same transcript pass as the Stop hook. This row is written with
+        # INSERT OR IGNORE and the compaction snapshot usually gets there first, so
+        # filling it here is what decides whether a compacted session has real numbers.
+        record.update(transcript_metrics(transcript_path))
         insert_session_metrics_if_new(conn, record)
     finally:
         if own_conn:

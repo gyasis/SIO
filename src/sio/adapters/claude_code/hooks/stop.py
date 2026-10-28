@@ -1,4 +1,4 @@
-"""Stop hook handler — finalizes session metrics and saves high-confidence patterns."""
+"""Stop hook handler — finishes session metrics and saves high-confidence patterns."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import os
 import sys
 from datetime import datetime, timezone
 
+from sio.adapters.claude_code.hooks._session_metrics import transcript_metrics
 from sio.core.paths import sio_home as _default_sio_home
 
 logger = logging.getLogger(__name__)
@@ -163,6 +164,10 @@ def _do_finalize(stdin_json: str, *, conn=None) -> list[str]:
         record = {
             "session_id": session_id,
             "file_path": transcript_path,
+            # Zeros only when the transcript cannot be read; transcript_metrics
+            # overwrites every one of these below. They were hardcoded, so 514
+            # session_metrics rows read 0/0/0 and `sio report` summed a cost of zero
+            # for sessions that had spent millions of tokens.
             "total_input_tokens": 0,
             "total_output_tokens": 0,
             "total_cache_read_tokens": 0,
@@ -180,6 +185,9 @@ def _do_finalize(stdin_json: str, *, conn=None) -> list[str]:
             "model_used": None,
             "mined_at": now,
         }
+        # Tokens, cost, duration, message and sidechain counts, stop reasons and the
+        # model are only in the transcript; the counts above come from the DB and stay.
+        record.update(transcript_metrics(transcript_path))
         insert_session_metrics_if_new(conn, record)
 
         # Lightweight pattern detection

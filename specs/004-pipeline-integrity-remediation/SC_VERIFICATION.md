@@ -6,18 +6,38 @@
 For each success criterion (SC-001 through SC-022), status is one of:
 - **PASS** — verified green via test or code inspection
 - **PARTIAL** — partially met; remaining gap noted
-- **PENDING** — requires real-world data or post-deployment verification
+- **PENDING** — needs real-world data, or verification after deployment
 
 ---
 
 ## SC-001: Behavior invocations count ≥ 38,091 after sync
 
-**Status**: PENDING (verifiable post-deployment)
+**Status**: PASS (measured 2026-10-27 on razer)
 
-After `sio sync` runs against a live `~/.sio/claude-code/behavior_invocations.db`,
-the query `SELECT COUNT(*) FROM behavior_invocations` in `~/.sio/sio.db` must
-return ≥ 38,091. The sync logic (`src/sio/core/db/sync.py`) is correct;
-the exact count depends on real-world usage data.
+```text
+$ sio sync --full
+  claude-code: 2169 copied, 53979 already present, 56148 in source
+
+$ sqlite3 ~/.sio/sio.db "SELECT COUNT(*) FROM behavior_invocations"
+57664                                   # ≥ 38,091 ✓
+$ sqlite3 ~/.sio/claude-code/behavior_invocations.db "SELECT COUNT(*) ..."
+56149
+```
+
+Canonical holds more rows than per-platform because 1,516 rows from
+2026-09-22..09-26 predate the current per-platform file. An identity-key comparison
+on `(platform, session_id, timestamp, tool_name)` found **0 per-platform rows missing
+from canonical**. That is the property SC-001 really asserts. `sio status` now
+reports the row gap as a number, and shows a check mark only at zero.
+
+This criterion sat at PENDING "verifiable post-deployment" while the thing it
+describes did not exist. **There was no `sio sync` command.** Nothing called
+`sync_behavior_invocations()` outside the one-time `scripts/migrate_split_brain.py`.
+The copy it did run dropped every row and reported success. The canonical table held
+0 rows against 55,348 captured. Someone read the code and wrote "the sync logic is
+correct"; nobody ran it. PRD `sio_behavior_invocations_sync_fix_2026-10-27` F1-F4
+built the command, made a shortfall raise `SyncIntegrityError`, and wired the
+incremental copy into the Stop hook. This entry is the measurement we owed.
 
 ---
 
@@ -27,7 +47,7 @@ the exact count depends on real-world usage data.
 
 Verified by `tests/integration/test_processed_sessions.py::TestMarkAndCheckProcessed`
 (16 tests green after T-REGR fix). The `_mark_processed` / `_is_already_processed`
-integration is tested end-to-end.
+integration test covers it end-to-end.
 
 ---
 
@@ -53,8 +73,8 @@ promote → GEPA → `optimized_modules` row with `active=1` and loadable path.
 
 **Status**: PENDING (verifiable post-deployment)
 
-The schedule is wired (`src/sio/autoresearch/cadence.py`). Confirmation of
-firing requires 24 hours of real-world observation after `sio schedule install`.
+`src/sio/autoresearch/cadence.py` wires the schedule. Confirming that it fires
+needs 24 hours of real-world observation after `sio schedule install`.
 
 ---
 
@@ -106,7 +126,7 @@ prevent recreation of legacy paths.
 
 **Status**: PASS (tested on empty store)
 
-The non-destructive path (no new errors → skip re-embedding) is verified by
+The non-destructive path (no new errors → skip re-embedding) comes from
 `test_suggest_non_destructive.py`. Exact timing on large corpus is PENDING.
 
 ---
@@ -117,7 +137,7 @@ The non-destructive path (no new errors → skip re-embedding) is verified by
 
 Baseline documented at 8% (see `research/suggestion_quality_baseline.md`).
 PatternToRule signature updated with few-shot guidance (T109). A post-remediation
-batch of ≥ 50 suggestions must be reviewed to measure improvement.
+reviewer must read a batch of ≥ 50 suggestions to measure improvement.
 
 ---
 
@@ -169,10 +189,10 @@ all exercised. Integration test `test_closed_loop.py` verifies GEPA artifact.
 
 ## SC-018: GEPA produces statistically better score than pre-optimization baseline
 
-**Status**: PENDING (requires real LLM call and held-out devset)
+**Status**: PENDING (needs a real LLM call and a held-out devset)
 
 Marked `@pytest.mark.slow` (T109). Confirmed callable. Full evaluation against
-real devset requires post-deployment batch with LLM configured.
+real devset needs a post-deployment batch with an LLM configured.
 
 ---
 
@@ -180,7 +200,7 @@ real devset requires post-deployment batch with LLM configured.
 
 **Status**: PASS
 
-`assert_rule_format` and `assert_no_phi` are called in `SuggestionGenerator.forward()`.
+`SuggestionGenerator.forward()` calls `assert_rule_format` and `assert_no_phi`.
 `instrumentation_json` now captures `backtrack_count` per run (T108).
 
 ---
@@ -209,7 +229,7 @@ provider-aware; native function calling enabled for Anthropic/OpenAI providers.
 
 Verified by `tests/unit/dspy/test_lm_factory.py` grep assertion + T111 audit
 (zero hits for `dspy.LM(` outside `lm_factory.py`). The `"claude-code"` literal
-is confined to `src/sio/core/constants.py`.
+lives only in `src/sio/core/constants.py`.
 
 ---
 
@@ -217,14 +237,23 @@ is confined to `src/sio/core/constants.py`.
 
 | Category | PASS | PARTIAL | PENDING |
 |----------|------|---------|---------|
-| Data flow (SC-001 to SC-004) | 3 | 0 | 1 |
+| Data flow (SC-001 to SC-004) | 4 | 0 | 0 |
 | Scheduling (SC-005) | 0 | 0 | 1 |
 | Safety (SC-006 to SC-008) | 3 | 0 | 0 |
 | Performance (SC-009 to SC-011) | 2 | 0 | 1 |
 | Quality (SC-012) | 0 | 0 | 1 |
 | Audit (SC-013 to SC-015) | 3 | 0 | 0 |
 | DSPy (SC-016 to SC-022) | 6 | 0 | 1 |
-| **Total** | **17** | **0** | **5** |
+| **Total** | **18** | **0** | **4** |
+
+SC-001 moved PENDING -> PASS on 2026-10-27 with the counts above.
+
+**A note on PENDING, earned the hard way.** SC-001 read "PENDING (verifiable
+post-deployment)" for as long as the criterion existed. That wording let a missing
+command look like a scheduling detail. A criterion nobody has ever run is not
+pending verification. It is unverified, and that difference is the whole point of
+this document. When a status says PENDING, name the artifact that is absent and the
+command that would produce it.
 
 All PENDING SCs depend on real-world data or post-deployment observation — none
 block the merge. All code-verifiable SCs are PASS.
