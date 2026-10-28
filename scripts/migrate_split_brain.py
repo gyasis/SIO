@@ -8,7 +8,17 @@ Usage:
     python scripts/migrate_split_brain.py
 
 Exits 0 in all cases (no per-platform DB is normal for fresh installs).
-Safe under concurrent hook writes — relies on sync.py's WAL + INSERT OR IGNORE.
+
+Safe under concurrent hook writes because sync.py uses WAL and
+`ON CONFLICT(platform, session_id, timestamp, tool_name) DO NOTHING`, which skips
+only the identity duplicate.
+
+This docstring used to credit `INSERT OR IGNORE` for that safety. It was the
+defect. In SQLite, `OR IGNORE` suppresses NOT NULL and CHECK violations as well as
+UNIQUE conflicts. The insert omitted `behavior_type` (`TEXT NOT NULL CHECK(...)`), so
+SQLite discarded all 35,387 source rows. This script printed
+`claude-code: 0 rows copied` in 0.06 s and called it a success. A shortfall now raises
+`SyncIntegrityError`, instead of returning a number the caller would believe.
 """
 
 from __future__ import annotations

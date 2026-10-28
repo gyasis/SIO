@@ -97,7 +97,7 @@ def handle_post_tool_use(stdin_json: str, *, conn=None) -> str:
         tool_output, error = _extract_tool_result(payload)
         user_message = payload.get("user_message", "[UNAVAILABLE]")
 
-        log_invocation(
+        row_id = log_invocation(
             conn=conn,
             session_id=session_id,
             tool_name=tool_name,
@@ -115,7 +115,23 @@ def handle_post_tool_use(stdin_json: str, *, conn=None) -> str:
         if own_conn:
             conn.close()
 
-        record_success("post_tool_use", session_id=session_id)
+        # log_invocation catches its own exceptions and returns -1, and this hook used to
+        # call record_success regardless. So a write that never landed still reported a
+        # healthy hook, and `sio status` had no way to show capture dying. That is how the
+        # canonical table reached 0 rows against 55,348 captured without a single warning.
+        # A constraint failure is the realistic case: a DB that has not run migration 007
+        # rejects behavior_type='tool' on the CHECK.
+        if row_id == -1:
+            record_failure(
+                "post_tool_use",
+                RuntimeError(
+                    "log_invocation returned -1: the invocation was NOT written. "
+                    "Most likely a schema mismatch -- run `sio db migrate` or check "
+                    "~/.sio/hook_errors.log."
+                ),
+            )
+        else:
+            record_success("post_tool_use", session_id=session_id)
     except Exception as exc:
         logger.exception("PostToolUse hook error — continuing silently")
         try:

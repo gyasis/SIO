@@ -1,17 +1,17 @@
 """systemd **user** timer for off-session briefing-store refresh.
 
-Why a systemd user timer (not bare crontab): on a laptop, ``crontab @daily``
-silently *skips* a run when the machine is asleep/off at the scheduled time and
-never catches up.  A user timer with ``Persistent=true`` runs the missed job
-shortly after the next boot/wake — so the worker always returns to a fresh
-briefing.  The service is throttled (``Nice=19`` + idle IO) and gated on user
-idle, so the off-session refresh never competes with an active session.
+Why a systemd user timer and not a bare crontab.  On a laptop, ``crontab @daily``
+silently *skips* a run when the machine sleeps through the scheduled time.  It never
+catches up.  A user timer with ``Persistent=true`` runs the missed job
+shortly after the next boot or wake.  So the worker always returns to a fresh
+briefing.  ``Nice=19`` plus idle IO throttle the service, and a user-idle gate
+holds it back, so the off-session refresh never competes with an active session.
 
-Installed by ``sio init`` (and ``sio schedule install-briefing``) so a fresh
-machine is wired up automatically — this is portable, not a manual per-machine
-step.  On platforms without ``systemctl --user`` the installer degrades
-gracefully (returns ``available=False``; the store still works, just refreshed
-by whatever other trigger runs ``sio briefing --refresh``).
+``sio init`` installs it, as does ``sio schedule install-briefing``, so a fresh
+machine wires itself up.  This is portable, not a manual per-machine step.  On a
+platform without ``systemctl --user`` the installer degrades gracefully: it
+returns ``available=False``, and the store still works.  Whatever other trigger
+runs ``sio briefing --refresh`` then keeps it fresh.
 """
 
 from __future__ import annotations
@@ -26,8 +26,25 @@ _SERVICE = "sio-briefing-refresh.service"
 _TIMER = "sio-briefing-refresh.timer"
 
 
+# States of `systemctl --user is-system-running` that mean the user manager is alive
+# and will accept units. `degraded` is the common one: it reports that at least one unit
+# failed, not that systemd is absent, and it exits 1.
+_LIVE_SYSTEMD_STATES = frozenset(
+    {"running", "degraded", "starting", "initializing", "maintenance"}
+)
+
+
 def available() -> bool:
-    """True when a systemd user instance is usable on this machine."""
+    """True when a systemd user instance is usable on this machine.
+
+    The previous check read `"running" in output` and so answered False for
+    `degraded` -- which its own comment listed as alive, because the word
+    `degraded` does not contain `running`. On razer, with one failed user unit,
+    `sio schedule status` therefore printed "Briefing timer: systemd --user
+    unavailable" while `systemctl --user list-timers` showed three live SIO timers.
+    That reads as "this machine cannot schedule" and sent the reader looking for a
+    platform limit that was not there.
+    """
     if not shutil.which("systemctl"):
         return False
     try:
@@ -37,10 +54,12 @@ def available() -> bool:
             text=True,
             timeout=5,
         )
-        # "running"/"degraded"/"starting" all mean the user manager is alive.
-        return r.returncode == 0 or "running" in (r.stdout + r.stderr).lower()
     except Exception:
         return False
+    if r.returncode == 0:
+        return True
+    state = (r.stdout + r.stderr).strip().lower()
+    return any(s in state for s in _LIVE_SYSTEMD_STATES)
 
 
 def _service_unit(python: str, interval_hours: int) -> str:

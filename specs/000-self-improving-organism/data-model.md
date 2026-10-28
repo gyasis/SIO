@@ -13,7 +13,7 @@ The central fact table. One row per AI action observed.
 | timestamp | TEXT | NOT NULL, ISO-8601 | When the action occurred |
 | platform | TEXT | NOT NULL | 'claude-code' \| 'gemini-cli' \| 'opencode' \| 'codex-cli' \| 'goose' |
 | user_message | TEXT | NOT NULL, secret-scrubbed | What the user said (redacted secrets) |
-| behavior_type | TEXT | NOT NULL, CHECK | 'skill' \| 'mcp_tool' \| 'preference' \| 'instructions_rule' (closed enum — new types require schema migration) |
+| behavior_type | TEXT | NOT NULL, CHECK | 'skill' \| 'tool' \| 'mcp_tool' \| 'preference' \| 'instructions_rule' (closed enum — a new type needs a schema migration; 'tool' arrived with `migrate_007_behavior_type_tool`, which stopped the logger filing every plain tool call as 'skill') |
 | actual_action | TEXT | NULLABLE | Tool/skill that actually fired |
 | expected_action | TEXT | NULLABLE | Agent-inferred correct action |
 | activated | INTEGER | 0 or 1 | Did anything fire? |

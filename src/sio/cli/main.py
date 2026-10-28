@@ -9373,8 +9373,28 @@ def db_migrate(db_path):
 
     conn.close()
 
-    # In-package migrations (not scripts/): 006 agent isolation — backup,
-    # backfill `agent`, merge partial ids, dedupe, UNIQUE fingerprint.
+    # In-package migrations, which live in the package rather than scripts/ and so are
+    # invisible to the glob above. 005 and 007 were missing here, so a command that
+    # promises "any pending schema migrations" skipped two of them -- and 007 is the one
+    # that lets a row say behavior_type='tool'. Each is idempotent and returns at once
+    # once stamped.
+    from sio.core.db.schema import (
+        migrate_005_experiments,
+        migrate_007_behavior_type_tool,
+    )
+
+    for name, fn in (
+        ("migrate_005_experiments", migrate_005_experiments),
+        ("migrate_007_behavior_type_tool", migrate_007_behavior_type_tool),
+    ):
+        try:
+            fn(str(db_path))
+            click.echo(f"{name}: ok")
+        except Exception as exc:  # noqa: BLE001
+            click.echo(f"{name}: FAILED — {exc}", err=True)
+
+    # 006 agent isolation — backup, backfill `agent`, merge partial ids, dedupe,
+    # UNIQUE fingerprint.
     from sio.core.db.agents import (
         format_migration_report,
         migrate_006_agent_isolation,
