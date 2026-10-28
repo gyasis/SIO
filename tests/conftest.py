@@ -100,6 +100,41 @@ def _isolate_session_archive(tmp_path_factory, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_hook_health(tmp_path_factory, monkeypatch):
+    """Keep the hooks' heartbeat and error log out of the real ``~/.sio``.
+
+    ``sio status`` reads ``~/.sio/hook_health.json`` to report whether the Claude Code
+    hooks are working. This suite drives their failure paths on purpose -- three tests
+    close the connection and assert the hook stays silent -- and every run recorded
+    those as real failures. After a full run ``sio status`` showed:
+
+        pre_compact  x error  3 consecutive failures; last error
+                              ProgrammingError: Cannot operate on a closed database.
+
+    with ``last_session_id: "sess-errs"``, a test id. The health dashboard for the most
+    important system on this box was reporting the test suite, and a reader had no way
+    to tell that from a hook that had genuinely stopped working. ``_ERROR_LOG`` goes the
+    same way: ``~/.sio/hook_errors.log`` was collecting test payloads.
+
+    Same intent as ``_isolate_backup_root`` and ``_isolate_session_archive`` above, and
+    the same intent as the ``own_conn`` guard in the Stop hook's sync, which stopped a
+    test run from copying 55,475 production rows into the canonical DB.
+    """
+    from sio.adapters.claude_code.hooks import (
+        _heartbeat,
+        pre_compact,
+        session_start,
+        stop,
+        user_prompt_submit,
+    )
+
+    root = tmp_path_factory.mktemp("sio-hook-state")
+    monkeypatch.setattr(_heartbeat, "HEALTH_FILE", root / "hook_health.json")
+    for mod in (pre_compact, stop, session_start, user_prompt_submit):
+        monkeypatch.setattr(mod, "_ERROR_LOG", str(root / "hook_errors.log"))
+
+
+@pytest.fixture(autouse=True)
 def _restore_sio_env():
     """Undo any ``SIO_*`` env var a test (or the code it drove) left behind.
 
