@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 
 from sio.adapters.claude_code.hooks.post_tool_use import handle_post_tool_use
+from sio.core.session_handle import ensure_canonical
 
 # --- Valid payload used across multiple tests ---
 _VALID_PAYLOAD = {
@@ -47,7 +48,13 @@ class TestHandlesErrorField:
 
 
 class TestSessionIdPropagation:
-    """The logged record should carry the session_id from the input payload."""
+    """The logged record should carry the session_id from the input payload.
+
+    The stored value is the CANONICAL ``<agent>:<id>`` form that
+    ``log_invocation`` writes through ``ensure_canonical``, not the bare id from
+    the payload. This test asserted the bare id and so failed on every run after
+    canonicalization landed; the live DB holds ``claude:<uuid>``.
+    """
 
     def test_session_id_propagation(self, tmp_db):
         payload = {**_VALID_PAYLOAD, "session_id": "propagation-session-xyz"}
@@ -56,12 +63,14 @@ class TestSessionIdPropagation:
         # The hook should log into the DB; we verify the session_id was stored.
         handle_post_tool_use(stdin_json, conn=tmp_db)
 
+        canonical = ensure_canonical("propagation-session-xyz")
         rows = tmp_db.execute(
             "SELECT session_id FROM behavior_invocations WHERE session_id = ?",
-            ("propagation-session-xyz",),
+            (canonical,),
         ).fetchall()
         assert len(rows) >= 1, "handle_post_tool_use must persist the invocation to the DB"
-        assert rows[0]["session_id"] == "propagation-session-xyz"
+        assert rows[0]["session_id"] == canonical
+        assert canonical.endswith(":propagation-session-xyz")
 
 
 class TestReturnsAllowOnInvalidJson:
