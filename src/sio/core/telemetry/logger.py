@@ -17,17 +17,24 @@ logger = logging.getLogger(__name__)
 def _behavior_type_for(tool_name: str) -> str:
     """Map a tool call to a legal `behavior_type`.
 
-    Every row was hardcoded "skill", so 44,425 Bash calls on razer were filed as skills and
-    any analysis grouping by behavior_type saw exactly one group. `mcp_tool` is already a
-    legal CHECK value so MCP calls can be classified now. A plain tool call (Bash, Read,
-    Edit, Write) still has NO correct value in the CHECK domain
-    ('skill','mcp_tool','preference','instructions_rule'); adding one needs a schema
-    migration and is kept to its own commit (PRD sio_behavior_invocations_sync_fix, F5).
-    Until then those keep the historical value rather than silently failing the CHECK.
+    Every row was hardcoded "skill", so 46,322 Bash calls on razer were filed as skills and
+    any analysis grouping by behavior_type saw exactly one group. `'tool'` became a legal
+    CHECK value in schema 007 (`migrate_007_behavior_type_tool`), so a plain tool call now
+    has somewhere correct to go:
+
+    - `mcp__*`  -> `mcp_tool`
+    - `Skill`   -> `skill`, the only tool that actually invokes one
+    - anything else (Bash, Read, Edit, Write, Agent, WebSearch, ...) -> `tool`
+
+    A DB that has not run the 007 migration rejects `'tool'` on the CHECK and this function
+    would swallow the IntegrityError, so the migration runs from `init_db` -- which every
+    hook calls -- as well as from `bootstrap.ensure_db`.
     """
     if tool_name and tool_name.startswith("mcp__"):
         return "mcp_tool"
-    return "skill"
+    if tool_name == "Skill":
+        return "skill"
+    return "tool"
 
 
 def log_invocation(

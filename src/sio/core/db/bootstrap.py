@@ -119,6 +119,15 @@ def ensure_canonical_db_ready(db_path: str | Path | None = None) -> Path:
     except Exception as exc:
         logger.warning("migrate_006_agent_isolation failed on %s: %s", db_path, exc)
 
+    # 3d. 007 migration — `behavior_type` gains 'tool' and the historical rows
+    # that were all hardcoded 'skill' are reclassified from their tool name.
+    try:
+        from sio.core.db.schema import migrate_007_behavior_type_tool  # noqa: PLC0415
+
+        migrate_007_behavior_type_tool(str(db_path))
+    except Exception as exc:
+        logger.warning("migrate_007_behavior_type_tool failed on %s: %s", db_path, exc)
+
     # 4. Split-brain backfill (one-time, idempotent across runs)
     try:
         from scripts.migrate_split_brain import main as split_brain  # noqa: PLC0415

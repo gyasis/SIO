@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS behavior_invocations (
     platform TEXT NOT NULL,
     user_message TEXT NOT NULL,
     behavior_type TEXT NOT NULL CHECK(
-        behavior_type IN ('skill', 'mcp_tool', 'preference', 'instructions_rule')
+        behavior_type IN ('skill', 'tool', 'mcp_tool', 'preference', 'instructions_rule')
     ),
     actual_action TEXT,
     expected_action TEXT,
@@ -737,6 +737,22 @@ def init_db(db_path: str) -> sqlite3.Connection:
     ensure_error_fingerprint_index(conn)
 
     conn.commit()
+
+    # The 007 CHECK must exist before anything writes behavior_type='tool', and the
+    # hooks call init_db directly -- they never go through bootstrap.ensure_db. Without
+    # this, a machine that pulls the classifier but not the migration writes 'tool'
+    # into a pre-007 CHECK, log_invocation swallows the IntegrityError, and capture
+    # stops dead while every hook keeps reporting success. Measured on razer: ~4 tool
+    # calls were lost in the 100 s between the classifier going live and the migration
+    # running by hand. Idempotent and ~1 ms once stamped (one indexed SELECT).
+    # Skipped for ":memory:", where the table was just created with the 007 CHECK and
+    # a second connect() would address a different, empty database.
+    if db_path != ":memory:":
+        try:
+            migrate_007_behavior_type_tool(db_path)
+        except Exception:
+            logger.exception("migrate_007_behavior_type_tool failed on %s", db_path)
+
     return conn
 
 
@@ -895,6 +911,132 @@ def migrate_005_experiments(db_path: str) -> None:
             "UPDATE schema_version SET status='applied' WHERE version=5"
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+# Pre- and post-007 constraint text. Matched exactly: the migration rewrites the
+# stored DDL, so it must refuse anything it does not recognise.
+_BEHAVIOR_TYPE_CHECK_PRE_007 = (
+    "behavior_type IN ('skill', 'mcp_tool', 'preference', 'instructions_rule')"
+)
+_BEHAVIOR_TYPE_CHECK_007 = (
+    "behavior_type IN ('skill', 'tool', 'mcp_tool', 'preference', 'instructions_rule')"
+)
+
+
+def migrate_007_behavior_type_tool(db_path: str) -> None:
+    """Bring a DB to schema version 7: ``behavior_type`` can say ``'tool'``.
+
+    ``telemetry/logger.py`` hardcoded ``behavior_type='skill'`` on every write, so
+    57,664 canonical rows on razer -- 46,322 of them Bash calls -- were filed as skill
+    invocations, and every analysis grouping by ``behavior_type`` saw exactly one
+    group. The CHECK domain held no value for a plain tool call, so classifying one
+    needed this migration first (PRD sio_behavior_invocations_sync_fix, F5).
+
+    Widens the CHECK by adding ``'tool'``, then backfills from the tool name:
+    ``mcp__*`` -> ``mcp_tool``, the ``Skill`` tool -> ``skill``, anything else ->
+    ``tool``. Only rows still reading ``'skill'`` are touched, and a row with no tool
+    name at all keeps its value rather than being guessed at.
+
+    The constraint is rewritten in place through ``PRAGMA writable_schema`` instead of
+    the 12-step table rebuild. Only the constraint text changes -- no column, type or
+    order moves -- and the rebuild would DROP and re-copy a 400 MB table. The stored
+    DDL is matched exactly before the rewrite, so an unexpected schema aborts instead
+    of being overwritten, and ``PRAGMA integrity_check`` must return ``ok`` on a fresh
+    connection before the backfill runs.
+
+    Idempotent. ``:memory:`` is supported for tests.
+    """
+    # isolation_level=None: a write to sqlite_master inside an implicit transaction is
+    # rolled back by close(), which silently loses the whole migration.
+    conn = sqlite3.connect(db_path, isolation_level=None)
+    rewritten = False
+    try:
+        conn.execute("PRAGMA busy_timeout=30000")
+        ensure_schema_version(conn)
+
+        existing = conn.execute(
+            "SELECT status FROM schema_version WHERE version = 7"
+        ).fetchone()
+        if existing and existing[0] == "applied":
+            return
+
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_version "
+            "(version, applied_at, status, description) "
+            "VALUES (7, datetime('now'), 'applying', '007-behavior-type-tool')"
+        )
+        conn.execute(
+            "UPDATE schema_version SET status='applying', applied_at=datetime('now') "
+            "WHERE version=7 AND status != 'applied'"
+        )
+
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master "
+            "WHERE type='table' AND name='behavior_invocations'"
+        ).fetchone()
+        if row is None:
+            # Nothing to migrate: init_db creates the table with the 007 CHECK.
+            conn.execute("UPDATE schema_version SET status='applied' WHERE version=7")
+            return
+
+        ddl = row[0]
+        if _BEHAVIOR_TYPE_CHECK_007 not in ddl:
+            if _BEHAVIOR_TYPE_CHECK_PRE_007 not in ddl:
+                raise RuntimeError(
+                    "behavior_invocations CHECK is neither the pre-007 nor the 007 "
+                    "form, so this migration will not rewrite it. Found: " + repr(ddl)
+                )
+            schema_cookie = conn.execute("PRAGMA schema_version").fetchone()[0]
+            conn.execute("PRAGMA writable_schema=ON")
+            try:
+                conn.execute(
+                    "UPDATE sqlite_master SET sql=? "
+                    "WHERE type='table' AND name='behavior_invocations'",
+                    (
+                        ddl.replace(
+                            _BEHAVIOR_TYPE_CHECK_PRE_007, _BEHAVIOR_TYPE_CHECK_007
+                        ),
+                    ),
+                )
+                # Bump the cookie or open connections keep the parsed old schema.
+                conn.execute(f"PRAGMA schema_version={schema_cookie + 1}")
+            finally:
+                conn.execute("PRAGMA writable_schema=OFF")
+            rewritten = True
+    except Exception:
+        conn.close()
+        raise
+
+    if rewritten and db_path != ":memory:":
+        # Reopen so the new DDL is parsed, and prove the file is still sound before
+        # writing a single row.
+        conn.close()
+        conn = sqlite3.connect(db_path, isolation_level=None)
+        conn.execute("PRAGMA busy_timeout=30000")
+
+    try:
+        integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+        if integrity != "ok":
+            raise RuntimeError(f"integrity_check after the CHECK rewrite: {integrity}")
+
+        # Backfill. COALESCE because older rows carried the tool name only in
+        # actual_action; a row with neither keeps 'skill' instead of being guessed.
+        conn.execute(
+            "UPDATE behavior_invocations SET behavior_type='mcp_tool' "
+            "WHERE behavior_type='skill' "
+            # substr, not LIKE 'mcp\_\_%': `_` is a single-character wildcard, so the
+            # LIKE form needs an ESCAPE clause to mean a literal underscore.
+            "AND substr(COALESCE(tool_name, actual_action), 1, 5) = 'mcp__'"
+        )
+        conn.execute(
+            "UPDATE behavior_invocations SET behavior_type='tool' "
+            "WHERE behavior_type='skill' "
+            "AND COALESCE(tool_name, actual_action) IS NOT NULL "
+            "AND COALESCE(tool_name, actual_action) <> 'Skill'"
+        )
+        conn.execute("UPDATE schema_version SET status='applied' WHERE version=7")
     finally:
         conn.close()
 

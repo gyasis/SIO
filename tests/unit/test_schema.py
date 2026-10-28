@@ -149,7 +149,7 @@ class TestIdempotency:
 
 
 class TestCheckConstraints:
-    VALID_TYPES = ("skill", "mcp_tool", "preference", "instructions_rule")
+    VALID_TYPES = ("skill", "tool", "mcp_tool", "preference", "instructions_rule")
 
     def test_behavior_type_check_rejects_invalid(self, conn):
         with pytest.raises(sqlite3.IntegrityError):
