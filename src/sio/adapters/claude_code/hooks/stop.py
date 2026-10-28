@@ -165,9 +165,9 @@ def _do_finalize(stdin_json: str, *, conn=None) -> list[str]:
             "session_id": session_id,
             "file_path": transcript_path,
             # Zeros only when the transcript cannot be read; transcript_metrics
-            # overwrites every one of these below. They were hardcoded, so 514
-            # session_metrics rows read 0/0/0 and `sio report` summed a cost of zero
-            # for sessions that had spent millions of tokens.
+            # overwrites every one of these below. They were hardcoded, so all 842
+            # hook-written session_metrics rows on razer read 0 input / 0 output /
+            # 0 messages, and not one carried a model.
             "total_input_tokens": 0,
             "total_output_tokens": 0,
             "total_cache_read_tokens": 0,

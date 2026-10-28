@@ -2,11 +2,18 @@
 
 The Stop and PreCompact hooks both wrote `total_input_tokens: 0`, `total_cost_usd: 0`,
 `message_count: 0`, `sidechain_count: 0` and `model_used: None`. They left duration and
-the stop-reason distribution NULL. Measured 2026-09-08: 514 `session_metrics` rows, and
-every recent one read 0/0/0. One of them was a session that `sio live show` reported as
-491 events with 4 errors. A zero there means "not counted", never "nothing happened".
-Downstream, nothing tells the two apart: `sio report` sums `total_cost_usd` and
-`reports/html_report.py` charts it, so a placeholder zero reads as a free session.
+the stop-reason distribution NULL. Measured 2026-10-27 on razer: **all 842** hook-written
+`session_metrics` rows read 0 input / 0 output / 0 messages, and not one carried a model.
+One was a session that `sio live show` reported as 491 events with 4 errors. A zero there
+means "not counted", never "nothing happened", and nothing downstream can tell the two
+apart.
+
+On the reach of that, plainly: those rows live in the per-platform DB, and **nothing reads
+them today.** `sio report` and `reports/html_report.py` both read the canonical
+`session_metrics`. `sio mine` fills that table with real values, under a derived
+`<path>:<hash>` session id. The sync copies `behavior_invocations` only, so a hook row
+never reaches canonical. So this module does not repair a broken report. It stops a table
+from asserting a measurement nobody took, which is the whole premise of the corpus.
 
 Every number here comes from the transcript the hook already holds. One streaming pass
 over `jsonl_parser.iter_events`, which never loads the file into memory. Measured on a
