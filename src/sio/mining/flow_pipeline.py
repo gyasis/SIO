@@ -17,6 +17,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+from sio.core.session_handle import from_path
 from sio.mining.flow_extractor import (
     compressed_to_tool_indices,
     extract_flows_from_session,
@@ -46,8 +47,22 @@ def _collect_jsonl_files(source_dirs: list[Path], since: str, project: str | Non
 
 
 def _session_id_from_path(path: Path) -> str:
-    """Extract session ID from JSONL file path."""
-    return path.stem
+    """Map a session JSONL path to a canonical ``agent:native_id`` handle.
+
+    This returned ``path.stem`` -- the bare native id, carrying no agent.
+    Flow mining only walks ``~/.claude/projects`` today (``sio flows`` in
+    cli/main.py builds that one source dir), so every stored value was
+    correct-for-claude and nothing misread it: ``session_match_clause``
+    matches a claude handle in BOTH forms.
+
+    The cost was latent rather than live.  A stem cannot say WHICH agent
+    produced it, so the moment flow mining gains a second source directory,
+    two agents' sessions that happen to share a stem merge into one id with
+    no error raised.  ``from_path`` infers the agent from the path location
+    and is the same helper ``--session`` already resolves through, so the
+    write path and the read path now agree by construction.
+    """
+    return from_path(str(path))
 
 
 def run_flow_mine(
