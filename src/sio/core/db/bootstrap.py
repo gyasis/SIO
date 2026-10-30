@@ -128,6 +128,16 @@ def ensure_canonical_db_ready(db_path: str | Path | None = None) -> Path:
     except Exception as exc:
         logger.warning("migrate_007_behavior_type_tool failed on %s: %s", db_path, exc)
 
+    # 3e. 008 backfill — the identity tables agree on `agent:native_id`.
+    # Pure data, no DDL. session_metrics is excluded on purpose: its id is a
+    # content-addressed dedup key under a UNIQUE constraint.
+    try:
+        from sio.core.db.schema import migrate_008_canonical_session_ids  # noqa: PLC0415
+
+        migrate_008_canonical_session_ids(str(db_path))
+    except Exception as exc:
+        logger.warning("migrate_008_canonical_session_ids failed on %s: %s", db_path, exc)
+
     # 4. Split-brain backfill (one-time, idempotent across runs)
     try:
         from scripts.migrate_split_brain import main as split_brain  # noqa: PLC0415
