@@ -9381,11 +9381,13 @@ def db_migrate(db_path):
     from sio.core.db.schema import (
         migrate_005_experiments,
         migrate_007_behavior_type_tool,
+        migrate_008_canonical_session_ids,
     )
 
     for name, fn in (
         ("migrate_005_experiments", migrate_005_experiments),
         ("migrate_007_behavior_type_tool", migrate_007_behavior_type_tool),
+        ("migrate_008_canonical_session_ids", migrate_008_canonical_session_ids),
     ):
         try:
             fn(str(db_path))

@@ -1041,6 +1041,75 @@ def migrate_007_behavior_type_tool(db_path: str) -> None:
         conn.close()
 
 
+def migrate_008_canonical_session_ids(db_path: str) -> int:
+    """Backfill the colon-less ``session_id`` values in the IDENTITY tables.
+
+    Four tables carry a ``session_id`` and THREE of them mean the same thing
+    by it -- "which session was this".  ``behavior_invocations`` has written
+    the canonical ``agent:native_id`` since the cross-agent merge; measured on
+    razer 2026-10-30 it is 230/230 canonical.  ``flow_events`` was 357/357
+    bare, and ``error_records`` holds a legacy tail of 193 bare ids against
+    1,578 canonical.  This rewrites the bare ones so one column means one
+    thing in all three.
+
+    Nothing was broken by the split, and that is worth stating plainly rather
+    than overselling this: ``session_match_clause`` matches a claude handle in
+    both forms, so ``--session`` kept working throughout, and NO query in the
+    codebase joins these tables on ``session_id`` (every cross-table join goes
+    through ``error_id``/``id`` or a timestamp window).  The gain here is that
+    a future join becomes expressible, and the latent cross-agent collision
+    described in ``_session_id_from_path`` stops being reachable.
+
+    **Deliberately NOT touched: ``session_metrics``.**  Its id is
+    ``<file_path>:<sha256[:16]>`` under ``session_id TEXT NOT NULL UNIQUE``,
+    which makes that column a content-addressed DEDUP key, not an identity --
+    it is what stops ``sio mine`` double-counting a transcript it already
+    read.  Rewriting it to a handle would drop that guarantee silently, and
+    re-mine idempotence is a correctness property.  Giving that table a real
+    session identity means a new column plus moving the UNIQUE onto the dedup
+    key -- a schema change, not a string rewrite.  See the PRD note of
+    2026-10-30 in ``sio_behavior_invocations_sync_fix_2026-10-27``.
+
+    The ``agent`` column stays correct across this without re-deriving it: the
+    ``trg_<table>_agent_default`` trigger derives the agent by the same
+    :func:`sio.core.session_handle.parse_handle` rule, under which a bare id is
+    already the legacy claude agent -- so a row that read ``claude`` before the
+    rewrite reads ``claude`` after it. The trigger is ``AFTER INSERT`` and does
+    not fire on an UPDATE, which is what we want here rather than a hazard.
+
+    Pure UPDATE, no DDL, so it records no ``schema_version`` row and nothing
+    gates on it.  Idempotent by the same rule ``ensure_canonical`` uses: a
+    value already holding a colon is skipped, so a second run rewrites 0.
+    A table that does not exist on this DB (the per-platform hook DB carries
+    only ``behavior_invocations``) is skipped.
+
+    Returns the number of rows rewritten.
+    """
+    conn = sqlite3.connect(db_path)
+    try:
+        present = {
+            r[0]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+        total = 0
+        if "flow_events" in present:
+            total += conn.execute(
+                "UPDATE flow_events SET session_id = 'claude:' || session_id "
+                "WHERE session_id IS NOT NULL AND instr(session_id, ':') = 0"
+            ).rowcount
+        if "error_records" in present:
+            total += conn.execute(
+                "UPDATE error_records SET session_id = 'claude:' || session_id "
+                "WHERE session_id IS NOT NULL AND instr(session_id, ':') = 0"
+            ).rowcount
+        conn.commit()
+        return total
+    finally:
+        conn.close()
+
+
 def repair_schema_version(conn: sqlite3.Connection) -> list[int]:
     """Mark any 'failed' or 'applying' schema_version rows as 'applied'.
 
