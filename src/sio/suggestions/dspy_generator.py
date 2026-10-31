@@ -71,7 +71,7 @@ def _load_optimized_or_default(config: Any) -> Any:
     ``contracts/dspy-module-api.md`` §3.
 
     Args:
-        config: SIOConfig instance (used to locate the DB).
+        config: SIOConfig instance, which locates the DB.
 
     Returns:
         A DSPy SuggestionGenerator — either optimized or freshly created.
@@ -670,8 +670,8 @@ def generate_dspy_suggestion(
     rationale = getattr(result, "rule_rationale", "Based on observed error patterns.")
     reasoning_trace = getattr(result, "reasoning", "")
 
-    # target_surface is no longer a DSPy output field in the new signature;
-    # derive it via the existing rule-based router (generator._infer_change_type)
+    # target_surface is not a DSPy output field in this signature, so
+    # derive it via the rule-based router (generator._infer_change_type)
     # which inspects pattern.tool_name etc. This keeps downstream callers
     # (apply path, change_type filter) working unchanged.
     from sio.suggestions.generator import _infer_change_type  # noqa: PLC0415

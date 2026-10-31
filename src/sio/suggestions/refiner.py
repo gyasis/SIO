@@ -116,7 +116,7 @@ def _governor_settings() -> tuple[str, str, str]:
 
 
 def _paid_refiner_allowed() -> bool:
-    """Paid refiner providers are opt-in (owner decision 2026-10-15)."""
+    """Paid refiner providers are opt-in (owner decision)."""
     return os.environ.get("SIO_ALLOW_PAID_REFINER") == "1"
 
 
@@ -162,10 +162,10 @@ def _try_anthropic(prompt: str, system: str) -> str | None:
         import anthropic
 
         client = anthropic.Anthropic(api_key=api_key)
-        # NOTE 2026-05-18: raised from 300 → 1500 per token-length audit.
-        # A refined CLAUDE.md rule typically runs 150-400 tokens but can
-        # exceed 500 for multi-clause rules with examples. 300 was a
-        # silent-truncation risk — same bug class as amplify judge
+        # max_tokens leaves room for the longest rule, not the typical one.
+        # A refined CLAUDE.md rule runs 150-400 tokens but can exceed 500
+        # when it carries multiple clauses and examples. A tighter budget
+        # truncates it silently — same bug class as the amplify judge
         # (commit 7f31ce3). Refiner output writes DIRECTLY to CLAUDE.md,
         # so truncated rules ship to production. 1500 gives ample headroom.
         response = client.messages.create(
@@ -199,8 +199,7 @@ def _try_openai(prompt: str, system: str) -> str | None:
         import openai
 
         client = openai.OpenAI(api_key=api_key)
-        # NOTE 2026-05-18: raised from 300 → 1500 per token-length audit.
-        # See Anthropic call above for full rationale. Same bug class.
+        # Same budget as the Anthropic call above, for the same reason.
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             max_tokens=1500,

@@ -80,8 +80,8 @@ class BackupRequired(Exception):
 class BackupMissingError(Exception):
     """Raised when rollback_applied_change cannot find the backup file.
 
-    The backup path stored in applied_changes references a file that no longer
-    exists on disk.  Manual recovery is required.
+    The backup path stored in applied_changes references a file that is absent
+    from disk.  Manual recovery is required.
     """
 
 
@@ -346,7 +346,7 @@ def rollback_applied_change(
     applied_change_id: int,
     db_path=None,
 ) -> dict:
-    """Revert a previously applied rule change using its backup file.
+    """Revert an applied rule change using its backup file.
 
     Looks up the applied_changes row identified by ``applied_change_id``,
     reads the backup content from ``backup_path``, atomically writes the

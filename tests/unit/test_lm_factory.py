@@ -55,11 +55,11 @@ class TestEnvDetection:
     @patch.dict("os.environ", {"AZURE_OPENAI_API_KEY": "az-key-123"}, clear=True)
     @patch("dspy.LM")
     def test_create_lm_azure_env_NOT_auto_detected(self, mock_lm_cls):
-        """Azure auto-detection was removed in the Azure→OpenAI migration
-        (commit 5f629e1). Azure provider must now be configured explicitly
-        via config.llm_model + config.llm_api_key_env="AZURE_OPENAI_API_KEY".
+        """The factory does NOT auto-detect Azure. Azure has to be configured
+        explicitly, via config.llm_model plus
+        config.llm_api_key_env="AZURE_OPENAI_API_KEY".
 
-        This test pins the new contract — Azure env-var alone does NOT
+        This test pins that contract — Azure env-var alone does NOT
         auto-detect; create_lm() returns None.
         """
         from sio.core.dspy.lm_factory import create_lm

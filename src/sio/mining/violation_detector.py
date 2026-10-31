@@ -141,7 +141,7 @@ _STOP_WORDS: frozenset[str] = frozenset(
         "no", "nor", "only", "same", "so", "also",
         "use", "using",
         # ------------------------------------------------------------------
-        # Rule/imperative noise (added 2026-05-13): these terms appear in
+        # Rule/imperative noise: these terms appear in
         # almost every rule (BLOCKING, MANDATORY, RULE, etc.) AND in almost
         # every error context, so matching on them produces false-positive
         # violations at 1000x+ inflation. The observed effect:
@@ -329,12 +329,12 @@ def detect_violations(
     violations: list[Violation] = []
 
     # Pre-compute, ONCE per rule, everything that depends only on the rule text.
-    # Previously this work (extracting base content words + compiling a
-    # word-boundary regex per term) ran *inside* the per-error loop, i.e.
-    # O(errors x rules x terms) regex compilations — 420 rules x thousands of
-    # error records took minutes.  Hoisting it out makes matching O(rules) setup
-    # + O(errors x rules) cheap substring/precompiled-regex checks.  Behaviour is
-    # identical; only the redundant recompilation is removed.
+    # Extracting base content words and compiling a word-boundary regex per
+    # term depends on the rule alone, so it MUST stay out of the per-error
+    # loop.  Inside it the cost is O(errors x rules x terms) regex
+    # compilations, which takes minutes for 420 rules against thousands of
+    # error records.  Hoisted, matching costs O(rules) setup plus
+    # O(errors x rules) cheap substring and precompiled-regex checks.
     #
     # Per rule we precompute:
     #   plain_words   : list[str]  deduped \w+ terms — matched by TOKEN membership
@@ -403,7 +403,7 @@ def detect_violations(
             if not plain_words and not compound_terms:
                 continue
 
-            # Multi-keyword match policy (added 2026-05-13; precomputed above).
+            # Multi-keyword match policy (precomputed above).
             #
             # Single-keyword matching was producing 1000x+ false positives:
             # generic words common to many rules (RETRY, LOOP, HOOK, etc.)

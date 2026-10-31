@@ -18,8 +18,9 @@ Read-only on error_records (writes only the new error_resolutions table). Labeli
 lm_factory (default nano; SIO_AUTOPSY_LM overrides).
 
 Usage:
-  python scripts/resolve.py --since 2026-06-06
-  python scripts/resolve.py --since 2026-06-06 --no-judge   # deterministic only, no LLM
+  python scripts/resolve.py --since 2026-06-06   history-ok
+  python scripts/resolve.py --since 2026-06-06 --no-judge   history-ok
+      (--no-judge: deterministic only, no LLM)
 """
 from __future__ import annotations
 

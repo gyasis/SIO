@@ -80,7 +80,7 @@ def log_invocation(
         # Audit Round 2 N-R2D.2: tool_name / tool_input / conversation_pointer
         # MUST be populated. The UNIQUE ix_bi_identity index depends on
         # tool_name being non-NULL for INSERT OR IGNORE dedup to work across
-        # sync and re-ingest. Previously only actual_action carried tool_name.
+        # sync and re-ingest. actual_action carrying it alone is not enough.
         record = {
             "session_id": canonical_session_id,
             "timestamp": now,

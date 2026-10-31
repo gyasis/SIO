@@ -1,4 +1,4 @@
-"""Tests for Ollama heartbeat fallback in lm_factory (2026-05-21).
+"""Tests for Ollama heartbeat fallback in lm_factory.
 
 Covers _apply_ollama_heartbeat_fallback() and _ollama_heartbeat() — the
 helpers that swap a configured ``ollama/<model>`` to a cloud fallback when
@@ -91,7 +91,7 @@ def test_ollama_alive_keeps_original_model(monkeypatch):
 
 
 def test_ollama_down_paid_fallback_refused_without_optin(monkeypatch):
-    """2026-10-15: a paid fallback is NOT taken silently -- fails loudly."""
+    """A paid fallback is NOT taken silently -- it fails loudly."""
     monkeypatch.setenv("OLLAMA_HOST", "http://10.99.99.99:11434")
     monkeypatch.setenv("SIO_OLLAMA_FALLBACK_TASK_LM", "openai/gpt-4o-mini")
     with patch(

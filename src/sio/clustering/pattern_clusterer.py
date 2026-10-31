@@ -307,9 +307,9 @@ def _load_stored_centroids(
     # Audit Round 2 H-R2.7 residual (Hunter #2, DSPy): collision-safe
     # description cache. A description string can legitimately be reused
     # across distinct pattern_ids (two clusters may share a human-readable
-    # cluster name). Previously by_desc was a simple dict and silently
-    # overwrote — the second pattern's centroid clobbered the first,
-    # causing cross-cluster reuse of the wrong vector.
+    # cluster name). A plain dict for by_desc silently overwrites: the second
+    # pattern's centroid clobbers the first, so a cluster reuses the wrong
+    # vector.
     #
     # Fix: First pass records (description -> {pattern_id: vec}). Any
     # description that appears in >1 pattern is REMOVED from by_desc.

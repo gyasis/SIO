@@ -277,7 +277,7 @@ class TestMarkStaleForNewCycle:
         )
 
     def test_second_call_with_different_cycle_id_flips_previous(self, tmp_path):
-        """A second call with a new cycle_id flips the previously-active set."""
+        """A second call with a new cycle_id flips the active set."""
         conn, db_path = _fresh_db(tmp_path)
         _seed_old_rows(conn, cycle_id="cycle-1")
 

@@ -252,7 +252,7 @@ class TestSinceOverrideWidensLoad:
     def test_since_flag_passes_date_to_get_error_records(
         self, tmp_path: Path
     ) -> None:
-        """--since 2024-01-01 must be forwarded as the 'since' kwarg.
+        """--since 2024-01-01 must be forwarded as the 'since' kwarg.  history-ok
 
         FR-008: ``sio suggest`` MUST accept ``--since`` to widen the load.
         """

@@ -851,7 +851,7 @@ def drop_agent(
                 )
             # The patterns that lost members: recompute their membership
             # aggregates from what remains, in this same transaction, so a
-            # pattern can never claim errors that no longer exist. A pattern
+            # pattern can never claim errors that are absent. A pattern
             # left with none is KEPT with error_count = 0 (visible, queryable,
             # listed in the report) — drop-agent was asked to delete the
             # agent's rows, not the cross-agent aggregates built on them.

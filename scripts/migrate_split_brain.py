@@ -13,11 +13,11 @@ Safe under concurrent hook writes because sync.py uses WAL and
 `ON CONFLICT(platform, session_id, timestamp, tool_name) DO NOTHING`, which skips
 only the identity duplicate.
 
-This docstring used to credit `INSERT OR IGNORE` for that safety. It was the
-defect. In SQLite, `OR IGNORE` suppresses NOT NULL and CHECK violations as well as
-UNIQUE conflicts. The insert omitted `behavior_type` (`TEXT NOT NULL CHECK(...)`), so
-SQLite discarded all 35,387 source rows. This script printed
-`claude-code: 0 rows copied` in 0.06 s and called it a success. A shortfall now raises
+Never credit `INSERT OR IGNORE` for that safety. In SQLite, `OR IGNORE` suppresses
+NOT NULL and CHECK violations as well as UNIQUE conflicts. An insert that omits
+`behavior_type` (`TEXT NOT NULL CHECK(...)`) therefore makes SQLite discard every
+source row, while this script prints `claude-code: 0 rows copied` in 0.06 s and calls
+it a success. A shortfall raises
 `SyncIntegrityError`, instead of returning a number the caller would believe.
 """
 

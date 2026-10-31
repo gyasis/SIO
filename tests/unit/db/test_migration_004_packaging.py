@@ -1,22 +1,20 @@
 """Regression tests for the migrate_004-lives-in-scripts/ bug.
 
-Origin: `sio.core.db.bootstrap.ensure_canonical_db_ready()` used to do
-``from scripts.migrate_004 import migrate as migrate_004`` inside a bare
-``except Exception: logger.debug(...)``. ``scripts/`` is a dev-repo-only
-directory — it is NOT shipped in the wheel (see
-``[tool.hatch.build.targets.wheel]`` in ``pyproject.toml``, which only
-force-includes ``skills``/``rules``/``docs``) — so on any install where the
-current working directory wasn't the repo root, that import raised
-``ModuleNotFoundError`` and was silently swallowed. The 004 columns
+The migration MUST live in the package, as ``sio.core.db.migrate_004``.
+Importing it as ``from scripts.migrate_004 import migrate`` cannot work off
+the repo: ``scripts/`` is a dev-repo-only directory that the wheel does not
+ship (see ``[tool.hatch.build.targets.wheel]`` in ``pyproject.toml``, which
+force-includes only ``skills``/``rules``/``docs``). Any install whose working
+directory is not the repo root raises ``ModuleNotFoundError``, and a bare
+``except Exception: logger.debug(...)`` swallows it. The 004 columns
 (``pattern_errors.active``, ``patterns.active``, ``datasets.active``,
-``suggestions.active``, plus the rest of the 004 delta) then never landed on
-a fresh ``~/.sio/sio.db``, and any query assuming them — e.g. ``sio trend``'s
-``JOIN pattern_errors pe ... AND pe.active = 1`` — crashed with
+``suggestions.active``, plus the rest of the 004 delta) then never land on a
+fresh ``~/.sio/sio.db``, so any query assuming them — e.g. ``sio trend``'s
+``JOIN pattern_errors pe ... AND pe.active = 1`` — crashes with
 ``sqlite3.OperationalError: no such column: pe.active``.
 
-The fix moves the migration into the package (``sio.core.db.migrate_004``),
-so it can no longer fail to import for that reason, and makes any *other*
-failure loud (WARNING, not DEBUG) instead of silent. These tests exercise
+A package import cannot fail that way, and every *other* failure logs loud
+(WARNING, not DEBUG) instead of silent. These tests exercise
 the migration through the exact path the CLI uses
 (``ensure_canonical_db_ready`` -> ``sio trend``), and guard against the
 ``scripts.migrate_004`` import creeping back into ``bootstrap.py``.
@@ -106,7 +104,7 @@ def test_migrate_004_importable_from_package():
 def test_migrate_004_unimportable_when_scripts_is_absent(tmp_path, monkeypatch):
     """Simulate the exact production failure mode: `scripts` cannot be
     imported at all (as on a real installed wheel). `sio.core.db.migrate_004`
-    must still work — it no longer depends on `scripts/` in any way.
+    must still work — it depends on `scripts/` in no way at all.
     """
     monkeypatch.setitem(sys.modules, "scripts", None)  # forces ImportError on `import scripts*`
     with pytest.raises(ImportError):

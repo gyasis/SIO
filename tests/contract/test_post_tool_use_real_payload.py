@@ -1,10 +1,9 @@
 """The hook must read the payload Claude Code actually sends: `tool_response`.
 
-Measured 2026-10-27 on razer: all 55,348 captured rows carried
-activated=1, correct_action=1, correct_outcome=0 — which is not three constants but one
-cause. `post_tool_use.py` read `payload.get("tool_output", "")` and `payload.get("error")`,
-neither of which Claude Code sends. auto_label() therefore always saw output="" and
-error=None:
+Read `payload.get("tool_output", "")` and `payload.get("error")` instead and every
+captured row carries activated=1, correct_action=1, correct_outcome=0 — not three
+constants but one cause. Claude Code sends neither key, so auto_label() always sees
+output="" with error=None:
 
     activated       = 1   because "" is not None
     correct_action  = 1   because error was always None

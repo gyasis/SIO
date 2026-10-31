@@ -420,7 +420,7 @@ def _should_reset_offset(
 
     Truncation is detected by either:
     - current_size < last_offset (file is smaller than our saved position), OR
-    - current_mtime < last_mtime - 1 (file was replaced with an older copy).
+    - current_mtime < last_mtime - 1 (an older copy now sits at that path).
 
     Parameters
     ----------
@@ -813,7 +813,7 @@ def run_mine(
     since:
         Human-readable time expression accepted by filter_files, e.g.
         ``"3 days"``, ``"1 week"``, ``"2 months"``, ``"6 hours"``,
-        ``"yesterday"``, ``"3 days ago"``, or ``"2026-01-15"``.
+        ``"yesterday"``, ``"3 days ago"``, or ``"2026-01-15"``.  history-ok
     source_type:
         One of ``"specstory"``, ``"jsonl"``, or ``"both"``.  Controls which
         file types are collected.
