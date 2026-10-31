@@ -65,3 +65,8 @@ required
 # --- python builtins that read as inflated verbs ---
 enumerate
 terminate
+
+# `repeated_attempt` is an error_type value the schema stores and the suggestion
+# generator routes on (src/sio/suggestions/dspy_generator.py, ground_truth/
+# seeder.py, cli/main.py). It is a stored name, not prose to improve.
+repeated_attempt

@@ -31,6 +31,9 @@ class SessionManifest:
     kind: str  # "file" | "db"
     path: str  # filesystem path (file) or db path (db)
     encoding: str = "jsonl"  # jsonl | md | sqlite | ...
+    # Free-form labels an adapter learned while LOCATING the session (title,
+    # working dir, company / agent / run status ...). Never required to read it.
+    meta: dict[str, Any] = field(default_factory=dict)
 
     @property
     def handle(self) -> str:
@@ -51,6 +54,9 @@ class SessionEvent:
     # result with is_error / isError, a non-zero exit). The mining layer files
     # it as a tool_failure; None means "not flagged", not "succeeded".
     error: str | None = None
+    # Category to file ``error`` under. None means ``tool_failure``; adapters
+    # that detect a loop set ``repeated_attempt``.
+    error_type: str | None = None
 
 
 @runtime_checkable

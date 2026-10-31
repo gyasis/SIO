@@ -268,6 +268,10 @@ _RULE_INJECTION_HEADERS: list[re.Pattern[str]] = [
 ]
 
 
+# Categories an adapter may pre-assign on a harness-flagged failure.
+_ADAPTER_ERROR_TYPES = frozenset({"tool_failure", "repeated_attempt"})
+
+
 def _is_hook_block_noise(error_text: str | None) -> bool:
     """Return True when ``error_text`` is a hook-success block message rather
     than a real tool failure.  Used to skip ingestion of guardrail interventions
@@ -545,7 +549,13 @@ def extract_errors(
                         messages=parsed_messages,
                         source_file=source_file,
                         source_type=source_type,
-                        error_type="tool_failure",
+                        # An adapter may pre-classify a failure it detected
+                        # itself (a same-command loop is a repeated_attempt).
+                        error_type=(
+                            msg.get("error_type")
+                            if msg.get("error_type") in _ADAPTER_ERROR_TYPES
+                            else "tool_failure"
+                        ),
                         error_text=error,
                         tool_name=tool_name,
                         user_message=user_msg,
@@ -617,7 +627,9 @@ def extract_errors(
         # ------------------------------------------------------------------
         # 3. repeated_attempt — track consecutive tool runs
         # ------------------------------------------------------------------
-        if role == "assistant" and tool_name:
+        # Adapters that fingerprint the exact command themselves (OpenCode,
+        # Paperclip) set loop_checked; same-tool-name runs are then not a loop.
+        if role == "assistant" and tool_name and not msg.get("loop_checked"):
             if tool_name == consecutive_tool:
                 consecutive_count += 1
                 # Emit exactly one record when the threshold (3) is first crossed.

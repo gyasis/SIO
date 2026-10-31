@@ -51,6 +51,11 @@ def adapter_for(agent: str):
 
         return OpenCodeAdapter()
 
+    if agent == "paperclip":
+        from sio.adapters.paperclip.adapter import PaperclipAdapter
+
+        return PaperclipAdapter()
+
     if agent == "codex":
         from sio.adapters.codex.adapter import CodexAdapter
 
@@ -76,6 +81,45 @@ def adapter_for(agent: str):
         f"No adapter for agent '{agent}' — known agents: "
         f"{', '.join(sorted(PARSERS))}."
     )
+
+
+def _opencode_has_session(db: Path, session_id: str) -> bool:
+    if not db.exists():
+        return False
+    try:
+        conn = sqlite3.connect(f"file:{db}?mode=ro&immutable=0", uri=True)
+    except (sqlite3.Error, OSError):
+        return False
+    try:
+        row = conn.execute("SELECT COUNT(*) FROM session WHERE id = ?", (session_id,)).fetchone()
+    except sqlite3.Error:
+        return False
+    finally:
+        conn.close()
+    return bool(row and row[0])
+
+
+def _opencode_manifest(native: str) -> SessionManifest | None:
+    """Find an OpenCode session in the default store or any ``SIO_OPENCODE_DIRS`` store.
+
+    A bare id belongs to the default store; ``<8-hex>:<id>`` to the configured
+    store whose path hashes to that prefix.
+    """
+    from sio.adapters.opencode.adapter import configured_dbs, split_native_id
+    from sio.adapters.opencode.parsing import store_hash
+
+    sid = split_native_id(native)
+    if sid == native:
+        stores = [_OPENCODE_DB]
+    else:
+        prefix = native.split(":", 1)[0]
+        stores = [d for d in configured_dbs() if store_hash(d) == prefix]
+    for db in stores:
+        if _opencode_has_session(db, sid):
+            return SessionManifest(
+                agent="opencode", native_id=native, kind="db", path=str(db), encoding="sqlite"
+            )
+    return None
 
 
 def manifest_from_handle(handle: str) -> SessionManifest | None:
@@ -199,30 +243,13 @@ def manifest_from_handle(handle: str) -> SessionManifest | None:
             encoding="sqlite",
         )
 
+    if agent == "paperclip":
+        from sio.adapters.paperclip.adapter import find_run, paperclip_home
+
+        return find_run(paperclip_home(), native)
+
     if agent == "opencode":
-        if not _OPENCODE_DB.exists():
-            return None
-        try:
-            conn = sqlite3.connect(f"file:{_OPENCODE_DB}?mode=ro&immutable=0", uri=True)
-        except (sqlite3.Error, OSError):
-            return None
-        try:
-            row = conn.execute(
-                "SELECT COUNT(*) FROM session WHERE id = ?", (native,)
-            ).fetchone()
-        except sqlite3.Error:
-            return None
-        finally:
-            conn.close()
-        if not row or not row[0]:
-            return None
-        return SessionManifest(
-            agent="opencode",
-            native_id=native,
-            kind="db",
-            path=str(_OPENCODE_DB),
-            encoding="sqlite",
-        )
+        return _opencode_manifest(native)
 
     from sio.search.cli import PARSERS
 
