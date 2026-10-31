@@ -1,4 +1,4 @@
-"""LLM-based error classifier — the Router model from 2026-05-15 paired debate.
+"""LLM-based error classifier — the Router model.
 
 Replaces (or complements) the embedding-based pattern clusterer for the
 ``tool_failure`` slice of error_records.  See PRD
@@ -44,7 +44,6 @@ of the pipeline).
 from __future__ import annotations
 
 import hashlib
-import os
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -69,7 +68,8 @@ CATEGORIES = (
 
 CYCLE_ID = "manual_backfill_2026-05-15"
 
-# Hash-normalisation rules (from the 2026-05-15 adversarial audit).
+# Hash-normalisation rules: UUIDs, hex, timestamps, paths, ports, line numbers
+# and numbers each collapse to one token.
 _NORM_RULES: tuple[tuple[re.Pattern, str], ...] = (
     (re.compile(
         r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
@@ -141,28 +141,12 @@ def _get_classifier():
                 )
             )
 
-        from sio.core.dspy.lm_factory import make_lm
+        from sio.core.dspy.lm_factory import get_task_lm
 
-        api_key = os.environ.get("SIO_GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            raise RuntimeError(
-                "classifier requires SIO_GEMINI_API_KEY (or GEMINI_API_KEY) in env. "
-                "Source ~/.sio/secrets.env first."
-            )
-        # NOTE 2026-05-18: raised from 500 → 1000 per token-length audit.
-        # Output is just one category string (~10 chars), but ChatAdapter
-        # scaffolding ([[ ## category ## ]] sentinel) + Gemini-Flash
-        # reasoning preamble can consume the 500-token budget BEFORE the
-        # answer fires — same bug class as amplify's judge (commit 7f31ce3).
-        # The classifier currently returns "Other" on failure (line 177)
-        # which is silently lossy — every "Other" might be a real category
-        # that got truncated. 1000 tokens of headroom kills that risk.
-        lm = make_lm(
-            "gemini/gemini-flash-latest",
-            temperature=0.0,
-            max_tokens=1000,
-            api_key=api_key,
-        )
+        # The task model from ~/.sio/config.toml ([llm.task] > [llm.sub]), so
+        # tagging runs on the configured lane, local by default, never a
+        # hard-coded paid provider.
+        lm = get_task_lm()
         dspy.configure(lm=lm)
         _classify_callable = dspy.Predict(_ClassifyError)
     return _classify_callable
