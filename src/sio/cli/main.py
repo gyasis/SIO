@@ -962,6 +962,42 @@ def _insert_counting(conn, errors: list[dict], canonical: str, now: str) -> tupl
     return inserted, present
 
 
+def _events_to_messages(events, canonical: str) -> list[dict]:
+    """Adapter events -> the message dicts ``extract_errors`` consumes.
+
+    ``raw["tool_input"]`` / ``raw["tool_output"]`` (set by the OpenCode and
+    Paperclip adapters) carry the tool call and its result through to the
+    stored error record; ``ev.error`` / ``ev.error_type`` carry a
+    harness-flagged failure (or a loop the adapter itself detected).
+    """
+    return [
+        {
+            "role": ev.role,
+            "content": ev.content,
+            "tool_name": ev.tool,
+            "tool_input": (ev.raw or {}).get("tool_input"),
+            "tool_output": (ev.raw or {}).get("tool_output"),
+            # An adapter that saw the harness flag a failure (pi's isError
+            # toolResult) surfaces it here so it is filed as a tool_failure.
+            "error": getattr(ev, "error", None),
+            "error_type": getattr(ev, "error_type", None),
+            "loop_checked": bool((ev.raw or {}).get("loop_checked")),
+            "timestamp": ev.ts,
+            "session_id": canonical,
+        }
+        for ev in events
+    ]
+
+
+def _project_tag_from_meta(meta: dict | None) -> str | None:
+    """A readable project tag from adapter-supplied session metadata, if any."""
+    meta = meta or {}
+    if meta.get("label"):
+        return f"paperclip:{meta['label']}"
+    directory = (meta.get("directory") or "").rstrip("/")
+    return os.path.basename(directory) or None if directory else None
+
+
 def _mine_session_via_adapter(db_path: str, handle: str, agent: str) -> None:
     """Mine ONE non-claude session through the adapter EXTRACT layer.
 
@@ -992,21 +1028,7 @@ def _mine_session_via_adapter(db_path: str, handle: str, agent: str) -> None:
     adapter = adapter_for(agent)
     canonical = f"{manifest.agent}:{manifest.native_id}"
     events = list(adapter.get_events(manifest))
-    messages = [
-        {
-            "role": ev.role,
-            "content": ev.content,
-            "tool_name": ev.tool,
-            "tool_input": None,
-            "tool_output": None,
-            # An adapter that saw the harness flag a failure (pi's isError
-            # toolResult) surfaces it here so it is filed as a tool_failure.
-            "error": getattr(ev, "error", None),
-            "timestamp": ev.ts,
-            "session_id": canonical,
-        }
-        for ev in events
-    ]
+    messages = _events_to_messages(events, canonical)
     signature = _session_signature(messages)
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     with _db_conn(db_path) as conn:
@@ -1018,6 +1040,10 @@ def _mine_session_via_adapter(db_path: str, handle: str, agent: str) -> None:
             )
             return
         errors = extract_errors(messages, source_file=manifest.handle, source_type="adapter")
+        tag = _project_tag_from_meta(manifest.meta)
+        for rec in errors:
+            if tag:
+                rec["project_tag"] = tag
         inserted, present = _insert_counting(conn, errors, canonical, now)
         _mark_non_claude_session_processed(
             conn, canonical, signature, manifest.agent, len(events), manifest.path
@@ -1110,6 +1136,84 @@ def _mine_agent_bulk(db_path: str, agent: str, since: str | None) -> None:
     )
 
 
+def _mine_adapter_bulk(
+    db_path: str,
+    agent: str,
+    since: str | None,
+    *,
+    opencode_dirs: tuple[str, ...] = (),
+    paperclip_home: str | None = None,
+    paperclip_instance: str | None = None,
+) -> None:
+    """Bulk-mine ``opencode`` / ``paperclip`` through their own adapters.
+
+    Unlike :func:`_mine_agent_bulk` (which goes through the text-only
+    session-search parsers) this keeps tool calls and their output, so shell
+    failures, command loops and leaked template tokens reach the extractor.
+    Same dedup contract: an unchanged session signature is skipped.
+    """
+    import datetime
+
+    from sio.adapters.factory import adapter_for
+    from sio.mining.error_extractor import extract_errors
+
+    cutoff_epoch: float | None = None
+    if since:
+        from sio.mining.time_filter import parse_since
+
+        cutoff_epoch = parse_since(since).timestamp()
+
+    if agent == "opencode":
+        from sio.adapters.opencode.adapter import configured_dbs, list_sessions
+
+        dbs = configured_dbs(opencode_dirs)
+        for db in dbs:
+            if not db.exists():
+                click.echo(f"warning: no opencode db at {db}", err=True)
+        manifests = [m for db in dbs for m in list_sessions(db, cutoff_epoch)]
+    else:
+        from sio.adapters.paperclip.adapter import list_runs
+        from sio.adapters.paperclip.adapter import paperclip_home as _pc_home
+
+        home = _pc_home(paperclip_home)
+        manifests = list_runs(home, paperclip_instance, cutoff_epoch)
+        if not manifests:
+            click.echo(f"warning: no paperclip run logs under {home}", err=True)
+
+    adapter = adapter_for(agent)
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    mined_sessions = skipped_sessions = 0
+    total_errors = total_inserted = total_present = 0
+    with _db_conn(db_path) as conn:
+        _warn_if_agent_migration_pending(conn)
+        for manifest in manifests:
+            canonical = f"{agent}:{manifest.native_id}"
+            messages = _events_to_messages(adapter.get_events(manifest), canonical)
+            signature = _session_signature(messages)
+            if _non_claude_session_processed(conn, canonical, signature):
+                skipped_sessions += 1
+                continue
+            errors = extract_errors(messages, source_file=canonical, source_type="adapter")
+            tag = _project_tag_from_meta(manifest.meta)
+            for rec in errors:
+                if tag:
+                    rec["project_tag"] = tag
+            inserted, present = _insert_counting(conn, errors, canonical, now)
+            _mark_non_claude_session_processed(
+                conn, canonical, signature, agent, len(messages), manifest.path
+            )
+            mined_sessions += 1
+            total_errors += len(errors)
+            total_inserted += inserted
+            total_present += present
+        conn.commit()
+    click.echo(
+        _bulk_summary(
+            agent, mined_sessions, skipped_sessions, total_errors, total_inserted, total_present
+        )
+    )
+
+
 def _plural(n: int, noun: str) -> str:
     return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
 
@@ -1178,15 +1282,41 @@ def _warn_if_agent_migration_pending(conn) -> None:
 @click.option("--project", default=None, help="Filter by project name.")
 @click.option(
     "--agent",
-    type=click.Choice(["claude", "codex", "gemini", "goose", "pi", "omp"]),
+    type=click.Choice(
+        ["claude", "codex", "gemini", "goose", "pi", "omp", "opencode", "paperclip"]
+    ),
     default="claude",
     help=(
         "Which coding agent's sessions to mine in bulk. 'claude' uses the "
         "native JSONL/SpecStory scan; codex/gemini/goose/pi/omp enumerate that "
         "agent's store via the sio search parsers (content-level errors, "
         "plus harness-flagged tool failures where the parser carries them -- pi "
-        "does). Ignored when --session is given."
+        "does). opencode/paperclip use their own adapters and keep tool calls "
+        "+ output (see --opencode-dir / --paperclip-home). Ignored when "
+        "--session is given."
     ),
+)
+@click.option(
+    "--opencode-dir",
+    "opencode_dirs",
+    multiple=True,
+    type=click.Path(),
+    help=(
+        "OpenCode data dir (or opencode.db) to mine; repeatable. Replaces the "
+        "default ~/.local/share/opencode. Env: SIO_OPENCODE_DIRS (os.pathsep "
+        "separated) ADDS stores to the default. Only with --agent opencode."
+    ),
+)
+@click.option(
+    "--paperclip-home",
+    default=None,
+    type=click.Path(),
+    help="Paperclip home holding instances/ (default ~/.paperclip, env SIO_PAPERCLIP_HOME).",
+)
+@click.option(
+    "--paperclip-instance",
+    default=None,
+    help="Only mine this Paperclip instance (a directory name under instances/).",
 )
 @click.option(
     "--source",
@@ -1219,7 +1349,18 @@ def _warn_if_agent_migration_pending(conn) -> None:
     ),
 )
 @runlogged("mine")
-def mine(since, project, agent, source, exclude_sidechains, session_handle, experiment_name):
+def mine(
+    since,
+    project,
+    agent,
+    opencode_dirs,
+    paperclip_home,
+    paperclip_instance,
+    source,
+    exclude_sidechains,
+    session_handle,
+    experiment_name,
+):
     """Mine recent sessions for errors and failures.
 
     The user-visible verb in the PRD is ``scan``; ``mine`` is the
@@ -1252,7 +1393,17 @@ def mine(since, project, agent, source, exclude_sidechains, session_handle, expe
     if agent != "claude" and not session_handle:
         db_path = str(_default_db_path())
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        _mine_agent_bulk(db_path, agent, since)
+        if agent in ("opencode", "paperclip"):
+            _mine_adapter_bulk(
+                db_path,
+                agent,
+                since,
+                opencode_dirs=opencode_dirs,
+                paperclip_home=paperclip_home,
+                paperclip_instance=paperclip_instance,
+            )
+        else:
+            _mine_agent_bulk(db_path, agent, since)
         return
     if not since and not session_handle and not experiment_name:
         raise click.UsageError(

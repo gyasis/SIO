@@ -22,9 +22,12 @@ def test_half_written_line_is_emitted_once_complete(tmp_path):
     fp.write_text("")
     line = json.dumps({"k": "v" * 20}) + "\n"
     out: list[str] = []
-    t = threading.Thread(
-        target=_collect, args=(tail_lines(str(fp), poll_interval=0.02), 1, out), daemon=True
-    )
+    # from_start pins the tail to offset 0. Otherwise the generator reads the
+    # file size on its first next(). That call runs in the worker thread, so it
+    # can land after the partial write. The tail then starts mid-line and
+    # emits only the remainder. This test covers reassembly, not the offset.
+    gen = tail_lines(str(fp), poll_interval=0.02, from_start=True)
+    t = threading.Thread(target=_collect, args=(gen, 1, out), daemon=True)
     t.start()
     with fp.open("a") as fh:
         fh.write(line[:10])
@@ -59,11 +62,8 @@ def test_pi_live_stream_emits_split_line(tmp_path):
     }) + "\n"
     m = SessionManifest(agent="pi", native_id="s", kind="file", path=str(fp), encoding="jsonl")
     out: list = []
-    # from_start=True removes a thread-timing race: tail_lines computes its
-    # starting offset from the file size on the FIRST next(), which the worker
-    # thread may not reach until after both writes. Under full-suite load this
-    # test then started at EOF and saw nothing. The subject here is reassembling
-    # a line delivered in two writes, not where the tail begins.
+    # from_start pins the tail to offset 0. The worker thread may reach its
+    # first next() only after both writes.
     gen = PiAdapter().get_live_stream(m, poll_interval=0.02, from_start=True)
     t = threading.Thread(target=_collect, args=(gen, 1, out), daemon=True)
     t.start()
