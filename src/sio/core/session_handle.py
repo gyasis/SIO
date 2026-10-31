@@ -25,6 +25,7 @@ KNOWN_AGENTS: tuple[str, ...] = (
     "kimi",
     "pi",
     "omp",
+    "paperclip",
     # wuphf carries NO local transcript store: an external bridge writes its
     # rows directly into the DB (behavior_invocations / error_records / ...).
     # Anything that enumerates KNOWN_AGENTS to probe an agent's on-disk
