@@ -9055,8 +9055,14 @@ def autoresearch_status():
     is_flag=True,
     help="Open report in browser after generation.",
 )
+@click.option(
+    "--by-session",
+    "by_session",
+    is_flag=True,
+    help="Top 20 sessions by token spend, with the tools each one ran.",
+)
 @runlogged("report")
-def report(html_flag, output, days, open_flag):
+def report(html_flag, output, days, open_flag, by_session):
     """Generate a session report (terminal or HTML).
 
     Without --html: show a plain text summary via Rich.
@@ -9067,13 +9073,16 @@ def report(html_flag, output, days, open_flag):
         sio report --html                   # HTML report (default path)
         sio report --html -o my-report.html # Custom output path
         sio report --html --open            # Generate and open in browser
+        sio report --by-session             # Spend per session + tools run
     """
     db_path = str(_default_db_path())
     if not os.path.exists(db_path):
         click.echo("No database found. Run 'sio mine' first.")
         return
 
-    if html_flag:
+    if by_session:
+        _report_by_session(db_path, days)
+    elif html_flag:
         _report_html(db_path, output, days, open_flag)
     else:
         _report_terminal(db_path, days)
@@ -9112,6 +9121,72 @@ def _report_html(
 
         webbrowser.open(f"file://{os.path.abspath(output)}")
         click.echo("Opening in browser...")
+
+
+def _report_by_session(db_path: str, days: int) -> None:
+    """Show per-session token spend beside the tools that session ran.
+
+    The join key is the transcript path, not ``session_id``. The two tables
+    spell that column differently: a ``<path>:<hash>`` dedup key in
+    ``session_metrics``, an ``agent:native_id`` handle in
+    ``behavior_invocations``. Joining them on it returns nothing.
+
+    MAX collapses the snapshots. ``session_metrics`` holds a row per mined
+    CONTENT version, so one growing transcript owns many rows, some of them
+    hook-written zeros. A transcript only grows, so the MAX is the fullest.
+    """
+    from datetime import datetime as _dt
+    from datetime import timedelta, timezone
+
+    cutoff = (_dt.now(timezone.utc) - timedelta(days=days)).isoformat()
+    with _db_conn(db_path) as conn:
+        rows = conn.execute(
+            "SELECT sm.file_path, "
+            "       MAX(sm.total_input_tokens + sm.total_output_tokens) AS tokens, "
+            "       MAX(sm.error_count) AS error_count, bi.tool_calls, "
+            "       (SELECT tool_name FROM behavior_invocations "
+            "         WHERE history_file = sm.file_path AND tool_name IS NOT NULL "
+            "         GROUP BY tool_name ORDER BY COUNT(*) DESC LIMIT 1) AS top_tool "
+            "FROM session_metrics sm "
+            "JOIN (SELECT history_file, COUNT(*) AS tool_calls "
+            "        FROM behavior_invocations WHERE history_file IS NOT NULL "
+            "        GROUP BY history_file) bi ON bi.history_file = sm.file_path "
+            "WHERE sm.mined_at >= ? "
+            "GROUP BY sm.file_path "
+            "ORDER BY tokens DESC LIMIT 20",
+            (cutoff,),
+        ).fetchall()
+
+    if not rows:
+        click.echo(
+            f"No session spend joinable in the last {days} days. "
+            "behavior_invocations rows only carry `history_file` once the hook "
+            "has recorded a transcript path; older rows cannot join."
+        )
+        return
+
+    from rich.console import Console
+    from rich.table import Table
+
+    table = Table(
+        title=f"Spend by session (top 20, {days}-day window)",
+        title_style="bold cyan",
+        border_style="dim",
+    )
+    table.add_column("Session", style="bold")
+    table.add_column("Tokens", justify="right")
+    table.add_column("Tool calls", justify="right")
+    table.add_column("Errors", justify="right")
+    table.add_column("Top tool")
+    for r in rows:
+        table.add_row(
+            os.path.basename(r["file_path"] or "").removesuffix(".jsonl")[:20] or "?",
+            f"{r['tokens'] or 0:,}",
+            str(r["tool_calls"]),
+            str(r["error_count"] or 0),
+            r["top_tool"] or "-",
+        )
+    Console().print(table)
 
 
 def _report_terminal(db_path: str, days: int) -> None:

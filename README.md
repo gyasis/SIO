@@ -723,6 +723,7 @@ v3.0 imports the best features from 10+ self-improving agent tools (claude-refle
 | `sio autoresearch stop` | Stop the autonomous loop |
 | `sio autoresearch status` | Show cycle count, active experiments, promotions |
 | `sio report --html` | Generate standalone HTML report with charts and copy-ready suggestions |
+| `sio report --by-session` | Top 20 sessions by token spend, with the tool calls, errors and top tool of each |
 
 ### Experiment Cohorts (`sio experiment`)
 
