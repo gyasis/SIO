@@ -265,20 +265,17 @@ def _resolve_role_lm(role: str, env_var: str, fallback_subkey: str | None,
     if cfg:
         cfg_model = cfg.get("model", default_model)
         resolved_model = _apply_ollama_heartbeat_fallback(cfg_model, role)
-        api_key = _resolve_api_key(cfg.get("api_key_env"))
-        # If we swapped (ollama → fallback), the cfg's api_key/api_base envs
-        # were for the original provider — drop them so dspy.LM falls back to
-        # the new provider's standard env (e.g. OPENAI_API_KEY).
-        if resolved_model != cfg_model:
-            api_key = None
         kwargs = {
             "model": resolved_model,
             "temperature": cfg.get("temperature", default_temperature),
             "max_tokens": cfg.get("max_tokens", default_max_tokens),
             "cache": cfg.get("cache", default_cache),
         }
-        if api_key:
-            kwargs["api_key"] = api_key
+        # The block's key/base envs belong to its own provider. After an
+        # ollama → fallback swap they do not apply, and dspy.LM reads the new
+        # provider's standard env (e.g. OPENAI_API_KEY) instead.
+        if resolved_model == cfg_model:
+            _endpoint_kwargs(cfg.get("api_key_env"), cfg.get("api_base_env"), kwargs)
         return _check_banned(dspy.LM(**kwargs))
 
     model = _apply_ollama_heartbeat_fallback(default_model, role)
@@ -303,12 +300,6 @@ def _read_config_role(role_key: str | None) -> dict | None:
         return data.get("llm", {}).get(role_key)
     except Exception:
         return None
-
-
-def _resolve_api_key(env_var_name: str | None) -> str | None:
-    if not env_var_name:
-        return None
-    return os.environ.get(env_var_name)
 
 
 def _build_lm(model: str, temperature: float, max_tokens: int, cache: bool) -> dspy.LM:
@@ -560,15 +551,20 @@ def _is_governor_base(api_base: str | None) -> bool:
 
 def _lm_endpoint_kwargs(config: SIOConfig, kwargs: dict) -> None:
     """Fill api_key/api_base (and governor thinking-off) into ``kwargs``."""
-    if config.llm_api_key_env:
-        api_key = os.environ.get(config.llm_api_key_env)
-        if not api_key and config.llm_api_key_env == "SIO_GOV_KEY":
+    _endpoint_kwargs(config.llm_api_key_env, config.llm_api_base_env, kwargs)
+
+
+def _endpoint_kwargs(key_env: str | None, base_env: str | None, kwargs: dict) -> None:
+    """Resolve a config block's key/base env names into ``kwargs``."""
+    if key_env:
+        api_key = os.environ.get(key_env)
+        if not api_key and key_env == "SIO_GOV_KEY":
             api_key = GOVERNOR_DEFAULT_KEY
         if api_key:
             kwargs["api_key"] = api_key
-    if config.llm_api_base_env:
-        api_base = os.environ.get(config.llm_api_base_env)
-        if not api_base and config.llm_api_base_env == "SIO_GOV_BASE":
+    if base_env:
+        api_base = os.environ.get(base_env)
+        if not api_base and base_env == "SIO_GOV_BASE":
             api_base = GOVERNOR_DEFAULT_BASE
         if api_base:
             kwargs["api_base"] = api_base
