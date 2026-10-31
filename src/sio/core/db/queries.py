@@ -271,12 +271,12 @@ _ERROR_RECORD_COLS = [
     "mined_at",
     "is_subagent",
     "parent_session_id",
-    "pattern_id",  # added 2026-05-15 so classify-on-mine hook writes through
-    "active_rules",  # added 2026-05-15 T1.L.1 — JSON array of rule-ids active at session start
-    "project_tag",  # added 2026-06-13 — Stage-1 structural tag (sio.mining.tagging)
-    "command_category",  # added 2026-06-13 — Stage-1 structural tag
-    "time_bucket",  # added 2026-06-13 — Stage-1 day bucket
-    "agent",  # added 2026-09-15 — owning coding agent (sio.core.db.agents)
+    "pattern_id",  # lets the classify-on-mine hook write through
+    "active_rules",  # T1.L.1 — JSON array of rule-ids active at session start
+    "project_tag",  # Stage-1 structural tag (sio.mining.tagging)
+    "command_category",  # Stage-1 structural tag
+    "time_bucket",  # Stage-1 day bucket
+    "agent",  # owning coding agent (sio.core.db.agents)
 ]
 
 # Default values for cols that have NOT NULL constraints and may be absent in

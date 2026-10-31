@@ -404,10 +404,9 @@ def init(
 def sync(full, fmt):
     """Copy per-platform behavior_invocations into the canonical sio.db.
 
-    Spec 004 SC-001 specifies verifying this command; it had never been built. The hooks
-    write to ~/.sio/<platform>/behavior_invocations.db while every reader (status, training,
-    analysis) reads ~/.sio/sio.db, so without this the canonical table stays empty — it held
-    0 rows against 55,348 captured on 2026-10-27.
+    The hooks write to ~/.sio/<platform>/behavior_invocations.db while every reader
+    (status, training, analysis) reads ~/.sio/sio.db. Without this command the canonical
+    table stays empty however much the hooks capture, so Spec 004 SC-001 requires it.
 
     Incremental by default: copies rows at or after the newest canonical timestamp.
     """
@@ -1501,11 +1500,11 @@ def mine(
         # fingerprint) -- say so rather than letting it look like nothing.
         table.add_row("Already present (identical, not re-inserted)", str(already_present))
 
-    # A run that captures nothing new is NOT a window with no errors, and the
-    # old label could not tell those apart. Observed 2026-09-02:
-    # `sio mine --since "6 hours"` printed "Errors captured: 0" while seven
-    # errors sat in that window -- all of them mined minutes earlier by a
-    # wider run, so the sessions were skipped as already-processed. The number
+    # A run that captures nothing new is NOT a window with no errors, and one
+    # label cannot tell those apart. `sio mine --since "6 hours"` can report
+    # "Errors captured: 0" while errors sit in that window, because a wider
+    # run mined them minutes earlier and these sessions count as
+    # already-processed. The number
     # was true and the reader's question ("how much friction just now?") got
     # the wrong answer. Absence of NEW must never render as absence.
     window_total = _errors_in_window(db_path, since, agent="claude")
@@ -2767,7 +2766,7 @@ def suggest(
             days = n if unit == "d" else n * 7 if unit == "w" else n * 30
             cutoff = datetime.now(timezone.utc) - _timedelta(days=days)
             return cutoff.isoformat()
-        # Try parsing as ISO date/datetime directly (e.g. "2024-01-01")
+        # Try parsing as ISO date/datetime directly (e.g. "2024-01-01")  history-ok
         for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S%z"):
             try:
                 dt = datetime.strptime(spec, fmt)
@@ -5295,7 +5294,7 @@ def differential_flows_cmd(min_success, min_failure, per_cohort, max_hashes,
     # --trainset-file or by dataset_builder). Without content-hashing, an
     # optimize run that USED a specific differential JSONL has no DB lineage
     # back to the flow_events corpus that produced it. Closes Agent D top-3
-    # gap #3 (2026-05-18 CLI audit). Failure isolated — does NOT delete the
+    # gap #3. Failure isolated — does NOT delete the
     # JSONL the user already has on disk.
     if _rows_written > 0 and Path(result["path"]).exists():
         try:
@@ -5607,7 +5606,7 @@ def promote_positives_cmd(since, min_confidence, dry_run):
         # Principle XIII (observability) + Principle XV-proposed (reproducibility):
         # snapshot the promoted batch as a JSONL trainset row. Without this, a
         # ground_truth row's lineage stops at the (pattern_id, source) pair —
-        # there's no way to ask "what was the promotion batch on 2026-05-18?"
+        # there's no way to ask "what was the promotion batch that day?"
         # The snapshot file + content-hash close the audit chain so a future
         # `sio reproduce` can walk: optimize → ground_truth slice → promotion
         # JSONL → original positive_records ids.
@@ -5914,7 +5913,7 @@ def amplify_cmd(input_path, output_path, n_per_row, min_judge_score, max_workers
         "refuses to run when valset_size < max(25, trainset_size * 0.2). "
         "MIPROv2's Bayesian search needs ~25-50+ valset rows to reliably "
         "outperform Bootstrap; below threshold it often UNDER-performs "
-        "(see optimized_modules row #17 vs #16 on 2026-05-18). Override "
+        "(see optimized_modules row #17 vs #16). Override "
         "logged via runlog so SIO mining can track data-gate-skip frequency."
     ),
 )
@@ -6095,7 +6094,7 @@ def optimize_cmd(
     #       been auto-promoted from a manual file)
     #   (b) row_count must meet a per-optimizer empirical floor
     #
-    # Empirical floors (2026-05-18 evidence):
+    # Empirical floors:
     #   MIPROv2 min 200 rows — #18 success at 93 was borderline (0.7705 vs
     #     Bootstrap 0.7154 by only +7.7%; could be noise on small data)
     #   GEPA min 300 rows — #15 success at 372 was solid (0.8653); today's
@@ -6184,7 +6183,7 @@ def optimize_cmd(
     # ~25-50+ valset rows to reliably outperform Bootstrap; below threshold
     # it overfits to the small valset and often UNDER-performs (empirical:
     # row #17 MIPROv2 0.6970 < row #16 Bootstrap 0.7154 on the same dataset
-    # with valset_size=5, 2026-05-18). Threshold: max(25, trainset * 0.2).
+    # with valset_size=5). Threshold: max(25, trainset * 0.2).
     # When refused, the recommended path is to GROW the dataset via
     # `sio amplify` first, then re-run MIPROv2 on the amplified output.
     if optimizer_name == "mipro" and not skip_data_gate:
@@ -6197,7 +6196,7 @@ def optimize_cmd(
                 f"trainset_size * 0.2)). Got valset_size=[cyan]{valset_size}[/cyan].\n"
                 f"\n  MIPROv2's Bayesian search overfits below this threshold "
                 f"and typically under-performs Bootstrap (see optimized_modules "
-                f"#17 vs #16, 2026-05-18). The recommended path is to GROW the "
+                f"#17 vs #16). The recommended path is to GROW the "
                 f"dataset via amplify first:\n"
                 f"    [dim]sio amplify -i {_suggest_input} --n-per-row 3[/dim]\n"
                 f"  Then re-run MIPROv2 against the amplified output (which "
@@ -6523,10 +6522,9 @@ def optimize_ladder_cmd(
     for the relevant trainset_id (idempotent on re-run — useful for cron
     crash recovery).
 
-    Empirical basis: GEPA on amplified 372-row trainset produced 0.8653
-    (#15, 2026-05-16); GEPA on un-amplified 93-row curate timed out
-    after 60 min wasting $1.11 (2026-05-18). This command makes the
-    successful path the default.
+    Empirical basis: GEPA on an amplified 372-row trainset scores 0.8653
+    (row #15), while GEPA on the un-amplified 93-row curate times out after
+    60 min and wastes $1.11. This command makes the paying path the default.
 
     Example:
         sio optimize-ladder --trainset-file ~/.sio/datasets/curated.jsonl --yes
@@ -6568,7 +6566,7 @@ def optimize_ladder_cmd(
     plan = []  # list of (step_name, cmd_args, est_cost) tuples
     target_for_mipro_gepa = trainset_file  # may be replaced post-amplify
 
-    # --rungs filter (origin 2026-05-18). Solo-owner reality: sometimes you
+    # --rungs filter. Solo-owner reality: sometimes you
     # need a 1-min Bootstrap baseline and want to defer MIPRO+GEPA to a
     # later session. Parse the comma-separated string into a normalized
     # set. Unknown rung names fail loud so a typo doesn't silently skip
@@ -6838,7 +6836,7 @@ def optimize_ladder_cmd(
     ladder_state["status"] = "complete"
     ladder_state["completed_at"] = _now_iso()
 
-    # MIPRO-vs-GEPA cost-justified verdict (origin 2026-05-18 paired-debate).
+    # MIPRO-vs-GEPA cost-justified verdict.
     # GEPA is ~30x the cost of MIPROv2 ($0.66 vs $0.02). If GEPA scores
     # within `gepa_justified_delta` (default 0.03) of MIPROv2, ship MIPROv2
     # instead. The verdict goes into state file so operator and downstream
@@ -6914,7 +6912,7 @@ def optimize_ladder_cmd(
 
     # Constitution XVI clause: background-mode audit log. Every state
     # transition (start/finish/fail) appends a compact JSONL line so a
-    # cron health check or post-mortem can reconstruct what happened.
+    # cron health check or later investigation can reconstruct what happened.
     if _background_mode:
         try:
             audit_log = state_dir / "ladder_runs.jsonl"
@@ -8121,7 +8119,7 @@ def violations(since, fmt):
 
     Examples:
         sio violations                          # Default: scan all rule files
-        sio violations --since 2026-03-01       # Only recent errors
+        sio violations --since "30 days"        # Only recent errors
         sio violations --format json            # JSON output for piping
     """
     from pathlib import Path
@@ -10099,8 +10097,8 @@ def gepa_status_cmd(watch):
       - iter idle time, parse_err / truncation counters
       - critical-tier warnings already fired
 
-    Origin: 2026-05-18 paired-debate. Lets the agent answer "where are
-    we?" mid-run without grepping stderr or guessing.
+    Lets the agent answer "where are we?" mid-run without grepping stderr
+    or guessing.
     """
     import glob as _glob  # noqa: PLC0415
     import json as _json  # noqa: PLC0415
