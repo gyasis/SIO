@@ -7,9 +7,28 @@ import sqlite3
 from pathlib import Path
 
 import numpy as np
-from fastembed import TextEmbedding
 
 from sio.core.embeddings.provider import EmbeddingBackend
+
+
+def __getattr__(name: str):
+    """Load fastembed on first use of ``TextEmbedding``, not at import.
+
+    Importing fastembed imports onnxruntime, which probes GPUs and prints
+    warnings to stderr. Commands that only import this module on the way to
+    something else (e.g. ``sio search``) then pay neither the load time nor the
+    noise. ``local_model.TextEmbedding`` stays patchable as a module attribute.
+    """
+    if name == "TextEmbedding":
+        from fastembed import TextEmbedding  # noqa: PLC0415
+
+        globals()["TextEmbedding"] = TextEmbedding
+        return TextEmbedding
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def _text_embedding_cls():
+    return globals().get("TextEmbedding") or __getattr__("TextEmbedding")
 
 
 class FastEmbedBackend(EmbeddingBackend):
@@ -31,7 +50,7 @@ class FastEmbedBackend(EmbeddingBackend):
         # masking the real error with a confusing secondary one.
         self._cache_conn: sqlite3.Connection | None = None
         self.model_name = model_name
-        self._model = TextEmbedding(model_name=model_name)
+        self._model = _text_embedding_cls()(model_name=model_name)
         if cache_dir:
             cache_path = Path(cache_dir) / "embedding_cache.db"
             self._cache_conn = sqlite3.connect(str(cache_path))
