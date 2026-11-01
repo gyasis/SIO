@@ -1028,7 +1028,7 @@ class TestRegexExpand:
 
 
 class TestRefineInFilesMode:
-    """--refine must narrow --files output too. Previously --files short-circuited
+    """--refine must narrow --files output too. Unguarded, --files short-circuits
     into files_seen and skipped the refine predicate entirely, so
     `X --files` and `X --refine Y --files` returned the SAME file set."""
 

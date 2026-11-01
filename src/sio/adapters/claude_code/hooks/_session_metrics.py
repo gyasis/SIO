@@ -1,12 +1,12 @@
 """Real per-session metrics from the transcript, instead of a row of zeros.
 
-The Stop and PreCompact hooks both wrote `total_input_tokens: 0`, `total_cost_usd: 0`,
-`message_count: 0`, `sidechain_count: 0` and `model_used: None`. They left duration and
-the stop-reason distribution NULL. Measured 2026-10-27 on razer: **all 842** hook-written
-`session_metrics` rows read 0 input / 0 output / 0 messages, and not one carried a model.
-One was a session that `sio live show` reported as 491 events with 4 errors. A zero there
-means "not counted", never "nothing happened", and nothing downstream can tell the two
-apart.
+A hook that hardcodes `total_input_tokens: 0`, `total_cost_usd: 0`,
+`message_count: 0`, `sidechain_count: 0` and `model_used: None`, and leaves duration and
+the stop-reason distribution NULL, writes a `session_metrics` row that asserts a
+measurement nobody took. A busy session can read 0 input / 0 output / 0 messages while
+`sio live show` reports hundreds of events for it. A zero there means "not counted",
+never "nothing happened", and nothing downstream can tell the two apart. So this module
+measures the transcript instead.
 
 On the reach of that, plainly: those rows live in the per-platform DB, and **nothing reads
 them today.** `sio report` and `reports/html_report.py` both read the canonical

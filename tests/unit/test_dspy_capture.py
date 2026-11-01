@@ -1,6 +1,6 @@
 """dspy_capture must never turn a successful LM call into a failure.
 
-Regression (2026-10-05): litellm puts a ``CompletionTokensDetailsWrapper`` in
+Regression: litellm puts a ``CompletionTokensDetailsWrapper`` in
 the usage dict; ``json.dumps`` raised TypeError inside the wrapped
 ``dspy.LM.__call__`` and only ``OSError`` was caught, so every fresh API call
 under a runlogged command "failed" — DSPy retried in JSON mode, failed again,

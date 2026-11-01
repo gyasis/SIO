@@ -15,8 +15,9 @@ Read-only on error_records (never deletes). Labeling routes through SIO's lm_fac
 (default openai/gpt-4.1-nano, ~cents; override with SIO_AUTOPSY_LM) — never a raw SDK client.
 
 Usage:
-  python scripts/autopsy.py --since 2026-06-06 --out ANTIPATTERNS.md
-  python scripts/autopsy.py --since 2026-06-06 --no-label   # clustering only, no LLM/cost
+  python scripts/autopsy.py --since 2026-06-06 --out ANTIPATTERNS.md   history-ok
+  python scripts/autopsy.py --since 2026-06-06 --no-label   history-ok
+      (--no-label: clustering only, no LLM, no cost)
 """
 from __future__ import annotations
 

@@ -555,7 +555,7 @@ class TestSC007CMPProtocolFlow:
     ) -> None:
         """The default search behavior is equivalent to explicit ``--recent 7``.
 
-        A caller that previously passed ``--recent 7`` gets the same result as a
+        A caller passing ``--recent 7`` gets the same result as a
         caller that passes nothing.  This is the CMP protocol-flow no-regression:
         existing explicit ``--recent 7`` callers are unaffected.
         """

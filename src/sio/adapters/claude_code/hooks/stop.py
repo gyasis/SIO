@@ -201,9 +201,9 @@ def _do_finalize(stdin_json: str, *, conn=None) -> list[str]:
                     saved_files.append(fpath)
 
         # Mirror this session's rows into the canonical sio.db. The hooks write to the
-        # per-platform DB while every reader (status, training, analysis) reads sio.db; with
-        # no caller the canonical table simply stayed empty — 0 rows against 55,348 captured
-        # by 2026-10-27. Incremental, so it copies one session's worth, and wrapped so a
+        # per-platform DB while every reader (status, training, analysis) reads sio.db, so
+        # without this call the canonical table stays empty however much the hooks
+        # capture. Incremental, so it copies one session's worth, and wrapped so a
         # sync failure can never take the hook down (hooks are observational, never blocking).
         # ONLY when this hook owns its connection, i.e. the real runtime path. An injected
         # `conn` means an embedded caller or a test, and the sync resolves GLOBAL paths

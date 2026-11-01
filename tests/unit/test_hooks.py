@@ -238,7 +238,7 @@ class TestStop:
     def test_marks_session_as_processed(self, mem_conn, skills_dir):
         """Stop hook must write session_metrics (not processed_sessions).
 
-        H-R1.3: stop hook no longer writes to processed_sessions because it
+        H-R1.3: the stop hook writes no processed_sessions row, because it
         does not know the file SHA-256 hash.  Idempotency of processed_sessions
         is maintained exclusively by the mining pipeline
         (pipeline._update_session_state).  The stop hook records its work in

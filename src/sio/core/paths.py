@@ -53,7 +53,7 @@ def claude_rule_dirs(claude_home: Path | None = None) -> list[Path]:
     the rules-injector hook reads them. A reader that scans only ``rules/``
     sees the always-loaded core and silently misses the whole rulebook — which
     is how violations / budget / dedupe / rule-audit / the suggest consultant
-    went blind to most rules after the 2026-10-01 split. Every rule reader MUST
+    went blind to most rules after the rulebook split. Every rule reader MUST
     resolve its directories here. Missing directories are skipped by callers;
     this function only names them.
     """

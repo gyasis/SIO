@@ -4,15 +4,15 @@ Long-running stages emit `[HB run=... stage=... elapsed=Ns ...]` to stderr
 every N seconds so the user/agent knows the process is alive vs hung. No
 artificial SIGTERM ceilings — heartbeats let the operator decide.
 
-2026-05-18 extension: stuck-in-reflection detector for GEPA runs. Reads
-the active dspy_capture sidecar each tick to detect the failure mode
-where reflection-LM calls accumulate but task-LM calls never appear.
-Empirical basis: today's GEPA on a 93-row dataset spent 58 min producing
-28 reflection (gpt-5) calls and ZERO eval (Flash) calls before timing
-out and burning $1.11 with no DB row. See PRD optimizer_ladder_2026-05-16
-"GEPA INVESTIGATION CLOSED" note for the full diagnosis. The amplify-
-first gate (commit d886078) prevents this pre-flight; this monitor
-catches it in-flight if a user runs with --skip-amplify-gate.
+A stuck-in-reflection detector guards GEPA runs. It reads the active
+dspy_capture sidecar each tick to catch the failure mode where
+reflection-LM calls accumulate but task-LM calls never appear. Left
+unwatched that mode burns a whole run: 58 min on a 93-row dataset, 28
+reflection (gpt-5) calls, ZERO eval (Flash) calls, $1.11, and no DB row.
+See PRD optimizer_ladder_2026-05-16 "GEPA INVESTIGATION CLOSED" for the
+full diagnosis.  history-ok
+The amplify-first gate stops that pre-flight; this monitor catches it
+in-flight when a user passes --skip-amplify-gate.
 """
 from __future__ import annotations
 
@@ -31,10 +31,10 @@ from .writer import RunLog, Stage
 # Reflection-class model fingerprints (Pro/gpt-5 tier).
 _REFLECTION_HINTS = ("gpt-5", "gemini-pro", "claude-opus", "claude-sonnet-4")
 # Task-LM fingerprints (Flash/mini tier). If any of these show up, GEPA
-# has reached the evaluation phase and is no longer stuck.
+# has reached the evaluation phase, so it is not stuck.
 _TASK_HINTS = ("flash", "gpt-4o-mini", "ollama", "haiku")
 
-# GEPA log line patterns we mine for live progress (2026-05-18 paired-debate).
+# GEPA log line patterns we mine for live progress.
 # Empirical from a3dd014a stderr capture — these lines emit at iteration
 # boundaries and within iterations as the optimizer reports best-found score.
 _GEPA_ITER_RE = re.compile(
@@ -48,7 +48,7 @@ _GEPA_ADAPTER_PARSE_ERR_RE = re.compile(r"AdapterParseError")
 _GEPA_TRUNCATION_RE = re.compile(
     r"LM response was truncated due to exceeding max_tokens=\d+"
 )
-# MIPROv2 log line patterns (extension 2026-05-18). DSPy MIPROv2 emits in
+# MIPROv2 log line patterns. DSPy MIPROv2 emits in
 # PERCENTAGE format (64.53) not 0-1 ratio — we convert when capturing.
 # Empirical from c28c44fb stderr capture.
 _MIPRO_TRIAL_RE = re.compile(r"== Trial (\d+) / (\d+)")
@@ -82,7 +82,7 @@ class _GepaProgressWatcher(logging.Handler):
         self.last_iter_score: Optional[float] = None
         self.best_valset_score: Optional[float] = None
         self.score_history: deque = deque(maxlen=10)
-        # === MIPRO state (added 2026-05-18 — same observability for MIPRO) ===
+        # === MIPRO state: the same observability GEPA gets ===
         self.current_trial: int = 0
         self.trial_total: int = 0
         self.last_trial_advance_at: float = time.time()
@@ -207,7 +207,7 @@ class _GepaProgressWatcher(logging.Handler):
                 "trend": trend,
                 "history": list(self.score_history),
                 "iter_idle_sec": int(time.time() - self.last_iter_advance_at),
-                # MIPRO fields (added 2026-05-18)
+                # MIPRO fields
                 "trial": self.current_trial,
                 "trial_total": self.trial_total,
                 "trial_score": self.last_trial_score,
@@ -244,7 +244,7 @@ class Heartbeat:
         self._stuck_critical_at = 40 * 60
         self._stuck_warned = False
         self._stuck_critical_emitted = False
-        # GEPA live-progress watcher (2026-05-18 paired-debate). Hooks
+        # GEPA live-progress watcher. Hooks
         # into Python logging so we don't need to scrape files. Killed
         # in __exit__.
         self._gepa = _GepaProgressWatcher()
@@ -298,8 +298,8 @@ class Heartbeat:
             elapsed = int(time.time() - start)
             since_progress = int(time.time() - self._last_progress)
             self.stage.heartbeats += 1
-            # P2 fix 2026-05-16: bump progress-marker when llm_calls advances,
-            # avoiding spurious HUNG_STAGE during long active runs.
+            # Bump the progress marker whenever llm_calls advances, which
+            # avoids a spurious HUNG_STAGE during a long active run.
             if self.stage.llm_calls > last_llm:
                 self._last_progress = time.time()
                 last_llm = self.stage.llm_calls
@@ -315,7 +315,7 @@ class Heartbeat:
                 extra = f" progress={cur}/{tot} ({frac:.0%})"
                 if eta is not None:
                     extra += f" eta={eta//60}m{eta%60:02d}s"
-            # GEPA live-progress suffix (origin 2026-05-18 paired-debate).
+            # GEPA live-progress suffix.
             # Surfaces iteration index + best valset score + abort signals
             # so the operator can see GEPA's "score-so-far" instead of
             # waiting for a black-box end-of-run number.
@@ -363,8 +363,8 @@ class Heartbeat:
                 file=sys.stderr,
                 flush=True,
             )
-            # 2026-05-16 fix: also flush the run-log file every heartbeat so
-            # `sio runs <id>` works DURING long runs, not just after.
+            # Flush the run-log file every heartbeat so `sio runs <id>`
+            # works DURING a long run, not only after it.
             try:
                 self.run._flush_partial()
             except Exception:
@@ -387,11 +387,10 @@ class Heartbeat:
                 # Detector failure must never crash the heartbeat thread.
                 pass
 
-            # T1-T4 abort tiers (origin 2026-05-18 paired-debate). Tighter
-            # heuristics calibrated from today's stuck GEPA: at iter 17 the
-            # task-LM started emitting truncated/malformed outputs and never
-            # advanced. Catching this within 30s-15min saves ~$0.20-0.50 vs
-            # the 40-min reflection-stuck backstop.
+            # T1-T4 abort tiers. A stuck GEPA emits truncated or malformed
+            # task-LM output and stops advancing, often mid-run. Catching
+            # that within 30s-15min saves ~$0.20-0.50 against the 40-min
+            # reflection-stuck backstop.
             try:
                 self._check_abort_tiers()
             except Exception:
@@ -479,7 +478,7 @@ class Heartbeat:
             self._stuck_warned = True
 
     def _check_abort_tiers(self) -> None:
-        """T1-T4 abort tiers (2026-05-18 paired-debate).
+        """T1-T4 abort tiers.
 
         T1: iter-idle 8min  → WARN (one-shot)
         T2: iter-idle 15min → CRITICAL ABORT signal (one-shot)

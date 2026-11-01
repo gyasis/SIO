@@ -9,7 +9,7 @@ Environment overrides:
   SIO_FORCE_ADAPTER — "json" | "chat"  (override provider detection)
   SIO_FORCE_NATIVE_FC — "0" | "1"     (override native function-calling flag)
 
-Ollama heartbeat fallback (2026-05-21):
+Ollama heartbeat fallback:
   SIO_OLLAMA_FALLBACK_TASK_LM        — used when a resolved ``ollama/*`` task
                                        model can't be reached (e.g. ``openai/gpt-4o-mini``)
   SIO_OLLAMA_FALLBACK_REFLECTION_LM  — same, for reflection role
@@ -43,7 +43,7 @@ litellm.drop_params = True
 
 
 # ---------------------------------------------------------------------------
-# JSON serialization shim for litellm response objects (P0 fix 2026-05-16)
+# JSON serialization shim for litellm response objects
 # ---------------------------------------------------------------------------
 # DSPy v3.1+ + litellm 1.79+ together produce response objects whose .usage
 # attribute contains Pydantic BaseModel instances (CompletionTokensDetailsWrapper,
@@ -51,12 +51,11 @@ litellm.drop_params = True
 # a `default=` argument on these in multiple places (adapters/json_adapter.py
 # line 208, primitives/cache logic, etc.).
 #
-# **Audit finding 2026-05-16:** Originally fixed by monkey-patching the global
-# `json.dumps` to add a `default=` fallback. That's a behavioral land-mine —
-# it silently suppresses `TypeError` for ANY downstream library that uses
-# `except TypeError` as control flow (litellm itself does this in places).
+# Never patch the global `json.dumps` to add a `default=` fallback. That
+# silently suppresses `TypeError` for ANY downstream library that uses
+# `except TypeError` as control flow, which litellm does in places.
 #
-# Scoped fix: instead of patching `json.dumps` globally, patch DSPy's own
+# So the fix stays scoped: instead of patching `json.dumps` globally, patch DSPy's own
 # `adapters.utils.serialize_for_json` helper (which IS already designed to
 # return a fallback). Plus register the offending litellm Pydantic class
 # with a `__getstate__` for repr-safe dumping. Opt-out via SIO_NO_JSON_SHIM=1.
@@ -68,8 +67,8 @@ def _install_json_shim() -> None:
     ``install_json_shim()`` / ``uninstall_json_shim()`` below, gated on the
     SIO_NO_JSON_SHIM env opt-out. This function reserves the namespace for
     a more permanent fix (e.g. patching DSPy's ``serialize_for_json`` helper
-    directly so json.dumps stays untouched globally). See the audit finding
-    2026-05-16 in the module docstring.
+    directly so json.dumps stays untouched globally). The module docstring says
+    why the global patch is unsafe.
 
     Strategy notes (not yet implemented):
       * DSPy's ``serialize_for_json()`` wraps Pydantic dump with try/except
@@ -140,7 +139,7 @@ def uninstall_json_shim() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Ollama heartbeat fallback (2026-05-21)
+# Ollama heartbeat fallback
 # ---------------------------------------------------------------------------
 # A resolved ``ollama/<model>`` will throw a network error at call time if
 # the configured OLLAMA_HOST is unreachable — a real failure mode for users
@@ -205,7 +204,7 @@ def _apply_ollama_heartbeat_fallback(model: str, role: str) -> str:
     if fallback and not fallback.startswith("ollama/") and (
         os.environ.get("SIO_ALLOW_PAID_FALLBACK") != "1"
     ):
-        # 2026-10-15 owner decision: never silently go to a paid provider.
+        # Owner decision: never silently go to a paid provider.
         raise RuntimeError(
             f"Ollama at {host} is unreachable (role={role}, model={model}) and "
             f"{fallback_env}={fallback} is a PAID provider. Refusing to fall "
@@ -322,15 +321,18 @@ def is_forbidden_model(model: str) -> bool:
         "gpt-4o"                             "gpt-4o"                 YES (exact)
         "openai/gpt-4o"                      "gpt-4o"                 YES
         "azure/gpt-4o"                       "gpt-4o"                 YES
-        "gpt-4o-2024-05-13"                  "gpt-4o-2024-05-13"      YES (starts
-                                                                       with "gpt-4o-",
-                                                                       not "gpt-4o-mini")
-        "openai/gpt-4o-2024-08-06"           "gpt-4o-2024-08-06"      YES
+        "gpt-4o-2024-05-13"                  "gpt-4o-2024-05-13"      YES   history-ok
+        "openai/gpt-4o-2024-08-06"           "gpt-4o-2024-08-06"      YES   history-ok
         "openrouter/openai/gpt-4o"           "gpt-4o"                 YES
         "gpt-4o-mini"                        "gpt-4o-mini"            NO  (allowed)
         "openai/gpt-4o-mini"                 "gpt-4o-mini"            NO  (allowed)
         "ollama/qwen3-coder:30b"             "qwen3-coder:30b"        NO
         "gemini/gemini-flash-latest"         "gemini-flash-latest"    NO
+
+        A snapshot id such as "gpt-4o-2024-05-13" (history-ok) is forbidden
+        because it starts
+        with "gpt-4o-", which "gpt-4o-mini" does not. Those two ids carry a date
+        the comparison depends on, hence the history-ok marks above.
 
     P0 guard: the condition deliberately checks for "gpt-4o-mini" BEFORE the
     broader "gpt-4o-" prefix so the mini model is never accidentally refused.
@@ -381,9 +383,9 @@ def _check_banned(lm: dspy.LM) -> dspy.LM:
         Models listed in ``[llm.banned].models`` in ``~/.sio/config.toml`` are
         rejected by EXACT model-id equality (not substring).
 
-        P0 fix (2026-05-16): was using ``b in lm.model`` substring match, which
-        refused 'openai/gpt-4o-mini' because 'openai/gpt-4' is a prefix. Now
-        requires exact equality — bans MUST list the exact model id to refuse.
+        Equality, not a substring match: ``b in lm.model`` would refuse
+        'openai/gpt-4o-mini' because 'openai/gpt-4' is a prefix of it. A ban
+        MUST therefore name the exact model id it refuses.
 
     The family check in Layer 1 raises before the config try/except block so a
     config read failure (IOError, etc.) can never silently suppress it.
@@ -501,8 +503,8 @@ def get_adapter(lm: dspy.LM) -> dspy.Adapter:
       ollama              -> JSONAdapter(use_native_function_calling=False)
       unknown             -> ChatAdapter(use_native_function_calling=False)
 
-    NOTE: Azure provider support was removed 2026-04-24 after the Azure OpenAI
-    endpoints were deactivated (2026-04-16). Do not re-introduce.
+    NOTE: this table carries no Azure provider row, because those Azure OpenAI
+    endpoints are deactivated. Do not re-introduce one.
     """
     forced = os.environ.get("SIO_FORCE_ADAPTER")
     native_env = os.environ.get("SIO_FORCE_NATIVE_FC")
@@ -534,7 +536,7 @@ def configure_default() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Atelier governor (local gemma4:12b) defaults — 2026-10-15 owner decision
+# Atelier governor (local gemma4:12b) defaults — owner decision
 # ---------------------------------------------------------------------------
 # `sio suggest` uses the LOCAL model via the Atelier governor instead of paid
 # OpenAI. config.toml points at env vars SIO_GOV_BASE / SIO_GOV_KEY; because
@@ -584,9 +586,9 @@ def create_lm(config: SIOConfig) -> dspy.LM | None:
     3. ANTHROPIC_API_KEY env var -> anthropic/claude-sonnet-4-20250514
     4. None (no LLM available)
 
-    NOTE: Azure OpenAI was removed 2026-04-24 after endpoints deactivated
-    2026-04-16 (see memory file ref_azure_endpoints_deactivated.md).
-    Do not re-introduce an Azure branch here.
+    NOTE: this factory carries no Azure OpenAI branch, because those endpoints
+    are deactivated (see memory file ref_azure_endpoints_deactivated.md).
+    Do not re-introduce one.
     """
     if config.llm_model:
         kwargs: dict = {

@@ -1,4 +1,4 @@
-"""2026-10-15: `sio suggest` uses local gemma4:12b via the Atelier governor,
+"""`sio suggest` uses local gemma4:12b via the Atelier governor,
 never paid OpenAI by default. All network is mocked."""
 
 from __future__ import annotations

@@ -1,13 +1,10 @@
 """The sync must carry EVERY column, and must never report success after dropping rows.
 
-TDD red for the behavior_invocations sync defect (PRD sio_behavior_invocations_sync_fix,
-2026-10-27). Measured that day: canonical `behavior_invocations` held 0 rows against 55,348
-in the per-platform DB on razer and 35,374 on the WSL node. No row had ever arrived.
-
-Cause: the INSERT lists 11 columns and omits `behavior_type`, which the schema declares
-`TEXT NOT NULL CHECK(...)`. SQLite's `INSERT OR IGNORE` suppresses NOT NULL and CHECK
-failures as well as UNIQUE conflicts, so every row was discarded and the function returned
-a count of 0 with no error.
+TDD red for the behavior_invocations sync defect (PRD sio_behavior_invocations_sync_fix).
+An INSERT that lists 11 columns and omits `behavior_type`, which the schema declares
+`TEXT NOT NULL CHECK(...)`, discards every row. SQLite's `INSERT OR IGNORE` suppresses
+NOT NULL and CHECK failures as well as UNIQUE conflicts, so the function returns a count
+of 0 and no error, and the canonical table stays empty however much the hooks capture.
 
 The existing tests/unit/db/test_sync.py could not catch this: it builds its own 11-column
 DDL with no `behavior_type` at all, so it exercises a schema in which the defect cannot

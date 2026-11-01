@@ -1,9 +1,10 @@
 """`sio render` must not flood every Claude Code session.
 
-Claude Code auto-loads every .md under ~/.claude/rules/. The claude-md format used
-to default to ~/.claude/rules/auto/, so each render added always-loaded context;
-the skill format wrote a flat ~/.claude/skills/<name>.md that is not a skill folder
-and never replaced the placeholder `sio init` ships.
+Claude Code auto-loads every .md under ~/.claude/rules/. So the claude-md format
+MUST NOT default under there: a target of ~/.claude/rules/auto/ makes every render
+add always-loaded context. The skill format MUST write a skill FOLDER, because a
+flat ~/.claude/skills/<name>.md is not one and never replaces the placeholder
+`sio init` ships.
 """
 from __future__ import annotations
 

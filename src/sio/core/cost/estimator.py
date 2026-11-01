@@ -69,7 +69,7 @@ def estimate_run(
     )
 
 
-# Optimizer-specific calibrated estimates from real run data (2026-05-16)
+# Optimizer-specific calibrated estimates from real run data
 _OPTIMIZER_PROFILES = {
     # (avg_calls, avg_in_tok, avg_out_tok) per role for ~370-row trainsets
     ("gepa", "light"): {

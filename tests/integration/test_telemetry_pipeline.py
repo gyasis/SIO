@@ -101,7 +101,7 @@ class TestTwentyHookCallsProduceTwentyRows:
             stdin_json = _make_payload(tool_name, i)
             handle_post_tool_use(stdin_json, conn=tmp_db)
 
-        # Check rows where user_message originally had a secret (even indices)
+        # Check rows whose user_message carried a secret (even indices)
         rows = tmp_db.execute(
             "SELECT user_message, actual_action FROM behavior_invocations "
             "WHERE session_id = 'claude:integration-session-001'"

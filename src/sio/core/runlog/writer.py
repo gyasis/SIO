@@ -59,10 +59,10 @@ class Stage:
         self.llm_cost_usd: float = 0.0
         self.heartbeats: int = 0
         self.notes: list[str] = []
-        # P2 fix 2026-05-16: progress + ETA for long optimizer runs
+        # Progress + ETA for long optimizer runs
         self.progress_current: Optional[int] = None  # e.g. 212
         self.progress_total: Optional[int] = None    # e.g. 250
-        # GEPA live snapshot (origin 2026-05-18 paired-debate). Updated by
+        # GEPA live snapshot. Updated by
         # the heartbeat thread each tick so external readers (sio gepa-status,
         # the agent in conversation) can answer "where are we right now?"
         # without grepping stderr logs.
@@ -137,7 +137,7 @@ class RunLog:
         self.outputs: dict[str, Any] = {}
         self.pid = os.getpid()
         self._path = _RUNS_DIR / f"{_ts_compact()}_{cmd}_{self.run_id}.json"
-        # P1 fix 2026-05-16: protects warnings/stages/errors lists against
+        # Protects warnings/stages/errors lists against
         # concurrent mutation from heartbeat daemon thread vs main-thread flush.
         # Audit-confirmed bug: to_dict() iterates self.stages/warnings via list
         # comprehension while HB thread .appends, causing RuntimeError:
@@ -212,9 +212,9 @@ class RunLog:
     def _flush_partial(self) -> None:
         """Write current state — called after every stage. THREAD-SAFE.
 
-        P1 fix 2026-05-16: catches ALL exceptions (was only OSError, missing
-        the RuntimeError from concurrent list mutation by HB thread).
-        Snapshots state under lock to avoid mid-iteration size change.
+        Catches ALL exceptions, not just OSError: the heartbeat thread
+        mutates these lists concurrently, which raises RuntimeError.
+        Snapshots state under lock to avoid a mid-iteration size change.
         """
         try:
             with self._lock:

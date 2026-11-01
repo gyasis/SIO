@@ -26,7 +26,7 @@ import subprocess
 import sys
 from typing import Any
 
-# Marker used to identify SIO-owned cron lines.
+# Marker that identifies SIO-owned cron lines.
 _SIO_MARKER = "# SIO passive analysis"
 
 # Regex patterns that match daily and weekly schedule fields.

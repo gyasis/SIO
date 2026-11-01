@@ -430,8 +430,8 @@ class TestGpt4oFamilyBan:
         "gpt-4o"                  → bare=="gpt-4o"                → REJECT
         "openai/gpt-4o"           → bare=="gpt-4o"                → REJECT
         "azure/gpt-4o"            → bare=="gpt-4o"                → REJECT
-        "gpt-4o-2024-05-13"       → startswith("gpt-4o-"), not mini → REJECT
-        "openai/gpt-4o-2024-08-06"→ startswith("gpt-4o-"), not mini → REJECT
+        "gpt-4o-2024-05-13"       → startswith("gpt-4o-"), not mini → REJECT  history-ok
+        "openai/gpt-4o-2024-08-06"→ startswith("gpt-4o-"), not mini → REJECT  history-ok
         "openrouter/openai/gpt-4o"→ bare=="gpt-4o"                → REJECT
         "gpt-4o-mini"             → startswith("gpt-4o-mini")     → ALLOW
         "openai/gpt-4o-mini"      → startswith("gpt-4o-mini")     → ALLOW

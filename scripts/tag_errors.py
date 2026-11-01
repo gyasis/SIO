@@ -6,7 +6,7 @@ tags are still NULL. Run after `sio mine` so every mined error is tagged.
 Usage:
   python scripts/tag_errors.py                 # tag all untagged rows
   python scripts/tag_errors.py --retag         # recompute for ALL rows (after logic change)
-  python scripts/tag_errors.py --since 2026-06-06
+  python scripts/tag_errors.py --since 2026-06-06   history-ok
 """
 from __future__ import annotations
 

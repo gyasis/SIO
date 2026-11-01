@@ -2,7 +2,7 @@
 
 Uses ``python-dateutil`` for flexible date parsing.  Supports relative
 durations ("3 days", "2 months", "6 hours"), natural language ("yesterday",
-"last week", "2 days ago"), and absolute dates ("2026-01-15", "Jan 15 2026",
+"last week", "2 days ago"), and absolute dates ("2026-01-15", "Jan 15 2026",  history-ok
 ISO 8601).
 
 Public API
@@ -73,8 +73,8 @@ def parse_since(since: str) -> datetime:
         - ``"last month"``                   → start of previous month
 
     Absolute dates (via dateutil):
-        - ``"2026-01-15"``                   → that date at midnight UTC
-        - ``"Jan 15, 2026"``                 → parsed by dateutil
+        - ``"2026-01-15"``                   → that date at midnight UTC  history-ok
+        - ``"Jan 15, 2026"``                 → parsed by dateutil  history-ok
         - ``"2026-01-15T10:30:00Z"``         → ISO 8601
         - ``"15/01/2026"``                   → various international formats
 

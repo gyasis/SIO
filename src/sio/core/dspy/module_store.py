@@ -47,10 +47,10 @@ def save_module(
     module.save(file_path)
 
     # Audit Round 2 N-R2D.3 (DSPy): deactivate + insert MUST be atomic.
-    # Previously the bare conn.execute calls relied on implicit transaction
-    # semantics; if the INSERT failed (schema drift, NOT NULL), the UPDATE
-    # had already deactivated the prior active module → operator left with
-    # zero active modules and no new one registered. Wrap in `with conn:`
+    # Bare conn.execute calls rely on implicit transaction semantics, which
+    # splits the pair: when the INSERT fails (schema drift, NOT NULL) the
+    # UPDATE has already deactivated the prior active module, leaving the
+    # operator with zero active modules and no new one. Wrap in `with conn:`
     # which commits on success and rolls back on any exception.
     try:
         with conn:

@@ -69,7 +69,7 @@ def claude_archive() -> Path:
 
 
 def archived_only(live_root: Path, rel: Path) -> bool:
-    """True when an archived file no longer exists live -- i.e. the harness deleted it."""
+    """True when an archived file is absent from the live tree, i.e. the harness deleted it."""
     return not (live_root / rel).exists()
 
 
@@ -134,12 +134,12 @@ class Record:
 def _compile_pattern(pattern: str, case_sensitive: bool) -> re.Pattern[str]:
     """Compile *pattern* as a REGEX, matching the ripgrep fast path's semantics.
 
-    BUGFIX (search-expand): the python parser path previously matched patterns
-    as a LITERAL substring while the ripgrep fast path matched them as a regex.
-    Same query, two answers — e.g. ``promptchain|graphiti`` returned 0 on the
-    python/``--files`` path but 785 via ``--fast``. Alternation (the natural way
-    to EXPAND a search across synonyms) silently returned nothing. This unifies
-    both paths on regex semantics (the documented default, see module docstring).
+    Both paths MUST read a pattern as a regex, which is the documented default
+    (see the module docstring). Treat it as a literal substring on the python
+    path and one query gives two answers: ``promptchain|graphiti`` returns 0
+    through python/``--files`` and 785 through ``--fast``. Alternation is the
+    natural way to EXPAND a search across synonyms, so that gap makes it
+    return nothing at all.
 
     An invalid regex falls back to a literal (escaped) match so a stray
     metacharacter never raises — it just behaves like the old substring search.
@@ -293,8 +293,9 @@ def _claude_entry_parts(entry: dict) -> tuple[list[tuple[str, str]], str | None]
 
     Conversation text alone is not the history: the work lives in tool calls
     (``tool_use`` name + input), their output (``tool_result``) and the top-level
-    ``toolUseResult``. Per-match search used to read only ``text`` blocks, so a
-    command or its output was unfindable — in live sessions and in the archive.
+    ``toolUseResult``. Per-match search therefore reads the tool blocks too:
+    scan only ``text`` and a command or its output is unfindable, both in live
+    sessions and in the archive.
 
     Returns the parts AND the harness's own failure flag: a ``tool_result`` block
     with ``is_error`` true. Reading the output but discarding the verdict on it
@@ -2004,12 +2005,12 @@ def main(argv: list[str] | None = None) -> int:
 
     # BUGFIX (refine-in-files): apply the Hop-2 --refine predicate HERE, at the
     # single choke point before aggregation, so --files / --count / record output
-    # all narrow identically. Previously --refine was applied only to the buffered
-    # ``inline_records`` AFTER the loop, so --files (which short-circuits into
-    # ``files_seen`` and never buffers) silently ignored --refine — e.g.
-    # ``promptchain --files`` and ``promptchain --refine graphiti --files`` both
-    # returned 144. --refine also now forces the python path (see fast_eligible),
-    # so the fast/ripgrep path can no longer bypass it either.
+    # all narrow identically. Apply it to the buffered ``inline_records`` after
+    # the loop instead and --files slips past: it short-circuits into
+    # ``files_seen`` and never buffers, so it would ignore --refine entirely —
+    # ``promptchain --files`` and ``promptchain --refine graphiti --files``
+    # would both return 144. --refine also forces the python path (see
+    # fast_eligible), which denies the fast/ripgrep path the same bypass.
     refine_term = getattr(args, "refine", None)
     refine_terms = (
         [t.strip().lower() for t in refine_term.split(",") if t.strip()]
@@ -2073,9 +2074,9 @@ def main(argv: list[str] | None = None) -> int:
         #   rg -C  (raw lines, not role-aware)
         #   --session (full transcript, no offset)
         #
-        # B2 fix: use the line→turn-index map so the window is correct even when
-        # blank or malformed lines exist in the JSONL (previously hit_offset used
-        # rec.line - 1 which miscounted because turns_from_jsonl skips those lines).
+        # B2: use the line→turn-index map so the window stays correct even when
+        # the JSONL holds blank or malformed lines. Deriving the offset from
+        # rec.line - 1 miscounts them, because turns_from_jsonl skips them.
         #
         # B5 fix: window ALL hits per session (up to MAX_WINDOWS_PER_SESSION) rather
         # than only the first/newest. Emit a note to stderr if hits are capped.

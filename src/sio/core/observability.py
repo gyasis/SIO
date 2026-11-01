@@ -1,8 +1,7 @@
 """Centralized failure logging for SIO — no more silent errors.
 
-Every ``except`` handler in SIO that previously swallowed an error with
-``pass`` or a lonely ``logger.warning`` should instead call
-:func:`log_failure`. Failures are:
+Every ``except`` handler in SIO MUST call :func:`log_failure` rather than
+swallow an error with ``pass`` or a lonely ``logger.warning``. Failures are:
 
 1. Written to stderr via the standard :mod:`logging` stack (visible to user).
 2. Appended as one JSON line per event to
