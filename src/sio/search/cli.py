@@ -95,6 +95,22 @@ def _live_copy_exists(archived: Path) -> bool:
 
 DEV_ROOT = HOME / "dev"
 
+# Default per-agent match cap. Agents call `sio search` without --limit; an
+# unbounded result floods their context, so the default sets a cap, and a capped
+# result says so (see _report_truncation). --limit 0 restores unlimited output.
+DEFAULT_LIMIT = 20
+
+
+def _report_truncation(labels: list[str], limit: int) -> None:
+    """Tell the caller on stderr that output stopped at the cap, not at the end."""
+    if not labels:
+        return
+    print(
+        f"# Truncated: {', '.join(labels)} hit --limit {limit}; there are more matches. "
+        "Narrow the pattern, or pass --limit N / --limit 0 for all.",
+        file=sys.stderr,
+    )
+
 
 # ------------------------- record + helpers ------------------------- #
 
@@ -1024,6 +1040,76 @@ def _find_specstory(days: int) -> list[str]:
     return out
 
 
+_RG_MATCH_LINE = re.compile(r"^[^:\n]+:\d+:")
+_RG_LINE_PREFIX = re.compile(r"^[^:\n]+[:-]\d+[:-]")
+
+# A transcript JSONL line can run to tens of thousands of characters. With a
+# cap in force, a longer line is cut to a window around the match.
+MAX_LINE_CHARS = 600
+LINE_WINDOW = 250
+
+
+def _window_line(line: str, needle: re.Pattern[str] | None) -> str:
+    """Shorten one ripgrep line to its path:lineno prefix plus a window on the match."""
+    body = line.rstrip("\n")
+    if len(body) <= MAX_LINE_CHARS:
+        return line
+    m = _RG_LINE_PREFIX.match(body)
+    prefix, text = (body[: m.end()], body[m.end():]) if m else ("", body)
+    hit = needle.search(text) if needle else None
+    centre = hit.start() if hit else 0
+    start = max(0, centre - LINE_WINDOW)
+    end = min(len(text), centre + LINE_WINDOW)
+    head = f"[…{start} chars omitted…]" if start else ""
+    tail = f"[…{len(text) - end} chars omitted…]" if end < len(text) else ""
+    return f"{prefix}{head}{text[start:end]}{tail}\n"
+
+
+def _cap_fast_output(
+    out: str,
+    limit: int,
+    *,
+    by_line: bool,
+    pattern: str = "",
+    case_sensitive: bool = False,
+) -> tuple[str, bool]:
+    """Cut ripgrep output to *limit* results; return (text, was_truncated).
+
+    by_line: --files / --count output, one result per line.
+    Otherwise: -n -C output, where a result is a match line (path:lineno:) and
+    context lines (path-lineno-) and "--" separators belong to the match before.
+    The cut falls on the separator ahead of the first match past the cap, so it
+    also drops that match's leading context. Each kept line longer than
+    MAX_LINE_CHARS is cut to a window on the match (see _window_line).
+    limit 0 returns the output untouched.
+    """
+    if not limit or not out:
+        return out, False
+    lines = out.splitlines(keepends=True)
+    if by_line:
+        if len(lines) <= limit:
+            return out, False
+        return "".join(lines[:limit]), True
+    try:
+        needle = re.compile(pattern, 0 if case_sensitive else re.IGNORECASE)
+    except re.error:
+        needle = re.compile(re.escape(pattern), 0 if case_sensitive else re.IGNORECASE)
+    kept: list[str] = []
+    seen = 0
+    last_sep = None
+    for line in lines:
+        if line.rstrip("\n") == "--":
+            last_sep = len(kept)
+        elif _RG_MATCH_LINE.match(line):
+            seen += 1
+            if seen > limit:
+                cut = last_sep if last_sep is not None else len(kept)
+                return "".join(kept[:cut]), True
+            last_sep = None  # only a separator AFTER the last kept match may be the cut
+        kept.append(_window_line(line, needle))
+    return "".join(kept), False
+
+
 def fast_path(args: argparse.Namespace) -> int:
     """Ripgrep short-circuit for claude-native search. Returns exit code.
 
@@ -1108,6 +1194,13 @@ def fast_path(args: argparse.Namespace) -> int:
         return 1
 
     out = proc.stdout
+    out, truncated = _cap_fast_output(
+        out,
+        args.limit,
+        by_line=args.files or args.count,
+        pattern=args.pattern,
+        case_sensitive=args.case_sensitive,
+    )
     if args.clean and not (args.files or args.count):
         out = _clean(out)
 
@@ -1137,12 +1230,14 @@ def fast_path(args: argparse.Namespace) -> int:
             # preceded by a non-dash character.  A match line's path never
             # contains a bare "-digit-" at the same position, so checking
             # that position 0 to the separator uses only ":" (not "-") works.
-            _match_re = re.compile(r"^[^:\n]+:\d+:")
+            _match_re = _RG_MATCH_LINE
             n = sum(1 for line in out.splitlines() if _match_re.match(line))
         print(
             f"# Total matches: {n}  (claude-fast, {len(files)} files)",
             file=sys.stderr,
         )
+        if truncated:
+            _report_truncation(["claude-fast"], args.limit)
         return 0
     if rc == 1:
         print(f"# Total matches: 0  (claude-fast, {len(files)} files)", file=sys.stderr)
@@ -1625,7 +1720,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
-        "--limit", type=int, default=0, help="Cap matches per agent (0=unlimited)."
+        "--limit",
+        type=int,
+        default=DEFAULT_LIMIT,
+        help=(
+            f"Cap matches per agent (default: {DEFAULT_LIMIT}; 0=unlimited). "
+            "Also caps --files/--count lines on the fast path. A capped result "
+            "prints '# Truncated:' on stderr."
+        ),
     )
     # Output modes
     p.add_argument("--files", action="store_true", help="Emit unique source paths.")
@@ -1891,6 +1993,7 @@ def main(argv: list[str] | None = None) -> int:
 
     total = 0
     per_label_counts: dict[str, int] = defaultdict(int)
+    truncated_labels: list[str] = []
     files_seen: set[str] = set()
     per_file_counts: dict[str, int] = defaultdict(int)
 
@@ -1931,6 +2034,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             for rec in parser(args.pattern, cs, cutoff):
                 if args.limit and per_label_counts[label] >= args.limit:
+                    truncated_labels.append(label)
                     break
                 # Hop-2 CONTRACT: drop records failing the refine predicate before
                 # any aggregation, so files/count/records narrow the same way.
@@ -2046,6 +2150,7 @@ def main(argv: list[str] | None = None) -> int:
 
     summary = ", ".join(f"{a}={c}" for a, c in per_label_counts.items()) or "none"
     print(f"# Total matches: {total}  ({summary})", file=sys.stderr)
+    _report_truncation(truncated_labels, args.limit)
 
     # FR-002: On zero results within the default window, emit a widen hint.
     # The hint fires only when a non-zero default window was active (i.e. the

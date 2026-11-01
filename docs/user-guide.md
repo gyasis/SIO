@@ -456,7 +456,7 @@ sio search "<pattern>" [--agent <harness>] [--recent <days>] [--files] [--count]
 | `<pattern>` | (required) | Search pattern (plain text) |
 | `--agent` | `claude` | Which harness to search: `claude`, `codex`, `goose`, `opencode`, `gemini`, `aider`, `promptchain`, `kimi`, `pi`, or `all` |
 | `--recent <N>` | `0` (all time) | Only files with mtime within N days |
-| `--limit <N>` | `0` (unlimited) | Cap matches per agent |
+| `--limit <N>` | `20` | Cap matches per agent; `0` = unlimited. A capped result prints `# Truncated:` on stderr, and fast-path text lines over 600 chars are cut to a window on the match |
 | `--files` | off | Emit unique source file paths (one per line; pipe into `--session`) |
 | `--count` | off | Emit per-file match counts (`N\tpath`) |
 | `--specstory` | off | Claude: search SpecStory MD only |
