@@ -4,7 +4,7 @@ Tests confirm that cluster slugs are stable across different input orderings.
 
 - Clustering the same errors twice (reverse, random shuffle) must produce
   identical ``pattern_id`` values per cluster.
-- Adding one new error must not change the slug of a previously-stable cluster.
+- Adding one new error must not change the slug of an already-stable cluster.
 - Slug format matches ``^[a-z_]+_[0-9a-f]{10}$``.
 
 These tests are EXPECTED RED until T098 (Wave 10) rewrites the slug algorithm.

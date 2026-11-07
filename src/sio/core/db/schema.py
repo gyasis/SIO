@@ -660,8 +660,8 @@ def init_db(db_path: str) -> sqlite3.Connection:
 
     # Migration: add cycle_id to datasets + suggestions. Code in
     # cli/main.py (suggest pipeline, FR-003) and datasets/builder.py
-    # writes cycle_id, but the DDLs originally shipped without it —
-    # ALTER here so existing pre-fix DBs catch up on next init_db().
+    # writes cycle_id, which the oldest DDLs omit — ALTER here so such a DB
+    # catches up on the next init_db().
     try:
         conn.execute("ALTER TABLE datasets ADD COLUMN cycle_id TEXT")
     except sqlite3.OperationalError:
@@ -683,7 +683,7 @@ def init_db(db_path: str) -> sqlite3.Connection:
     except sqlite3.OperationalError:
         pass  # Column already exists
 
-    # Migration (PRD prd-corpus-problem-miner 2026-06-13): Stage-1 structural tags on
+    # Migration (PRD prd-corpus-problem-miner): Stage-1 structural tags on
     # error_records — project_tag / command_category / time_bucket, derived generically
     # by sio.mining.tagging and written on mine (error_extractor._build_record). Lets the
     # autopsy/cluster stage read persisted tags instead of recomputing per run.
@@ -1045,20 +1045,19 @@ def migrate_008_canonical_session_ids(db_path: str) -> int:
     """Backfill the colon-less ``session_id`` values in the IDENTITY tables.
 
     Four tables carry a ``session_id`` and THREE of them mean the same thing
-    by it -- "which session was this".  ``behavior_invocations`` has written
-    the canonical ``agent:native_id`` since the cross-agent merge; measured on
-    razer 2026-10-30 it is 230/230 canonical.  ``flow_events`` was 357/357
-    bare, and ``error_records`` holds a legacy tail of 193 bare ids against
-    1,578 canonical.  This rewrites the bare ones so one column means one
-    thing in all three.
+    by it -- "which session was this".  ``behavior_invocations`` writes the
+    canonical ``agent:native_id``, while ``flow_events`` and a legacy tail of
+    ``error_records`` hold bare ids.  This rewrites the bare ones so one
+    column means one thing in all three.
 
-    Nothing was broken by the split, and that is worth stating plainly rather
-    than overselling this: ``session_match_clause`` matches a claude handle in
-    both forms, so ``--session`` kept working throughout, and NO query in the
-    codebase joins these tables on ``session_id`` (every cross-table join goes
-    through ``error_id``/``id`` or a timestamp window).  The gain here is that
-    a future join becomes expressible, and the latent cross-agent collision
-    described in ``_session_id_from_path`` stops being reachable.
+    Nothing depends on the two forms staying apart, which is worth saying
+    rather than overselling this migration: ``session_match_clause`` matches a
+    claude handle in BOTH forms, so ``--session`` resolves either way, and NO
+    query in the codebase joins these tables on ``session_id`` (every
+    cross-table join goes through ``error_id``/``id`` or a timestamp window).
+    The gain is that such a join becomes expressible, and the latent
+    cross-agent collision described in ``_session_id_from_path`` stops being
+    reachable.
 
     **Deliberately NOT touched: ``session_metrics``.**  Its id is
     ``<file_path>:<sha256[:16]>`` under ``session_id TEXT NOT NULL UNIQUE``,
@@ -1067,8 +1066,8 @@ def migrate_008_canonical_session_ids(db_path: str) -> int:
     read.  Rewriting it to a handle would drop that guarantee silently, and
     re-mine idempotence is a correctness property.  Giving that table a real
     session identity means a new column plus moving the UNIQUE onto the dedup
-    key -- a schema change, not a string rewrite.  See the PRD note of
-    2026-10-30 in ``sio_behavior_invocations_sync_fix_2026-10-27``.
+    key -- a schema change, not a string rewrite.  The PRD
+    ``sio_behavior_invocations_sync_fix_2026-10-27`` carries the note.  history-ok
 
     The ``agent`` column stays correct across this without re-deriving it: the
     ``trg_<table>_agent_default`` trigger derives the agent by the same

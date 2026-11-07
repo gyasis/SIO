@@ -76,9 +76,9 @@ class TestProviderAdapterRouting:
         """azure/* model falls into the 'unknown provider' branch →
         ChatAdapter(use_native_function_calling=False).
 
-        Azure was removed from explicit provider handling on 2026-04-24
-        after the Azure OpenAI endpoints were deactivated 2026-04-16
-        (see lm_factory.py docstring). Anything not in
+        lm_factory carries no explicit Azure provider branch, because those
+        Azure OpenAI endpoints are deactivated (see its docstring).
+        Anything not in
         ('openai', 'anthropic', 'ollama') falls through to the safe
         default: ChatAdapter without native function calling.
 

@@ -86,9 +86,9 @@ def sync_behavior_invocations(
     22 come from the source row.
 
     Duplicates are skipped by `ON CONFLICT (platform, session_id, timestamp, tool_name)
-    DO NOTHING`, which targets the identity index ONLY. A NOT NULL or CHECK violation is no
-    longer swallowed — it raises, as it must: `INSERT OR IGNORE` previously hid the missing
-    `behavior_type` column and silently dropped every row while reporting success.
+    DO NOTHING`, which targets the identity index ONLY. A NOT NULL or CHECK violation
+    raises, as it must: `INSERT OR IGNORE` suppresses those too, which hides a missing
+    `behavior_type` column and silently drops every row while reporting success.
 
     After the copy, every source row in range is confirmed present in the canonical table.
     A shortfall raises `SyncIntegrityError` rather than returning a number the caller would

@@ -143,7 +143,7 @@ def runs_cmd(run_id, failed, partial, cmd_filter, since, limit, tail, dspy):
 
 
 def _show_one(run_id_prefix: str, dspy: bool = False) -> None:
-    # P1 fix 2026-05-16: validate prefix is hex (run_ids are hex digits) before
+    # Validate the prefix is hex (run_ids are hex digits) before
     # using in glob pattern. Prevents user-supplied wildcards (*, ?, [abc])
     # from matching unintended files.
     import re

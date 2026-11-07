@@ -14,9 +14,8 @@ from __future__ import annotations
 # signature). Coverage for the new class lives at
 # `tests/unit/dspy/test_suggestion_generator_module.py` — those tests verify
 # forward() returns the expected Prediction, dspy.Assert-replacement triggers
-# on malformed output, and instrumentation is attached. No assertions from
-# the removed tests were silently dropped; each was replaced by a test
-# against the new canonical surface.
+# on malformed output, and instrumentation is attached. Every assertion that
+# lived here has a counterpart there, against the canonical surface.
 
 
 class TestGroundTruthModule:

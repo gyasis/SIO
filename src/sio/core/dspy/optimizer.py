@@ -742,12 +742,11 @@ def _record_optimization_run(
     conn.execute("SAVEPOINT activate_module")
     try:
         # Deactivate prior active rows for the same module.
-        # NOTE 2026-05-17: dropped two phantom-column refs here. `module_name`
-        # was never a column on the production schema (only `module_type` is)
-        # and `active` was never a column either (only `is_active`). The
-        # wrapped try/except silently swallowed both errors, but the WHERE
-        # clause that referenced module_name=? compared NULL to the value and
-        # matched nothing — so the deactivate sweep was a no-op AND the
+        # Name only real columns here. The schema has `module_type`, not
+        # `module_name`, and `is_active`, not `active`. The wrapped
+        # try/except swallows such an error, and a WHERE clause on
+        # module_name=? compares NULL to the value and matches nothing, so
+        # the deactivate sweep turns into a no-op AND the
         # parallel rich INSERT below failed for the same reason. Both fixed.
         try:
             conn.execute(
@@ -759,13 +758,11 @@ def _record_optimization_run(
             pass  # column may not exist on very old schema
 
         # Build INSERT with graceful fallback for missing columns.
-        # NOTE 2026-05-17 (P2 fix): the previous version listed two phantom
-        # columns — `active` (table only has `is_active`) and `module_name`
-        # (table only has `module_type`). Both made this rich INSERT raise
-        # on EVERY production write, silently falling to the minimal fallback.
-        # That's why runs 11-15 in production have NULL optimizer_name /
-        # score / task_lm / reflection_lm. With both phantom refs dropped,
-        # the rich path can persist attribution properly.
+        # Name only real columns here too. A phantom column makes this rich
+        # INSERT raise on EVERY write and fall silently to the minimal
+        # fallback, which leaves optimizer_name, score, task_lm and
+        # reflection_lm NULL. Keeping the names honest lets the rich path
+        # persist attribution.
         try:
             cur = conn.execute(
                 "INSERT INTO optimized_modules "
@@ -963,10 +960,10 @@ def run_optimize(
     ):
         """GEPA metric — returns (score, feedback_text).
 
-        2026-05-16 audit: GEPA's reflection_lm needs textual feedback to do
-        meaningful evolutionary mutations. Returning just a float starves it.
-        We now produce concise feedback citing which sub-score (specificity,
-        actionability, surface_accuracy) was weak, so the reflection_lm can
+        GEPA's reflection_lm needs textual feedback to make meaningful
+        evolutionary mutations, and a bare float starves it. So this returns
+        concise feedback naming the weak sub-score (specificity,
+        actionability, surface_accuracy), which lets the reflection_lm
         propose targeted instruction mutations.
         """
         try:
@@ -1007,10 +1004,10 @@ def run_optimize(
 
     # Run selected optimizer
     if optimizer_name == "gepa":
-        # 2026-05-16 audit fix: previous config (max_full_evals=1, num_threads=1,
-        # reflection_minibatch_size=2) was the DSPy DEMO config, not production.
-        # Docs (https://dspy.ai/api/optimizers/GEPA/) recommend auto="light"
-        # / "medium" / "heavy" for real runs; this is the actual budget knob.
+        # max_full_evals=1 with num_threads=1 and reflection_minibatch_size=2
+        # is the DSPy DEMO config, not a production one. The docs
+        # (https://dspy.ai/api/optimizers/GEPA/) recommend auto="light"
+        # / "medium" / "heavy" for real runs, which is the actual budget knob.
         # Configurable via env so we can dial up/down without code change.
         _gepa_auto = os.environ.get("SIO_GEPA_BUDGET", "light")
         _gepa_threads = int(os.environ.get("SIO_GEPA_THREADS", "8"))

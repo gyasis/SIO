@@ -132,7 +132,7 @@ def test_suggestion_generator_forward_returns_prediction_fields():
 def test_suggestion_generator_assert_fires_on_empty_rule_title():
     """ValidationError (or Exception) must fire when forward() returns empty rule_title.
 
-    C-R2.1 fix: dspy.Assert was replaced with validate_rule_format() + retry loop.
+    C-R2.1: validate_rule_format() plus a retry loop stands in for dspy.Assert.
     The assertion contract is now: forward() raises on persistent format violation,
     and the validate_rule_format validator returns False for empty rule_title.
     """

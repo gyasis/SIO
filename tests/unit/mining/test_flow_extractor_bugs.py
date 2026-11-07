@@ -25,7 +25,7 @@ def test_compute_ngrams_upper_bound_inclusive():
     compressed = ["Read(.py)", "Edit(.py)", "Bash", "Write(.py)", "Glob", "Read(.md)"]
     ngrams = compute_ngrams(compressed, n_range=(2, 5))
 
-    # Verify 5-grams exist (previously missing when upper bound was exclusive)
+    # Verify 5-grams exist (an exclusive upper bound drops them)
     five_grams = [ng for ng in ngrams if len(ng) == 5]
     assert len(five_grams) > 0, (
         "compute_ngrams(n_range=(2,5)) must produce 5-grams. "
@@ -112,7 +112,7 @@ def test_no_positive_marker_defaults_to_not_success():
     from sio.mining.flow_extractor import is_success_signal  # noqa: PLC0415
 
     # Short, no negatives — but also no positive keywords
-    # Previously this would return True (absence-of-negative bug)
+    # An absence-of-negative bug would return True here
     assert not is_success_signal("Alright"), (
         "Short neutral message 'Alright' must NOT be success signal without explicit positive keyword"
     )

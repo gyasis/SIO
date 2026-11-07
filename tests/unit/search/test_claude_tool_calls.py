@@ -1,7 +1,8 @@
 """Per-match `sio search` finds Claude tool calls and their output, live and archived.
 
-It used to read only ``text`` blocks, so a command, its output or a file path the
-agent wrote was unfindable — the work itself was invisible to search.
+It MUST read the tool blocks, not only ``text``: scan ``text`` alone and a
+command, its output, or a file path the agent wrote is unfindable, which hides
+the work itself from search.
 """
 from __future__ import annotations
 

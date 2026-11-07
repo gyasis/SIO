@@ -5,7 +5,7 @@ Per contracts/optimizer-selection.md §1 and contracts/cli-commands.md § sio op
 - All three optimizers are fully implemented (T068 Wave 7)
 - Unknown optimizer raises UnknownOptimizer (from run_optimize)
 
-Updated by T068: mipro/bootstrap no longer raise NotImplementedError.
+T068: mipro/bootstrap do not raise NotImplementedError.
 Run to see expected pass/fail counts:
     uv run pytest tests/unit/dspy/test_optimizer_registry.py -v
 """

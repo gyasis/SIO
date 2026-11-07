@@ -104,7 +104,7 @@ def validate_no_phi(pred) -> bool:
 
 # ---------------------------------------------------------------------------
 # Assert-style wrappers — raise ValidationError on failure (for call sites
-# that previously caught AssertionError from the old dspy.Assert shim)
+# that expect AssertionError from the dspy.Assert shim)
 # ---------------------------------------------------------------------------
 
 

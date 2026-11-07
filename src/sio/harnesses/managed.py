@@ -155,8 +155,8 @@ def remove_files(
     """Remove every manifest-tracked file that still matches its installed hash.
 
     Returns the paths removed (or that would be removed on dry-run) so the
-    caller can prune now-empty directories it created. Files whose content
-    no longer matches the manifest are left in place and reported.
+    caller can prune now-empty directories it created. A file whose content
+    does not match the manifest stays in place and is reported.
     """
     manifest_path = config_dir / MANIFEST_NAME
     removed: list[Path] = []

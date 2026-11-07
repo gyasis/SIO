@@ -73,6 +73,7 @@ Commands:
   status                Show 5-section SIO pipeline health status.
   suggest               Run the full pipeline: cluster -> persist ->...
   suggest-review        Review pending improvement suggestions...
+  sync                  Copy per-platform behavior_invocations into the...
   train                 Train DSPy modules on exported datasets.
   trend                 Show growth / decline of pattern clusters over time.
   velocity              Show learning velocity trends — how error rates...
@@ -548,7 +549,7 @@ Options:
                                   id is assumed claude). Matches legacy and
                                   canonical forms. Pipe from search: `sio
                                   search ... --files`.
-  --agent [claude|codex|goose|opencode|gemini|aider|promptchain|kimi|pi|wuphf]
+  --agent [claude|codex|goose|opencode|gemini|aider|promptchain|kimi|pi|omp|paperclip|wuphf]
                                   Scope to ONE coding agent's errors (the
                                   `agent` column — the same rows the
                                   `errors_<agent>` view returns).
@@ -785,15 +786,28 @@ Options:
                                   targets a single session, or --experiment is
                                   given.
   --project TEXT                  Filter by project name.
-  --agent [claude|codex|gemini|goose|pi]
+  --agent [claude|codex|gemini|goose|pi|omp|opencode|paperclip]
                                   Which coding agent's sessions to mine in
                                   bulk. 'claude' uses the native
-                                  JSONL/SpecStory scan; codex/gemini/goose/pi
-                                  enumerate that agent's store via the sio
-                                  search parsers (content-level errors, plus
-                                  harness-flagged tool failures where the
-                                  parser carries them -- pi does). Ignored
-                                  when --session is given.
+                                  JSONL/SpecStory scan;
+                                  codex/gemini/goose/pi/omp enumerate that
+                                  agent's store via the sio search parsers
+                                  (content-level errors, plus harness-flagged
+                                  tool failures where the parser carries them
+                                  -- pi does). opencode/paperclip use their
+                                  own adapters and keep tool calls + output
+                                  (see --opencode-dir / --paperclip-home).
+                                  Ignored when --session is given.
+  --opencode-dir PATH             OpenCode data dir (or opencode.db) to mine;
+                                  repeatable. Replaces the default
+                                  ~/.local/share/opencode. Env:
+                                  SIO_OPENCODE_DIRS (os.pathsep separated)
+                                  ADDS stores to the default. Only with
+                                  --agent opencode.
+  --paperclip-home PATH           Paperclip home holding instances/ (default
+                                  ~/.paperclip, env SIO_PAPERCLIP_HOME).
+  --paperclip-instance TEXT       Only mine this Paperclip instance (a
+                                  directory name under instances/).
   --source [specstory|jsonl|both]
                                   Source type.
   --exclude-sidechains / --include-sidechains
@@ -1244,7 +1258,8 @@ Usage: sio report [OPTIONS]
   Examples:     sio report                          # Terminal summary     sio
   report --html                   # HTML report (default path)     sio report
   --html -o my-report.html # Custom output path     sio report --html --open
-  # Generate and open in browser
+  # Generate and open in browser     sio report --by-session             #
+  Spend per session + tools run
 
 Options:
   --html             Generate HTML report.
@@ -1252,6 +1267,8 @@ Options:
                      YYYYMMDD.html).
   --days INTEGER     Lookback period in days (default: 30).
   --open             Open report in browser after generation.
+  --by-session       Top 20 sessions by token spend, with the tools each one
+                     ran.
   --help             Show this message and exit.
 ```
 
@@ -1385,7 +1402,7 @@ Commands:
 
 ```
 usage: sio search [-h]
-                  [--agent {claude,codex,goose,opencode,gemini,aider,promptchain,kimi,pi,all}]
+                  [--agent {claude,codex,goose,opencode,gemini,aider,promptchain,kimi,pi,omp,all}]
                   [--specstory] [--backups] [--all] [--recent RECENT]
                   [--limit LIMIT] [--files] [--count] [--context CONTEXT]
                   [--around N] [--clean] [--format {jsonl,text}] [--skeleton]
@@ -1401,7 +1418,7 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
-  --agent {claude,codex,goose,opencode,gemini,aider,promptchain,kimi,pi,all}
+  --agent {claude,codex,goose,opencode,gemini,aider,promptchain,kimi,pi,omp,all}
                         Which agent's history to search (default: claude).
                         'all' fans out to every known harness.
   --specstory           Search SpecStory MD only.
@@ -1418,7 +1435,9 @@ options:
                         explicit --recent N is still honored alongside --all.
                         Aligns with the Cascade Memory Protocol recency-first
                         gate.
-  --limit LIMIT         Cap matches per agent (0=unlimited).
+  --limit LIMIT         Cap matches per agent (default: 20; 0=unlimited). Also
+                        caps --files/--count lines on the fast path. A capped
+                        result prints '# Truncated:' on stderr.
   --files               Emit unique source paths.
   --count               Emit per-file match counts.
   --context CONTEXT     Lines of context (fast/legacy only).
@@ -1606,6 +1625,29 @@ Usage: sio suggest-review [OPTIONS]
 
 Options:
   --help  Show this message and exit.
+```
+
+### `sio sync`
+
+```
+Usage: sio sync [OPTIONS]
+
+  Copy per-platform behavior_invocations into the canonical sio.db.
+
+  Spec 004 SC-001 specifies verifying this command; it had never been built.
+  The hooks write to ~/.sio/<platform>/behavior_invocations.db while every
+  reader (status, training, analysis) reads ~/.sio/sio.db, so without this the
+  canonical table stays empty — it held 0 rows against 55,348 captured on
+  2026-10-27.
+
+  Incremental by default: copies rows at or after the newest canonical
+  timestamp.
+
+Options:
+  --full                 Copy every row, not just rows newer than the newest
+                         canonical timestamp.
+  --format [table|json]  Output format.
+  --help                 Show this message and exit.
 ```
 
 ### `sio train`

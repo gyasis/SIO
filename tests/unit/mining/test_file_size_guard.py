@@ -23,7 +23,7 @@ class TestFileSizeGuard:
     def test_large_file_returns_sentinel_not_none(self, tmp_path: Path, caplog):
         """A file reported as > 1 GB must return a sentinel string and log a WARNING.
 
-        H-R1.2 fix: None was returned previously, causing NOT NULL constraint
+        H-R1.2: a None return triggers a NOT NULL constraint
         failure on processed_sessions.file_hash.  Now a sentinel string is
         returned so the DB write can succeed.
         """

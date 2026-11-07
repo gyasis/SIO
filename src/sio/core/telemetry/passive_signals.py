@@ -69,7 +69,7 @@ def detect_re_invocation(
     intent: str,
     conn: sqlite3.Connection,
 ) -> bool:
-    """Detect if the same intent was previously invoked with a different tool.
+    """Detect whether the same intent already ran with a different tool.
 
     Returns True if a previous invocation in this session had a different
     actual_action but similar user_message (same intent).

@@ -24,12 +24,11 @@ This module is read-only — it never writes back to ``error_records``.
 ``sio approve`` / ``sio promote-to-gold`` remain the ONLY writers to
 ``ground_truth`` and ``gold_standards``.
 
-History: this module was scoped on 2026-05-15 after two adversarial
-audits surfaced that 80%+ of mined records pre-date current rules
-(concept drift), and the user explicitly wanted to train only on
-TARGETED records — those carrying user-frustration markers (``!!`` /
-``??``) within a recent time window. See PRD
-``sio_backend_dead_loop_2026-05-15.md``.
+Scope: train only on TARGETED records, those carrying user-frustration
+markers (``!!`` / ``??``) within a recent time window. Over 80% of mined
+records pre-date the current rules, so training on all of them learns
+concept drift instead. See PRD
+``sio_backend_dead_loop_2026-05-15.md``.  history-ok
 """
 
 from __future__ import annotations
@@ -54,7 +53,7 @@ class CurateFilters:
     fields that are set. Empty filters → no narrowing.
     """
 
-    since: str | None = None  # e.g. "7 days", or "2026-04-22"
+    since: str | None = None  # e.g. "7 days", or "2026-04-22"  history-ok
     emphasis: bool = False  # require ``!!`` or ``??`` in user_message
     classified: bool = False  # require pattern_id NOT NULL
     pattern: str | None = None  # exact pattern_id slug

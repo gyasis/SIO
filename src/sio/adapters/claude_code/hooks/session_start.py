@@ -1,6 +1,6 @@
 """SessionStart hook handler — injects a brief SIO briefing at session start.
 
-Pure reader (rewritten 2026-07-02)
+Pure reader
 ----------------------------------
 The briefing is expensive to compute (it scans SIO DBs that have grown to
 hundreds of MB).  It is therefore materialised **off-session** into a small

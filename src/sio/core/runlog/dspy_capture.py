@@ -60,9 +60,9 @@ def _jsonable(obj: Any) -> Any:
 
 def _append_record(rec: dict) -> None:
     """Append one capture line. NEVER raises: this wrapper sits inside every
-    LM call, and an exception here used to turn a successful completion into
-    a failed generation (json.dumps on litellm's CompletionTokensDetailsWrapper
-    raised TypeError, which only the OSError handler below did not catch)."""
+    LM call, and an exception here turns a successful completion into a failed
+    generation: json.dumps on litellm's CompletionTokensDetailsWrapper raises
+    TypeError, which the OSError handler below does not catch."""
     path = _ensure_capture_file()
     if path is None:
         return
@@ -93,7 +93,7 @@ def _truncate(s: Any, n: int = 8000) -> str:
 def install() -> None:
     """Monkey-patch dspy.LM.__call__ for one-shot capture. Idempotent.
 
-    P1 fix 2026-05-16: capture _ORIG_LM_CALL FRESH every install (not cached
+    Capture _ORIG_LM_CALL FRESH every install (not cached
     from first-ever invocation). Prevents leaking intermediate patches across
     process-shared runs (e.g. pytest running two @runlogged tests).
     """

@@ -48,7 +48,7 @@ def install() -> None:
 def _maybe_record(t) -> None:
     """If a RunLog stage is active, write its progress fields.
 
-    2026-05-16 fix: prefer the LARGEST tqdm bar (outer optimization budget,
+    Prefer the LARGEST tqdm bar (outer optimization budget,
     e.g. 250 rollouts in GEPA) over inner per-eval bars (e.g. 50 valset items
     that reset to 0 each minibatch). Updates only if the new bar's total is
     >= the existing one, so inner-loop bars don't clobber outer progress.

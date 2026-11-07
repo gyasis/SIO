@@ -351,7 +351,7 @@ def _check_dspy_alive() -> CheckResult:
         )
     # Trivial-metric guard — if score is exactly 1.0 AND training_count was
     # small (< 5 historical), the optimizer likely tripped the lazy-metric
-    # bug surfaced 2026-05-15. Score of 1.0 is rarely legitimate for the
+    # bug. Score of 1.0 is rarely legitimate for the
     # suggestion task.
     if score >= 0.999:
         return CheckResult(

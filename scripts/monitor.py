@@ -16,7 +16,7 @@ signatures, WHAT fix landed and WHEN. Read-only on error_records.
 
 Usage:
   python scripts/monitor.py                 # all history
-  python scripts/monitor.py --since 2026-04-01
+  python scripts/monitor.py --since 2026-04-01   history-ok
 """
 from __future__ import annotations
 

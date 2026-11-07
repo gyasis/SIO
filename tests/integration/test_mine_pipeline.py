@@ -900,7 +900,7 @@ class TestMineMultipleSourceDirs:
 
 
 class TestMineProjectFilter:
-    """When project is specified, it should be recorded or used to scope results."""
+    """When project is specified, it should be recorded or scope the results."""
 
     def test_mine_with_project_does_not_raise(self, v2_db, sample_specstory_file, tmp_path: Path):
         """Passing a project name must not cause run_mine to raise."""
