@@ -1,4 +1,4 @@
-"""Regression tests for the two optimizer gates shipped 2026-05-16/18:
+"""Regression tests for the two optimizer gates:
 
 1. Tier 5 ladder gate (Constitution XIV proposed) — refuses
    `sio optimize --optimizer gepa --trainset-file <X>` when no prior

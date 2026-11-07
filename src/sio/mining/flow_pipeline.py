@@ -201,7 +201,7 @@ def run_flow_mine(
     db_conn.commit()
 
     # Observability: persist failures via central module so a silent warning
-    # never swallows a systemic bug (cf. 2026-04-23 message_count regression).
+    # never swallows a systemic bug (cf. the message_count regression).
     if failures:
         from sio.core.observability import log_failure  # noqa: PLC0415
         for f in failures:
@@ -284,11 +284,10 @@ def query_flows(
         count = row["count"]
         success_rate = row["success_rate"]
 
-        # Confidence tiers — re-calibrated 2026-05-15 (PRD T4.2) after
-        # observing zero flows reached HIGH/MEDIUM in production. The old
-        # 80%/60% success-rate thresholds assumed users explicitly say
-        # "great" / "perfect" after most flows. In practice they don't —
-        # they just move on. Empirical floor: a successful flow run rarely
+        # Confidence tiers (PRD T4.2). Thresholds of 80%/60% on success rate
+        # let NO flow reach HIGH or MEDIUM, because they assume a user says
+        # "great" or "perfect" after most flows. Users just move on
+        # instead. Empirical floor: a successful flow run rarely
         # exceeds 50% explicit-success-signal rate. Re-tuned thresholds:
         #   HIGH:   count ≥ 20  AND success_rate ≥ 40%
         #   MEDIUM: count ≥ 10  AND success_rate ≥ 20%

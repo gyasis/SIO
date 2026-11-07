@@ -59,8 +59,8 @@ _CORRECTION_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\bi\s+meant\b", re.IGNORECASE),
     re.compile(r"\bi\s+said\b", re.IGNORECASE),
     re.compile(r"\bnot\s+correct\b", re.IGNORECASE),
-    # Frustration markers (2026-10-05): a phrase-only list missed every
-    # profane or "!!!!!!" message, so the angriest turns never reached suggest.
+    # Frustration markers. A phrase-only list misses every profane or
+    # "!!!!!!" message, which keeps the angriest turns away from suggest.
     re.compile(r"\b(?:fuck\w*|shit\w*|wtf|goddamn\w*|bullshit|ffs)\b", re.IGNORECASE),
     re.compile(r"!{3,}"),
     re.compile(
@@ -274,7 +274,7 @@ _ADAPTER_ERROR_TYPES = frozenset({"tool_failure", "repeated_attempt"})
 
 def _is_hook_block_noise(error_text: str | None) -> bool:
     """Return True when ``error_text`` is a hook-success block message rather
-    than a real tool failure.  Used to skip ingestion of guardrail interventions
+    than a real tool failure.  Skips ingestion of guardrail interventions
     that would otherwise pollute error rankings.
     """
     if not error_text:

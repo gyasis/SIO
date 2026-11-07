@@ -1,11 +1,11 @@
 """scripts/migrate_004.py — thin CLI shim over sio.core.db.migrate_004.
 
-The migration logic used to live entirely in this file. It has moved into
-the installed package (``sio.core.db.migrate_004``) so it is importable
-regardless of how ``sio`` was installed — ``scripts/`` is a dev-repo-only
-directory, not bundled into the wheel (see ``[tool.hatch.build.targets.wheel]``
-in ``pyproject.toml``), so ``from scripts.migrate_004 import migrate`` only
-ever resolved when the current working directory happened to be the repo
+The migration logic lives in the installed package
+(``sio.core.db.migrate_004``), which makes it importable however ``sio`` was
+installed. ``scripts/`` is a dev-repo-only directory that the wheel does not
+bundle (see ``[tool.hatch.build.targets.wheel]`` in ``pyproject.toml``), so
+``from scripts.migrate_004 import migrate`` resolves only when the current
+working directory happens to be the repo
 root. On every other install layout ``sio.core.db.bootstrap`` caught the
 resulting ``ModuleNotFoundError`` and logged it at DEBUG — invisible by
 default — so the 004 columns (``pattern_errors.active``, ``patterns.active``,

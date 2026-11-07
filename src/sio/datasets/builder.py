@@ -203,7 +203,7 @@ def collect_dataset(
 
     Args:
         db_conn: Active SQLite connection with the SIO v2 schema.
-        since: ISO date string (e.g. ``"2026-02-15"``).  Only errors with
+        since: ISO date string (e.g. ``"2026-02-15"``).  Only errors with  history-ok
             ``timestamp >= since`` are returned.
         error_type: Filter by the ``error_type`` column.
         sessions: List of ``session_id`` values to restrict to.

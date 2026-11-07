@@ -1,8 +1,8 @@
 """Rule readers must see ~/.claude/rulebook/, not only ~/.claude/rules/.
 
 Claude Code auto-loads every .md under ~/.claude/rules/, so on-demand rules
-moved to ~/.claude/rulebook/ (2026-10-01). Readers that scanned only rules/
-went blind to them: violations, budget, dedupe, rule-audit, the suggest
+live in ~/.claude/rulebook/ instead. A reader that scans only rules/ goes blind
+to them, which covers violations, budget, dedupe, rule-audit, the suggest
 consultant, active-rule stamping and cohort snapshots.
 """
 from __future__ import annotations

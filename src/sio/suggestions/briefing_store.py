@@ -2,8 +2,8 @@
 
 The session-start briefing (violations / declining rules / budget / pending /
 stats / search-discipline) is expensive to compute because it scans the SIO DBs,
-which have grown to hundreds of MB.  Computing it *on every session start* used
-to block the interactive session for minutes.
+which have grown to hundreds of MB.  Computing it *on every session start* blocks
+the interactive session for minutes.
 
 This module is the fix: the briefing is materialised **off-session** (by the
 scheduler / a systemd user timer / the passive-analysis pipeline) into a small

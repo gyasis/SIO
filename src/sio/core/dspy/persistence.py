@@ -167,7 +167,7 @@ def load_compiled(module_name: str, path: Path) -> dspy.Module:
 
     Args:
         module_name: Key into MODULE_REGISTRY (e.g. ``"suggestion_generator"``).
-        path: File path previously written by ``save_compiled()``.
+        path: File path written earlier by ``save_compiled()``.
 
     Returns:
         A ``dspy.Module`` instance with compiled state loaded.

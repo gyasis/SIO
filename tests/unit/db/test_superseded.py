@@ -8,7 +8,7 @@ Invariants per data-model.md §2.7:
 - ``list_active_applied_changes`` returns only rows with superseded_at IS NULL.
 - ``mark_superseded`` sets superseded_at to the current UTC timestamp and
   superseded_by to the by_id argument (may be None).
-- After marking superseded, the row no longer appears in list_active_applied_changes.
+- After marking superseded, the row is absent from list_active_applied_changes.
 - Idempotent: marking an already-superseded row a second time does NOT change
   superseded_at (first-write-wins semantics to preserve audit trail).
 

@@ -148,14 +148,13 @@ def link_optimized_module(module_id: int, dataset_id: int,
     finally:
         conn.close()
 
-# NOTE 2026-05-18: `backfill_known_trainsets()` was removed. It was a
-# one-shot helper that hardcoded three specific trainset files + linked
-# them to modules #8/#13/#14/#15/#10. Its work has already been applied
-# to ~/.sio/sio.db (rows 1, 2, 3 in the trainsets table, plus the
-# trainset_id linkages on the corresponding optimized_modules rows).
-# Now that curate_cmd and amplify_cmd auto-register every output via
-# register_dataset(), and optimize_cmd auto-links by sha via
-# link_optimized_module(), the one-shot path is obsolete. Generic
+# This module carries NO `backfill_known_trainsets()` helper, by design. Such
+# a helper hardcodes a few trainset files and their module links, and that work
+# already sits in ~/.sio/sio.db (trainsets rows 1-3, plus the trainset_id
+# linkages on the matching optimized_modules rows). curate_cmd and amplify_cmd
+# auto-register every output via register_dataset(), and optimize_cmd
+# auto-links by sha via link_optimized_module(), which leaves a one-shot path
+# nothing to do. Generic
 # recovery is the right replacement — e.g. `sio datasets scan
 # --dir ~/.sio/{amplified,curated}/` that content-addresses every JSONL
 # (queued as a separate task; not implemented yet). See PRD

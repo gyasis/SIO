@@ -66,10 +66,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS ix_bi_identity
 def _seed_platform_rows(path: Path, count: int = 10, ts_prefix: str = "2026-04-20T") -> None:
     """Insert `count` rows into a per-platform behavior_invocations DB.
 
-    Uses the REAL schema via init_db. These helpers previously built a hand-written
-    11-column table with no `behavior_type`, so the sync was exercised against a schema in
-    which its defect could not occur — which is how `INSERT OR IGNORE` silently dropping
-    every row survived a green suite (PRD sio_behavior_invocations_sync_fix, 2026-10-27).
+    Uses the REAL schema via init_db. A hand-written 11-column table with no
+    `behavior_type` would exercise the sync against a schema in which its defect cannot
+    occur, and that is how `INSERT OR IGNORE` silently dropping every row survives a
+    green suite. See PRD sio_behavior_invocations_sync_fix.
     """
     conn = init_db(str(path))
     for i in range(count):

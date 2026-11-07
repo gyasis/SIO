@@ -68,7 +68,7 @@ def _get_lms():
                 "Source ~/.sio/secrets.env first."
             )
         # Slightly higher temperature for variant generation (creativity).
-        # NOTE 2026-05-18: raised from 4000 → 6000 per token-length audit.
+        # max_tokens must cover far more than the variants themselves:
         # 10 variants × ~400 chars (~100 tokens) = 1000 raw + ChatAdapter
         # scaffolding ([[ ## variants_json ## ]] + [[ ## completed ## ]] +
         # field separators) + Gemini-Flash reasoning preamble can push past
@@ -81,13 +81,12 @@ def _get_lms():
             api_key=api_key,
         )
         # Low temperature for judging (consistency).
-        # NOTE 2026-05-18 (adversarial-audit H2 CONFIRMED): max_tokens was
-        # 500. ChatAdapter scaffolding ([[ ## scores_json ## ]] + [[ ## completed ## ]]
+        # ChatAdapter scaffolding ([[ ## scores_json ## ]] + [[ ## completed ## ]]
         # sentinel) + Gemini-Flash reasoning preamble + N floats CONSUMES
-        # ~600-2000 tokens for typical N=10. Stderr capture today showed
-        # scores_json values truncated mid-array: '[1.0, 1.', '[1.0, 1.0,'
-        # → JSONDecodeError → all variants got 0.5 placeholder, defeating
-        # the judge entirely. Raising to 2000 covers ChatAdapter overhead
+        # ~600-2000 tokens for a typical N=10. A smaller budget truncates
+        # scores_json mid-array ('[1.0, 1.', '[1.0, 1.0,'), which raises
+        # JSONDecodeError and hands every variant the 0.5 placeholder,
+        # defeating the judge entirely. 2000 covers ChatAdapter overhead
         # for N up to ~30 variants. See PRD amplify_observability_gaps
         # ISSUE 1 for the full diagnostic.
         _judge_lm = make_lm(
@@ -127,7 +126,7 @@ def _make_modules():
         surface features (paths, tool names, phrasing).
         The user_message must contain frustration markers (!! or ??).
 
-        DOMAIN PRESERVATION (origin 2026-05-18 paired-debate Step 2):
+        DOMAIN PRESERVATION:
         If `domain_keywords` is non-empty, AT LEAST 60% of variants MUST
         keep at least ONE domain keyword somewhere in error_text. Drift
         to generic surrogates (salesforce → s3 → bigquery) when the
@@ -166,10 +165,10 @@ def _make_modules():
         """Score each variant 0.0-1.0 using a 5-tier rubric for FAILURE-MODE
         preservation + DOMAIN-fidelity against the target pattern_id.
 
-        ⚠️ RUBRIC ANCHORS — calibrate to these (origin 2026-05-18 paired-debate
-        Step 3, "Synthetic Extremes" pattern). Today's binary judge collapsed
-        all kept variants to 1.0 with no spread. The rubric below FORCES
-        graded scores that downstream optimizers can rank.
+        ⚠️ RUBRIC ANCHORS — calibrate to these ("Synthetic Extremes"
+        pattern). A binary judge collapses every kept variant to 1.0 with no
+        spread. The rubric below FORCES graded scores that downstream
+        optimizers can rank.
 
         SCORE 1.0 — GOLD
           Failure mode matches pattern_id exactly; surface features differ
@@ -213,11 +212,11 @@ def _make_modules():
         <0.6 will be detected as a calibration failure downstream.
         """
 
-        # NOTE 2026-05-18: dropped `original_error_text` from inputs. Today's
-        # E2E test showed the judge was anchoring on surface similarity to
-        # the original instead of evaluating category preservation. Without
-        # the original in scope, the judge MUST evaluate against pattern_id.
-        # This is Tier 1 of PRD sio_meta_optimize_judgevariants_2026-05-18
+        # This signature takes NO `original_error_text`. With the original in
+        # scope the judge anchors on surface similarity to it instead of
+        # evaluating category preservation. Without it, the judge MUST
+        # evaluate against pattern_id.
+        # Tier 1 of PRD sio_meta_optimize_judgevariants_2026-05-18  history-ok
         # (manual prompt fix; Tier 2-5 is DSPy meta-optimization).
         original_pattern_id: str = dspy.InputField(
             desc="Target failure category id, e.g. tool_failure__permissiondenied"
@@ -250,7 +249,7 @@ def _make_modules():
 
 
 # ---------------------------------------------------------------------------
-# Step 2 (2026-05-18): Domain keyword extraction for generator preservation
+# Step 2: Domain keyword extraction for generator preservation
 # ---------------------------------------------------------------------------
 
 # HH-domain lexicon — the keywords that distinguish HH errors from generic
@@ -284,7 +283,7 @@ def _filter_by_diversity(
     kept_variants: list[tuple[dict, str, str, float]],
     similarity_threshold: float = 0.95,
 ) -> tuple[list[tuple[dict, str, str, float]], int]:
-    """Step 4 (2026-05-18 paired-debate): Drop near-duplicates by cosine similarity.
+    """Step 4: Drop near-duplicates by cosine similarity.
 
     For each pair of variants belonging to the SAME source row whose
     embedded error_text cosine similarity > threshold, keep only the
@@ -426,7 +425,7 @@ def amplify(
         max_workers: thread-pool parallelism for the LLM calls.
         diversity_filter: if True, drop near-duplicate variants within
             each source row using cosine similarity on fastembed
-            (Step 4 of 2026-05-18 paired-debate framework).
+            (Step 4 of the paired-debate framework).
         diversity_threshold: cosine similarity above which duplicates
             are dropped (default 0.95; permissive).
 
@@ -482,7 +481,7 @@ def amplify(
             pattern_id = meta.get("pattern_id") or "tool_failure__unclassified"
             error_text = (data.get("example_errors", [""])[0] or "")[:400]
             tool_name = meta.get("tool_name") or "unknown"
-            # Step 2 (2026-05-18 paired-debate): auto-extract domain keywords
+            # Step 2: auto-extract domain keywords
             # from the source so generator preserves domain vocabulary.
             # See _extract_domain_keywords() for the lexicon (HH-specific
             # plus a generic "common-jargon" fallback).
@@ -556,7 +555,7 @@ def amplify(
             pattern_id = meta.get("pattern_id") or "unknown"
             orig_err = (data.get("example_errors", [""])[0] or "")[:400]
             orig_tool = meta.get("tool_name") or "unknown"
-            # Step 3 (2026-05-18 paired-debate): pass domain_keywords so the
+            # Step 3: pass domain_keywords so the
             # judge can penalize domain-dilution variants (silver 0.7 instead
             # of gold 1.0). Same keyword extractor as the generator, so the
             # judge knows what the generator was TOLD to preserve.
@@ -566,11 +565,10 @@ def amplify(
             judge_input = json.dumps(
                 [{"error_text": v["error_text"][:400]} for v in variants]
             )
-            # NOTE 2026-05-18: dropped `original_error_text=orig_err` kwarg.
-            # JudgeVariants no longer accepts it as an input (see signature
-            # at line 132). The judge now grades against pattern_id +
-            # variants only — forces category-evaluation, kills the
-            # surface-similarity anchor bias.
+            # No `original_error_text=orig_err` kwarg here: JudgeVariants
+            # takes no such input (see its signature above). The judge grades
+            # against pattern_id + variants only, which forces
+            # category-evaluation and denies it a surface-similarity anchor.
             out = _retry_429(
                 judge,
                 original_pattern_id=pattern_id,
@@ -674,7 +672,7 @@ def amplify(
         for _ in as_completed(futures):
             pass
 
-    # Phase 2.5 (Step 4, 2026-05-18 paired-debate): diversity filter
+    # Phase 2.5 (Step 4): diversity filter
     diversity_dropped = 0
     if diversity_filter and results:
         # Only run diversity filter on variants that would PASS the
@@ -724,7 +722,7 @@ def amplify(
             f.write(json.dumps(new_row) + "\n")
             kept += 1
 
-    # Step 3 (2026-05-18 paired-debate): CALIBRATION HEALTH CHECK.
+    # Step 3: CALIBRATION HEALTH CHECK.
     # If the rubric is working, kept scores should show spread across
     # the 1.0/0.7/0.5 anchor tiers. If everything is still 1.0, the
     # judge is binary-mode-collapsed and we need Tier 2 (DSPy meta-opt).

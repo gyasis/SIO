@@ -20,7 +20,7 @@ def track_lineage(
 ) -> None:
     """Record which sessions and time window contributed to a dataset.
 
-    The sessions list is merged with any previously stored sessions,
+    The sessions list is merged with any sessions already stored,
     deduplicated, and written back.  The ``time_window`` is always updated
     to the value provided in the most recent call.
 

@@ -17,7 +17,7 @@ Public API under test
 
 Design notes
 ------------
-- os.utime() is used to set deterministic mtimes on tmp files so that
+- os.utime() sets deterministic mtimes on tmp files so that
   mtime-based filtering is fully reproducible without sleeping.
 - All produced datetimes are UTC-aware; tests freeze the reference point
   via monkeypatch where needed.
@@ -639,7 +639,7 @@ class TestParseSinceAbsoluteDates:
     """parse_since handles absolute date strings via dateutil."""
 
     def test_iso_date(self) -> None:
-        """'2026-01-15' parses to that date at midnight UTC."""
+        """'2026-01-15' parses to that date at midnight UTC."""  # history-ok
         result = parse_since("2026-01-15")
         assert result.year == 2026
         assert result.month == 1
@@ -656,7 +656,7 @@ class TestParseSinceAbsoluteDates:
         assert result.minute == 30
 
     def test_natural_date(self) -> None:
-        """'Jan 15 2026' parses correctly."""
+        """'Jan 15 2026' parses correctly."""  # history-ok
         result = parse_since("Jan 15 2026")
         assert result.year == 2026
         assert result.month == 1

@@ -20,10 +20,10 @@ _DEFAULT_DB_DIR = str(_default_sio_home() / _DEFAULT_PLATFORM)
 def _extract_tool_result(payload: dict) -> tuple[str, str | None]:
     """Pull (output, error) out of a PostToolUse payload.
 
-    Claude Code sends `tool_response`, NOT `tool_output`/`error`. Reading the wrong key
-    meant auto_label() always saw output="" and error=None, so every one of the 55,348 rows
-    captured by 2026-10-27 was labelled activated=1, correct_action=1, correct_outcome=0 —
-    a corpus asserting that 99.99% of tool calls produced nothing.
+    Claude Code sends `tool_response`, NOT `tool_output`/`error`. Read the wrong key and
+    auto_label() sees output="" with error=None for every call, which labels the whole
+    corpus activated=1, correct_action=1, correct_outcome=0 — an assertion that 99.99%
+    of tool calls produced nothing.
 
     `tool_response` is a dict for Bash-like tools (stdout/stderr/exit_code/is_error) and a
     bare string for others. `tool_output`/`error` are still honoured so other harnesses and
@@ -115,12 +115,11 @@ def handle_post_tool_use(stdin_json: str, *, conn=None) -> str:
         if own_conn:
             conn.close()
 
-        # log_invocation catches its own exceptions and returns -1, and this hook used to
-        # call record_success regardless. So a write that never landed still reported a
-        # healthy hook, and `sio status` had no way to show capture dying. That is how the
-        # canonical table reached 0 rows against 55,348 captured without a single warning.
-        # A constraint failure is the realistic case: a DB that has not run migration 007
-        # rejects behavior_type='tool' on the CHECK.
+        # log_invocation catches its own exceptions and returns -1, so calling
+        # record_success unconditionally would report a healthy hook for a write that
+        # never landed, and `sio status` could not show capture dying. A constraint
+        # failure is the realistic case: a DB that has not run migration 007 rejects
+        # behavior_type='tool' on the CHECK.
         if row_id == -1:
             record_failure(
                 "post_tool_use",

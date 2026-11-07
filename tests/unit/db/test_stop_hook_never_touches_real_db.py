@@ -1,11 +1,11 @@
 """The Stop hook must never write outside the connection it was given.
 
-Regression guard. The canonical sync added to the Stop hook resolved GLOBAL paths
-(~/.sio/sio.db and the real per-platform DB) regardless of the `conn` passed in. Because
-tests/unit/test_hooks.py sets neither SIO_DB_PATH nor SIO_HOME, a single test run copied
-55,475 production rows into the real canonical database (2026-10-27).
+Regression guard. The Stop hook's canonical sync resolves GLOBAL paths
+(~/.sio/sio.db and the real per-platform DB) whatever `conn` it is handed, and
+tests/unit/test_hooks.py sets neither SIO_DB_PATH nor SIO_HOME. Left unguarded, one test
+run copies tens of thousands of production rows into the real canonical database.
 
-The hook now syncs only when it opened its own connection — the real runtime path.
+So the hook syncs ONLY when it opened its own connection — the real runtime path.
 """
 
 from __future__ import annotations

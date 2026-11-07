@@ -9,6 +9,27 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
+### Changed — `sio search` caps its output by default
+
+Coding agents call `sio search` with no `--limit`. Under the old unlimited
+default, one call could return 600k+ characters. That filled an agent's
+context in a few turns, and the agent lost track of its task.
+
+- **`--limit` defaults to 20 per agent** (was `0` = unlimited). `--limit 0`
+  still returns everything.
+- **A capped result says so.** stderr gets
+  `# Truncated: <agent> hit --limit N; there are more matches…`, so a low
+  `# Total matches:` is never read as the real total.
+- **The ripgrep fast path honours `--limit`** for `--files`, `--count` and
+  text output. It used to ignore the flag.
+- **The fast path windows long lines.** With a cap in force, it cuts any
+  line over 600 characters. It keeps the `path:line:` prefix and ±250
+  characters around the match. A `[…N chars omitted…]` marker shows each cut.
+- **`sio search` no longer loads fastembed/onnxruntime.**
+  `core/embeddings/local_model.py` loads fastembed on first use of
+  `TextEmbedding`. Commands that only pass through that module stop printing
+  onnxruntime's GPU-probe warnings and skip its load time.
+
 ### Fixed — two bugs that `ruff` had been reporting as style
 
 Clearing the repo's 81-finding lint backlog surfaced two real bugs. Both

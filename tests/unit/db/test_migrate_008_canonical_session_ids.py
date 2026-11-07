@@ -1,9 +1,8 @@
 """schema 008 — the IDENTITY tables agree on `agent:native_id`. The DEDUP key stays put.
 
-Measured on razer 2026-10-30. `behavior_invocations` held 230/230 canonical ids.
-`flow_events` held 357/357 bare. `error_records` held 193 bare against 1,578
-canonical. `session_metrics` held 2,842/2,842 in a fourth form entirely:
-`<file_path>:<sha256[:16]>`.
+`behavior_invocations` writes canonical ids, while `flow_events` and a legacy
+tail of `error_records` carry bare ones. `session_metrics` uses a fourth form
+entirely: `<file_path>:<sha256[:16]>`.
 
 That fourth form is NOT an identity. It sits under `session_id TEXT NOT NULL
 UNIQUE` and stops `sio mine` re-counting a transcript it already read. Rewriting
@@ -100,7 +99,7 @@ def test_flow_writer_stores_the_agent_not_a_bare_stem():
     claude = "/home/u/.claude/projects/-home-u-code/abc-123.jsonl"
     assert _session_id_from_path(Path(claude)) == "claude:abc-123"
 
-    # Same stem, different agent -- these used to collide into one id.
+    # Same stem, different agent -- a bare stem collides these into one id.
     goose = "/home/u/.local/share/goose/sessions/abc-123.jsonl"
     assert _session_id_from_path(Path(goose)) == "goose:abc-123"
     assert _session_id_from_path(Path(claude)) != _session_id_from_path(Path(goose))

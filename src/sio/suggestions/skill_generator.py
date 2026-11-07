@@ -75,7 +75,7 @@ def _extract_trigger_conditions(
 
     Trigger conditions describe WHEN the agent should activate this skill.
     They combine the tool context from the pattern with the situations
-    where the agent previously succeeded or failed.
+    where the agent has succeeded or failed.
     """
     conditions: list[str] = []
     tool_name = _tool_display_name(pattern.get("tool_name"))

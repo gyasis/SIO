@@ -2,8 +2,8 @@
 
 Runs once at the top of ``sio init`` (before any harness adapter), so the
 canonical DB is always ready regardless of which harness is selected.
-Restores the orchestration concern that was dropped when ``installer.py``
-was replaced by the file-staging-only adapter pattern in commit ``bc39869``.
+Owns the orchestration concern that the file-staging-only adapter pattern
+leaves unhandled.
 
 Idempotent on every step — safe to call repeatedly.
 """
@@ -53,7 +53,7 @@ def ensure_canonical_db_ready(db_path: str | Path | None = None) -> Path:
         ``ensure_canonical_db_ready()`` — several callers (e.g. `sio
         experiment start/status`) invoke it directly with no try/except
         of their own, and step 1 (``init_db()``) already leaves a usable,
-        if not fully up-to-date, schema. But "non-fatal" no longer means
+        if not fully up-to-date, schema. But "non-fatal" does NOT mean
         "silent": every step below logs its failure at WARNING (not
         DEBUG), so a genuinely broken migration (a locked DB, a disk
         error, a real code bug) is visible instead of vanishing into a
@@ -87,7 +87,7 @@ def ensure_canonical_db_ready(db_path: str | Path | None = None) -> Path:
 
     # 3. 004 migration (idempotent — checks schema_version internally).
     # Lives in the package (sio.core.db.migrate_004), not scripts/, so this
-    # import can no longer fail because of install layout (see the module
+    # import cannot fail because of install layout (see the module
     # docstring). Any exception here is therefore a real, unexpected
     # failure — log it loudly rather than swallowing it at DEBUG, but
     # don't raise: callers that invoke ensure_canonical_db_ready() without
