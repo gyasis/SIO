@@ -896,8 +896,10 @@ def search_promptchain(
             continue
         if archive and _live_copy_exists(fp):
             continue
+        # The directory uuid is the session id: display names repeat (most are
+        # "default"), so a name would merge separate sessions into one.
         uuid = session_dir.name
-        session_id = names.get(uuid, uuid)
+        session_id = uuid
         try:
             with fp.open(encoding="utf-8", errors="replace") as fh:
                 for lineno, raw in enumerate(fh, start=1):

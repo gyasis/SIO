@@ -333,7 +333,8 @@ CREATE TABLE IF NOT EXISTS velocity_snapshots (
     window_end TEXT NOT NULL,
     rule_applied INTEGER NOT NULL DEFAULT 0,
     rule_suggestion_id INTEGER REFERENCES suggestions(id),
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    agent TEXT
 )
 """
 
@@ -640,6 +641,11 @@ def init_db(db_path: str) -> sqlite3.Connection:
             "ALTER TABLE suggestions ADD COLUMN "
             f"target_harness TEXT NOT NULL DEFAULT '{DEFAULT_PLATFORM}'"
         )
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    # velocity_snapshots.agent: the harness a snapshot counts; NULL = every harness.
+    try:
+        conn.execute("ALTER TABLE velocity_snapshots ADD COLUMN agent TEXT")
     except sqlite3.OperationalError:
         pass  # Column already exists
     # T105: Add quality_assessment column to ground_truth
