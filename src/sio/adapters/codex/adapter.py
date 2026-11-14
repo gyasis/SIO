@@ -22,11 +22,14 @@ Claude/Kimi do (poll file size).
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator
 from typing import Any
 
 from sio.adapters._tail import tail_lines
 from sio.adapters.base import SessionEvent, SessionManifest
+
+_EXIT_RE = re.compile(r"Process exited with code (-?\d+)")
 
 
 def _text_from_blocks(blocks: Any) -> str:
@@ -103,6 +106,30 @@ def _event_from_line(obj: dict[str, Any], call_names: dict[str, str]) -> Session
             tool=name, raw=obj,
         )
 
+    if ptype == "function_call":
+        name = payload.get("name") or "tool"
+        call_id = payload.get("call_id")
+        if call_id:
+            call_names[call_id] = name
+        return SessionEvent(
+            ts=ts, role="assistant", content=str(payload.get("arguments") or ""),
+            tool=name, raw=obj,
+        )
+
+    if ptype == "function_call_output":
+        name = call_names.get(payload.get("call_id"), "tool")
+        output = payload.get("output")
+        content = output if isinstance(output, str) else _text_from_blocks(output)
+        # exec_command output reports its exit status in the text; a non-zero
+        # exit is the harness's failure signal for the call.
+        exit_match = _EXIT_RE.search(content or "")
+        error = None
+        if exit_match and exit_match.group(1) != "0":
+            error = content or f"exit code {exit_match.group(1)}"
+        return SessionEvent(
+            ts=ts, role="tool", content=content or "", tool=name, raw=obj, error=error,
+        )
+
     if ptype == "reasoning":
         # encrypted_content is opaque; only the (usually-empty) summary is
         # human-readable.
@@ -111,7 +138,7 @@ def _event_from_line(obj: dict[str, Any], call_names: dict[str, str]) -> Session
             tool=None, raw=obj,
         )
 
-    # function_call / local_shell_call / any future response_item shape:
+    # local_shell_call / web_search_call / any future response_item shape:
     # unrecognised -- drop rather than guess at its meaning.
     return None
 

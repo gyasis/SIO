@@ -61,6 +61,14 @@ _HARNESS_INSTRUCTION_FILES: dict[str, tuple[str, str]] = {
     "codex": ("~/.codex/AGENTS.md", "agents_md_rule"),
     "gemini": ("~/.gemini/GEMINI.md", "gemini_md_rule"),
     "goose": ("~/.config/goose/.goosehints", "goosehints_rule"),
+    # Global files each harness's own loader reads (checked in its source):
+    # pi/omp load <agentDir>/AGENTS.md; dsh loads $DSH_HOME/AGENTS.md; kimi
+    # loads <brandDir>/AGENTS.md; opencode loads <config dir>/AGENTS.md.
+    "pi": ("~/.pi/agent/AGENTS.md", "agents_md_rule"),
+    "omp": ("~/.omp/agent/AGENTS.md", "agents_md_rule"),
+    "dsh": ("~/.dsh/AGENTS.md", "agents_md_rule"),
+    "kimi": ("~/.kimi-code/AGENTS.md", "agents_md_rule"),
+    "opencode": ("~/.config/opencode/AGENTS.md", "agents_md_rule"),
 }
 
 # Known tool name -> rule file mapping for tiered routing

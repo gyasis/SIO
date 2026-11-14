@@ -56,6 +56,7 @@ KIMI_SESSIONS = HOME / ".kimi-code" / "sessions"
 KIMI_SESSION_INDEX = HOME / ".kimi-code" / "session_index.jsonl"
 PI_SESSIONS = HOME / ".pi" / "agent" / "sessions"
 OMP_SESSIONS = HOME / ".omp" / "agent" / "sessions"
+DSH_SESSIONS = HOME / ".dsh" / "sessions"
 
 # Env vars a harness might expose so a session can identify ITSELF as "you".
 _SELF_ID_ENVS = ("SIO_SESSION_ID", "CLAUDE_SESSION_ID", "CLAUDE_SESSION")
@@ -711,6 +712,10 @@ def discover_sessions(minutes: int) -> list[dict[str, Any]]:
         rows.append(_pi_session(fp))
     for fp in _recent(OMP_SESSIONS, "*.jsonl", cutoff):
         rows.append(_pi_session(fp, "omp"))
+    for fp in _recent(DSH_SESSIONS, "session*.jsonl*", cutoff):
+        row = _simple_session(fp, "dsh", None)
+        row["native_id"] = fp.parent.name
+        rows.append(row)
 
     # Collapse resume/compact continuations that share a session id (newest wins),
     # so one logical session is one row and never collides with itself.

@@ -46,6 +46,11 @@ def test_claude_general_pattern_routes_to_claude_md():
         ("codex", "~/.codex/AGENTS.md", "agents_md_rule"),
         ("gemini", "~/.gemini/GEMINI.md", "gemini_md_rule"),
         ("goose", "~/.config/goose/.goosehints", "goosehints_rule"),
+        ("pi", "~/.pi/agent/AGENTS.md", "agents_md_rule"),
+        ("omp", "~/.omp/agent/AGENTS.md", "agents_md_rule"),
+        ("dsh", "~/.dsh/AGENTS.md", "agents_md_rule"),
+        ("kimi", "~/.kimi-code/AGENTS.md", "agents_md_rule"),
+        ("opencode", "~/.config/opencode/AGENTS.md", "agents_md_rule"),
     ],
 )
 def test_non_claude_harness_routes_to_single_instruction_file(
