@@ -627,6 +627,51 @@ def migrate_006_agent_isolation(
         conn.close()
 
 
+def merge_partial_session_ids(db_path: str | Path, *, apply: bool = False) -> dict:
+    """Fold partial non-Claude session ids into their full id, then dedupe errors.
+
+    The same merge and dedupe ``migrate_006_agent_isolation`` runs once, for a
+    database that has already been migrated. Example: codex rows mined under a
+    bare uuid fold into ``codex:rollout-<ts>-<uuid>``. Runs in one transaction;
+    without ``apply`` the work is rolled back, so the counts are exact and
+    nothing changes. Returns ``{"merged_ids", "merged_rows", "ambiguous_ids",
+    "duplicates_removed", "applied"}``.
+    """
+    conn = sqlite3.connect(str(db_path), timeout=30)
+    report: dict = {
+        "merged_ids": {},
+        "merged_rows": {},
+        "ambiguous_ids": {},
+        "duplicates_removed": {},
+        "applied": False,
+    }
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            for table in ("error_records", "flow_events"):
+                if not _table_exists(conn, table):
+                    continue
+                for agent in _sh.KNOWN_AGENTS:
+                    if agent == LEGACY_AGENT:
+                        continue
+                    merged, rows, ambiguous = _merge_partial_ids(conn, table, agent)
+                    if merged:
+                        report["merged_ids"].setdefault(table, {})[agent] = merged
+                        report["merged_rows"].setdefault(table, {})[agent] = rows
+                    if ambiguous:
+                        report["ambiguous_ids"].setdefault(table, {})[agent] = ambiguous
+            if _table_exists(conn, "error_records"):
+                report["duplicates_removed"] = _dedupe_error_records(conn)
+            conn.execute("COMMIT" if apply else "ROLLBACK")
+            report["applied"] = apply
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        return report
+    finally:
+        conn.close()
+
+
 def format_migration_report(report: dict) -> str:
     """Human-readable rendering of a :func:`migrate_006_agent_isolation` report."""
     if report.get("status") == "already_applied":

@@ -25,6 +25,7 @@ def compute_velocity_snapshot(
     window_days: int = 7,
     window_start: str | None = None,
     window_end: str | None = None,
+    agent: str | None = None,
 ) -> dict:
     """Compute a velocity snapshot for a given error type.
 
@@ -44,6 +45,8 @@ def compute_velocity_snapshot(
             window). Used by ``sio velocity --experiment`` so a closed
             cohort's window is honored exactly rather than rolling-from-now.
         window_end: explicit ISO-8601 upper bound.
+        agent: count only this harness's errors and store the snapshot under
+            it; None counts every harness (the series existing rows belong to).
 
     Returns:
         Dict with keys: error_type, error_rate, error_count_in_window,
@@ -58,18 +61,21 @@ def compute_velocity_snapshot(
         window_end = now.isoformat()
         window_start = (now - timedelta(days=window_days)).isoformat()
 
+    ag_sql = " AND agent = ?" if agent else ""
+    ag: tuple = (agent,) if agent else ()
+
     # Count errors of this type in the window
     row = db.execute(
         "SELECT COUNT(*) FROM error_records "
-        "WHERE error_type = ? AND timestamp >= ? AND timestamp <= ?",
-        (error_type, window_start, window_end),
+        "WHERE error_type = ? AND timestamp >= ? AND timestamp <= ?" + ag_sql,
+        (error_type, window_start, window_end, *ag),
     ).fetchone()
     error_count_in_window = row[0]
 
     # Count total errors in the window (all types)
     total_row = db.execute(
-        "SELECT COUNT(*) FROM error_records WHERE timestamp >= ? AND timestamp <= ?",
-        (window_start, window_end),
+        "SELECT COUNT(*) FROM error_records WHERE timestamp >= ? AND timestamp <= ?" + ag_sql,
+        (window_start, window_end, *ag),
     ).fetchone()
     total_errors_in_window = total_row[0]
 
@@ -110,14 +116,14 @@ def compute_velocity_snapshot(
 
         pre_type_row = db.execute(
             "SELECT COUNT(*) FROM error_records "
-            "WHERE error_type = ? AND timestamp >= ? AND timestamp <= ?",
-            (error_type, pre_window_start, pre_window_end),
+            "WHERE error_type = ? AND timestamp >= ? AND timestamp <= ?" + ag_sql,
+            (error_type, pre_window_start, pre_window_end, *ag),
         ).fetchone()
         pre_type_count = pre_type_row[0]
 
         pre_total_row = db.execute(
-            "SELECT COUNT(*) FROM error_records WHERE timestamp >= ? AND timestamp <= ?",
-            (pre_window_start, pre_window_end),
+            "SELECT COUNT(*) FROM error_records WHERE timestamp >= ? AND timestamp <= ?" + ag_sql,
+            (pre_window_start, pre_window_end, *ag),
         ).fetchone()
         pre_total_count = pre_total_row[0]
 
@@ -136,8 +142,10 @@ def compute_velocity_snapshot(
 
         # Get distinct sessions after the rule was applied, ordered by time
         session_rows = db.execute(
-            "SELECT DISTINCT session_id FROM error_records WHERE timestamp > ? ORDER BY timestamp",
-            (applied_at,),
+            "SELECT DISTINCT session_id FROM error_records WHERE timestamp > ?"
+            + ag_sql
+            + " ORDER BY timestamp",
+            (applied_at, *ag),
         ).fetchall()
 
         if threshold > 0 and session_rows:
@@ -179,9 +187,9 @@ def compute_velocity_snapshot(
     # Get session_id for this snapshot (most recent session in window)
     latest_session_row = db.execute(
         "SELECT session_id FROM error_records "
-        "WHERE timestamp >= ? AND timestamp <= ? "
+        "WHERE timestamp >= ? AND timestamp <= ?" + ag_sql + " "
         "ORDER BY timestamp DESC LIMIT 1",
-        (window_start, window_end),
+        (window_start, window_end, *ag),
     ).fetchone()
     session_id = latest_session_row[0] if latest_session_row else "no-session"
 
@@ -192,8 +200,8 @@ def compute_velocity_snapshot(
         "INSERT INTO velocity_snapshots "
         "(error_type, session_id, error_rate, error_count_in_window, "
         "window_start, window_end, rule_applied, rule_suggestion_id, "
-        "created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "created_at, agent) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             error_type,
             session_id,
@@ -204,6 +212,7 @@ def compute_velocity_snapshot(
             1 if rule_applied else 0,
             rule_suggestion_id,
             created_at,
+            agent,
         ),
     )
     db.commit()
@@ -610,23 +619,28 @@ def sample_errors_around_rule(
 def get_velocity_trends(
     db: sqlite3.Connection,
     error_type: str | None = None,
+    agent: str | None = None,
 ) -> list[dict]:
     """Retrieve velocity snapshots ordered by time.
 
     Args:
         db: Open sqlite3.Connection with SIO schema.
         error_type: If given, filter to this error type only.
+        agent: That harness's series; None reads the every-harness series
+            (snapshots stored with no agent).
 
     Returns:
         List of snapshot dicts ordered by created_at ascending.
     """
+    conds = ["agent = ?" if agent else "agent IS NULL"]
+    params: list = [agent] if agent else []
     if error_type:
-        rows = db.execute(
-            "SELECT * FROM velocity_snapshots WHERE error_type = ? ORDER BY created_at",
-            (error_type,),
-        ).fetchall()
-    else:
-        rows = db.execute("SELECT * FROM velocity_snapshots ORDER BY created_at").fetchall()
+        conds.append("error_type = ?")
+        params.append(error_type)
+    rows = db.execute(
+        "SELECT * FROM velocity_snapshots WHERE " + " AND ".join(conds) + " ORDER BY created_at",
+        params,
+    ).fetchall()
 
     return [_row_to_dict(r) for r in rows]
 

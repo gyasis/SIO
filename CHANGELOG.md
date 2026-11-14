@@ -9,6 +9,39 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
+### Fixed — harness parity, remainder of #81
+
+- **Bulk `mine --agent` uses the adapters** for codex, gemini, kimi, pi, omp,
+  dsh and goose (as for opencode and paperclip). Tool calls and their output
+  reach the extractor. Sessions are listed from the harness store, a
+  session with several files (kimi subagent wires) is mined once, and a
+  session read as empty is reported and skipped. aider and promptchain keep
+  the search-parser path.
+- **The scheduler and autoresearch mine every harness** after the Claude
+  scan (`sio/mining/harness_mine.py`). A failing harness is logged and the
+  others still run; autoresearch records a `mine-harnesses` step.
+- **`--agent` on `report`, `velocity` and `violations`.**
+  - `report --agent X` scopes sessions, errors, signals and flows to one
+    harness (read-only TEMP views on the report's own connection).
+  - `velocity --agent X` counts only that harness and keeps its own
+    snapshot series. A new nullable `velocity_snapshots.agent` column
+    (added on open) separates the series; existing rows are the
+    every-harness series.
+  - `violations --agent X` checks that harness's errors against the global
+    instruction file it loads; `--agent claude` (default) is unchanged and
+    `--agent all` checks every error against Claude's rules.
+- **promptchain sessions are keyed by their directory uuid.** The display
+  name (most are `default`) merged separate sessions into one.
+- **`from_path` maps promptchain and paperclip paths** to their own handles
+  (they were filed as `claude:`), so `sio search --files | sio mine
+  --session -` mines them.
+- **`mine --session` with a wrong id fails loudly.** A search-backed agent
+  that reads 0 events exits 1 and is not marked processed.
+- **New `sio db merge-ids [--apply]`.** Folds partial non-Claude session ids
+  into their full id (for example codex rows mined under a bare uuid before
+  the rollout id) and removes the duplicate error rows, for databases
+  already migrated. Dry run by default, with exact counts.
+
 ### Fixed — positive signals, session metrics and flows for every harness (#81)
 
 Non-Claude mining stored only error rows, so `report`, `discover`, `curate`,
