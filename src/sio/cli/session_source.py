@@ -20,6 +20,7 @@ import json
 from pathlib import Path
 from typing import Iterable
 
+from sio.adapters.messages import events_to_paired_messages
 from sio.core.session_handle import coerce_session_input, from_path, looks_like_path, parse_handle
 
 # Harnesses whose sessions are one file each: agent -> (store attr in sio.cli.live, glob).
@@ -93,63 +94,6 @@ def resolve_session(
         extra = f" matching '{project}'" if project else ""
         raise SessionLoadError(f"No {scope}sessions found{extra}.")
     return best[1]
-
-
-def events_to_paired_messages(events: Iterable) -> list[dict]:
-    """Adapter events -> message dicts with each tool call joined to its result.
-
-    Adapters emit a tool call (``assistant`` event with ``tool`` set, arguments
-    as content) and its result (``tool`` event) separately. The Claude parser
-    emits ONE assistant message per call carrying ``tool_input``,
-    ``tool_output`` and ``error``; the distiller reads that shape. Results are
-    matched to the oldest open call of the same tool name, else the oldest open
-    call. Adapters that already carry the whole call in ``raw`` (OpenCode,
-    Paperclip) produce one message directly.
-    """
-    out: list[dict] = []
-    pending: dict[str, list[int]] = {}
-
-    def _base(ev, role: str) -> dict:
-        return {
-            "role": role,
-            "content": ev.content or "",
-            "tool_name": None,
-            "tool_input": None,
-            "tool_output": None,
-            "error": None,
-            "timestamp": ev.ts,
-        }
-
-    for ev in events:
-        raw = ev.raw if isinstance(ev.raw, dict) else {}
-        if ev.tool and ("tool_input" in raw or "tool_output" in raw):
-            msg = _base(ev, "assistant")
-            msg.update(
-                tool_name=ev.tool,
-                tool_input=raw.get("tool_input"),
-                tool_output=raw.get("tool_output"),
-                error=getattr(ev, "error", None) or None,
-            )
-            out.append(msg)
-        elif ev.role == "assistant" and ev.tool:
-            msg = _base(ev, "assistant")
-            msg.update(content="", tool_name=ev.tool, tool_input=ev.content or "")
-            out.append(msg)
-            pending.setdefault(ev.tool, []).append(len(out) - 1)
-        elif ev.role == "tool":
-            queue = pending.get(ev.tool) if ev.tool else None
-            if not queue:
-                open_calls = [q for q in pending.values() if q]
-                queue = min(open_calls, key=lambda q: q[0]) if open_calls else None
-            if queue:
-                call = out[queue.pop(0)]
-                call["tool_output"] = ev.content or ""
-                call["error"] = getattr(ev, "error", None) or None
-            else:
-                out.append(_base(ev, "tool"))
-        else:
-            out.append(_base(ev, ev.role))
-    return out
 
 
 def _unparsed_reason(path: Path) -> str:

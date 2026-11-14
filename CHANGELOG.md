@@ -9,6 +9,23 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
+### Fixed — positive signals, session metrics and flows for every harness (#81)
+
+Non-Claude mining stored only error rows, so `report`, `discover`, `curate`,
+`promote-positives`, `amplify` and `flows` learned from Claude sessions only.
+
+- **`sio mine --session <agent:id>` and `sio mine --agent <name>`** now also
+  write `positive_records` and a `session_metrics` row for each session
+  (`sio/mining/session_signals.py`), keyed by the canonical `<agent>:<id>`.
+  Re-mining a grown session replaces that session's rows; it never
+  duplicates them. Claude rows are unchanged.
+- **`sio flows --agent <name|all>`** mines tool-flow patterns from any
+  harness through its adapter and shows only that harness's flows (default
+  `claude`, as before). A session that cannot be loaded is reported as a
+  failure, never skipped silently.
+- The call/result pairing step moved to `sio/adapters/messages.py` so the
+  mining code shares it with `distill`.
+
 ### Fixed — harness parity: SIO reads every harness, not only Claude (#81)
 
 Many commands read only Claude Code transcripts. On omp, pi, dsh, codex,
