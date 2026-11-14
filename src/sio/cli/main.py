@@ -18,6 +18,7 @@ from sio.core.paths import sio_home as _default_sio_home
 from sio.core.runlog import current as _runlog_current
 from sio.core.runlog import runlogged
 from sio.core.session_handle import KNOWN_AGENTS as _KNOWN_AGENTS
+from sio.mining.session_signals import record_session_signals
 
 _DEFAULT_DB_DIR = str(_default_sio_home() / DEFAULT_PLATFORM)
 
@@ -1045,11 +1046,16 @@ def _mine_session_via_adapter(db_path: str, handle: str, agent: str) -> None:
             if tag:
                 rec["project_tag"] = tag
         inserted, present = _insert_counting(conn, errors, canonical, now)
+        signals = record_session_signals(
+            conn, messages, canonical, manifest.agent, manifest.path, errors
+        )
         _mark_non_claude_session_processed(
             conn, canonical, signature, manifest.agent, len(events), manifest.path
         )
         conn.commit()
     click.echo(_session_summary(canonical, len(events), len(errors), inserted, present))
+    click.echo(f"  {_plural(signals['positive'], 'positive signal')} recorded"
+               + ("" if signals["metrics"] else "; session metrics FAILED (see log)"))
 
 
 def _mine_agent_bulk(db_path: str, agent: str, since: str | None) -> None:
@@ -1121,6 +1127,9 @@ def _mine_agent_bulk(db_path: str, agent: str, since: str | None) -> None:
                 messages, source_file=f"{agent}:{sid}", source_type="adapter"
             )
             inserted, present = _insert_counting(conn, errors, canonical, now)
+            record_session_signals(
+                conn, messages, canonical, agent, recs[0].source_path, errors
+            )
             _mark_non_claude_session_processed(
                 conn, canonical, signature, agent, len(messages), recs[0].source_path
             )
@@ -1199,6 +1208,7 @@ def _mine_adapter_bulk(
                 if tag:
                     rec["project_tag"] = tag
             inserted, present = _insert_counting(conn, errors, canonical, now)
+            record_session_signals(conn, messages, canonical, agent, manifest.path, errors)
             _mark_non_claude_session_processed(
                 conn, canonical, signature, agent, len(messages), manifest.path
             )
@@ -1596,8 +1606,15 @@ def _errors_in_window(db_path: str, since: str | None, agent: str | None = None)
     default=None,
     help="Scope flows to the cohort window of the named experiment.",
 )
+@click.option(
+    "--agent",
+    type=click.Choice(["claude", *[a for a in LATEST_AGENTS if a != "claude"], "all"]),
+    default="claude",
+    show_default=True,
+    help="Harness whose sessions to mine and show; 'all' covers every harness.",
+)
 @runlogged("flows")
-def flows(since, project, min_count, limit, mine_first, experiment_name):
+def flows(since, project, min_count, limit, mine_first, experiment_name, agent):
     """Discover recurring positive tool sequence patterns.
 
     Analyzes JSONL session transcripts to find tool sequences that
@@ -1610,10 +1627,12 @@ def flows(since, project, min_count, limit, mine_first, experiment_name):
         sio flows --min-count 5           # Only frequent patterns
         sio flows --no-mine               # Skip mining, query existing data
         sio flows --experiment sysprompt-v2  # Scope to a cohort window
+        sio flows --agent omp             # One harness
+        sio flows --agent all             # Every harness
     """
     from pathlib import Path
 
-    from sio.mining.flow_pipeline import query_flows, run_flow_mine
+    from sio.mining.flow_pipeline import query_flows, run_flow_mine, run_flow_mine_agent
 
     db_path = str(_default_db_path())
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
@@ -1636,7 +1655,23 @@ def flows(since, project, min_count, limit, mine_first, experiment_name):
 
     with _db_conn(db_path) as conn:
         # Optionally mine fresh flow data
-        if mine_first:
+        if mine_first and agent != "claude":
+            others = [a for a in LATEST_AGENTS if a != "claude"] if agent == "all" else [agent]
+            for name in others:
+                res = run_flow_mine_agent(conn, name, since, project)
+                click.echo(
+                    f"[{name}] mined {res['total_files_scanned']} sessions, "
+                    f"found {res['flows_found']} flow events"
+                )
+                for f in res.get("failures", [])[:3]:
+                    click.secho(f"   [{f['stage']}] {f['error']}", err=True, fg="yellow")
+                if res.get("failed_files", 0) > 3:
+                    click.secho(
+                        f"   ... and {res['failed_files'] - 3} more "
+                        f"(see {_default_sio_home() / 'logs/flow_failures.log'})",
+                        err=True, fg="yellow",
+                    )
+        if mine_first and agent in ("claude", "all"):
             source_dirs = []
             jsonl_dir = Path(os.path.expanduser("~/.claude/projects"))
             if jsonl_dir.exists():
@@ -1677,7 +1712,12 @@ def flows(since, project, min_count, limit, mine_first, experiment_name):
 
         # Query aggregated flows
         results = query_flows(
-            conn, since=since, min_count=min_count, limit=limit, until=exp_until
+            conn,
+            since=since,
+            min_count=min_count,
+            limit=limit,
+            until=exp_until,
+            agent=None if agent == "all" else agent,
         )
 
     if not results:
