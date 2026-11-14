@@ -9,6 +9,46 @@ GitHub release pages (with full asset downloads) live at
 
 ## [Unreleased]
 
+### Fixed — harness parity: SIO reads every harness, not only Claude (#81)
+
+Many commands read only Claude Code transcripts. On omp, pi, dsh, codex,
+gemini and other harnesses they printed "No messages found" or zero counts.
+That hid a parse failure behind a result that looked real.
+
+- **`distill`, `recall` and `collect-recall` read every harness.** They take
+  a file path, a handle such as `omp:<id>`, or `--latest`. `--latest` looks at
+  every harness store; `--agent <name>` limits it to one. Other harnesses go
+  through their adapters (`sio/cli/session_source.py`), which join each tool
+  call to its result.
+- **An unreadable session fails loudly.** It exits 1 and says why: the line
+  count, the record types seen, or that the adapter read 0 events. It is never
+  reported as an empty session.
+- **New dsh adapter** for `~/.dsh/sessions/**/session.v4.jsonl.zstd`
+  (needs the `zstandard` package). dsh works in `distill`, `recall`,
+  `live show`, `search --agent dsh` and `mine --session` / `--agent dsh`.
+- **gemini:** the parser reads `session-*.jsonl` (it looked for `.json`, so
+  gemini was empty everywhere), including tool calls, failed calls and
+  `$set` message snapshots.
+- **codex:** the parser reads the nested `sessions/YYYY/MM/DD/rollout-*.jsonl`
+  files through the adapter's line parser, so one session has one id. The
+  adapter now reads `function_call` / `function_call_output` records (most
+  codex tool calls); a non-zero exit code marks the call failed.
+- **`mine --agent`** accepts `dsh`, `kimi`, `aider` and `promptchain`.
+- **`suggest --session <agent:id>`** reads that agent's error rows (it read
+  Claude rows only). **`suggest --harness`** accepts `pi`, `omp`, `dsh`,
+  `kimi` and `opencode`; each routes to the global `AGENTS.md` its harness
+  loads (`~/.pi/agent`, `~/.omp/agent`, `~/.dsh`, `~/.kimi-code`,
+  `~/.config/opencode`). The writer allowlists include these directories.
+- **PreCompact and Stop hooks count correctly.** They looked up the bare
+  payload session id, but rows are stored as `claude:<uuid>`, so every
+  `session_metrics` row read 0 tool calls / 0 errors.
+- **`distill` step summaries** match tool names without case (`bash`, `read`)
+  and know codex `exec_command` / `exec`.
+
+Still open on #81: flows, positive signals and session metrics for
+non-Claude harnesses; promptchain session ids; agent filters on
+`violations` / `velocity`; and the scheduler scanning only Claude stores.
+
 ### Changed — `sio search` caps its output by default
 
 Coding agents call `sio search` with no `--limit`. Under the old unlimited

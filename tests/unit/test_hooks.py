@@ -158,6 +158,41 @@ class TestPreCompact:
         assert row["tool_call_count"] == 3
         assert row["error_count"] == 2
 
+    def test_counts_rows_stored_under_canonical_id(self, mem_conn):
+        """Rows carry ``claude:<uuid>``; the hook payload carries the bare uuid."""
+        from sio.adapters.claude_code.hooks.pre_compact import (
+            handle_pre_compact,
+        )
+
+        for i in range(4):
+            mem_conn.execute(
+                "INSERT INTO behavior_invocations "
+                "(session_id, actual_action, user_message, "
+                "behavior_type, timestamp, platform) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                ("claude:sess-canon", "Bash", "t", "skill", f"2025-01-01T00:00:0{i}Z",
+                 "claude-code"),
+            )
+        mem_conn.execute(
+            "INSERT INTO error_records "
+            "(session_id, timestamp, source_type, source_file, error_text, mined_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("claude:sess-canon", "2025-01-01T00:00:00Z", "hook", "/tmp/c.jsonl", "e",
+             "2025-01-01T00:00:00Z"),
+        )
+        mem_conn.commit()
+
+        handle_pre_compact(
+            json.dumps({"session_id": "sess-canon", "transcript_path": "/tmp/c.jsonl"}),
+            conn=mem_conn,
+        )
+
+        row = mem_conn.execute(
+            "SELECT * FROM session_metrics WHERE session_id = ?", ("sess-canon",)
+        ).fetchone()
+        assert row["tool_call_count"] == 4
+        assert row["error_count"] == 1
+
     def test_returns_allow_on_invalid_json(self, mem_conn):
         from sio.adapters.claude_code.hooks.pre_compact import (
             handle_pre_compact,

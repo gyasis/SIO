@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 from sio.adapters.claude_code.hooks._session_metrics import transcript_metrics
 from sio.core.paths import sio_home as _default_sio_home
+from sio.core.session_handle import session_match_clause
 
 logger = logging.getLogger(__name__)
 
@@ -50,28 +51,30 @@ def _do_snapshot(stdin_json: str, *, conn=None) -> None:
 
     try:
         session_id = payload.get("session_id", "unknown")
+        # Rows are stored canonical (claude:<uuid>); the payload id is bare.
+        _sid_clause, _sid_params = session_match_clause(session_id)
         transcript_path = payload.get("transcript_path", "")
         now = datetime.now(timezone.utc).isoformat()
 
         # Count tool calls from behavior_invocations
         inv_row = conn.execute(
-            "SELECT COUNT(*) as total FROM behavior_invocations WHERE session_id = ?",
-            (session_id,),
+            f"SELECT COUNT(*) as total FROM behavior_invocations WHERE {_sid_clause}",
+            _sid_params,
         ).fetchone()
         tool_call_count = inv_row["total"] if inv_row else 0
 
         # Count errors from error_records
         err_row = conn.execute(
-            "SELECT COUNT(*) as errors FROM error_records WHERE session_id = ?",
-            (session_id,),
+            f"SELECT COUNT(*) as errors FROM error_records WHERE {_sid_clause}",
+            _sid_params,
         ).fetchone()
         error_count = err_row["errors"] if err_row else 0
 
         # Count positive signals already captured for this session
         try:
             pos_row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM positive_records WHERE session_id = ?",
-                (session_id,),
+                f"SELECT COUNT(*) as cnt FROM positive_records WHERE {_sid_clause}",
+                _sid_params,
             ).fetchone()
             positive_count = pos_row["cnt"] if pos_row else 0
         except Exception:

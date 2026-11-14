@@ -20,6 +20,11 @@ _ALLOWED_ROOTS: list[Path] = [
     Path.home() / ".codex",  # codex AGENTS.md
     Path.home() / ".gemini",  # gemini GEMINI.md
     Path.home() / ".config" / "goose",  # goose .goosehints
+    Path.home() / ".pi" / "agent",  # pi AGENTS.md
+    Path.home() / ".omp" / "agent",  # omp AGENTS.md
+    Path.home() / ".dsh",  # dsh AGENTS.md
+    Path.home() / ".kimi-code",  # kimi AGENTS.md
+    Path.home() / ".config" / "opencode",  # opencode AGENTS.md
 ]
 
 

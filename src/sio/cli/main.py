@@ -10,6 +10,7 @@ from pathlib import Path
 
 import click
 
+from sio.cli.session_source import LATEST_AGENTS
 from sio.core.constants import DEFAULT_PLATFORM
 from sio.core.observability import log_failure
 from sio.core.paths import db_path as _default_db_path
@@ -1282,12 +1283,16 @@ def _warn_if_agent_migration_pending(conn) -> None:
 @click.option(
     "--agent",
     type=click.Choice(
-        ["claude", "codex", "gemini", "goose", "pi", "omp", "opencode", "paperclip"]
+        [
+            "claude", "codex", "gemini", "goose", "pi", "omp", "dsh", "kimi",
+            "aider", "promptchain", "opencode", "paperclip",
+        ]
     ),
     default="claude",
     help=(
         "Which coding agent's sessions to mine in bulk. 'claude' uses the "
-        "native JSONL/SpecStory scan; codex/gemini/goose/pi/omp enumerate that "
+        "native JSONL/SpecStory scan; codex/gemini/goose/pi/omp/dsh/kimi/aider/"
+        "promptchain enumerate that "
         "agent's store via the sio search parsers (content-level errors, "
         "plus harness-flagged tool failures where the parser carries them -- pi "
         "does). opencode/paperclip use their own adapters and keep tool calls "
@@ -1743,7 +1748,7 @@ def flows(since, project, min_count, limit, mine_first, experiment_name):
     "--latest",
     is_flag=True,
     default=False,
-    help="Distill the most recent JSONL session.",
+    help="Distill the most recent session from any harness.",
 )
 @click.option(
     "--output",
@@ -1756,8 +1761,14 @@ def flows(since, project, min_count, limit, mine_first, experiment_name):
     default=None,
     help="Filter latest session by project name.",
 )
+@click.option(
+    "--agent",
+    type=click.Choice(LATEST_AGENTS),
+    default=None,
+    help="Harness for --latest (default: newest session across all harnesses).",
+)
 @runlogged("distill")
-def distill(session_path, latest, output, project):
+def distill(session_path, latest, output, project, agent):
     """Distill a long session into a clean playbook of winning steps.
 
     Takes a messy exploratory session and extracts just the steps that worked,
@@ -1767,61 +1778,42 @@ def distill(session_path, latest, output, project):
         sio distill --latest                          # Most recent session
         sio distill --latest --project jira-issues    # Most recent for project
         sio distill /path/to/session.jsonl            # Specific session file
+        sio distill omp:<session-id>                  # Session handle, any harness
+        sio distill --latest --agent pi               # Most recent pi session
         sio distill --latest -o playbook.md           # Save to file
     """
     from pathlib import Path
 
-    from sio.mining.jsonl_parser import parse_jsonl
+    from sio.cli.session_source import SessionLoadError, load_session_messages, resolve_session
     from sio.mining.session_distiller import distill_session, format_playbook
 
-    # Find the session file
-    if session_path:
-        jsonl_file = Path(session_path)
-        if not jsonl_file.exists():
-            click.echo(f"File not found: {session_path}")
-            return
-    elif latest:
-        # Find most recent JSONL in ~/.claude/projects/
-        projects_dir = Path(os.path.expanduser("~/.claude/projects"))
-        if not projects_dir.exists():
-            click.echo("No projects directory found at ~/.claude/projects/")
-            return
-
-        jsonl_files = sorted(
-            projects_dir.rglob("*.jsonl"),
-            key=lambda f: f.stat().st_mtime,
-            reverse=True,
-        )
-
-        if project:
-            jsonl_files = [f for f in jsonl_files if project.lower() in str(f).lower()]
-
-        if not jsonl_files:
-            click.echo("No JSONL sessions found.")
-            return
-
-        jsonl_file = jsonl_files[0]
-        click.echo(f"Distilling: {jsonl_file.name} ({jsonl_file.stat().st_size // 1024}KB)")
-    else:
-        click.echo("Provide a session path or use --latest")
-        click.echo("  sio distill --latest")
+    if not session_path and not latest:
+        click.echo("Provide a session path or handle, or use --latest")
+        click.echo("  sio distill --latest [--agent omp]")
         click.echo("  sio distill /path/to/session.jsonl")
+        click.echo("  sio distill omp:<session-id>")
         return
 
-    # Parse and distill
-    parsed = parse_jsonl(jsonl_file)
-    if not parsed:
-        click.echo("No messages found in session.")
-        return
+    try:
+        target = resolve_session(session_path, agent=agent, project=project)
+        parsed, label = load_session_messages(target)
+    except SessionLoadError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"Distilling: {label} ({_plural(len(parsed), 'message')})")
 
     distilled = distill_session(parsed)
 
     if not distilled["steps"]:
-        click.echo("No successful tool calls found to distill.")
+        st = distilled["stats"]
+        click.echo(
+            f"No successful tool calls to distill: {st['total_messages']} messages, "
+            f"{st['total_tool_calls']} tool calls, {st['failed_calls']} failed, "
+            f"{st['retries']} retries."
+        )
         return
 
     # Format output
-    title = f"Playbook: {jsonl_file.stem}"
+    title = f"Playbook: {Path(label).stem}"
     playbook = format_playbook(distilled, title=title)
 
     # Stats line
@@ -1847,7 +1839,13 @@ def distill(session_path, latest, output, project):
 @click.option(
     "--session",
     default=None,
-    help="Path to specific JSONL session. Default: latest.",
+    help="Session path or handle (e.g. omp:<id>). Default: latest across all harnesses.",
+)
+@click.option(
+    "--agent",
+    type=click.Choice(LATEST_AGENTS),
+    default=None,
+    help="Harness for the default latest session.",
 )
 @click.option(
     "--project",
@@ -1888,7 +1886,7 @@ def distill(session_path, latest, output, project):
     help="Save runbook to file.",
 )
 @runlogged("recall")
-def recall(query, session, project, polish, polish_model, confirm_cost, output):
+def recall(query, session, project, polish, polish_model, confirm_cost, output, agent):
     """Recall how a specific task was solved in a previous session.
 
     Topic-filters a distilled session to only the steps matching your query,
@@ -1904,7 +1902,7 @@ def recall(query, session, project, polish, polish_model, confirm_cost, output):
     import sys
     from pathlib import Path
 
-    from sio.mining.jsonl_parser import parse_jsonl
+    from sio.cli.session_source import SessionLoadError, load_session_messages, resolve_session
     from sio.mining.recall import (
         detect_struggles,
         format_recall_output,
@@ -1912,30 +1910,14 @@ def recall(query, session, project, polish, polish_model, confirm_cost, output):
     )
     from sio.mining.session_distiller import distill_session
 
-    # Find session
-    if session:
-        jsonl_file = Path(session)
-    else:
-        projects_dir = Path(os.path.expanduser("~/.claude/projects"))
-        jsonl_files = sorted(
-            projects_dir.rglob("*.jsonl"),
-            key=lambda f: f.stat().st_mtime,
-            reverse=True,
-        )
-        if project:
-            jsonl_files = [f for f in jsonl_files if project.lower() in str(f).lower()]
-        if not jsonl_files:
-            click.echo("No sessions found.")
-            return
-        jsonl_file = jsonl_files[0]
-
-    click.echo(f"Session: {jsonl_file.name} ({jsonl_file.stat().st_size // 1024}KB)")
+    try:
+        target = resolve_session(session, agent=agent, project=project)
+        parsed, label = load_session_messages(target)
+    except SessionLoadError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"Session: {label} ({_plural(len(parsed), 'message')})")
 
     # Step 1: Distill
-    parsed = parse_jsonl(jsonl_file)
-    if not parsed:
-        click.echo("No messages found.")
-        return
 
     distilled = distill_session(parsed)
     total_steps = distilled["stats"]["winning_steps"]
@@ -2655,12 +2637,14 @@ def inspect(pattern_id):
 @click.option(
     "--harness",
     "harness",
-    type=click.Choice([DEFAULT_PLATFORM, "codex", "gemini", "goose"]),
+    type=click.Choice(
+        [DEFAULT_PLATFORM, "codex", "gemini", "goose", "pi", "omp", "dsh", "kimi", "opencode"]
+    ),
     default=DEFAULT_PLATFORM,
     help=(
         "Target harness for generated suggestions. claude-code uses the tiered "
-        "config surface (CLAUDE.md + rules/ + skills/); codex/gemini/goose each "
-        "route to their single instruction file (AGENTS.md / GEMINI.md / "
+        "config surface (CLAUDE.md + rules/ + skills/); every other harness "
+        "routes to its single global instruction file (AGENTS.md / GEMINI.md / "
         ".goosehints)."
     ),
 )
@@ -2866,8 +2850,14 @@ def suggest(
             )
             # Multi-agent isolation: a harness learns only from its OWN
             # sessions. claude-code -> claude rows (excludes other agents);
-            # codex/gemini/goose -> only that agent's rows.
-            _scope_agent = "claude" if harness == DEFAULT_PLATFORM else harness
+            # codex/gemini/goose -> only that agent's rows. A --session handle
+            # names its own agent, and that agent's rows are the ones to read.
+            if session_handle:
+                from sio.core.session_handle import parse_handle as _parse_handle
+
+                _scope_agent = _parse_handle(session_handle)[0]
+            else:
+                _scope_agent = "claude" if harness == DEFAULT_PLATFORM else harness
             all_errors = get_error_records(
                 conn,
                 limit=effective_limit,
@@ -2876,6 +2866,13 @@ def suggest(
                 session_id=session_handle,
                 agent=_scope_agent,
             )
+            if not all_errors and session_handle:
+                click.echo(
+                    f"No errors recorded for session {session_handle} "
+                    f"(agent {_scope_agent}). If it was never mined, run: "
+                    f"sio mine --session {session_handle}"
+                )
+                return
             if not all_errors:
                 filter_hint = f" for project '{project}'" if project else ""
                 since_hint = (
@@ -7140,8 +7137,14 @@ def train(task, optimizer, model, max_examples):
 
 @cli.command(name="collect-recall")
 @click.argument("query")
-@click.option("--session", default=None, help="Session JSONL path.")
+@click.option("--session", default=None, help="Session path or handle (e.g. omp:<id>).")
 @click.option("--project", default=None, help="Filter by project name.")
+@click.option(
+    "--agent",
+    type=click.Choice(LATEST_AGENTS),
+    default=None,
+    help="Harness for the default latest session.",
+)
 @click.option("--runbook", default=None, help="Path to polished runbook (from Gemini).")
 @click.option(
     "--label",
@@ -7150,7 +7153,7 @@ def train(task, optimizer, model, max_examples):
     help="Quality label for this example.",
 )
 @runlogged("collect-recall")
-def collect_recall(query, session, project, runbook, label):
+def collect_recall(query, session, project, runbook, label, agent):
     """Collect a recall example for training.
 
     This is the data collection step: distill a session, optionally attach
@@ -7164,35 +7167,20 @@ def collect_recall(query, session, project, runbook, label):
     """
     from pathlib import Path
 
-    from sio.mining.jsonl_parser import parse_jsonl
+    from sio.cli.session_source import SessionLoadError, load_session_messages, resolve_session
     from sio.mining.recall import detect_struggles, format_recall_output, topic_filter
     from sio.mining.session_distiller import distill_session
 
     db_path = str(_default_db_path())
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
-    # Find session
-    if session:
-        jsonl_file = Path(session)
-    else:
-        projects_dir = Path(os.path.expanduser("~/.claude/projects"))
-        jsonl_files = sorted(
-            projects_dir.rglob("*.jsonl"),
-            key=lambda f: f.stat().st_mtime,
-            reverse=True,
-        )
-        if project:
-            jsonl_files = [f for f in jsonl_files if project.lower() in str(f).lower()]
-        if not jsonl_files:
-            click.echo("No sessions found.")
-            return
-        jsonl_file = jsonl_files[0]
+    try:
+        target = resolve_session(session, agent=agent, project=project)
+        parsed, session_label = load_session_messages(target)
+    except SessionLoadError as exc:
+        raise click.ClickException(str(exc)) from exc
 
     # Distill + filter
-    parsed = parse_jsonl(jsonl_file)
-    if not parsed:
-        click.echo("No messages found.")
-        return
 
     distilled = distill_session(parsed)
     filtered = topic_filter(distilled, query)
@@ -7220,7 +7208,8 @@ def collect_recall(query, session, project, runbook, label):
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (
                 query,
-                jsonl_file.stem,
+                # Claude rows keep the bare uuid; other harnesses store their handle.
+                session_label.removesuffix(".jsonl"),
                 raw_output[:10000],  # Cap at 10KB
                 polished,
                 label,
@@ -7236,7 +7225,7 @@ def collect_recall(query, session, project, runbook, label):
         click.echo(f"  Polished runbook attached ({len(polished)} chars)")
     else:
         click.echo("  No polished runbook yet. Use Gemini to polish, then re-run with --runbook")
-    click.echo(f"  Session: {jsonl_file.name}")
+    click.echo(f"  Session: {session_label}")
 
 
 # ---------------------------------------------------------------------------
