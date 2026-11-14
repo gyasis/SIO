@@ -130,6 +130,15 @@ def from_path(path_str: str) -> str:
     elif "/.omp/" in s:
         # Same <iso-ts>_<uuid>.jsonl layout as pi (omp is a pi fork).
         agent = "omp"
+    elif "/.promptchain/" in s:
+        # sessions/<uuid>/messages.jsonl -- the directory names the session.
+        agent = "promptchain"
+        native = p.parent.name
+    elif "/.paperclip/" in s:
+        # instances/<inst>/data/run-logs/<company>/<agent>/<run>.ndjson -> "<inst>:<run>".
+        agent = "paperclip"
+        if len(p.parents) > 4 and p.parents[2].name == "run-logs":
+            native = f"{p.parents[4].name}:{p.stem}"
     elif "/.dsh/" in s:
         # <cwd>/<session-id>/session.v4.jsonl.zstd -- the directory names the session.
         agent = "dsh"

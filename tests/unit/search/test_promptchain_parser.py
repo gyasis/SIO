@@ -63,7 +63,7 @@ class TestPromptChainParser:
 
         assert "promptchain" in PARSERS
 
-    def test_finds_match_and_maps_session_name(self, tmp_path, monkeypatch):
+    def test_finds_match_and_keys_session_by_uuid(self, tmp_path, monkeypatch):
         import sio.search.cli as _cli
 
         uuid = _make_fixture(tmp_path)
@@ -74,8 +74,9 @@ class TestPromptChainParser:
         assert len(recs) == 2  # both turns mention codeblock
         for r in recs:
             assert r.agent == "promptchain"
-            # uuid resolved to friendly name from sessions.db
-            assert r.session_id == "default"
+            # The directory uuid is the session id (display names repeat and
+            # would merge sessions); the friendly name stays in metadata.
+            assert r.session_id == uuid
             assert r.metadata["uuid"] == uuid
             assert r.metadata["session_name"] == "default"
             assert r.source_path.endswith("messages.jsonl")
