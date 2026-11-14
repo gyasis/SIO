@@ -160,6 +160,18 @@ class AutoResearchLoop:
                 "success",
                 f"Mined {mine_out.get('total_files_scanned', 0)} sessions, {errors_found} errors",
             )
+            # Every other harness (omp, pi, dsh, kimi, codex, gemini, ...).
+            from sio.mining.harness_mine import db_path_of, mine_other_harnesses
+
+            harnesses = mine_other_harnesses(db_path_of(self._db), "7 days")
+            failed = {a: r for a, r in harnesses.items() if r != "ok"}
+            self._txlog.append(
+                cycle,
+                "mine-harnesses",
+                "failure" if failed else "success",
+                f"{len(harnesses) - len(failed)}/{len(harnesses)} harnesses mined"
+                + (f"; failed: {failed}" if failed else ""),
+            )
             return {"errors_found": errors_found}
         except Exception as exc:
             self._txlog.append(
