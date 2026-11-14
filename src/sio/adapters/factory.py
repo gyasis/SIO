@@ -21,6 +21,7 @@ _OPENCODE_DB = Path.home() / ".local" / "share" / "opencode" / "opencode.db"
 _CODEX_SESSIONS = Path.home() / ".codex" / "sessions"
 _PI_SESSIONS = Path.home() / ".pi" / "agent" / "sessions"
 _OMP_SESSIONS = Path.home() / ".omp" / "agent" / "sessions"
+_DSH_SESSIONS = Path.home() / ".dsh" / "sessions"
 
 
 def adapter_for(agent: str):
@@ -70,6 +71,11 @@ def adapter_for(agent: str):
         from sio.adapters.omp.adapter import OmpAdapter
 
         return OmpAdapter()
+
+    if agent == "dsh":
+        from sio.adapters.dsh.adapter import DshAdapter
+
+        return DshAdapter()
 
     from sio.search.cli import PARSERS
 
@@ -216,6 +222,28 @@ def manifest_from_handle(handle: str) -> SessionManifest | None:
             kind="file",
             path=str(path),
             encoding="jsonl",
+        )
+
+    if agent == "dsh":
+        # The session directory is the native id; exact name first, then a
+        # substring (a bare/partial uuid). Newest file last on several hits.
+        if not _DSH_SESSIONS.exists():
+            return None
+        matches = sorted(_DSH_SESSIONS.glob(f"*/{native}/session*.jsonl*"))
+        if not matches:
+            matches = sorted(
+                _DSH_SESSIONS.glob(f"*/*{native}*/session*.jsonl*"),
+                key=lambda f: f.stat().st_mtime,
+            )
+        if not matches:
+            return None
+        path = matches[-1]
+        return SessionManifest(
+            agent="dsh",
+            native_id=path.parent.name,
+            kind="file",
+            path=str(path),
+            encoding="jsonl.zstd" if path.suffix == ".zstd" else "jsonl",
         )
 
     if agent == "goose":

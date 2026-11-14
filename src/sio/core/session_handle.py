@@ -25,6 +25,7 @@ KNOWN_AGENTS: tuple[str, ...] = (
     "kimi",
     "pi",
     "omp",
+    "dsh",
     "paperclip",
     # wuphf carries NO local transcript store: an external bridge writes its
     # rows directly into the DB (behavior_invocations / error_records / ...).
@@ -129,6 +130,10 @@ def from_path(path_str: str) -> str:
     elif "/.omp/" in s:
         # Same <iso-ts>_<uuid>.jsonl layout as pi (omp is a pi fork).
         agent = "omp"
+    elif "/.dsh/" in s:
+        # <cwd>/<session-id>/session.v4.jsonl.zstd -- the directory names the session.
+        agent = "dsh"
+        native = p.parent.name
     else:
         agent = LEGACY_AGENT
     return f"{agent}:{native}"

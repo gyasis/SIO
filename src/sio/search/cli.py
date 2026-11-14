@@ -407,9 +407,75 @@ def search_claude_specstory(
 # --------------------- non-Claude parsers --------------------- #
 
 
+def _codex_rollout_records(
+    rollouts: list[Path], pattern: str, cs: bool, cutoff: float | None, archive: bool
+) -> Iterator[Record]:
+    """Records from Codex ``rollout-*.jsonl`` files, via the codex adapter's line parser."""
+    from sio.adapters.codex.adapter import _event_from_line
+
+    for fp in rollouts:
+        if not _file_within(fp, cutoff):
+            continue
+        if archive and _live_copy_exists(fp):
+            continue
+        call_names: dict[str, str] = {}
+        try:
+            with fp.open(encoding="utf-8", errors="replace") as fh:
+                for lineno, raw in enumerate(fh, start=1):
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    try:
+                        obj = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(obj, dict):
+                        continue
+                    ev = _event_from_line(obj, call_names)
+                    if ev is None:
+                        continue
+                    error = getattr(ev, "error", None)
+                    if not _matches(ev.content, pattern, cs) and not (
+                        error and _matches(error, pattern, cs)
+                    ):
+                        continue
+                    meta: dict = {"store": "rollout", "entry_type": obj.get("type")}
+                    if ev.tool:
+                        meta["tool"] = ev.tool
+                    if error is not None:
+                        meta["error"] = error[:2000]
+                    yield Record(
+                        agent="codex",
+                        session_id=fp.stem,
+                        ts=ev.ts,
+                        role=ev.role,
+                        content=ev.content[:2000],
+                        source_path=str(fp),
+                        metadata=meta,
+                        line=lineno,
+                        match_text=ev.content or error or "",
+                    )
+        except OSError:
+            continue
+
+
 def search_codex(
     pattern: str, cs: bool, cutoff: float | None, archive: bool = False
 ) -> Iterator[Record]:
+    """Search Codex CLI transcripts.
+
+    Rollouts live at ``~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl``
+    and are normalised by the EXTRACT adapter's line parser, so search and mine
+    agree on every event. The session id is the file stem, the same id the
+    adapter path stamps. ``history.jsonl`` holds only typed prompts keyed by the
+    bare uuid; its lines are used only for sessions with no rollout file, so one
+    session never gets two ids.
+    """
+    sessions_dir = _store(HOME / ".codex" / "sessions", archive)
+    rollouts = sorted(sessions_dir.rglob("rollout-*.jsonl")) if sessions_dir.exists() else []
+    rollout_uuids = {fp.stem[-36:] for fp in rollouts}
+    yield from _codex_rollout_records(rollouts, pattern, cs, cutoff, archive)
+
     hist = _store(HOME / ".codex" / "history.jsonl", archive)
     if hist.exists() and _file_within(hist, cutoff):
         try:
@@ -421,6 +487,8 @@ def search_codex(
                     try:
                         entry = json.loads(raw)
                     except json.JSONDecodeError:
+                        continue
+                    if entry.get("session_id", "") in rollout_uuids:
                         continue
                     text = entry.get("text", "")
                     # drops empty content by design (see _matches); no harness flag here yet
@@ -439,7 +507,6 @@ def search_codex(
         except OSError:
             pass
 
-    sessions_dir = _store(HOME / ".codex" / "sessions", archive)
     if not sessions_dir.exists():
         return
     for fp in sessions_dir.glob("rollout-*.json"):
@@ -614,12 +681,111 @@ def search_opencode(
         conn.close()
 
 
+def _gemini_text(content) -> str:
+    """Text of a gemini message ``content``: a string or a list of ``{text}`` parts."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(
+            str(p.get("text", "")) for p in content if isinstance(p, dict) and p.get("text")
+        )
+    return json.dumps(content) if content else ""
+
+
+def _gemini_tool_output(result) -> str:
+    """Output text of a gemini tool call ``result`` (a list of functionResponse parts)."""
+    parts = []
+    for item in result or []:
+        resp = (item or {}).get("functionResponse", {}).get("response", {})
+        out = resp.get("output", resp.get("error", resp)) if isinstance(resp, dict) else resp
+        parts.append(out if isinstance(out, str) else json.dumps(out))
+    return "\n".join(p for p in parts if p)
+
+
+def _gemini_jsonl_records(fp: Path, pattern: str, cs: bool) -> Iterator[Record]:
+    """Records from one gemini ``session-*.jsonl`` transcript.
+
+    Line 1 is a header (``sessionId``, ``projectHash``); later lines are
+    messages (``type`` user | gemini | info) or ``$set`` updates. A ``$set``
+    holding ``messages`` is a snapshot that replaces the list so far; other
+    ``$set`` fields are metadata and are skipped. A gemini message's
+    ``toolCalls`` become one assistant record per call (``metadata.tool``,
+    JSON args) and one tool record with its output; a status other than
+    ``success`` is the harness failure flag.
+    The session id is the file stem, the id ``from_path`` and live discovery
+    give the same file.
+    """
+    session_id = fp.stem
+    proj = ""
+    try:
+        lines = fp.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return
+    messages: list[tuple[int, dict]] = []
+    for n, line in enumerate(lines, 1):
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        if "sessionId" in obj and "type" not in obj:
+            proj = obj.get("projectHash", "")
+        elif isinstance((obj.get("$set") or {}).get("messages"), list):
+            messages = [(n, m) for m in obj["$set"]["messages"] if isinstance(m, dict)]
+        elif obj.get("type"):
+            messages.append((n, obj))
+    for n, msg in messages:
+        msg_type = msg["type"] if msg.get("type") else None
+        if not msg_type:
+            continue
+        ts = msg.get("timestamp", "")
+        role = {"gemini": "assistant", "user": "user", "info": "info"}.get(msg_type, msg_type)
+        meta = {"project_hash": proj}
+        text = _gemini_text(msg.get("content"))
+        if _matches(text, pattern, cs):
+            yield Record(
+                agent="gemini", session_id=session_id, ts=ts, role=role,
+                content=text[:2000], source_path=str(fp), metadata=dict(meta),
+                line=n, match_text=text,
+            )
+        for call in msg.get("toolCalls") or []:
+            if not isinstance(call, dict):
+                continue
+            name = call.get("name") or "tool"
+            args = json.dumps(call.get("args") or {}, ensure_ascii=False)
+            if _matches(args, pattern, cs):
+                yield Record(
+                    agent="gemini", session_id=session_id, ts=call.get("timestamp") or ts,
+                    role="assistant", content=args[:2000], source_path=str(fp),
+                    metadata={**meta, "tool": name}, line=n, match_text=args,
+                )
+            output = _gemini_tool_output(call.get("result"))
+            status = call.get("status")
+            failed = bool(status) and status != "success"
+            if failed or _matches(output, pattern, cs):
+                tool_meta = {**meta, "tool": name}
+                if failed:
+                    tool_meta["error"] = output or f"status: {status}"
+                yield Record(
+                    agent="gemini", session_id=session_id, ts=call.get("timestamp") or ts,
+                    role="tool", content=output[:2000], source_path=str(fp),
+                    metadata=tool_meta, line=n, match_text=output,
+                )
+
+
 def search_gemini(
     pattern: str, cs: bool, cutoff: float | None, archive: bool = False
 ) -> Iterator[Record]:
     root = _store(HOME / ".gemini" / "tmp", archive)
     if not root.exists():
         return
+    for fp in root.rglob("session-*.jsonl"):
+        if not _file_within(fp, cutoff):
+            continue
+        if archive and _live_copy_exists(fp):
+            continue
+        yield from _gemini_jsonl_records(fp, pattern, cs)
     for fp in root.rglob("session-*.json"):
         if not _file_within(fp, cutoff):
             continue
@@ -960,6 +1126,66 @@ def _search_pi_format(
             continue
 
 
+def search_dsh(
+    pattern: str, cs: bool, cutoff: float | None, archive: bool = False
+) -> Iterator[Record]:
+    """Search dsh (DeepSeek Harness) transcripts.
+
+    Layout: ``~/.dsh/sessions/<encoded-cwd>/<session-id>/session.v4.jsonl.zstd``.
+    The session id is the directory name, the id ``from_path`` and the adapter
+    give the same file. Normalisation is shared with the EXTRACT adapter
+    (:mod:`sio.adapters.dsh.adapter`); a flagged tool result survives even with
+    empty content, as in the pi parser. ``archive`` is accepted for a uniform
+    signature; dsh stores are not archived.
+    """
+    from sio.adapters.dsh.adapter import events_from_entry, open_session_lines
+
+    root = HOME / ".dsh" / "sessions"
+    if archive or not root.exists():
+        return
+    for fp in root.rglob("session*.jsonl*"):
+        if not _file_within(fp, cutoff):
+            continue
+        session_id = fp.parent.name
+        call_names: dict[str, str] = {}
+        try:
+            with open_session_lines(str(fp)) as fh:
+                for lineno, raw in enumerate(fh, start=1):
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    try:
+                        obj = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(obj, dict):
+                        continue
+                    for ev in events_from_entry(obj, call_names):
+                        if not _matches(ev.content, pattern, cs) and not (
+                            ev.error and _matches(ev.error, pattern, cs)
+                        ):
+                            continue
+                        meta: dict = {"source_kind": "dsh", "entry_type": obj.get("type")}
+                        if ev.tool:
+                            meta["tool"] = ev.tool
+                        if ev.error is not None:
+                            meta["error"] = ev.error[:2000]
+                        yield Record(
+                            agent="dsh",
+                            session_id=session_id,
+                            ts=ev.ts,
+                            role=ev.role,
+                            content=ev.content[:2000],
+                            source_path=str(fp),
+                            metadata=meta,
+                            line=lineno,
+                            match_text=ev.content or ev.error or "",
+                        )
+        except (OSError, RuntimeError) as exc:
+            print(f"[sio search] dsh: cannot read {fp}: {exc}", file=sys.stderr)
+            continue
+
+
 PARSERS = {
     "claude": search_claude,
     "codex": search_codex,
@@ -971,6 +1197,7 @@ PARSERS = {
     "kimi": search_kimi,
     "pi": search_pi,
     "omp": search_omp,
+    "dsh": search_dsh,
 }
 
 #: Agents whose stores ``sio archive sync`` keeps (claude handles its own, see search_claude).

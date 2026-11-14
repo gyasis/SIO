@@ -83,25 +83,30 @@ def _extract_step_summary(msg: dict) -> str:
     else:
         params = tool_input if isinstance(tool_input, dict) else {}
 
-    if tool in ("Read", "read_file"):
+    # Harnesses differ in tool-name case (Claude "Bash", pi/omp "bash").
+    name = tool.lower()
+    if name in ("read", "read_file"):
         path = params.get("file_path", params.get("path", ""))
         return f"Read {path}"
-    elif tool in ("Write", "write_file"):
+    elif name in ("write", "write_file"):
         path = params.get("file_path", params.get("path", ""))
         return f"Write {path}"
-    elif tool in ("Edit", "edit_file"):
+    elif name in ("edit", "edit_file"):
         path = params.get("file_path", params.get("path", ""))
         return f"Edit {path}"
-    elif tool == "Bash":
-        cmd = params.get("command", "")
+    elif name in ("bash", "shell", "exec_command", "exec"):
+        # Codex passes `cmd` (exec_command) or raw code text (exec).
+        cmd = params.get("command") or params.get("cmd") or ""
+        if not cmd and isinstance(tool_input, str) and not params:
+            cmd = tool_input.strip()
         if len(cmd) > 120:
             cmd = cmd[:117] + "..."
         return f"Run: {cmd}"
-    elif tool == "Grep":
+    elif name == "grep":
         pattern = params.get("pattern", "")
         path = params.get("path", "")
         return f"Search for '{pattern}' in {path}"
-    elif tool == "Glob":
+    elif name == "glob":
         pattern = params.get("pattern", "")
         return f"Find files: {pattern}"
     elif tool.startswith("mcp__gemini"):
@@ -208,7 +213,10 @@ def distill_session(parsed_messages: list[dict]) -> dict:
     prev_summary = None
     for idx, msg in tool_calls:
         summary = _extract_step_summary(msg)
-        if summary == prev_summary and msg.get("tool_name") in ("Read", "read_file"):
+        if summary == prev_summary and (msg.get("tool_name") or "").lower() in (
+            "read",
+            "read_file",
+        ):
             continue
         deduped.append((idx, msg, summary))
         prev_summary = summary
