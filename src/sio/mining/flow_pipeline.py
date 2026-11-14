@@ -65,6 +65,141 @@ def _session_id_from_path(path: Path) -> str:
     return from_path(str(path))
 
 
+def _store_session_flows(
+    db_conn: sqlite3.Connection,
+    parsed: list[dict],
+    session_id: str,
+    file_path: str,
+    agent: str,
+    mined_at: str,
+) -> int:
+    """Extract tool-flow n-grams from one session and insert them into flow_events.
+
+    Returns the number of n-grams written. Dedup is the table's
+    UNIQUE(file_path, session_id, flow_hash), via INSERT OR IGNORE.
+    """
+    flow_data = extract_flows_from_session(parsed)
+    if not flow_data["ngrams"]:
+        return 0
+
+    # Message indices near success markers, and compressed position -> tool indices.
+    success_indices = flow_data["success_indices"]
+    tool_seq = flow_data["tool_sequence"]
+    comp_to_tool = compressed_to_tool_indices(tool_seq)
+    ngrams_with_pos = indexed_ngrams(flow_data["compressed"])
+
+    written = 0
+    for ngram, comp_start in ngrams_with_pos:
+        seq_str = " → ".join(ngram)
+        flow_hash = hashlib.sha256(seq_str.encode()).hexdigest()[:16]
+
+        # An n-gram succeeded when ITS tool indices overlap a success marker.
+        ngram_tool_indices: set[int] = set()
+        for comp_pos in range(comp_start, comp_start + len(ngram)):
+            if comp_pos < len(comp_to_tool):
+                for tool_idx in comp_to_tool[comp_pos]:
+                    ngram_tool_indices.add(tool_seq[tool_idx]["idx"])
+        was_successful = 1 if ngram_tool_indices & success_indices else 0
+
+        # Timestamp of this n-gram's first tool.
+        ts = mined_at
+        if comp_start < len(comp_to_tool) and comp_to_tool[comp_start]:
+            first_tool_idx = comp_to_tool[comp_start][0]
+            ts = tool_seq[first_tool_idx].get("timestamp") or mined_at
+
+        db_conn.execute(
+            """INSERT OR IGNORE INTO flow_events
+               (session_id, flow_hash, sequence, ngram_size,
+                was_successful, duration_seconds, source_file,
+                file_path, timestamp, mined_at, agent)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                session_id,
+                flow_hash,
+                seq_str,
+                len(ngram),
+                was_successful,
+                flow_data["duration_seconds"] / max(len(flow_data["ngrams"]), 1),
+                file_path,
+                file_path,
+                ts,
+                mined_at,
+                agent,
+            ),
+        )
+        written += 1
+    return written
+
+
+def run_flow_mine_agent(
+    db_conn: sqlite3.Connection,
+    agent: str,
+    since: str | None,
+    project: str | None = None,
+) -> dict:
+    """Mine tool-flow patterns from one non-Claude harness's sessions.
+
+    Sessions are listed from the harness store and loaded through its adapter
+    (``sio.cli.session_source``), then stored like Claude flows with the
+    canonical ``<agent>:<native_id>`` session id. A session is skipped when
+    its listing mtime is unchanged since the last flow mine. A session that
+    cannot be loaded is a recorded failure, never a silent skip.
+    """
+    from sio.cli.session_source import (  # noqa: PLC0415
+        SessionLoadError,
+        _latest_candidates,
+        load_session_messages,
+    )
+    from sio.mining.pipeline import _get_session_state, _update_session_state  # noqa: PLC0415
+
+    cutoff = None
+    if since:
+        from sio.mining.time_filter import parse_since  # noqa: PLC0415
+
+        cutoff = parse_since(since).timestamp()
+
+    mined_at = datetime.now(timezone.utc).isoformat()
+    scanned = flows = 0
+    failures: list[dict] = []
+    for mtime, target, text in _latest_candidates(agent):
+        if cutoff is not None and mtime < cutoff:
+            continue
+        if project and project.lower() not in text.lower():
+            continue
+        scanned += 1
+        state_key = f"flows:{agent}:{target}"
+        state = _get_session_state(db_conn, state_key)
+        if state["last_mtime"] is not None and abs(state["last_mtime"] - mtime) < 1.0:
+            continue
+        try:
+            messages, label = load_session_messages(target)
+        except SessionLoadError as exc:
+            failures.append({"file": target, "stage": "load", "error": str(exc)})
+            continue
+        try:
+            flows += _store_session_flows(db_conn, messages, label, target, agent, mined_at)
+            _update_session_state(db_conn, state_key, len(messages), mtime, agent=agent)
+        except Exception as exc:  # noqa: BLE001
+            failures.append(
+                {"file": target, "stage": "extract", "error": f"{type(exc).__name__}: {exc}"}
+            )
+    db_conn.commit()
+    if failures:
+        from sio.core.observability import log_failure  # noqa: PLC0415
+
+        for f in failures:
+            log_failure(
+                "flow_failures", f["file"], f["error"],
+                stage=f.get("stage"), extra={"mined_at": mined_at, "agent": agent},
+            )
+    return {
+        "total_files_scanned": scanned,
+        "flows_found": flows,
+        "failed_files": len(failures),
+        "failures": failures,
+    }
+
+
 def run_flow_mine(
     db_conn: sqlite3.Connection,
     source_dirs: list[Path],
@@ -121,70 +256,9 @@ def run_flow_mine(
                 continue
 
             session_id = _session_id_from_path(file_path)
-            flow_data = extract_flows_from_session(parsed)
-
-            if not flow_data["ngrams"]:
-                continue
-
-            # Check which tool indices are near success signals
-            success_indices = flow_data["success_indices"]
-            tool_seq = flow_data["tool_sequence"]
-
-            # Build mapping: compressed position -> tool_sequence indices
-            comp_to_tool = compressed_to_tool_indices(tool_seq)
-
-            # Use indexed_ngrams to get (ngram, start_position) pairs
-            ngrams_with_pos = indexed_ngrams(flow_data["compressed"])
-
-            # Insert each n-gram as a flow_event
-            for ngram, comp_start in ngrams_with_pos:
-                seq_str = " → ".join(ngram)
-                flow_hash = hashlib.sha256(seq_str.encode()).hexdigest()[:16]
-
-                # BUG 1 FIX: Check if this specific ngram's tool indices
-                # overlap with success_indices (message indices near success
-                # markers), not just whether the session had any success.
-                ngram_tool_indices: set[int] = set()
-                for comp_pos in range(comp_start, comp_start + len(ngram)):
-                    if comp_pos < len(comp_to_tool):
-                        for tool_idx in comp_to_tool[comp_pos]:
-                            # Get the message-level index from the tool_seq
-                            ngram_tool_indices.add(tool_seq[tool_idx]["idx"])
-
-                was_successful = 1 if ngram_tool_indices & success_indices else 0
-
-                # BUG 2 FIX: Use the timestamp of this ngram's first tool,
-                # not the first tool in the entire session.
-                ts = mined_at
-                if comp_start < len(comp_to_tool) and comp_to_tool[comp_start]:
-                    first_tool_idx = comp_to_tool[comp_start][0]
-                    ts = tool_seq[first_tool_idx].get("timestamp") or mined_at
-
-                # T087 [US5] FR-008: INSERT OR IGNORE — dedup via
-                # UNIQUE(file_path, session_id, flow_hash)
-                # Flow mining reads ~/.claude/projects only, so every row is
-                # claude's (sio.core.db.agents — the agent column).
-                db_conn.execute(
-                    """INSERT OR IGNORE INTO flow_events
-                       (session_id, flow_hash, sequence, ngram_size,
-                        was_successful, duration_seconds, source_file,
-                        file_path, timestamp, mined_at, agent)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        session_id,
-                        flow_hash,
-                        seq_str,
-                        len(ngram),
-                        was_successful,
-                        flow_data["duration_seconds"] / max(len(flow_data["ngrams"]), 1),
-                        str(file_path),
-                        str(file_path),  # file_path column for dedup constraint
-                        ts,
-                        mined_at,
-                        "claude",
-                    ),
-                )
-                total_flow_events += 1
+            total_flow_events += _store_session_flows(
+                db_conn, parsed, session_id, str(file_path), "claude", mined_at
+            )
 
             # T087 [US5]: Update processed_sessions after successful file mine
             _update_session_state(db_conn, file_str, current_size, current_mtime)
@@ -227,6 +301,7 @@ def query_flows(
     min_count: int = 3,
     limit: int = 20,
     until: str | None = None,
+    agent: str | None = None,
 ) -> list[dict]:
     """Query aggregated flows sorted by confidence.
 
@@ -234,6 +309,7 @@ def query_flows(
         until: optional ISO-8601 upper bound on ``fe.timestamp``. Used by
             ``--experiment`` scoping so a closed cohort doesn't count flows
             that occurred after its close timestamp.
+        agent: only this harness's flows; None means every harness.
 
     Returns list of dicts:
         {sequence, count, success_count, success_rate, avg_duration,
@@ -254,6 +330,10 @@ def query_flows(
     if until:
         conds.append("fe.timestamp <= ?")
         params.append(until)
+
+    if agent:
+        conds.append("fe.agent = ?")
+        params.append(agent)
 
     where_clause = ("WHERE " + " AND ".join(conds)) if conds else ""
 
