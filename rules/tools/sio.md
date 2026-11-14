@@ -142,6 +142,38 @@ The `--session` scope flag accepts `agent:native_id`, a search-result path,
 a bare id, or `-` for stdin. Fuzzy partial-id resolution is supported.
 Canonical session-id migration: `sio db backfill-sessions`.
 
+## Other live sessions — `sio live` (R-SIO-LIVE1..3)
+
+`sio live` reads every running coding-agent session on this machine (claude, pi, omp, codex,
+kimi, goose, opencode), whatever terminal or multiplexer pane it runs in. It is read-only and
+makes no model calls.
+
+### R-SIO-LIVE1 — Never say "I can't tell which session" (BLOCKING)
+When a task touches another session (it owns a fix, holds a worktree, or the user says "attach
+to the session doing X"), FIND it and READ it before you report anything about it:
+```bash
+sio live ls                                   # every live session: id, repo, branch, age, last event, collisions
+sio live ls --repo . --as-json                # same, machine-readable, this working tree only
+sio live show <id> --digest                   # events, tools, files, errors, CURSOR
+sio live show <id> --only text -n 10          # what it said last
+sio search "<topic>" --session <full-id>      # did it commit, merge, apply, finish?
+```
+Then check the result in the artifact itself (`git log`, the branch, the files), not only in
+what the session said. Report: which session it is, what it does NOW, and whether the work
+you depend on is DONE (commit hash) or still open.
+Agent names from a harness's own agent list (for example `code-36` in Claude Code's ListAgents)
+do not map to session ids. Never guess a peer from them; the session id from `sio live ls` is
+the address.
+
+### R-SIO-LIVE2 — Poll with `show`, attach only for real time
+`sio live attach <id>` streams the peer into this session, and every event costs a turn. Use
+`sio live show <id> --since <CURSOR>` to check again later. Attach only when the user asks to
+follow it live, and detach when done.
+
+### R-SIO-LIVE3 — A collision warning is an instruction
+When `sio live ls` prints "Two sessions in one checkout", split one session to a git worktree
+or coordinate with the other session before either writes. Do not ignore it.
+
 ## Database locations
 
 | Database | Path | Purpose |
