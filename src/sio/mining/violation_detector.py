@@ -473,6 +473,7 @@ def get_violation_report(
     rule_file_paths: list[str],
     *,
     since: str | None = None,
+    agent: str | None = None,
 ) -> dict[str, Any]:
     """Generate a complete violation report.
 
@@ -487,6 +488,8 @@ def get_violation_report(
         List of paths to instruction files to scan for rules.
     since:
         Optional ISO-8601 date string to filter error records.
+    agent:
+        Only this harness's error records; None means every harness.
 
     Returns
     -------
@@ -510,11 +513,17 @@ def get_violation_report(
         }
 
     # 2. Query recent error records.
-    query = "SELECT * FROM error_records"
+    conds: list[str] = []
     params: list[Any] = []
     if since:
-        query += " WHERE timestamp >= ?"
+        conds.append("timestamp >= ?")
         params.append(since)
+    if agent:
+        conds.append("agent = ?")
+        params.append(agent)
+    query = "SELECT * FROM error_records"
+    if conds:
+        query += " WHERE " + " AND ".join(conds)
     query += " ORDER BY timestamp DESC"
 
     rows = db.execute(query, params).fetchall()

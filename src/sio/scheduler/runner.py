@@ -84,6 +84,11 @@ def run_analysis(
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Mining step failed: %s", exc)
 
+        # Every other harness (omp, pi, dsh, kimi, codex, gemini, ...).
+        from sio.mining.harness_mine import mine_other_harnesses
+
+        mine_result["harnesses"] = mine_other_harnesses(resolved_db_path, since)
+
         # --- Cluster --------------------------------------------------------
         all_errors = get_error_records(conn)
         patterns: list[dict[str, Any]] = []

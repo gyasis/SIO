@@ -1029,6 +1029,13 @@ def _mine_session_via_adapter(db_path: str, handle: str, agent: str) -> None:
     adapter = adapter_for(agent)
     canonical = f"{manifest.agent}:{manifest.native_id}"
     events = list(adapter.get_events(manifest))
+    if not events:
+        # A search-backed agent resolves any id without checking it exists, so
+        # zero events usually means a wrong id; never file it as processed.
+        raise click.ClickException(
+            f"{canonical}: the {manifest.agent} adapter read 0 events. "
+            f"Check the session id (sio live ls / sio search --agent {manifest.agent} --files)."
+        )
     messages = _events_to_messages(events, canonical)
     signature = _session_signature(messages)
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -1145,6 +1152,13 @@ def _mine_agent_bulk(db_path: str, agent: str, since: str | None) -> None:
     )
 
 
+#: Harnesses with one global instruction file (sio.suggestions.generator).
+_INSTRUCTION_FILE_AGENTS = ("codex", "gemini", "goose", "pi", "omp", "dsh", "kimi", "opencode")
+
+#: Harnesses bulk-mined through their adapter from a listed session store.
+_STORE_BULK_AGENTS = ("codex", "gemini", "kimi", "pi", "omp", "dsh", "goose")
+
+
 def _mine_adapter_bulk(
     db_path: str,
     agent: str,
@@ -1154,12 +1168,16 @@ def _mine_adapter_bulk(
     paperclip_home: str | None = None,
     paperclip_instance: str | None = None,
 ) -> None:
-    """Bulk-mine ``opencode`` / ``paperclip`` through their own adapters.
+    """Bulk-mine a harness through its own adapter.
 
-    Unlike :func:`_mine_agent_bulk` (which goes through the text-only
-    session-search parsers) this keeps tool calls and their output, so shell
-    failures, command loops and leaked template tokens reach the extractor.
-    Same dedup contract: an unchanged session signature is skipped.
+    opencode and paperclip list sessions from their own stores; the harnesses
+    in :data:`_STORE_BULK_AGENTS` are listed from their session stores
+    (``sio.cli.session_source``). Unlike :func:`_mine_agent_bulk` (the
+    text-only session-search parsers, kept for aider and promptchain) this
+    keeps tool calls and their output, so shell failures, command loops and
+    leaked template tokens reach the extractor. Same dedup contract: an
+    unchanged session signature is skipped. A session the adapter reads as
+    empty is reported and skipped, never filed as processed.
     """
     import datetime
 
@@ -1180,7 +1198,7 @@ def _mine_adapter_bulk(
             if not db.exists():
                 click.echo(f"warning: no opencode db at {db}", err=True)
         manifests = [m for db in dbs for m in list_sessions(db, cutoff_epoch)]
-    else:
+    elif agent == "paperclip":
         from sio.adapters.paperclip.adapter import list_runs
         from sio.adapters.paperclip.adapter import paperclip_home as _pc_home
 
@@ -1188,6 +1206,25 @@ def _mine_adapter_bulk(
         manifests = list_runs(home, paperclip_instance, cutoff_epoch)
         if not manifests:
             click.echo(f"warning: no paperclip run logs under {home}", err=True)
+    else:
+        from sio.cli.session_source import SessionLoadError, _latest_candidates, _manifest_for
+
+        manifests = []
+        seen: set[str] = set()
+        for mtime, target, _text in _latest_candidates(agent):
+            if cutoff_epoch is not None and mtime < cutoff_epoch:
+                continue
+            try:
+                manifest = _manifest_for(target)[0]
+            except SessionLoadError as exc:
+                click.echo(f"warning: {exc}", err=True)
+                continue
+            # Several files can belong to one session (kimi subagent wires).
+            if manifest.native_id not in seen:
+                seen.add(manifest.native_id)
+                manifests.append(manifest)
+        if not manifests:
+            click.echo(f"warning: no {agent} sessions in the window", err=True)
 
     adapter = adapter_for(agent)
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -1198,6 +1235,9 @@ def _mine_adapter_bulk(
         for manifest in manifests:
             canonical = f"{agent}:{manifest.native_id}"
             messages = _events_to_messages(adapter.get_events(manifest), canonical)
+            if not messages:
+                click.echo(f"warning: {canonical}: the adapter read 0 events; skipped", err=True)
+                continue
             signature = _session_signature(messages)
             if _non_claude_session_processed(conn, canonical, signature):
                 skipped_sessions += 1
@@ -1301,12 +1341,10 @@ def _warn_if_agent_migration_pending(conn) -> None:
     default="claude",
     help=(
         "Which coding agent's sessions to mine in bulk. 'claude' uses the "
-        "native JSONL/SpecStory scan; codex/gemini/goose/pi/omp/dsh/kimi/aider/"
-        "promptchain enumerate that "
-        "agent's store via the sio search parsers (content-level errors, "
-        "plus harness-flagged tool failures where the parser carries them -- pi "
-        "does). opencode/paperclip use their own adapters and keep tool calls "
-        "+ output (see --opencode-dir / --paperclip-home). Ignored when "
+        "native JSONL/SpecStory scan. codex/gemini/goose/pi/omp/dsh/kimi and "
+        "opencode/paperclip go through their own adapters and keep tool calls "
+        "+ output (see --opencode-dir / --paperclip-home). aider/promptchain "
+        "use the sio search parsers (content-level errors). Ignored when "
         "--session is given."
     ),
 )
@@ -1407,7 +1445,7 @@ def mine(
     if agent != "claude" and not session_handle:
         db_path = str(_default_db_path())
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        if agent in ("opencode", "paperclip"):
+        if agent in ("opencode", "paperclip", *_STORE_BULK_AGENTS):
             _mine_adapter_bulk(
                 db_path,
                 agent,
@@ -7325,8 +7363,16 @@ def collect_recall(query, session, project, runbook, label, agent):
         "(overrides --window). Not compatible with --by-rule."
     ),
 )
+@click.option(
+    "--agent",
+    type=click.Choice(sorted(set(_KNOWN_AGENTS) - {"wuphf"})),
+    default=None,
+    help="Only this harness's errors (its own snapshot series). Default: every harness.",
+)
 @runlogged("velocity")
-def velocity(error_type, window, fmt, skills, by_rule, min_records, experiment_name):
+def velocity(
+    error_type, window, fmt, skills, by_rule, min_records, experiment_name, agent
+):
     """Show learning velocity trends — how error rates change after rules.
 
     Computes error frequency per type over a rolling window, measures
@@ -7481,6 +7527,8 @@ def velocity(error_type, window, fmt, skills, by_rule, min_records, experiment_n
         else:
             rows = conn.execute(
                 "SELECT DISTINCT error_type FROM error_records WHERE error_type IS NOT NULL"
+                + (" AND agent = ?" if agent else ""),
+                (agent,) if agent else (),
             ).fetchall()
             error_types = [r[0] for r in rows]
 
@@ -7497,15 +7545,16 @@ def velocity(error_type, window, fmt, skills, by_rule, min_records, experiment_n
                     etype,
                     window_start=exp_window[0],
                     window_end=exp_window[1],
+                    agent=agent,
                 )
             else:
-                snap = compute_velocity_snapshot(conn, etype, window_days=window)
+                snap = compute_velocity_snapshot(conn, etype, window_days=window, agent=agent)
             snapshots.append(snap)
 
         # Get historical trends for delta computation
         all_trends: dict[str, list[dict]] = {}
         for etype in error_types:
-            all_trends[etype] = get_velocity_trends(conn, error_type=etype)
+            all_trends[etype] = get_velocity_trends(conn, error_type=etype, agent=agent)
 
     if fmt == "json":
         click.echo(_json.dumps(snapshots, indent=2, default=str))
@@ -8134,8 +8183,19 @@ def rule_audit_cmd(rule_id, samples, window, judge, yes, write_report, fmt):
     default="table",
     help="Output format.",
 )
+@click.option(
+    "--agent",
+    type=click.Choice(["claude", *_INSTRUCTION_FILE_AGENTS, "all"]),
+    default="claude",
+    show_default=True,
+    help=(
+        "Harness to check. claude checks Claude errors against CLAUDE.md + rules/; "
+        "another harness checks its errors against the global instruction file it "
+        "loads; all checks every error against Claude's rule files."
+    ),
+)
 @runlogged("violations")
-def violations(since, fmt):
+def violations(since, fmt, agent):
     """Show detected rule violations (existing rules the assistant ignored).
 
     Scans CLAUDE.md and all files in the rules/ directory for imperative
@@ -8189,6 +8249,15 @@ def violations(since, fmt):
             if str(md_file) not in rule_file_paths:
                 rule_file_paths.append(str(md_file))
 
+    if agent not in ("claude", "all"):
+        from sio.suggestions.generator import _HARNESS_INSTRUCTION_FILES  # noqa: PLC0415
+
+        target = _HARNESS_INSTRUCTION_FILES[agent][0]
+        rule_file_paths = [p for p in [os.path.expanduser(target)] if os.path.exists(p)]
+        if not rule_file_paths:
+            click.echo(f"No instruction file for {agent}: {target} does not exist.")
+            return
+
     if not rule_file_paths:
         click.echo("No instruction files found to scan.")
         click.echo(
@@ -8198,7 +8267,9 @@ def violations(since, fmt):
         return
 
     with _db_conn(db_path) as conn:
-        report = get_violation_report(conn, rule_file_paths, since=since)
+        report = get_violation_report(
+            conn, rule_file_paths, since=since, agent=None if agent == "all" else agent
+        )
 
     if fmt == "json":
         click.echo(_json.dumps(report, indent=2, default=str))
@@ -9088,8 +9159,14 @@ def autoresearch_status():
     is_flag=True,
     help="Top 20 sessions by token spend, with the tools each one ran.",
 )
+@click.option(
+    "--agent",
+    type=click.Choice(sorted(set(_KNOWN_AGENTS) - {"wuphf"})),
+    default=None,
+    help="Only this harness's sessions, errors, signals and flows. Default: every harness.",
+)
 @runlogged("report")
-def report(html_flag, output, days, open_flag, by_session):
+def report(html_flag, output, days, open_flag, by_session, agent):
     """Generate a session report (terminal or HTML).
 
     Without --html: show a plain text summary via Rich.
@@ -9108,11 +9185,11 @@ def report(html_flag, output, days, open_flag, by_session):
         return
 
     if by_session:
-        _report_by_session(db_path, days)
+        _report_by_session(db_path, days, agent=agent)
     elif html_flag:
-        _report_html(db_path, output, days, open_flag)
+        _report_html(db_path, output, days, open_flag, agent=agent)
     else:
-        _report_terminal(db_path, days)
+        _report_terminal(db_path, days, agent=agent)
 
 
 def _report_html(
@@ -9120,6 +9197,7 @@ def _report_html(
     output: str | None,
     days: int,
     open_flag: bool,
+    agent: str | None = None,
 ) -> None:
     """Generate and write an HTML report."""
     from datetime import datetime as _dt
@@ -9127,6 +9205,7 @@ def _report_html(
     from sio.reports.html_report import generate_html_report
 
     with _db_conn(db_path) as conn:
+        _scope_to_agent(conn, agent)
         html = generate_html_report(conn, days=days)
 
     if output is None:
@@ -9150,7 +9229,27 @@ def _report_html(
         click.echo("Opening in browser...")
 
 
-def _report_by_session(db_path: str, days: int) -> None:
+def _scope_to_agent(conn, agent: str | None) -> None:
+    """Make this connection's unqualified harness tables show only ``agent``'s rows.
+
+    Creates TEMP views named after the agent tables; SQLite resolves an
+    unqualified name in the temp schema first, so every existing query on this
+    connection reads one harness. Read-only commands only: the views live
+    until the connection closes and are invisible to other connections.
+    """
+    if not agent:
+        return
+    from sio.core.db.agents import validate_agent_name  # noqa: PLC0415
+
+    validate_agent_name(agent)
+    for table in ("error_records", "flow_events", "positive_records", "session_metrics"):
+        conn.execute(
+            f"CREATE TEMP VIEW IF NOT EXISTS {table} AS "  # noqa: S608
+            f"SELECT * FROM main.{table} WHERE agent = '{agent}'"
+        )
+
+
+def _report_by_session(db_path: str, days: int, agent: str | None = None) -> None:
     """Show per-session token spend beside the tools that session ran.
 
     The join key is the transcript path, not ``session_id``. The two tables
@@ -9167,6 +9266,7 @@ def _report_by_session(db_path: str, days: int) -> None:
 
     cutoff = (_dt.now(timezone.utc) - timedelta(days=days)).isoformat()
     with _db_conn(db_path) as conn:
+        _scope_to_agent(conn, agent)
         rows = conn.execute(
             "SELECT sm.file_path, "
             "       MAX(sm.total_input_tokens + sm.total_output_tokens) AS tokens, "
@@ -9216,12 +9316,13 @@ def _report_by_session(db_path: str, days: int) -> None:
     Console().print(table)
 
 
-def _report_terminal(db_path: str, days: int) -> None:
+def _report_terminal(db_path: str, days: int, agent: str | None = None) -> None:
     """Show a plain text summary using Rich."""
     from datetime import datetime as _dt
     from datetime import timedelta, timezone
 
     with _db_conn(db_path) as conn:
+        _scope_to_agent(conn, agent)
         cutoff = (_dt.now(timezone.utc) - timedelta(days=days)).isoformat()
 
         # Session metrics summary
@@ -9715,6 +9816,46 @@ def db_drop_agent(agent, db_path, yes, including_claude):
         click.echo(f"ERROR: {exc}", err=True)
         raise SystemExit(2) from exc
     click.echo(format_drop_report(report))
+
+
+@db.command("merge-ids")
+@click.option(
+    "--db-path",
+    default=str(_default_db_path()),
+    help="Path to the SIO database.",
+    show_default=True,
+)
+@click.option("--apply", is_flag=True, help="Write the changes (default: dry run).")
+def db_merge_ids(db_path, apply):
+    """Fold partial non-Claude session ids into their full id and dedupe errors.
+
+    Rows mined under a short or bare id (for example codex rows keyed by a
+    bare uuid before the rollout id was used) are moved to the one full id
+    they belong to; duplicate error rows that result are removed. Dry run by
+    default: it reports exact counts and changes nothing.
+    """
+    from sio.core.db.agents import merge_partial_session_ids  # noqa: PLC0415
+
+    if not os.path.exists(db_path):
+        raise click.ClickException(f"No database at {db_path}")
+    report = merge_partial_session_ids(db_path, apply=apply)
+    verb = "Merged" if apply else "Would merge"
+    if not report["merged_ids"]:
+        click.echo("No partial session ids to merge.")
+    for table, per_agent in report["merged_ids"].items():
+        for agent, n in per_agent.items():
+            rows = report["merged_rows"][table][agent]
+            click.echo(f"{verb} {n} {agent} id(s) in {table} ({rows} rows)")
+    for table, per_agent in report["ambiguous_ids"].items():
+        for agent, ids in per_agent.items():
+            click.echo(f"Ambiguous, left alone: {len(ids)} {agent} id(s) in {table}")
+    dups = report["duplicates_removed"]
+    total_dups = sum(dups.values()) if isinstance(dups, dict) else dups
+    click.echo(
+        f"{'Removed' if apply else 'Would remove'} {total_dups} duplicate error row(s)."
+    )
+    if not apply and (report["merged_ids"] or total_dups):
+        click.echo("Dry run: nothing changed. Re-run with --apply to write.")
 
 
 @db.command("repair")
