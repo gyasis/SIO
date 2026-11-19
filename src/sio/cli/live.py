@@ -170,6 +170,71 @@ def _content_snippet(entry: dict[str, Any]) -> str:
     return " ".join(text.split())
 
 
+_CONVERSATION_ROLES = {"user", "assistant", "tool", "system"}
+
+
+def _block_text(content: Any) -> str:
+    """Full text of a tool_result ``content`` (str or list of blocks), newlines kept."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(
+            b.get("text", "") for b in content if isinstance(b, dict) and b.get("text")
+        )
+    return ""
+
+
+def _call_id(raw: dict[str, Any]) -> str | None:
+    """Tool call id from a non-Claude record (dsh ``callId`` / ``toolCallId``)."""
+    data = raw.get("data") if isinstance(raw.get("data"), dict) else {}
+    message = data.get("message") if isinstance(data.get("message"), dict) else {}
+    return data.get("callId") or message.get("toolCallId") or None
+
+
+def _full_records(ev: Any, call_names: dict[str, str]) -> list[dict[str, Any]]:
+    """Lossless JSON records for one event: whole bodies, newlines kept, call ids, errors.
+
+    A Claude JSONL entry splits into one record per content block. A tool_result
+    becomes a ``tool``/``tool`` record that carries its call's name from
+    ``call_names``, not an unnamed user row. Other harnesses already give one
+    record per event, so this keeps their content whole. A record with a role
+    outside the conversation (an echo or bookkeeping row) gets kind ``system``.
+    """
+    raw = ev.raw if isinstance(ev.raw, dict) else {}
+    base = {"ts": ev.ts, "role": ev.role, "tool": ev.tool, "call_id": None, "error": ev.error}
+    if (ev.role or "") not in _CONVERSATION_ROLES:
+        return [{**base, "kind": "system", "body": ev.content or _content_snippet(raw)}]
+
+    msg = raw.get("message") if isinstance(raw.get("message"), dict) else {}
+    blocks = msg.get("content")
+    if not isinstance(blocks, list):
+        return [{**base, "kind": _event_kind(ev), "body": ev.content or "", "call_id": _call_id(raw)}]
+
+    out: list[dict[str, Any]] = []
+    for b in blocks:
+        if not isinstance(b, dict):
+            continue
+        kind = b.get("type")
+        if kind == "text" and b.get("text"):
+            out.append({**base, "tool": None, "body": b["text"],
+                        "kind": "text" if ev.role == "assistant" else _event_kind(ev)})
+        elif kind == "thinking" and b.get("thinking"):
+            out.append({**base, "tool": None, "role": "system", "kind": "system", "body": b["thinking"]})
+        elif kind == "tool_use":
+            name = b.get("name") or "tool"
+            if b.get("id"):
+                call_names[b["id"]] = name
+            out.append({**base, "kind": "tool", "role": "assistant", "tool": name, "call_id": b.get("id"),
+                        "body": json.dumps(b.get("input") or {}, ensure_ascii=False)})
+        elif kind == "tool_result":
+            body = _block_text(b.get("content"))
+            cid = b.get("tool_use_id")
+            out.append({**base, "kind": "tool", "role": "tool", "tool": call_names.get(cid or ""),
+                        "call_id": cid, "body": body,
+                        "error": (body or "is_error (empty tool result)") if b.get("is_error") else ev.error})
+    return out
+
+
 def _last_event_label(entry: dict[str, Any]) -> str:
     """Short 'what happened last' label from a parsed JSONL entry."""
     msg = entry.get("message") or {}
@@ -955,14 +1020,19 @@ def _stream(
     digest: bool = False,
     handle: str | None = None,
     save: bool = True,
+    full: bool = False,
 ) -> None:
     """Emit the last ``tail`` MATCHING events, then optionally follow new ones.
 
     The cursor persisted for ``handle`` is the newest **matched** event — i.e.
     "everything up to here has been shown to me under my current filter" — so a
     resume can never skip something this call actually displayed.
+
+    ``full`` emits lossless records (see ``_full_records``) instead of the
+    flattened, truncated catch-up snippets.
     """
     last_ts = ""
+    call_names: dict[str, str] = {}
 
     def _body(ev) -> str:
         return _content_snippet(ev.raw) or ev.content or ""
@@ -974,6 +1044,14 @@ def _stream(
             return
         if ev.ts > last_ts:
             last_ts = ev.ts
+        if full:
+            for rec in _full_records(ev, call_names):
+                if as_json:
+                    click.echo(json.dumps(rec, ensure_ascii=False))
+                else:
+                    tag = f"[{rec['tool']}]" if rec["tool"] else rec["role"]
+                    click.echo(f"{(rec['ts'] or '')[:19]} {tag}: {rec['body']}")
+            return
         if as_json:
             click.echo(
                 json.dumps(
@@ -1105,6 +1183,12 @@ def _build_filter(
 @click.option("--tail", "-n", default=40, show_default=True, help="Show last N events.")
 @click.option("--follow", "-f", is_flag=True, help="Keep streaming new events.")
 @click.option("--digest", is_flag=True, help="Aggregate instead of listing (~200 bytes).")
+@click.option(
+    "--full",
+    is_flag=True,
+    help="Lossless records: whole bodies with newlines, call_id and error fields, "
+    "tool results named after their call. For replay/export consumers.",
+)
 @_filter_options
 @_cursor_options
 def live_show(
@@ -1112,6 +1196,7 @@ def live_show(
     tail: int,
     follow: bool,
     digest: bool,
+    full: bool,
     only: str | None,
     tools_only: bool,
     text_only: bool,
@@ -1151,6 +1236,7 @@ def live_show(
         digest=digest,
         handle=manifest.handle,
         save=not no_save,
+        full=full,
     )
 
 
