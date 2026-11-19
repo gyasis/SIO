@@ -82,6 +82,58 @@ def test_dsh_session_distills(tmp_path):
     assert [s["summary"] for s in distilled["steps"]] == ["Run: ls"]
 
 
-def test_live_stream_is_refused_loudly(tmp_path):
-    with pytest.raises(NotImplementedError, match="zstd"):
-        next(DshAdapter().get_live_stream(_manifest(_write_session(tmp_path))))
+def _append_frame(path, records):
+    payload = "\n".join(json.dumps(r) for r in records).encode() + b"\n"
+    with open(path, "ab") as fh:
+        fh.write(zstandard.ZstdCompressor().compress(payload))
+
+
+def _follow(path, *, from_start=False, after=None):
+    """Drive get_live_stream with time.sleep patched to run `after` once, then stop."""
+    import sio.adapters.dsh.adapter as mod
+
+    calls = {"n": 0}
+
+    def fake_sleep(_):
+        calls["n"] += 1
+        if calls["n"] == 1 and after:
+            after()
+        elif calls["n"] > 1:
+            raise StopIteration
+
+    real = mod.time.sleep
+    mod.time.sleep = fake_sleep
+    out = []
+    try:
+        for ev in DshAdapter().get_live_stream(_manifest(path), from_start=from_start):
+            out.append(ev)
+    except (StopIteration, RuntimeError):
+        pass
+    finally:
+        mod.time.sleep = real
+    return out
+
+
+def test_live_stream_yields_only_records_appended_after_start(tmp_path):
+    path = _write_session(tmp_path)
+    later = {"type": "tool/result", "seq": 9, "time": 1793449385900,
+             "data": {"message": {"role": "tool", "toolCallId": "c1", "isError": False,
+                                  "content": [{"type": "text", "text": "b.txt"}]}}}
+    events = _follow(path, after=lambda: _append_frame(path, [later]))
+    assert [(e.role, e.tool, e.content) for e in events] == [("tool", "bash", "b.txt")]
+
+
+def test_live_stream_from_start_replays_existing(tmp_path):
+    events = _follow(_write_session(tmp_path), from_start=True)
+    assert len(events) == 8
+
+
+def test_live_stream_ignores_truncated_trailing_frame(tmp_path):
+    path = _write_session(tmp_path)
+    frame = zstandard.ZstdCompressor().compress(b'{"type": "user/message"}\n')
+
+    def half_write():
+        with open(path, "ab") as fh:
+            fh.write(frame[: len(frame) // 2])
+
+    assert _follow(path, after=half_write) == []

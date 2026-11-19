@@ -29,6 +29,7 @@ conversation makes every event a turn that re-reads the whole context.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import signal
@@ -45,6 +46,8 @@ from typing import Any
 import click
 
 from sio.core.paths import sio_home as _default_sio_home
+
+logger = logging.getLogger(__name__)
 
 HOME = Path.home()
 CLAUDE_PROJECTS = HOME / ".claude" / "projects"
@@ -554,6 +557,32 @@ def _simple_session(path: Path, agent: str, cwd: str | None) -> dict[str, Any]:
     }
 
 
+def _dsh_session(path: Path) -> dict[str, Any]:
+    """Probe of one dsh session: cwd from its ``session`` header, msgs = record count.
+
+    The session id is the parent directory name; the file stem is always
+    ``session.v4``. An unreadable file still yields a row, just without cwd.
+    """
+    from sio.adapters.dsh.adapter import complete_lines
+
+    row = _simple_session(path, "dsh", None)
+    row["native_id"] = path.parent.name
+    try:
+        lines = complete_lines(str(path))
+    except Exception as exc:  # noqa: BLE001 — a bad file must not break `ls`
+        logger.debug("dsh probe failed for %s: %s", path, exc)
+        return row
+    row["msgs"] = len(lines)
+    if lines:
+        try:
+            head = json.loads(lines[0])
+        except json.JSONDecodeError:
+            head = {}
+        if isinstance(head, dict) and head.get("type") == "session":
+            row["cwd"] = head.get("cwd")
+    return row
+
+
 def _codex_session(path: Path) -> dict[str, Any]:
     """Probe of one Codex rollout-*.jsonl session (cwd from its session_meta).
 
@@ -713,9 +742,7 @@ def discover_sessions(minutes: int) -> list[dict[str, Any]]:
     for fp in _recent(OMP_SESSIONS, "*.jsonl", cutoff):
         rows.append(_pi_session(fp, "omp"))
     for fp in _recent(DSH_SESSIONS, "session*.jsonl*", cutoff):
-        row = _simple_session(fp, "dsh", None)
-        row["native_id"] = fp.parent.name
-        rows.append(row)
+        rows.append(_dsh_session(fp))
 
     # Collapse resume/compact continuations that share a session id (newest wins),
     # so one logical session is one row and never collides with itself.
@@ -899,9 +926,9 @@ def _locate(session: str):
         path = _resolve_claude_partial(native)
         if path is None:
             # A bare id parses as claude; fall through to the other file-backed
-            # stores (omp/pi/codex) before giving up. An explicit "claude:" is final.
+            # stores (omp/pi/codex/dsh) before giving up. An explicit "claude:" is final.
             if not session.startswith("claude:"):
-                for other in ("omp", "pi", "codex"):
+                for other in ("omp", "pi", "codex", "dsh"):
                     if manifest_from_handle(f"{other}:{native}") is not None:
                         agent, handle = other, f"{other}:{native}"
                         break
@@ -1158,7 +1185,7 @@ def live_attach(
     The companion to ``sio live ls``: find the peer session, then attach to keep
     watching it as it works — a short context tail, then a live stream. This is
     a read-only observer (it never writes to the attached session); Ctrl-C to
-    detach. Live follow supports claude, pi, omp, codex, kimi, goose and opencode sessions.
+    detach. Live follow supports claude, pi, omp, codex, kimi, goose, dsh and opencode sessions.
 
     COST NOTE: every streamed event becomes a turn in the observing session,
     which re-reads its whole context. Prefer ``sio live show`` polling; attach
