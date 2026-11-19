@@ -424,3 +424,64 @@ class TestPiDiscovery:
     def test_missing_pi_tree_is_safe(self, tmp_path, monkeypatch):
         self._wire(monkeypatch, tmp_path, tmp_path / "nope" / "pi")
         assert live.discover_sessions(minutes=600) == []
+
+
+class TestFullRecords:
+    """``sio live show --full``: lossless records for replay/export consumers."""
+
+    @staticmethod
+    def _claude_events():
+        from sio.adapters.claude_code.adapter import _event_from_entry
+
+        long_out = "line one\n" + "x" * 2000 + "\nlast line"
+        entries = [
+            {"type": "user", "timestamp": "t1", "message": {"role": "user", "content": "fix it\nplease"}},
+            {"type": "assistant", "timestamp": "t2", "message": {"role": "assistant", "content": [
+                {"type": "text", "text": "Looking.\n\n| a | b |\n|---|---|"},
+                {"type": "tool_use", "id": "tu1", "name": "Bash", "input": {"command": "ls\npwd"}},
+            ]}},
+            {"type": "user", "timestamp": "t3", "message": {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "tu1", "content": long_out},
+            ]}},
+            {"type": "user", "timestamp": "t4", "message": {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "tu1", "is_error": True,
+                 "content": [{"type": "text", "text": "Exit code 1\nboom"}]},
+            ]}},
+            {"type": "api-request-blob", "timestamp": "t5", "message": {"content": "echo"}},
+        ]
+        return [_event_from_entry(e) for e in entries], long_out
+
+    def test_claude_entries_split_into_whole_named_records(self):
+        events, long_out = self._claude_events()
+        names: dict[str, str] = {}
+        recs = [r for ev in events for r in live._full_records(ev, names)]
+        assert [(r["kind"], r["role"], r["tool"]) for r in recs] == [
+            ("user", "user", None),
+            ("text", "assistant", None),
+            ("tool", "assistant", "Bash"),
+            ("tool", "tool", "Bash"),
+            ("tool", "tool", "Bash"),
+            ("system", "api-request-blob", None),
+        ]
+        assert recs[0]["body"] == "fix it\nplease"
+        assert recs[1]["body"].endswith("|---|---|")
+        assert json.loads(recs[2]["body"]) == {"command": "ls\npwd"}
+        assert recs[3]["body"] == long_out  # no 400-char cut, newlines kept
+        assert recs[3]["call_id"] == "tu1" and recs[3]["error"] is None
+        assert recs[4]["error"] == "Exit code 1\nboom"
+
+    def test_dsh_records_pass_through_with_call_id(self, tmp_path):
+        from sio.adapters.dsh.adapter import events_from_lines
+
+        lines = [json.dumps(o) for o in (
+            {"type": "tool/call", "seq": 1, "time": 1, "data": {"callId": "c1", "name": "bash",
+                                                                "arguments": "{\"command\":\"ls\"}"}},
+            {"type": "tool/result", "seq": 2, "time": 2, "data": {"message": {
+                "toolCallId": "c1", "isError": True, "content": [{"type": "text", "text": "a\n" * 500}]}}},
+        )]
+        recs = [r for ev in events_from_lines(lines) for r in live._full_records(ev, {})]
+        assert [(r["kind"], r["role"], r["tool"], r["call_id"]) for r in recs] == [
+            ("tool", "assistant", "bash", "c1"),
+            ("tool", "tool", "bash", "c1"),
+        ]
+        assert recs[1]["body"] == "a\n" * 500 and recs[1]["error"]
