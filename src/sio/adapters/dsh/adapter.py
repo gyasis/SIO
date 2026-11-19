@@ -27,6 +27,8 @@ from __future__ import annotations
 import datetime
 import io
 import json
+import os
+import time
 from typing import Any, Iterable, Iterator
 
 from sio.adapters.base import SessionEvent, SessionManifest
@@ -154,9 +156,83 @@ class DshAdapter:
         with open_session_lines(manifest.path) as fh:
             yield from events_from_lines(fh)
 
-    def get_live_stream(self, manifest: SessionManifest, **_: Any) -> Iterator[SessionEvent]:
-        """Not supported: the transcript is a zstd stream that cannot be tailed by size."""
-        raise NotImplementedError(
-            "dsh sessions are zstd-compressed and cannot be streamed live; "
-            "use 'sio live show' or 'sio distill' instead."
-        )
+    def get_live_stream(
+        self,
+        manifest: SessionManifest,
+        *,
+        poll_interval: float = 1.0,
+        from_start: bool = False,
+    ) -> Iterator[SessionEvent]:
+        """Follow the session, yielding events for records written after the start.
+
+        A zstd stream cannot be tailed by byte offset, so this polls the file's
+        size and mtime and, on change, decompresses it again and yields only the
+        records past the last complete line already seen. dsh session files are
+        small (tens of KB), so a full re-read per change is cheap.
+        Runs until the caller stops iterating (e.g. KeyboardInterrupt).
+        """
+        path = manifest.path
+        call_names: dict[str, str] = {}
+        lines = complete_lines(path)
+        if from_start:
+            yield from _events_for(lines, call_names)
+        else:
+            # Prime call_names so results of earlier calls still get tool names.
+            for _ in _events_for(lines, call_names):
+                pass
+        seen = len(lines)
+        stamp = _stat_stamp(path)
+        while True:
+            time.sleep(poll_interval)
+            now = _stat_stamp(path)
+            if now == stamp:
+                continue
+            stamp = now
+            lines = complete_lines(path)
+            if len(lines) > seen:
+                yield from _events_for(lines[seen:], call_names)
+                seen = len(lines)
+
+
+def _stat_stamp(path: str) -> tuple[int, int] | None:
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    return (st.st_size, st.st_mtime_ns)
+
+
+def complete_lines(path: str) -> list[str]:
+    """Every newline-terminated line in the session, read in full.
+
+    The writer may be mid-frame while we read; a truncated trailing zstd frame
+    or an unterminated last line is dropped and picked up on the next poll.
+    """
+    buf = io.StringIO()
+    try:
+        with open_session_lines(path) as fh:
+            while True:
+                chunk = fh.read(65536)
+                if not chunk:
+                    break
+                buf.write(chunk)
+    except Exception as exc:  # noqa: BLE001 — narrowed just below
+        if not (isinstance(exc, (OSError, ValueError, EOFError)) or _is_zstd_error(exc)):
+            raise
+    text = buf.getvalue()
+    cut = text.rfind("\n")
+    return text[: cut + 1].splitlines() if cut >= 0 else []
+
+
+def _is_zstd_error(exc: BaseException) -> bool:
+    return type(exc).__module__.startswith("zstandard")
+
+
+def _events_for(lines: Iterable[str], call_names: dict[str, str]) -> Iterator[SessionEvent]:
+    for line in lines:
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict):
+            yield from events_from_entry(obj, call_names)
